@@ -48,7 +48,7 @@ class FinalizeInventoryCatalogSyncJob implements ShouldQueue
             ]);
         } catch (Throwable $e) {
             report($e);
-            $inventory->markCatalogSyncFailed($this->clientAccountId, $e->getMessage());
+            $inventory->markCatalogSyncFailed($this->clientAccountId);
             Log::warning('inventory.catalog_sync.failed', [
                 'client_account_id' => $this->clientAccountId,
                 'phase' => 'finalize',
@@ -60,6 +60,6 @@ class FinalizeInventoryCatalogSyncJob implements ShouldQueue
 
     public function failed(Throwable $e): void
     {
-        app(ShipHeroInventoryService::class)->markCatalogSyncFailed($this->clientAccountId, $e->getMessage());
+        app(ShipHeroInventoryService::class)->markCatalogSyncFailed($this->clientAccountId);
     }
 }

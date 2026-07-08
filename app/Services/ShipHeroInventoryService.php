@@ -33,8 +33,6 @@ class ShipHeroInventoryService
 
     public const CATALOG_FINALIZE_BATCH_SIZE = 2000;
 
-    public const CATALOG_SYNC_PAGE_SIZE = 100;
-
     public function __construct(ShipHeroClient $client)
     {
         $this->client = $client;
@@ -785,17 +783,7 @@ GQL;
 
     public function catalogSyncStallMinutes(): int
     {
-        return max(5, (int) config('services.shiphero.catalog_sync_stall_minutes', 15));
-    }
-
-    public function catalogSyncMaxRuntimeHours(): int
-    {
-        return max(1, (int) config('services.shiphero.catalog_sync_max_runtime_hours', 6));
-    }
-
-    public function catalogSyncPagesPerJob(): int
-    {
-        return max(1, min(20, (int) config('services.shiphero.catalog_sync_pages_per_job', 5)));
+        return max(5, (int) config('services.shiphero.catalog_sync_stall_minutes', 5));
     }
 
     /**
@@ -914,37 +902,7 @@ GQL;
             'page_ms' => (int) round((microtime(true) - $pageStartedAt) * 1000),
         ]);
 
-        $this->recordCatalogSyncPageProgress($clientAccountId);
-
         return $payload;
-    }
-
-    public function recordCatalogSyncPageProgress(int $clientAccountId): void
-    {
-        if ($clientAccountId <= 0) {
-            return;
-        }
-
-        ClientAccount::query()
-            ->where('id', $clientAccountId)
-            ->update([
-                'inventory_catalog_sync_last_progress_at' => now(),
-                'inventory_catalog_sync_pages_completed' => DB::raw('inventory_catalog_sync_pages_completed + 1'),
-                'inventory_catalog_sync_last_error' => null,
-            ]);
-    }
-
-    public function touchCatalogSyncProgress(int $clientAccountId): void
-    {
-        if ($clientAccountId <= 0) {
-            return;
-        }
-
-        ClientAccount::query()
-            ->where('id', $clientAccountId)
-            ->update([
-                'inventory_catalog_sync_last_progress_at' => now(),
-            ]);
     }
 
     public function resolveStaleRunningCatalogSync(int $clientAccountId): void
@@ -960,24 +918,13 @@ GQL;
 
         $startedAt = $account->inventory_catalog_sync_started_at;
         if ($startedAt === null) {
-            $this->markCatalogSyncFailed($clientAccountId, 'Catalog sync was running without a start time.');
+            $this->markCatalogSyncFailed($clientAccountId);
 
             return;
         }
 
-        if ($startedAt->diffInHours(now()) >= $this->catalogSyncMaxRuntimeHours()) {
-            $this->markCatalogSyncFailed($clientAccountId, 'Catalog sync exceeded maximum runtime.');
-
-            return;
-        }
-
-        $lastProgressAt = $account->inventory_catalog_sync_last_progress_at ?? $startedAt;
-        $stallMinutes = $this->catalogSyncStallMinutes();
-        if ($lastProgressAt->diffInMinutes(now()) >= $stallMinutes) {
-            $this->markCatalogSyncFailed(
-                $clientAccountId,
-                'Catalog sync made no progress for '.$stallMinutes.' minutes. Ensure queue worker database-long is running.'
-            );
+        if ($startedAt->diffInMinutes(now()) >= $this->catalogSyncStallMinutes()) {
+            $this->markCatalogSyncFailed($clientAccountId);
         }
     }
 
@@ -1019,9 +966,6 @@ GQL;
             ->update([
                 'inventory_catalog_sync_status' => 'running',
                 'inventory_catalog_sync_started_at' => now(),
-                'inventory_catalog_sync_last_progress_at' => now(),
-                'inventory_catalog_sync_pages_completed' => 0,
-                'inventory_catalog_sync_last_error' => null,
             ]);
     }
 
@@ -1073,8 +1017,6 @@ GQL;
             ->whereIn('id', $ids->all())
             ->update(['product_active' => false]);
 
-        $this->touchCatalogSyncProgress($clientAccountId);
-
         if ($ids->count() < self::CATALOG_FINALIZE_BATCH_SIZE) {
             return null;
         }
@@ -1100,26 +1042,20 @@ GQL;
                 'inventory_catalog_sync_status' => 'idle',
                 'inventory_catalog_synced_at' => now(),
                 'inventory_catalog_product_count' => $productCount,
-                'inventory_catalog_sync_last_error' => null,
             ]);
     }
 
-    public function markCatalogSyncFailed(int $clientAccountId, ?string $errorMessage = null): void
+    public function markCatalogSyncFailed(int $clientAccountId): void
     {
         if ($clientAccountId <= 0) {
             return;
         }
 
-        $update = [
-            'inventory_catalog_sync_status' => 'failed',
-        ];
-        if ($errorMessage !== null && trim($errorMessage) !== '') {
-            $update['inventory_catalog_sync_last_error'] = mb_substr(trim($errorMessage), 0, 500);
-        }
-
         ClientAccount::query()
             ->where('id', $clientAccountId)
-            ->update($update);
+            ->update([
+                'inventory_catalog_sync_status' => 'failed',
+            ]);
     }
 
     /**
@@ -1132,9 +1068,6 @@ GQL;
                 'inventory_catalog_synced_at' => null,
                 'inventory_catalog_sync_status' => 'idle',
                 'inventory_catalog_product_count' => 0,
-                'inventory_catalog_sync_pages_completed' => 0,
-                'inventory_catalog_sync_last_progress_at' => null,
-                'inventory_catalog_sync_last_error' => null,
             ];
         }
 
@@ -1144,24 +1077,15 @@ GQL;
                 'inventory_catalog_synced_at' => null,
                 'inventory_catalog_sync_status' => 'idle',
                 'inventory_catalog_product_count' => 0,
-                'inventory_catalog_sync_pages_completed' => 0,
-                'inventory_catalog_sync_last_progress_at' => null,
-                'inventory_catalog_sync_last_error' => null,
             ];
         }
 
         $syncedAt = $account->inventory_catalog_synced_at;
-        $lastProgressAt = $account->inventory_catalog_sync_last_progress_at;
 
         return [
             'inventory_catalog_synced_at' => $syncedAt !== null ? $syncedAt->toIso8601String() : null,
             'inventory_catalog_sync_status' => (string) ($account->inventory_catalog_sync_status ?? 'idle'),
             'inventory_catalog_product_count' => (int) ($account->inventory_catalog_product_count ?? 0),
-            'inventory_catalog_sync_pages_completed' => (int) ($account->inventory_catalog_sync_pages_completed ?? 0),
-            'inventory_catalog_sync_last_progress_at' => $lastProgressAt !== null ? $lastProgressAt->toIso8601String() : null,
-            'inventory_catalog_sync_last_error' => $account->inventory_catalog_sync_last_error !== null
-                ? (string) $account->inventory_catalog_sync_last_error
-                : null,
         ];
     }
 

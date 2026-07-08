@@ -45,42 +45,26 @@ class SyncInventoryCatalogPageJob implements ShouldQueue
 
     public function handle(ShipHeroInventoryService $inventory): void
     {
-        $deadline = microtime(true) + 240;
-        $maxPages = $inventory->catalogSyncPagesPerJob();
-        $after = $this->after;
-        $pagesProcessed = 0;
-        $lastPayload = null;
-
         try {
-            do {
-                $lastPayload = $inventory->syncCatalogInventoryPage(
-                    $this->clientAccountId,
-                    $this->customerAccountId,
-                    ShipHeroInventoryService::CATALOG_SYNC_PAGE_SIZE,
-                    $after,
-                    $this->syncMode
-                );
-                $pagesProcessed++;
+            $payload = $inventory->syncCatalogInventoryPage(
+                $this->clientAccountId,
+                $this->customerAccountId,
+                100,
+                $this->after,
+                $this->syncMode
+            );
 
-                $pageInfo = is_array($lastPayload['page_info'] ?? null) ? $lastPayload['page_info'] : [];
-                $hasNextPage = (bool) ($pageInfo['has_next_page'] ?? false);
-                $endCursor = isset($pageInfo['end_cursor']) && is_string($pageInfo['end_cursor'])
-                    ? trim($pageInfo['end_cursor'])
-                    : null;
+            $pageInfo = is_array($payload['page_info'] ?? null) ? $payload['page_info'] : [];
+            $hasNextPage = (bool) ($pageInfo['has_next_page'] ?? false);
+            $endCursor = isset($pageInfo['end_cursor']) && is_string($pageInfo['end_cursor'])
+                ? trim($pageInfo['end_cursor'])
+                : null;
 
-                if (! $hasNextPage || $endCursor === null || $endCursor === '') {
-                    $after = null;
-                    break;
-                }
-
-                $after = $endCursor;
-            } while ($pagesProcessed < $maxPages && microtime(true) < $deadline);
-
-            if ($after !== null && $after !== '') {
+            if ($hasNextPage && $endCursor !== null && $endCursor !== '') {
                 $inventory->dispatchCatalogPageJob(
                     $this->clientAccountId,
                     $this->customerAccountId,
-                    $after,
+                    $endCursor,
                     $this->syncMode
                 );
 
@@ -92,7 +76,6 @@ class SyncInventoryCatalogPageJob implements ShouldQueue
                 Log::info('inventory.catalog_sync.completed', [
                     'client_account_id' => $this->clientAccountId,
                     'sync_mode' => ShipHeroInventoryService::CATALOG_SYNC_FULL,
-                    'pages_in_job' => $pagesProcessed,
                 ]);
 
                 return;
@@ -101,7 +84,7 @@ class SyncInventoryCatalogPageJob implements ShouldQueue
             $inventory->dispatchFinalizeCatalogSyncJob($this->clientAccountId);
         } catch (Throwable $e) {
             report($e);
-            $inventory->markCatalogSyncFailed($this->clientAccountId, $e->getMessage());
+            $inventory->markCatalogSyncFailed($this->clientAccountId);
             Log::warning('inventory.catalog_sync.failed', [
                 'client_account_id' => $this->clientAccountId,
                 'phase' => 'page',
@@ -113,6 +96,6 @@ class SyncInventoryCatalogPageJob implements ShouldQueue
 
     public function failed(Throwable $e): void
     {
-        app(ShipHeroInventoryService::class)->markCatalogSyncFailed($this->clientAccountId, $e->getMessage());
+        app(ShipHeroInventoryService::class)->markCatalogSyncFailed($this->clientAccountId);
     }
 }

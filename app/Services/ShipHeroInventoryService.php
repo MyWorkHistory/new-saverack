@@ -293,6 +293,18 @@ GQL;
         }
 
         if ($backorderOnly) {
+            // Prefer empty quick response over scanning ShipHero page-by-page when the
+            // catalog index is empty/unpopulated — live backorder scans cause origin 502s.
+            if ($this->inventoryIndexHasAnyRows($clientAccountId, $customerAccountId)) {
+                return [
+                    'rows' => [],
+                    'page_info' => [
+                        'has_next_page' => false,
+                        'end_cursor' => null,
+                    ],
+                ];
+            }
+
             return $this->listInventoryRowsSearch(
                 $graphql,
                 $customerAccountId,
@@ -387,6 +399,21 @@ GQL;
         }
 
         return null;
+    }
+
+    /**
+     * True when the local product index already has rows for this account
+     * (regardless of backorder / kit / active filters).
+     */
+    private function inventoryIndexHasAnyRows(?int $clientAccountId, ?string $customerAccountId): bool
+    {
+        $query = ShipHeroInventoryProductIndex::query();
+        $query = $this->applyInventoryIndexAccountScope($query, $clientAccountId, $customerAccountId);
+        if ($query === null) {
+            return false;
+        }
+
+        return $query->exists();
     }
 
     private function applyInventoryIndexCrmStatusJoin(Builder $query): Builder
@@ -824,6 +851,18 @@ GQL;
                 return null;
             }
             if ((clone $query)->count() === 0) {
+                // Synced index with zero matches for this filter → empty page (no ShipHero scan).
+                if ($backorderOnly && $this->inventoryIndexHasAnyRows($clientAccountId, $customerAccountId)) {
+                    return [
+                        'rows' => [],
+                        'page_info' => [
+                            'has_next_page' => false,
+                            'end_cursor' => null,
+                            'next_search_skip' => null,
+                        ],
+                    ];
+                }
+
                 return null;
             }
         }
@@ -831,6 +870,20 @@ GQL;
         $first = max(1, min(200, $first));
         $total = (clone $query)->count();
         if ($total === 0) {
+            // Index is synced but no matching rows (common for backorder_only with zero
+            // oversold SKUs). Returning null used to fall through to a multi-page ShipHero
+            // scan that regularly exceeded Cloudflare's origin timeout (~100s) and 502'd.
+            if ($backorderOnly && $this->inventoryIndexHasAnyRows($clientAccountId, $customerAccountId)) {
+                return [
+                    'rows' => [],
+                    'page_info' => [
+                        'has_next_page' => false,
+                        'end_cursor' => null,
+                        'next_search_skip' => $term !== '' ? max(0, $searchSkip) : null,
+                    ],
+                ];
+            }
+
             return null;
         }
 
@@ -1119,9 +1172,14 @@ GQL;
         $lastFetchHadNext = false;
         $iterations = 0;
         $innerFirst = min(100, max(40, $desired * 3));
-        $maxIterations = $backorderOnly ? 25 : 1;
+        // Cap hard: each ShipHero page can take ~6–25s; Cloudflare origin timeout is ~100s.
+        $maxIterations = $backorderOnly ? 3 : 1;
+        $deadline = $backorderOnly ? (microtime(true) + 12.0) : null;
 
         while ($iterations < $maxIterations) {
+            if ($deadline !== null && microtime(true) >= $deadline) {
+                break;
+            }
             $iterations++;
             $vars = array_merge(
                 ['first' => $innerFirst, 'after' => $graphqlAfter],

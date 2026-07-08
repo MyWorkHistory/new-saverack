@@ -332,4 +332,52 @@ class ShipHeroInventoryRefreshTest extends TestCase
         $this->assertCount(1, $payload['rows']);
         $this->assertSame('POS-OOS', $payload['rows'][0]['sku'] ?? null);
     }
+
+    public function test_backorder_only_with_synced_index_but_zero_oversold_does_not_hit_shiphero(): void
+    {
+        $account = ClientAccount::query()->create([
+            'company_name' => 'OOS Empty Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-oos-empty-1',
+        ]);
+
+        ShipHeroInventoryProductIndex::query()->create([
+            'client_account_id' => $account->id,
+            'shiphero_customer_account_id' => 'sh-oos-empty-1',
+            'shiphero_product_id' => 'prod-in-stock',
+            'sku' => 'IN-STOCK',
+            'sku_search' => 'in-stock',
+            'name' => 'In stock only',
+            'name_search' => 'in stock only',
+            'product_active' => true,
+            'kit' => false,
+            'kit_build' => false,
+            'warehouse_id' => 'WH1',
+            'warehouse_active' => true,
+            'on_hand' => 10,
+            'allocated' => 1,
+            'backorder' => 0,
+            'synced_at' => now(),
+        ]);
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldNotReceive('query');
+
+        $service = new ShipHeroInventoryService($client);
+        $payload = $service->listInventoryRows(
+            'sh-oos-empty-1',
+            100,
+            null,
+            'all',
+            'active',
+            null,
+            0,
+            $account->id,
+            true,
+            false
+        );
+
+        $this->assertSame([], $payload['rows']);
+        $this->assertFalse((bool) ($payload['page_info']['has_next_page'] ?? true));
+    }
 }

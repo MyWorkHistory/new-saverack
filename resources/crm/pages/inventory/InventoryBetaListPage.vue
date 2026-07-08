@@ -415,8 +415,8 @@ function openStatusModal(row) {
   statusModalOpen.value = true;
 }
 
-function closeStatusModal() {
-  if (statusModalSaving.value) return;
+function closeStatusModal(force = false) {
+  if (!force && statusModalSaving.value) return;
   statusModalOpen.value = false;
   statusModalRow.value = null;
 }
@@ -446,7 +446,7 @@ async function saveStatusModal() {
       skus: [sku],
     });
     toast.success(`Status set to ${nextActive ? "Active" : "Inactive"}.`);
-    closeStatusModal();
+    closeStatusModal(true);
     await loadRows(true);
   } catch (e) {
     toast.errorFrom(e, "Could not update status.");

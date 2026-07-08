@@ -43,6 +43,11 @@ const bulkBusy = ref(false);
 const rows = ref([]);
 const pageInfo = ref({ has_next_page: false, end_cursor: null });
 
+const statusModalOpen = ref(false);
+const statusModalRow = ref(null);
+const statusModalActive = ref(true);
+const statusModalSaving = ref(false);
+
 const searchDraft = ref("");
 const searchCommitted = ref("");
 /** When searching, cumulative match offset for paging (from API next_search_skip). */
@@ -395,6 +400,59 @@ const bulkEligibleSkus = computed(() => {
 
 function crmStatusLabel(row) {
   return row?.crm_active === false ? "Inactive" : "Active";
+}
+
+const statusModalAccountId = computed(() => effectiveRowAccountId(statusModalRow.value));
+
+const statusModalCanEdit = computed(
+  () => canInventoryUpdate.value && statusModalAccountId.value > 0,
+);
+
+function openStatusModal(row) {
+  if (!row) return;
+  statusModalRow.value = row;
+  statusModalActive.value = row.crm_active !== false;
+  statusModalOpen.value = true;
+}
+
+function closeStatusModal() {
+  if (statusModalSaving.value) return;
+  statusModalOpen.value = false;
+  statusModalRow.value = null;
+}
+
+async function saveStatusModal() {
+  const row = statusModalRow.value;
+  if (!row || !statusModalCanEdit.value) return;
+
+  const sku = String(row.sku || "").trim();
+  const accountIdVal = statusModalAccountId.value;
+  if (!sku || accountIdVal <= 0) {
+    toast.error("Could not resolve account for this product.");
+    return;
+  }
+
+  const nextActive = statusModalActive.value === true;
+  if (nextActive === (row.crm_active !== false)) {
+    closeStatusModal();
+    return;
+  }
+
+  statusModalSaving.value = true;
+  try {
+    await api.patch("/inventory/products/bulk-crm-active", {
+      client_account_id: accountIdVal,
+      active: nextActive,
+      skus: [sku],
+    });
+    toast.success(`Status set to ${nextActive ? "Active" : "Inactive"}.`);
+    closeStatusModal();
+    await loadRows(true);
+  } catch (e) {
+    toast.errorFrom(e, "Could not update status.");
+  } finally {
+    statusModalSaving.value = false;
+  }
 }
 
 async function commitSearch() {
@@ -1288,12 +1346,15 @@ onUnmounted(() => {
                 <span v-else class="text-secondary">{{ rowAccountLabel(row) }}</span>
               </td>
               <td class="text-center user-inv-table__status-col">
-                <span
-                  class="badge rounded-pill user-inv-status-badge"
+                <button
+                  type="button"
+                  class="badge rounded-pill user-inv-status-badge user-inv-status-badge--btn border-0"
                   :class="row.crm_active === false ? 'user-inv-status-badge--inactive' : 'user-inv-status-badge--active'"
+                  :aria-label="`Status: ${crmStatusLabel(row)}. Click to ${canInventoryUpdate && effectiveRowAccountId(row) > 0 ? 'update' : 'view'}.`"
+                  @click="openStatusModal(row)"
                 >
                   {{ crmStatusLabel(row) }}
-                </span>
+                </button>
               </td>
               <td class="text-center user-inv-table__num-col">{{ (row.kit || row.kit_build) ? "Yes" : "No" }}</td>
               <td class="text-center user-inv-table__num-col">{{ Number(row.on_hand || 0) }}</td>
@@ -1323,6 +1384,85 @@ onUnmounted(() => {
       </div>
     </div>
   </div>
+
+  <Teleport to="body">
+    <div
+      v-if="statusModalOpen"
+      class="crm-vx-modal-overlay"
+      @click.self="closeStatusModal"
+    >
+      <div
+        class="crm-vx-modal crm-vx-modal--sm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="inv-status-modal-title"
+        @click.stop
+      >
+        <header class="crm-vx-modal__head">
+          <h2 id="inv-status-modal-title" class="crm-vx-modal__title">Product Status</h2>
+          <p v-if="statusModalRow" class="crm-vx-modal__subtitle mb-0">
+            {{ statusModalRow.sku }} — {{ statusModalRow.name || "—" }}
+          </p>
+        </header>
+        <div class="crm-vx-modal__body">
+          <p v-if="!statusModalCanEdit" class="small text-secondary mb-0">
+            CRM status is {{ crmStatusLabel(statusModalRow) }}.
+            <span v-if="!canInventoryUpdate">You need inventory update permission to change it.</span>
+            <span v-else>Select an account for this product to update status.</span>
+          </p>
+          <template v-else>
+            <p class="small text-secondary mb-3">
+              CRM-only status. Does not change the ShipHero product active flag.
+            </p>
+            <fieldset class="border-0 p-0 m-0">
+              <legend class="visually-hidden">CRM status</legend>
+              <div class="d-flex flex-column gap-2">
+                <label class="d-flex align-items-center gap-2 mb-0">
+                  <input
+                    v-model="statusModalActive"
+                    type="radio"
+                    name="inv-crm-status"
+                    :value="true"
+                    :disabled="statusModalSaving"
+                  />
+                  Active
+                </label>
+                <label class="d-flex align-items-center gap-2 mb-0">
+                  <input
+                    v-model="statusModalActive"
+                    type="radio"
+                    name="inv-crm-status"
+                    :value="false"
+                    :disabled="statusModalSaving"
+                  />
+                  Inactive
+                </label>
+              </div>
+            </fieldset>
+          </template>
+        </div>
+        <footer class="crm-vx-modal__footer">
+          <button
+            type="button"
+            class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+            :disabled="statusModalSaving"
+            @click="closeStatusModal"
+          >
+            {{ statusModalCanEdit ? "Cancel" : "Close" }}
+          </button>
+          <button
+            v-if="statusModalCanEdit"
+            type="button"
+            class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+            :disabled="statusModalSaving"
+            @click="saveStatusModal"
+          >
+            {{ statusModalSaving ? "Saving…" : "Save" }}
+          </button>
+        </footer>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -1386,6 +1526,19 @@ onUnmounted(() => {
 .user-inv-status-badge--inactive {
   background: #f3f4f6;
   color: #6b7280;
+}
+
+.user-inv-status-badge--btn {
+  cursor: pointer;
+}
+
+.user-inv-status-badge--btn:hover {
+  filter: brightness(0.95);
+}
+
+.user-inv-status-badge--btn:focus-visible {
+  outline: 2px solid var(--bs-primary, #2563eb);
+  outline-offset: 2px;
 }
 
 .user-inv-table--syncing {

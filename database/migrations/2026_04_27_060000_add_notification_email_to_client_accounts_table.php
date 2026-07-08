@@ -8,6 +8,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasColumn('client_accounts', 'notification_email')) {
+            return;
+        }
+
         Schema::table('client_accounts', function (Blueprint $table) {
             $table->string('notification_email', 190)->nullable()->after('notify_email');
         });

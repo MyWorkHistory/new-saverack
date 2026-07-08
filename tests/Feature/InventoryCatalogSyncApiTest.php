@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\SyncInventoryCatalogPageJob;
 use App\Models\ClientAccount;
 use App\Models\ShipHeroInventoryProductDetailCache;
 use App\Models\ShipHeroInventoryProductIndex;
@@ -9,6 +10,8 @@ use App\Models\User;
 use App\Services\ShipHeroClient;
 use App\Services\ShipHeroInventoryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
 use Mockery;
 use Tests\TestCase;
@@ -199,5 +202,106 @@ class InventoryCatalogSyncApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('rows', [])
             ->assertJsonPath('page_info.has_next_page', false);
+    }
+
+    public function test_catalog_sync_endpoint_returns_meta_without_list_query(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([$this->inventoryViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Catalog Sync Poll Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-poll-1',
+            'inventory_catalog_sync_status' => 'running',
+            'inventory_catalog_sync_started_at' => now(),
+        ]);
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldNotReceive('query');
+        $this->app->instance(ShipHeroClient::class, $client);
+
+        $this->getJson('/api/inventory-beta/catalog-sync?'.http_build_query([
+            'client_account_id' => $account->id,
+        ]))
+            ->assertOk()
+            ->assertJsonPath('catalog_sync.inventory_catalog_sync_status', 'running');
+    }
+
+    public function test_refresh_dispatches_background_job_and_returns_202(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([$this->inventoryViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Job Sync Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-job-sync-1',
+            'inventory_catalog_sync_status' => 'idle',
+        ]);
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldNotReceive('query');
+        $this->app->instance(ShipHeroClient::class, $client);
+
+        $this->getJson('/api/inventory-beta/list?'.http_build_query([
+            'client_account_id' => $account->id,
+            'refresh' => 1,
+            'sync_mode' => 'incremental',
+        ]))
+            ->assertStatus(202)
+            ->assertJsonPath('catalog_sync.inventory_catalog_sync_status', 'running');
+
+        Queue::assertPushed(SyncInventoryCatalogPageJob::class, function ($job) use ($account) {
+            return $job->clientAccountId === $account->id
+                && $job->customerAccountId === 'sh-job-sync-1';
+        });
+    }
+
+    public function test_list_read_works_when_crm_status_table_is_missing(): void
+    {
+        Schema::dropIfExists('inventory_product_crm_status');
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([$this->inventoryViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        $account = ClientAccount::query()->create([
+            'company_name' => 'No CRM Table Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-no-crm-1',
+        ]);
+
+        ShipHeroInventoryProductIndex::query()->create([
+            'client_account_id' => $account->id,
+            'shiphero_customer_account_id' => 'sh-no-crm-1',
+            'sku' => 'SKU-NO-CRM',
+            'sku_search' => 'sku-no-crm',
+            'name' => 'No CRM',
+            'name_search' => 'no crm',
+            'product_active' => true,
+            'kit' => false,
+            'kit_build' => false,
+            'warehouse_id' => 'WH1',
+            'warehouse_active' => true,
+            'on_hand' => 3,
+            'allocated' => 0,
+            'backorder' => 0,
+            'synced_at' => now(),
+        ]);
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldNotReceive('query');
+        $this->app->instance(ShipHeroClient::class, $client);
+
+        $this->getJson('/api/inventory-beta/list?'.http_build_query([
+            'client_account_id' => $account->id,
+        ]))
+            ->assertOk()
+            ->assertJsonPath('rows.0.sku', 'SKU-NO-CRM');
     }
 }

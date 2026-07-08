@@ -196,6 +196,8 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('inventory-beta')->group(function () {
+        Route::get('/catalog-sync', [InventoryBetaController::class, 'catalogSync'])
+            ->middleware('can:inventory.view');
         Route::get('/list', [InventoryBetaController::class, 'list'])
             ->middleware('can:inventory.view');
         Route::post('/products/{sku}/sync', [InventoryBetaController::class, 'syncCatalogProduct'])

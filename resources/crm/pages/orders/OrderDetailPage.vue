@@ -1855,19 +1855,19 @@ function goToOrdersList() {
     </div>
     <div v-else-if="loadError" class="alert alert-warning small mb-4" role="alert">
       {{ loadError }}
-    </div>
+          </div>
     <div v-else-if="!order" class="alert alert-warning mb-4">
       No order data loaded. Check the order link and account, then try again.
     </div>
     <template v-else>
       <header class="order-detail-page__hero mb-4">
-        <button
-          type="button"
+          <button
+            type="button"
           class="btn btn-link btn-sm text-secondary px-0 py-0 mb-2 text-decoration-none order-detail-page__back-link"
           @click="goToOrdersList"
-        >
+          >
           {{ isReturnPreviewMode ? "&lt; Create Return" : "&lt; Back to Orders" }}
-        </button>
+          </button>
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
           <div class="min-w-0">
             <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
@@ -1902,11 +1902,11 @@ function goToOrdersList() {
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                 </svg>
               </a>
-            </div>
+        </div>
             <p v-if="orderHeaderMetaLine" class="small text-secondary mb-0 order-detail-page__hero-meta">
               {{ orderHeaderMetaLine }}
-            </p>
-          </div>
+        </p>
+      </div>
           <div
             v-if="canUseStaffOrderHeaderActions"
             class="d-flex flex-wrap gap-2 align-items-center flex-shrink-0 order-detail-page__hero-actions"
@@ -1969,7 +1969,7 @@ function goToOrdersList() {
                 More Actions
                 <span class="order-detail-page__more-actions-caret" aria-hidden="true">▾</span>
               </button>
-            </div>
+    </div>
             <button
               v-if="!isDraftOrder && showRemoveHoldBtn"
               type="button"
@@ -1980,8 +1980,8 @@ function goToOrdersList() {
             >
               {{ removeHoldsBusy ? "Removing…" : "Remove Hold" }}
             </button>
-          </div>
-        </div>
+    </div>
+    </div>
       </header>
 
       <div v-if="loadNotice" class="alert alert-warning small mb-4" role="status">
@@ -2018,7 +2018,7 @@ function goToOrdersList() {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                   </svg>
                 </span>
-                <h2 class="h6 mb-0 fw-semibold">Items</h2>
+              <h2 class="h6 mb-0 fw-semibold">Items</h2>
               </div>
               <button
                 v-if="!isReturnPreviewMode"
@@ -2265,8 +2265,8 @@ function goToOrdersList() {
             <p v-if="!canRunShipHeroActions" class="small text-secondary mt-2 mb-0">
               You do not have permission to edit this note.
             </p>
+            </div>
           </div>
-        </div>
 
         <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
@@ -2278,7 +2278,7 @@ function goToOrdersList() {
                   </svg>
                 </span>
                 <h3 class="h6 fw-semibold mb-0">Shipping Address</h3>
-              </div>
+            </div>
               <button
                 v-if="canUseStaffOrderHeaderActions"
                 type="button"
@@ -2287,12 +2287,12 @@ function goToOrdersList() {
               >
                 Edit
               </button>
-            </div>
+              </div>
             <div class="small mb-3 pb-3 border-bottom">
               <div class="order-detail-page__address-text text-body fw-semibold">
                 {{ formattedShippingAddress }}
-              </div>
             </div>
+          </div>
             <template v-if="orderIsShipped">
               <div class="order-detail-page__tracking-block">
                 <div class="d-flex align-items-center gap-2 mb-3">
@@ -2382,7 +2382,7 @@ function goToOrdersList() {
                 {{ shippingLinesSaveBusy ? "Saving…" : "Save Carrier & Method" }}
               </button>
             </template>
-          </div>
+        </div>
 
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
             <div class="d-flex align-items-center gap-2 mb-3 order-detail-page__section-head">
@@ -2568,7 +2568,7 @@ function goToOrdersList() {
                   </svg>
                 </span>
                 <h3 class="h6 fw-semibold mb-0">Attachments</h3>
-              </div>
+          </div>
               <button
                 type="button"
                 class="btn btn-sm btn-outline-secondary"

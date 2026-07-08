@@ -77,6 +77,8 @@ return [
         'restock_dispatch_mode' => env('SHIPHERO_RESTOCK_DISPATCH_MODE', 'sync'),
         /** Max restock rows returned in a single full=1 API response (avoids origin OOM / 502). */
         'restock_api_max_rows' => (int) env('SHIPHERO_RESTOCK_API_MAX_ROWS', 5000),
+        /** Minutes before a stuck inventory catalog sync is marked failed. */
+        'catalog_sync_stall_minutes' => (int) env('SHIPHERO_CATALOG_SYNC_STALL_MINUTES', 5),
         /** GraphQL mutation for customer account update (from shiphero:probe-customer-mutations). */
         'customer_account_update_mutation' => env('SHIPHERO_CUSTOMER_ACCOUNT_UPDATE_MUTATION'),
         'customer_account_update_input_type' => env('SHIPHERO_CUSTOMER_ACCOUNT_UPDATE_INPUT_TYPE'),

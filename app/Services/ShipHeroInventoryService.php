@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\SyncInventoryCatalogPageJob;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountOnDemandProduct;
 use App\Models\ShipHeroInventoryProductDetailCache;
@@ -10,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 
 class ShipHeroInventoryService
@@ -473,8 +475,17 @@ GQL;
         return $query->exists();
     }
 
+    private function inventoryIndexCrmStatusEnabled(): bool
+    {
+        return Schema::hasTable('inventory_product_crm_status');
+    }
+
     private function applyInventoryIndexCrmStatusJoin(Builder $query): Builder
     {
+        if (! $this->inventoryIndexCrmStatusEnabled()) {
+            return $query;
+        }
+
         $table = (new ShipHeroInventoryProductIndex())->getTable();
 
         return $query
@@ -491,6 +502,10 @@ GQL;
 
     private function applyInventoryIndexCrmActiveFilter(Builder $query, string $activeStatus): void
     {
+        if (! $this->inventoryIndexCrmStatusEnabled()) {
+            return;
+        }
+
         if ($activeStatus === 'active') {
             $query->whereRaw('COALESCE(inventory_crm_status.crm_active, 1) = 1');
         } elseif ($activeStatus === 'inactive') {
@@ -708,7 +723,54 @@ GQL;
 
     public function catalogSyncStallMinutes(): int
     {
-        return max(5, (int) config('services.shiphero.catalog_sync_stall_minutes', 30));
+        return max(5, (int) config('services.shiphero.catalog_sync_stall_minutes', 5));
+    }
+
+    /**
+     * Queue a background catalog sync (one ShipHero page per job).
+     */
+    public function dispatchCatalogSyncJob(int $clientAccountId, string $customerAccountId, string $syncMode): void
+    {
+        $syncMode = $this->normalizeCatalogSyncMode($syncMode);
+        if ($syncMode === self::CATALOG_SYNC_FULL) {
+            $this->clearInventoryIndexForAccount($clientAccountId, $customerAccountId);
+        }
+        $this->beginCatalogSync($clientAccountId);
+        SyncInventoryCatalogPageJob::dispatch($clientAccountId, $customerAccountId, null, $syncMode);
+    }
+
+    /**
+     * Sync one ShipHero catalog page into the local index (used by queue jobs).
+     *
+     * @return array{rows: list<array<string,mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null}}
+     */
+    public function syncCatalogInventoryPage(
+        int $clientAccountId,
+        string $customerAccountId,
+        int $first,
+        ?string $after,
+        string $syncMode
+    ): array {
+        $this->normalizeCatalogSyncMode($syncMode);
+        $this->catalogSyncTrackSeen = true;
+        try {
+            return $this->listInventoryRows(
+                $customerAccountId,
+                $first,
+                $after,
+                'all',
+                'active',
+                null,
+                0,
+                $clientAccountId,
+                false,
+                true,
+                false,
+                true
+            );
+        } finally {
+            $this->catalogSyncTrackSeen = false;
+        }
     }
 
     public function resolveStaleRunningCatalogSync(int $clientAccountId): void
@@ -967,22 +1029,24 @@ GQL;
             } elseif ($after !== null) {
                 return null;
             }
-            if ((clone $query)->count() === 0) {
-                // Synced index with zero matches for this filter → empty page (no ShipHero scan).
-                if ($this->inventoryIndexHasAnyRows($clientAccountId, $customerAccountId)) {
-                    return $this->emptyInventoryListPage();
-                }
-
-                return null;
-            }
         }
 
         $first = max(1, min(200, $first));
-        $total = (clone $query)->count();
-        if ($total === 0) {
-            // Index is synced but no matching rows (e.g. CRM active filter or backorder_only
-            // with zero oversold SKUs). Returning null used to fall through to a live ShipHero
-            // scan that regularly exceeded Cloudflare's origin timeout (~100s) and 502'd.
+        $fetchLimit = $first + 1;
+
+        $items = $query
+            ->with('clientAccount:id,company_name')
+            ->when($term === '', function ($builder) {
+                return $builder
+                    ->orderByDesc('on_hand')
+                    ->orderBy('sku')
+                    ->orderBy('warehouse_id');
+            })
+            ->skip($offset)
+            ->take($fetchLimit)
+            ->get();
+
+        if ($items->isEmpty()) {
             if ($this->inventoryIndexHasAnyRows($clientAccountId, $customerAccountId)) {
                 return $this->emptyInventoryListPage($term !== '' ? max(0, $searchSkip) : null);
             }
@@ -990,14 +1054,10 @@ GQL;
             return null;
         }
 
-        $items = $query
-            ->with('clientAccount:id,company_name')
-            ->orderByDesc('on_hand')
-            ->orderBy('sku')
-            ->orderBy('warehouse_id')
-            ->skip($offset)
-            ->take($first)
-            ->get();
+        $hasNextPage = $items->count() > $first;
+        if ($hasNextPage) {
+            $items = $items->slice(0, $first)->values();
+        }
         $rows = $items->map(function (ShipHeroInventoryProductIndex $row) {
             return $this->inventoryIndexRowToListRow($row);
         })->values()->all();
@@ -1009,8 +1069,8 @@ GQL;
         return [
             'rows' => $rows,
             'page_info' => [
-                'has_next_page' => $next < $total,
-                'end_cursor' => $term === '' ? ($next < $total ? 'idx:'.$next : null) : null,
+                'has_next_page' => $hasNextPage,
+                'end_cursor' => $term === '' ? ($hasNextPage ? 'idx:'.$next : null) : null,
                 'next_search_skip' => $term !== '' ? $next : null,
             ],
         ];

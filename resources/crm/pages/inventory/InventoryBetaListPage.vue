@@ -51,11 +51,6 @@ let searchRunSeq = 0;
 let refreshRunSeq = 0;
 let accountLoadSeq = 0;
 
-const REFRESH_MAX_PAGES = 500;
-
-/** Auto-refresh catalog from ShipHero every 30 minutes for the selected account. */
-const AUTO_SYNC_INTERVAL_MS = 30 * 60 * 1000;
-
 /** ShipHero inventory list page size */
 const LIST_PAGE_SIZE = 50;
 
@@ -169,9 +164,13 @@ async function fetchPage(append, forceRefresh = false, syncMode = "incremental")
     params.sync_mode = syncMode;
     currentSyncMode.value = syncMode;
   }
-  const { data } = await api.get("/inventory-beta/list", { params });
+  const response = await api.get("/inventory-beta/list", { params });
+  const data = response.data;
   if (data?.catalog_sync && typeof data.catalog_sync === "object") {
     catalogSync.value = { ...catalogSync.value, ...data.catalog_sync };
+  }
+  if (forceRefresh && response.status === 202) {
+    return { backgroundSyncStarted: true, chunkLength: 0 };
   }
   const chunk = normalizeRows(data?.rows);
   if (Boolean(data?.meta?.cross_account)) {
@@ -205,7 +204,7 @@ async function fetchPage(append, forceRefresh = false, syncMode = "incremental")
     dest.push(r);
   }
   rows.value = dest;
-  return chunk.length;
+  return { backgroundSyncStarted: false, chunkLength: chunk.length };
 }
 
 async function loadRows(reset, forceRefresh = false) {
@@ -227,7 +226,11 @@ async function loadRows(reset, forceRefresh = false) {
     loadingMore.value = true;
   }
   try {
-    await fetchPage(!reset, forceRefresh);
+    const pageResult = await fetchPage(!reset, forceRefresh);
+    if (pageResult?.backgroundSyncStarted) {
+      startCatalogSyncPoll();
+      return;
+    }
   } catch (e) {
     if (forceRefresh) {
       rows.value = previousRows;
@@ -240,15 +243,6 @@ async function loadRows(reset, forceRefresh = false) {
   }
   if (reset && searchCommitted.value.trim() && pageInfo.value.has_next_page) {
     continueSearchInBackground(runId);
-  }
-}
-
-async function continueRefreshSync(refreshId) {
-  let guard = 0;
-  while (refreshId === refreshRunSeq && pageInfo.value.has_next_page && guard < REFRESH_MAX_PAGES) {
-    guard += 1;
-    await fetchPage(true, true, currentSyncMode.value);
-    await nextTick();
   }
 }
 
@@ -412,7 +406,10 @@ function clearSearch() {
 
 async function syncAccountRows(syncMode = "incremental") {
   if (!canLoadInventory.value || loading.value || loadingMore.value || refreshing.value) return;
-  if (catalogSyncRunning.value) return;
+  if (catalogSyncRunning.value) {
+    startCatalogSyncPoll();
+    return;
+  }
   if (crossAccountMode.value) {
     toast.error("Select an account to sync a single catalog.");
     return;
@@ -429,8 +426,11 @@ async function syncAccountRows(syncMode = "incremental") {
     rows.value = [];
     selectedKeys.value = [];
     searchSkipNext.value = 0;
-    await fetchPage(false, true, syncMode);
-    await continueRefreshSync(refreshId);
+    const pageResult = await fetchPage(false, true, syncMode);
+    if (pageResult?.backgroundSyncStarted) {
+      startCatalogSyncPoll();
+      return;
+    }
     if (refreshId !== refreshRunSeq) return;
     pageInfo.value = { has_next_page: false, end_cursor: null };
     rows.value = [];
@@ -441,9 +441,8 @@ async function syncAccountRows(syncMode = "incremental") {
         ? "Products synced from ShipHero."
         : "Inventory refreshed from ShipHero.",
     );
-    startAutoSyncTimer();
   } catch (e) {
-    if (e.response?.status === 409) {
+    if (e.response?.status === 409 || e.response?.status === 202) {
       if (e.response?.data?.catalog_sync) {
         catalogSync.value = { ...catalogSync.value, ...e.response.data.catalog_sync };
       }
@@ -453,7 +452,7 @@ async function syncAccountRows(syncMode = "incremental") {
     rows.value = previousRows;
     toast.errorFrom(e, "Could not sync inventory catalog.");
   } finally {
-    if (refreshId === refreshRunSeq) {
+    if (refreshId === refreshRunSeq && !catalogSyncPollTimer) {
       refreshing.value = false;
     }
   }
@@ -648,14 +647,6 @@ function onDocClick(e) {
   }
 }
 
-watch(
-  () => accountId.value,
-  (id) => {
-    if (id) loadRows(true);
-  },
-);
-
-
 let catalogSyncPollTimer = null;
 
 function stopCatalogSyncPoll() {
@@ -665,27 +656,53 @@ function stopCatalogSyncPoll() {
   }
 }
 
+async function refreshCatalogSyncMeta() {
+  if (accountId.value <= 0 || crossAccountMode.value) return;
+  try {
+    const { data } = await api.get("/inventory-beta/catalog-sync", {
+      params: { client_account_id: accountId.value },
+    });
+    if (data?.catalog_sync && typeof data.catalog_sync === "object") {
+      catalogSync.value = { ...catalogSync.value, ...data.catalog_sync };
+    }
+    if (catalogSync.value?.inventory_catalog_sync_status === "running") {
+      startCatalogSyncPoll();
+    }
+  } catch {
+    // ignore transient errors
+  }
+}
+
+async function ensureAccountCatalogSynced(loadId) {
+  if (loadId !== accountLoadSeq) return;
+  if (accountId.value <= 0 || crossAccountMode.value) return;
+  await refreshCatalogSyncMeta();
+}
+
 async function pollCatalogSyncStatus() {
   if (accountId.value <= 0 || crossAccountMode.value) {
     stopCatalogSyncPoll();
     return;
   }
   try {
-    const { data } = await api.get("/inventory-beta/list", {
+    const { data } = await api.get("/inventory-beta/catalog-sync", {
       params: {
         client_account_id: accountId.value,
-        first: 1,
-        kits: filters.kits,
-        active_status: filters.activeStatus,
       },
     });
     if (data?.catalog_sync && typeof data.catalog_sync === "object") {
       catalogSync.value = { ...catalogSync.value, ...data.catalog_sync };
     }
-    if (catalogSync.value?.inventory_catalog_sync_status !== "running") {
+    const status = catalogSync.value?.inventory_catalog_sync_status;
+    if (status !== "running") {
       stopCatalogSyncPoll();
       refreshing.value = false;
-      await loadRows(true);
+      if (status === "idle") {
+        await loadRows(true);
+        toast.success("Inventory refreshed from ShipHero.");
+      } else if (status === "failed") {
+        toast.error("Catalog sync failed. Try Sync Products again.");
+      }
     }
   } catch {
     // ignore transient poll errors
@@ -699,63 +716,8 @@ function startCatalogSyncPoll() {
   pollCatalogSyncStatus();
 }
 
-let autoSyncTimer = null;
-
-function catalogSyncIsStale() {
-  const raw = catalogSync.value?.inventory_catalog_synced_at;
-  if (!raw) return true;
-  const syncedAt = new Date(raw).getTime();
-  if (Number.isNaN(syncedAt)) return true;
-  return Date.now() - syncedAt >= AUTO_SYNC_INTERVAL_MS;
-}
-
 function stopAutoSyncTimer() {
-  if (autoSyncTimer !== null) {
-    clearInterval(autoSyncTimer);
-    autoSyncTimer = null;
-  }
   stopCatalogSyncPoll();
-}
-
-function startAutoSyncTimer() {
-  stopAutoSyncTimer();
-  if (accountId.value <= 0 || crossAccountMode.value) return;
-  autoSyncTimer = setInterval(() => {
-    if (document.visibilityState !== "visible") return;
-    if (loading.value || refreshing.value || loadingMore.value || catalogSyncRunning.value) return;
-    syncAccountRows("incremental");
-  }, AUTO_SYNC_INTERVAL_MS);
-}
-
-function onPageVisibilityChange() {
-  if (document.visibilityState !== "visible") return;
-  if (accountId.value <= 0 || crossAccountMode.value) return;
-  if (!catalogSyncIsStale()) return;
-  if (loading.value || refreshing.value || loadingMore.value || catalogSyncRunning.value) return;
-  syncAccountRows("incremental");
-}
-
-async function ensureAccountCatalogSynced(loadId) {
-  if (loadId !== accountLoadSeq) return;
-  if (accountId.value <= 0 || crossAccountMode.value) return;
-  if (!catalogSyncIsStale()) {
-    startAutoSyncTimer();
-    return;
-  }
-  if (loading.value || refreshing.value) return;
-  // Portal: sync in background so the first index read can return immediately.
-  if (isPortalList.value) {
-    void syncAccountRows("incremental").finally(() => {
-      if (loadId === accountLoadSeq) {
-        startAutoSyncTimer();
-      }
-    });
-    return;
-  }
-  await syncAccountRows("incremental");
-  if (loadId === accountLoadSeq) {
-    startAutoSyncTimer();
-  }
 }
 
 watch(
@@ -805,7 +767,6 @@ onMounted(() => {
     });
   }
   document.addEventListener("click", onDocClick);
-  document.addEventListener("visibilitychange", onPageVisibilityChange);
   const fixedId = Number(props.fixedClientAccountId || 0);
   if (fixedId > 0) {
     selectedAccountId.value = String(fixedId);
@@ -825,7 +786,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener("click", onDocClick);
-  document.removeEventListener("visibilitychange", onPageVisibilityChange);
   stopAutoSyncTimer();
 });
 </script>

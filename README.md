@@ -26,6 +26,13 @@ Open the app via Laravel: `http://127.0.0.1:8000/` (SPA) and sign in with `ADMIN
 - [ETL next steps](docs/etl-next-steps.md)
 - [Legacy review notes](docs/legacy-review-save_net.md)
 
+### Inventory catalog sync (production)
+
+- Run migrations after deploy: `php artisan migrate --force`
+- Run a queue worker: `php artisan queue:work` (catalog sync uses `SyncInventoryCatalogPageJob`)
+- If sync is stuck `running` and list returns 409: `php artisan inventory:reset-catalog-sync` then `php artisan inventory:reset-catalog-sync 271`
+- Reload PHP-FPM / clear OPcache after backend deploy; deploy `public/assets/*` after `npm run build:spa`
+
 ---
 
 <p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>

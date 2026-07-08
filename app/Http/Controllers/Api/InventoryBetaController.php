@@ -11,6 +11,7 @@ use App\Services\ShipHeroInventoryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -35,6 +36,26 @@ class InventoryBetaController extends Controller
         $this->inventory = $inventory;
         $this->detailCache = $detailCache;
         $this->crossAccountInventory = $crossAccountInventory;
+    }
+
+    public function catalogSync(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+        ]);
+
+        $user = $request->user();
+        if (! $user instanceof User) {
+            abort(401);
+        }
+
+        $clientAccountId = (int) $validated['client_account_id'];
+        $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+        $this->inventory->resolveStaleRunningCatalogSync($clientAccountId);
+
+        return response()->json([
+            'catalog_sync' => $this->inventory->catalogSyncMetaForAccount($clientAccountId),
+        ]);
     }
 
     public function list(Request $request): JsonResponse
@@ -122,6 +143,8 @@ class InventoryBetaController extends Controller
             ? $validated['sync_mode']
             : ShipHeroInventoryService::CATALOG_SYNC_INCREMENTAL;
 
+        $this->inventory->resolveStaleRunningCatalogSync($clientAccountId);
+
         if ($refresh) {
             try {
                 $this->inventory->assertCanBeginCatalogSync($clientAccountId);
@@ -135,8 +158,35 @@ class InventoryBetaController extends Controller
 
                 throw $e;
             }
+
+            try {
+                $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+                $this->inventory->dispatchCatalogSyncJob($clientAccountId, $shipheroCustomerId, $syncMode);
+
+                return response()->json([
+                    'rows' => [],
+                    'page_info' => [
+                        'has_next_page' => false,
+                        'end_cursor' => null,
+                    ],
+                    'catalog_sync' => $this->inventory->catalogSyncMetaForAccount($clientAccountId),
+                    'message' => 'Catalog sync started in the background.',
+                ], 202);
+            } catch (ValidationException $e) {
+                throw $e;
+            } catch (Throwable $e) {
+                $this->inventory->markCatalogSyncFailed($clientAccountId);
+                report($e);
+
+                return response()->json([
+                    'message' => config('app.debug')
+                        ? $e->getMessage()
+                        : 'Could not start catalog sync.',
+                ], 502);
+            }
         }
 
+        $listStartedAt = microtime(true);
         try {
             $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
             $payload = $this->inventory->listCatalogInventoryRows(
@@ -149,18 +199,9 @@ class InventoryBetaController extends Controller
                 $searchSkip,
                 $clientAccountId,
                 $backorderOnly,
-                $refresh,
+                false,
                 $syncMode
             );
-
-            $hasNextPage = (bool) ($payload['page_info']['has_next_page'] ?? false);
-            if ($refresh && ! $hasNextPage) {
-                if ($syncMode === ShipHeroInventoryService::CATALOG_SYNC_FULL) {
-                    $this->inventory->markCatalogSyncCompleted($clientAccountId);
-                } else {
-                    $this->inventory->finalizeIncrementalCatalogSync($clientAccountId);
-                }
-            }
 
             $account = ClientAccount::query()->find($clientAccountId);
             $companyName = $account !== null ? (string) $account->company_name : '';
@@ -176,6 +217,14 @@ class InventoryBetaController extends Controller
                 return $row;
             }, $payload['rows'] ?? []);
 
+            Log::info('inventory_beta.list.completed', [
+                'client_account_id' => $clientAccountId,
+                'refresh' => false,
+                'backorder_only' => $backorderOnly,
+                'row_count' => count($rows),
+                'index_ms' => (int) round((microtime(true) - $listStartedAt) * 1000),
+            ]);
+
             return response()->json([
                 'rows' => array_values($rows),
                 'page_info' => $payload['page_info'],
@@ -184,15 +233,8 @@ class InventoryBetaController extends Controller
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {
-            if ($refresh) {
-                $this->inventory->markCatalogSyncFailed($clientAccountId);
-            }
-
             return response()->json(['message' => $e->getMessage()], 502);
         } catch (Throwable $e) {
-            if ($refresh) {
-                $this->inventory->markCatalogSyncFailed($clientAccountId);
-            }
             report($e);
 
             return response()->json([

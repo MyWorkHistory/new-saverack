@@ -157,27 +157,43 @@ final class LegacyCustomerAccountImportMapper
 
     private static function shouldFillField(string $key, ClientAccount $existing): bool
     {
-        return match ($key) {
-            'account_manager_id' => $existing->account_manager_id === null,
-            'contract_date' => $existing->contract_date === null,
-            'in_house_slack' => trim((string) ($existing->in_house_slack ?? '')) === '',
-            'slack_channel' => trim((string) ($existing->slack_channel ?? '')) === '',
-            'stripe_customer_id' => trim((string) ($existing->stripe_customer_id ?? '')) === '',
-            'whatsapp_api_id' => trim((string) ($existing->whatsapp_api_id ?? '')) === '',
-            'cc_fee_percent' => $existing->cc_fee_percent === null
-                || abs((float) $existing->cc_fee_percent - 3.50) < 0.00001,
-            'default_payment_type' => trim((string) ($existing->default_payment_type ?? '')) === '',
-            'payment_terms_days' => $existing->payment_terms_days === null,
-            'notify_email' => trim((string) ($existing->notification_email ?? '')) === '',
-            'notification_email' => trim((string) ($existing->notification_email ?? '')) === '',
-            'notes' => trim((string) ($existing->notes ?? '')) === '',
-            'brand_logo_path' => trim((string) ($existing->brand_logo_path ?? '')) === '',
-            'postage_option' => trim((string) ($existing->postage_option ?? '')) === ''
-                || $existing->postage_option === ClientAccountBillingPreferences::defaultPostageKey(),
-            'billing_available_funds_cents' => $existing->billing_available_funds_cents === null
-                || (int) $existing->billing_available_funds_cents === 0,
-            default => false,
-        };
+        switch ($key) {
+            case 'account_manager_id':
+                return $existing->account_manager_id === null;
+            case 'contract_date':
+                return $existing->contract_date === null;
+            case 'in_house_slack':
+                return trim((string) ($existing->in_house_slack ?? '')) === '';
+            case 'slack_channel':
+                return trim((string) ($existing->slack_channel ?? '')) === '';
+            case 'stripe_customer_id':
+                return trim((string) ($existing->stripe_customer_id ?? '')) === '';
+            case 'whatsapp_api_id':
+                return trim((string) ($existing->whatsapp_api_id ?? '')) === '';
+            case 'cc_fee_percent':
+                return $existing->cc_fee_percent === null
+                    || abs((float) $existing->cc_fee_percent - 3.50) < 0.00001;
+            case 'default_payment_type':
+                return trim((string) ($existing->default_payment_type ?? '')) === '';
+            case 'payment_terms_days':
+                return $existing->payment_terms_days === null;
+            case 'notify_email':
+                return trim((string) ($existing->notification_email ?? '')) === '';
+            case 'notification_email':
+                return trim((string) ($existing->notification_email ?? '')) === '';
+            case 'notes':
+                return trim((string) ($existing->notes ?? '')) === '';
+            case 'brand_logo_path':
+                return trim((string) ($existing->brand_logo_path ?? '')) === '';
+            case 'postage_option':
+                return trim((string) ($existing->postage_option ?? '')) === ''
+                    || $existing->postage_option === ClientAccountBillingPreferences::defaultPostageKey();
+            case 'billing_available_funds_cents':
+                return $existing->billing_available_funds_cents === null
+                    || (int) $existing->billing_available_funds_cents === 0;
+            default:
+                return false;
+        }
     }
 
     /**

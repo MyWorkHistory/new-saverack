@@ -81,6 +81,7 @@ class SyncLegacyAccountFieldsCommand extends Command
         $skippedNoLegacyData = 0;
         $skippedAlreadyFilled = 0;
         $unmappedManagers = 0;
+        $failedUpdates = 0;
 
         LegacyCustomerAccountImportMapper::clearManagerCache();
 
@@ -91,7 +92,8 @@ class SyncLegacyAccountFieldsCommand extends Command
             &$skippedNoAccount,
             &$skippedNoLegacyData,
             &$skippedAlreadyFilled,
-            &$unmappedManagers
+            &$unmappedManagers,
+            &$failedUpdates
         ) {
             foreach ($rows as $row) {
                 $legacyId = (int) $row->id;
@@ -134,7 +136,14 @@ class SyncLegacyAccountFieldsCommand extends Command
                         .json_encode((string) $account->company_name).' → '.json_encode($attrs)
                     );
                 } else {
-                    ClientAccount::query()->whereKey($account->id)->update($attrs);
+                    try {
+                        ClientAccount::query()->whereKey($account->id)->update($attrs);
+                    } catch (\Throwable $e) {
+                        $failedUpdates++;
+                        $this->warn("Failed legacy_customer_id={$legacyId} client_account_id={$account->id}: ".$e->getMessage());
+
+                        continue;
+                    }
                 }
                 $wouldUpdate++;
             }
@@ -149,6 +158,7 @@ class SyncLegacyAccountFieldsCommand extends Command
                 ['Skipped (no mappable legacy data)', (string) $skippedNoLegacyData],
                 ['Skipped (target fields already set; use --force)', (string) $skippedAlreadyFilled],
                 ['Legacy manager id present but unmapped to users', (string) $unmappedManagers],
+                ['Failed updates (see warnings above)', (string) $failedUpdates],
             ]
         );
 

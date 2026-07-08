@@ -107,6 +107,12 @@ final class LegacyCustomerAccountImportMapperTest extends TestCase
         $this->assertSame(12345, $mapped['billing_available_funds_cents']);
     }
 
+    public function test_clamps_negative_billing_balance_to_zero(): void
+    {
+        $this->assertSame(0, LegacyCustomerAccountImportMapper::normalizeBillingBalance(-37.19));
+        $this->assertSame(3719, LegacyCustomerAccountImportMapper::normalizeBillingBalance(37.19));
+    }
+
     public function test_merge_for_sync_fills_empty_fields_only_by_default(): void
     {
         $account = new ClientAccount([

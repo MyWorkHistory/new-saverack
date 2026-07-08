@@ -376,7 +376,7 @@ final class LegacyCustomerAccountImportMapper
             return null;
         }
 
-        return (int) round((float) $raw * 100);
+        return max(0, (int) round((float) $raw * 100));
     }
 
     /**

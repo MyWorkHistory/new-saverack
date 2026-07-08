@@ -92,6 +92,8 @@ return [
         ),
         'webhook_secret' => env('SHIPHERO_WEBHOOK_SECRET'),
         'webhook_url' => env('SHIPHERO_WEBHOOK_URL'),
+        /** Optional: register webhooks for one 3PL child customer (ShipHero customer_account_id). */
+        'webhook_customer_account_id' => env('SHIPHERO_WEBHOOK_CUSTOMER_ACCOUNT_ID'),
     ],
 
     'whatsapp' => [

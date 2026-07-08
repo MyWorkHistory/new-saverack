@@ -106,7 +106,7 @@ GQL;
             }
 
             $graphql = <<<'GQL'
-mutation ShipHeroWebhookCreate($data: WebhookCreateInput!) {
+mutation ShipHeroWebhookCreate($data: CreateWebhookInput!) {
   webhook_create(data: $data) {
     request_id
     webhook {
@@ -121,12 +121,18 @@ mutation ShipHeroWebhookCreate($data: WebhookCreateInput!) {
 }
 GQL;
 
+            $data = [
+                'name' => $name,
+                'url' => $url,
+                'shop_name' => $shopName,
+            ];
+            $customerAccountId = trim((string) config('services.shiphero.webhook_customer_account_id', ''));
+            if ($customerAccountId !== '') {
+                $data['customer_account_id'] = $customerAccountId;
+            }
+
             $json = $this->client->query($graphql, [
-                'data' => [
-                    'name' => $name,
-                    'url' => $url,
-                    'shop_name' => $shopName,
-                ],
+                'data' => $data,
             ]);
 
             $webhook = data_get($json, 'data.webhook_create.webhook');

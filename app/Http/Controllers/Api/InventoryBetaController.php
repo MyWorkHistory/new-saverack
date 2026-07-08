@@ -184,7 +184,7 @@ class InventoryBetaController extends Controller
             } catch (ValidationException $e) {
                 throw $e;
             } catch (Throwable $e) {
-                $this->inventory->markCatalogSyncFailed($clientAccountId);
+                $this->inventory->markCatalogSyncFailed($clientAccountId, $e->getMessage());
                 report($e);
 
                 return response()->json([

@@ -701,7 +701,7 @@ onUnmounted(() => {
         >
           Syncing inventory from ShipHero…
         </div>
-        <div class="table-responsive staff-table-wrap" :class="{ 'user-inv-table--syncing': refreshing }">
+        <div class="table-responsive staff-table-wrap">
         <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table user-inv-table--oos">
           <thead class="table-light staff-table-head">
             <tr>
@@ -843,11 +843,6 @@ onUnmounted(() => {
 .user-inv-search-wrap {
   width: 100%;
   max-width: min(100%, 22rem);
-}
-
-.user-inv-table--syncing {
-  opacity: 0.55;
-  pointer-events: none;
 }
 
 .user-inv-table__image-col {

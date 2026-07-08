@@ -30,10 +30,18 @@ Open the app via Laravel: `http://127.0.0.1:8000/` (SPA) and sign in with `ADMIN
 
 - Run migrations after deploy: `php artisan migrate --force`
 - Run a persistent queue worker: `php artisan queue:work database-long --timeout=3700 --tries=1`
+- Diagnose sync state: `php artisan inventory:diagnose-catalog-sync` or `php artisan inventory:diagnose-catalog-sync 271`
 - If sync is stuck `running` and list returns 409: `php artisan inventory:reset-catalog-sync` then `php artisan inventory:reset-catalog-sync 271`
 - Reload PHP-FPM / clear OPcache after backend deploy; deploy `public/assets/*` after `npm run build:spa`
 
-**Smoke test after deploy**
+**Smoke test after deploy** (account with &lt;1,000 SKUs, incremental refresh)
+
+| Step | Request | Expected |
+|------|---------|----------|
+| 1 | `GET /api/inventory-beta/list?client_account_id=271&first=50` | 200; rows from local index |
+| 2 | `GET /api/inventory-beta/list?client_account_id=271&refresh=1&sync_mode=incremental` | 202; `catalog_sync.status` = `running` |
+| 3 | Within ~2–5 min | `GET /api/inventory-beta/catalog-sync?client_account_id=271` → `idle`, `pages_completed` &gt; 0 |
+| 4 | During step 2–3 | List still returns rows; CRM status edits work; UI shows sync banner only |
 
 | Request | Expected |
 |---------|----------|
@@ -42,7 +50,7 @@ Open the app via Laravel: `http://127.0.0.1:8000/` (SPA) and sign in with `ADMIN
 | `GET ...&refresh=1` | 202; worker logs `inventory.catalog_sync.page` |
 | After sync idle | List populates from local index without ShipHero GraphQL on reads |
 
-If `inventory_beta.list.start` never appears in the log, the request is not reaching Laravel (undeployed code, OPcache, or PHP-FPM pool exhaustion).
+If `inventory.catalog_sync.page` never appears in the log after refresh, the `database-long` worker is not processing jobs (run diagnose command).
 
 ### ShipHero order webhooks (near-real-time dashboard counts)
 

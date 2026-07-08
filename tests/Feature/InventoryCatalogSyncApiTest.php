@@ -217,6 +217,87 @@ class InventoryCatalogSyncApiTest extends TestCase
             'shiphero_customer_account_id' => 'sh-poll-1',
             'inventory_catalog_sync_status' => 'running',
             'inventory_catalog_sync_started_at' => now(),
+            'inventory_catalog_sync_last_progress_at' => now(),
+            'inventory_catalog_sync_pages_completed' => 3,
+            'inventory_catalog_sync_last_error' => null,
+        ]);
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldNotReceive('query');
+        $this->app->instance(ShipHeroClient::class, $client);
+
+        $this->getJson('/api/inventory-beta/catalog-sync?'.http_build_query([
+            'client_account_id' => $account->id,
+        ]))
+            ->assertOk()
+            ->assertJsonPath('catalog_sync.inventory_catalog_sync_status', 'running')
+            ->assertJsonPath('catalog_sync.inventory_catalog_sync_pages_completed', 3);
+    }
+
+    public function test_list_returns_rows_while_catalog_sync_running(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([$this->inventoryViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Running Sync Rows Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-running-rows-1',
+            'inventory_catalog_sync_status' => 'running',
+            'inventory_catalog_sync_started_at' => now()->subMinutes(10),
+            'inventory_catalog_sync_last_progress_at' => now()->subMinute(),
+            'inventory_catalog_sync_pages_completed' => 2,
+        ]);
+
+        ShipHeroInventoryProductIndex::query()->create([
+            'client_account_id' => $account->id,
+            'shiphero_customer_account_id' => 'sh-running-rows-1',
+            'sku' => 'RUNNING-SKU',
+            'sku_search' => 'running-sku',
+            'name' => 'Still visible',
+            'name_search' => 'still visible',
+            'product_active' => true,
+            'kit' => false,
+            'kit_build' => false,
+            'warehouse_id' => 'WH1',
+            'warehouse_active' => true,
+            'on_hand' => 7,
+            'allocated' => 0,
+            'backorder' => 0,
+            'synced_at' => now(),
+        ]);
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldNotReceive('query');
+        $this->app->instance(ShipHeroClient::class, $client);
+
+        $this->getJson('/api/inventory-beta/list?'.http_build_query([
+            'client_account_id' => $account->id,
+        ]))
+            ->assertOk()
+            ->assertJsonPath('catalog_sync.inventory_catalog_sync_status', 'running')
+            ->assertJsonPath('catalog_sync.inventory_catalog_sync_pages_completed', 2)
+            ->assertJsonCount(1, 'rows')
+            ->assertJsonPath('rows.0.sku', 'RUNNING-SKU');
+    }
+
+    public function test_progress_based_stall_does_not_fail_while_sync_still_making_progress(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([$this->inventoryViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        config(['services.shiphero.catalog_sync_stall_minutes' => 15]);
+
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Healthy Long Sync Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-healthy-long-1',
+            'inventory_catalog_sync_status' => 'running',
+            'inventory_catalog_sync_started_at' => now()->subHours(2),
+            'inventory_catalog_sync_last_progress_at' => now()->subMinutes(2),
+            'inventory_catalog_sync_pages_completed' => 8,
         ]);
 
         $client = Mockery::mock(ShipHeroClient::class);
@@ -228,6 +309,46 @@ class InventoryCatalogSyncApiTest extends TestCase
         ]))
             ->assertOk()
             ->assertJsonPath('catalog_sync.inventory_catalog_sync_status', 'running');
+
+        $this->assertDatabaseHas('client_accounts', [
+            'id' => $account->id,
+            'inventory_catalog_sync_status' => 'running',
+        ]);
+    }
+
+    public function test_progress_based_stall_marks_failed_when_last_progress_is_stale(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([$this->inventoryViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        config(['services.shiphero.catalog_sync_stall_minutes' => 15]);
+
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Stalled Sync Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-stalled-1',
+            'inventory_catalog_sync_status' => 'running',
+            'inventory_catalog_sync_started_at' => now()->subHours(1),
+            'inventory_catalog_sync_last_progress_at' => now()->subMinutes(20),
+            'inventory_catalog_sync_pages_completed' => 1,
+        ]);
+
+        $client = Mockery::mock(ShipHeroClient::class);
+        $client->shouldNotReceive('query');
+        $this->app->instance(ShipHeroClient::class, $client);
+
+        $response = $this->getJson('/api/inventory-beta/catalog-sync?'.http_build_query([
+            'client_account_id' => $account->id,
+        ]))->assertOk();
+
+        $response->assertJsonPath('catalog_sync.inventory_catalog_sync_status', 'failed');
+        $this->assertNotNull($response->json('catalog_sync.inventory_catalog_sync_last_error'));
+
+        $this->assertDatabaseHas('client_accounts', [
+            'id' => $account->id,
+            'inventory_catalog_sync_status' => 'failed',
+        ]);
     }
 
     public function test_refresh_dispatches_background_job_and_returns_202(): void

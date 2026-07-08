@@ -94,6 +94,19 @@ const catalogSyncRunning = computed(
   () => catalogSync.value?.inventory_catalog_sync_status === "running",
 );
 
+const catalogSyncPagesCompleted = computed(() =>
+  Number(catalogSync.value?.inventory_catalog_sync_pages_completed ?? 0),
+);
+
+const catalogSyncLastError = computed(() => {
+  const msg = catalogSync.value?.inventory_catalog_sync_last_error;
+  return typeof msg === "string" && msg.trim() !== "" ? msg.trim() : "";
+});
+
+const showCatalogSyncBanner = computed(
+  () => catalogSyncRunning.value || refreshing.value,
+);
+
 const showQtySnapshotHint = computed(
   () => !crossAccountMode.value && accountId.value > 0 && Boolean(catalogSyncedLabel.value),
 );
@@ -261,7 +274,9 @@ async function loadRows(reset, forceRefresh = false) {
   } finally {
     loading.value = false;
     loadingMore.value = false;
-    refreshing.value = false;
+    if (!catalogSyncPollTimer) {
+      refreshing.value = false;
+    }
   }
   if (reset && searchCommitted.value.trim() && pageInfo.value.has_next_page) {
     continueSearchInBackground(runId);
@@ -480,8 +495,8 @@ function clearSearch() {
 }
 
 async function syncAccountRows(syncMode = "incremental") {
-  if (!canLoadInventory.value || loading.value || loadingMore.value || refreshing.value) return;
-  if (catalogSyncRunning.value) {
+  if (!canLoadInventory.value || loading.value || loadingMore.value) return;
+  if (catalogSyncRunning.value || refreshing.value) {
     startCatalogSyncPoll();
     return;
   }
@@ -489,18 +504,12 @@ async function syncAccountRows(syncMode = "incremental") {
     toast.error("Select an account to sync a single catalog.");
     return;
   }
-  const previousRows = rows.value;
   const refreshId = ++refreshRunSeq;
-  ++searchRunSeq;
   refreshing.value = true;
   searchAutoLoading.value = false;
   loading.value = false;
   loadingMore.value = false;
   try {
-    pageInfo.value = { has_next_page: false, end_cursor: null };
-    rows.value = [];
-    selectedKeys.value = [];
-    searchSkipNext.value = 0;
     const pageResult = await fetchPage(false, true, syncMode);
     if (pageResult?.backgroundSyncStarted) {
       startCatalogSyncPoll();
@@ -509,6 +518,7 @@ async function syncAccountRows(syncMode = "incremental") {
     if (refreshId !== refreshRunSeq) return;
     pageInfo.value = { has_next_page: false, end_cursor: null };
     rows.value = [];
+    selectedKeys.value = [];
     searchSkipNext.value = 0;
     await fetchPage(false, false);
     toast.success(
@@ -524,7 +534,6 @@ async function syncAccountRows(syncMode = "incremental") {
       startCatalogSyncPoll();
       return;
     }
-    rows.value = previousRows;
     toast.errorFrom(e, "Could not sync inventory catalog.");
   } finally {
     if (refreshId === refreshRunSeq && !catalogSyncPollTimer) {
@@ -776,7 +785,9 @@ async function pollCatalogSyncStatus() {
         await loadRows(true);
         toast.success("Inventory refreshed from ShipHero.");
       } else if (status === "failed") {
-        toast.error("Catalog sync failed. Try Sync Products again.");
+        await loadRows(true);
+        const err = catalogSyncLastError.value;
+        toast.error(err || "Catalog sync failed. Try Sync Products again.");
       }
     }
   } catch {
@@ -1172,12 +1183,16 @@ onUnmounted(() => {
 
       <div class="position-relative">
         <div
-          v-if="refreshing"
+          v-if="showCatalogSyncBanner"
           class="user-inv-sync-banner small text-secondary px-3 py-2 border-bottom bg-body-tertiary"
           role="status"
           aria-live="polite"
         >
           Syncing inventory catalog from ShipHero…
+          <span v-if="catalogSyncPagesCompleted > 0" class="ms-1">
+            ({{ catalogSyncPagesCompleted }}
+            {{ catalogSyncPagesCompleted === 1 ? "page" : "pages" }} synced)
+          </span>
         </div>
         <p
           v-if="showQtySnapshotHint"
@@ -1185,7 +1200,7 @@ onUnmounted(() => {
         >
           On Hand, Allocated, and Backorder are snapshots from the last account sync. Open a product for live quantities.
         </p>
-        <div class="table-responsive staff-table-wrap" :class="{ 'user-inv-table--syncing': refreshing }">
+        <div class="table-responsive staff-table-wrap">
         <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -1539,11 +1554,6 @@ onUnmounted(() => {
 .user-inv-status-badge--btn:focus-visible {
   outline: 2px solid var(--bs-primary, #2563eb);
   outline-offset: 2px;
-}
-
-.user-inv-table--syncing {
-  opacity: 0.55;
-  pointer-events: none;
 }
 
 .user-inv-table__image-col {

@@ -6,6 +6,8 @@ export const PRICING_CATEGORY_OPTIONS = [
   { value: "receiving", label: "Receiving" },
   { value: "custom_work", label: "Custom Work" },
   { value: "wholesale", label: "Wholesale" },
+  { value: "packaging", label: "Packaging" },
+  { value: "amazon", label: "Amazon" },
 ];
 
 /** @type {Record<string, { label: string, subtitle: string, accent: string, headerBg: string }>} */
@@ -45,6 +47,18 @@ export const PRICING_CATEGORY_META = {
     subtitle: "Wholesale order handling and processing.",
     accent: "#1e3a8a",
     headerBg: "#dbeafe",
+  },
+  packaging: {
+    label: "Packaging",
+    subtitle: "Boxes, mailers, and packaging materials.",
+    accent: "#0369a1",
+    headerBg: "#e0f2fe",
+  },
+  amazon: {
+    label: "Amazon",
+    subtitle: "Amazon FBA prep and labeling services.",
+    accent: "#c2410c",
+    headerBg: "#ffedd5",
   },
 };
 
@@ -114,6 +128,8 @@ export function categoryBadgeClass(category) {
   if (c === "receiving") return "settings-pricing-badge settings-pricing-badge--receiving";
   if (c === "custom_work") return "settings-pricing-badge settings-pricing-badge--custom";
   if (c === "wholesale") return "settings-pricing-badge settings-pricing-badge--wholesale";
+  if (c === "packaging") return "settings-pricing-badge settings-pricing-badge--packaging";
+  if (c === "amazon") return "settings-pricing-badge settings-pricing-badge--amazon";
   return "settings-pricing-badge";
 }
 

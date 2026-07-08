@@ -233,7 +233,9 @@ class PricingFeeTemplateService
     {
         $map = [
             'First Pick' => ClientAccountFee::LINE_FIRST_PICK,
+            'Fulfillment (pick & pack 1 item)' => ClientAccountFee::LINE_FIRST_PICK,
             'Additional Picks' => ClientAccountFee::LINE_ADDITIONAL_PICKS,
+            'Additional Items' => ClientAccountFee::LINE_ADDITIONAL_PICKS,
             'Returns Processing' => ClientAccountFee::LINE_RETURNS_PROCESSING,
             'Returns Additional Items' => ClientAccountFee::LINE_RETURNS_ADDITIONAL_ITEMS,
             'Returns Assembly' => ClientAccountFee::LINE_RETURNS_ASSEMBLY,
@@ -243,7 +245,10 @@ class PricingFeeTemplateService
             'Receiving (Per Box)' => 'per_box',
             'Receiving (Per Pallet)' => 'per_pallet',
             'Receiving (Per Item)' => 'per_item',
+            'Receiving (Per Container 20 ft)' => 'per_container_20',
+            'Receiving (Per Container 40 ft)' => 'per_container_40',
             'Custom Hourly Work' => 'hourly',
+            'Custom Work (hourly)' => 'hourly',
             'Non-Compliant' => 'non_compliant',
         ];
 

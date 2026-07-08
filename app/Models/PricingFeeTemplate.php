@@ -19,6 +19,10 @@ class PricingFeeTemplate extends Model
 
     public const CATEGORY_WHOLESALE = 'wholesale';
 
+    public const CATEGORY_PACKAGING = 'packaging';
+
+    public const CATEGORY_AMAZON = 'amazon';
+
     /** @var list<string> */
     public const CATEGORIES = [
         self::CATEGORY_FULFILLMENT,
@@ -27,6 +31,8 @@ class PricingFeeTemplate extends Model
         self::CATEGORY_RECEIVING,
         self::CATEGORY_CUSTOM_WORK,
         self::CATEGORY_WHOLESALE,
+        self::CATEGORY_PACKAGING,
+        self::CATEGORY_AMAZON,
     ];
 
     /** @var array<string, string> */
@@ -37,6 +43,8 @@ class PricingFeeTemplate extends Model
         self::CATEGORY_RECEIVING => 'Receiving',
         self::CATEGORY_CUSTOM_WORK => 'Custom Work',
         self::CATEGORY_WHOLESALE => 'Wholesale',
+        self::CATEGORY_PACKAGING => 'Packaging',
+        self::CATEGORY_AMAZON => 'Amazon',
     ];
 
     protected $fillable = [

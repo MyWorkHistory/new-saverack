@@ -523,6 +523,9 @@ class ClientAccountService
             ClientAccountFee::GROUP_STORAGE => [],
             ClientAccountFee::GROUP_RECEIVING => [],
             ClientAccountFee::GROUP_CUSTOM_WORK => [],
+            PricingFeeTemplate::CATEGORY_WHOLESALE => [],
+            PricingFeeTemplate::CATEGORY_PACKAGING => [],
+            PricingFeeTemplate::CATEGORY_AMAZON => [],
         ];
 
         $feeItems = $items
@@ -647,7 +650,13 @@ class ClientAccountService
 
     private function isCatalogFeeLine(ClientAccountFee $fee): bool
     {
-        if (in_array($fee->fee_group, [ClientAccountFee::GROUP_RECEIVING, ClientAccountFee::GROUP_CUSTOM_WORK], true)) {
+        if (in_array($fee->fee_group, [
+            ClientAccountFee::GROUP_RECEIVING,
+            ClientAccountFee::GROUP_CUSTOM_WORK,
+            PricingFeeTemplate::CATEGORY_WHOLESALE,
+            PricingFeeTemplate::CATEGORY_PACKAGING,
+            PricingFeeTemplate::CATEGORY_AMAZON,
+        ], true)) {
             return true;
         }
 

@@ -258,6 +258,18 @@ function onKeydown(e) {
   border-color: #93c5fd;
 }
 
+.settings-pricing-badge--packaging {
+  color: #0369a1;
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+}
+
+.settings-pricing-badge--amazon {
+  color: #c2410c;
+  background: #ffedd5;
+  border-color: #fdba74;
+}
+
 @media (max-width: 575.98px) {
   .pricing-fee-row {
     flex-wrap: wrap;

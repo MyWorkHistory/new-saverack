@@ -7,6 +7,7 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { exportPortalInventoryCsv } from "../../utils/portalInventoryExport.js";
 import { formatDateTimeUs } from "../../utils/formatUserDates.js";
+import { useShipHeroRevisionPoll } from "../../composables/useShipHeroRevisionPoll.js";
 
 const props = defineProps({
   fixedClientAccountId: { type: [Number, String], default: null },
@@ -857,6 +858,12 @@ onMounted(() => {
     hasSearched.value = true;
     loadRows(true).then(() => ensureAccountCatalogSynced(loadId));
   }
+});
+
+useShipHeroRevisionPoll({
+  getClientAccountId: () => accountId.value,
+  pollInventory: () => accountId.value > 0 && !crossAccountMode.value,
+  onInventoryRevision: () => loadRows(true),
 });
 
 onUnmounted(() => {

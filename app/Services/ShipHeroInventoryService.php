@@ -1043,6 +1043,41 @@ GQL;
                 'inventory_catalog_synced_at' => now(),
                 'inventory_catalog_product_count' => $productCount,
             ]);
+
+        $this->bumpCatalogRevision($clientAccountId);
+    }
+
+    public function catalogRevisionKey(int $clientAccountId): string
+    {
+        return 'inventory:catalog:revision:'.$clientAccountId;
+    }
+
+    public function getCatalogRevision(int $clientAccountId): int
+    {
+        if ($clientAccountId <= 0) {
+            return 0;
+        }
+
+        return max(0, (int) Cache::get($this->catalogRevisionKey($clientAccountId), 0));
+    }
+
+    public function bumpCatalogRevision(int $clientAccountId): int
+    {
+        if ($clientAccountId <= 0) {
+            return 0;
+        }
+
+        $key = $this->catalogRevisionKey($clientAccountId);
+        if (! Cache::has($key)) {
+            Cache::put($key, 1, now()->addDays(30));
+
+            return 1;
+        }
+
+        $next = (int) Cache::increment($key);
+        Cache::put($key, $next, now()->addDays(30));
+
+        return $next;
     }
 
     public function markCatalogSyncFailed(int $clientAccountId): void

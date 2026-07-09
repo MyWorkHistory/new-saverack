@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ProcessShipHeroInventoryWebhookJob;
 use App\Jobs\ProcessShipHeroOrderWebhookJob;
 use App\Models\ClientAccount;
 use App\Models\Permission;
@@ -94,6 +95,48 @@ class ShipHeroWebhookApiTest extends TestCase
         ]);
 
         Bus::assertDispatched(ProcessShipHeroOrderWebhookJob::class);
+    }
+
+    public function test_inventory_webhook_accepts_valid_payload_and_dispatches_inventory_job(): void
+    {
+        Bus::fake();
+
+        $account = ClientAccount::create([
+            'company_name' => 'Inventory Webhook Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-inv-webhook-1',
+        ]);
+
+        $payload = json_encode([
+            'webhook_type' => 'Inventory Update',
+            'account_id' => 'sh-inv-webhook-1',
+            'inventory' => [
+                ['sku' => 'TEST-SKU-1'],
+            ],
+        ]);
+
+        $this->call(
+            'POST',
+            '/api/shiphero/webhook',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_SHIPHERO_HMAC_SHA256' => $this->signPayload($payload),
+                'HTTP_X_SHIPHERO_MESSAGE_ID' => 'msg-inv-1',
+            ],
+            $payload
+        )->assertOk()->assertJsonPath('Status', 'Success');
+
+        $this->assertDatabaseHas('shiphero_webhook_events', [
+            'event_id' => 'msg-inv-1',
+            'event_type' => 'Inventory Update',
+            'client_account_id' => $account->id,
+        ]);
+
+        Bus::assertDispatched(ProcessShipHeroInventoryWebhookJob::class);
+        Bus::assertNotDispatched(ProcessShipHeroOrderWebhookJob::class);
     }
 
     public function test_duplicate_webhook_message_is_idempotent(): void

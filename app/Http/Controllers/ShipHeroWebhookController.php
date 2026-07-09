@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\ProcessShipHeroInventoryWebhookJob;
 use App\Jobs\ProcessShipHeroOrderWebhookJob;
 use App\Models\ShipHeroWebhookEvent;
 use App\Services\ShipHeroWebhookPayloadResolver;
@@ -75,7 +76,16 @@ class ShipHeroWebhookController extends Controller
             'payload' => $decoded,
         ]);
 
-        ProcessShipHeroOrderWebhookJob::dispatch((int) $event->id)->afterResponse();
+        if ($resolver->isInventoryWebhookType($eventType)) {
+            ProcessShipHeroInventoryWebhookJob::dispatch((int) $event->id)->afterResponse();
+        } elseif ($resolver->isOrderWebhookType($eventType)) {
+            ProcessShipHeroOrderWebhookJob::dispatch((int) $event->id)->afterResponse();
+        } else {
+            Log::warning('shiphero.webhook.unhandled_type', [
+                'event_type' => $eventType,
+                'event_id' => $eventId,
+            ]);
+        }
 
         return response()->json([
             'code' => '200',

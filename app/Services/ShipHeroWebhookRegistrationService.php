@@ -15,6 +15,12 @@ class ShipHeroWebhookRegistrationService
         'Order Packed Out',
     ];
 
+    /** @var list<string> */
+    public const INVENTORY_WEBHOOK_NAMES = [
+        'Inventory Update',
+        'Inventory Change',
+    ];
+
     /** @var ShipHeroClient */
     private $client;
 
@@ -74,6 +80,23 @@ GQL;
      */
     public function registerOrderWebhooks(string $url, string $shopName = 'saverack'): array
     {
+        return $this->registerWebhooks(self::ORDER_WEBHOOK_NAMES, $url, $shopName);
+    }
+
+    /**
+     * @return array{created: list<string>, skipped: list<string>, secrets: list<array{name: string, secret: string}>}
+     */
+    public function registerInventoryWebhooks(string $url, string $shopName = 'saverack'): array
+    {
+        return $this->registerWebhooks(self::INVENTORY_WEBHOOK_NAMES, $url, $shopName);
+    }
+
+    /**
+     * @param  list<string>  $names
+     * @return array{created: list<string>, skipped: list<string>, secrets: list<array{name: string, secret: string}>}
+     */
+    public function registerWebhooks(array $names, string $url, string $shopName = 'saverack'): array
+    {
         $url = trim($url);
         $shopName = trim($shopName);
         if ($url === '') {
@@ -98,7 +121,7 @@ GQL;
         $skipped = [];
         $secrets = [];
 
-        foreach (self::ORDER_WEBHOOK_NAMES as $name) {
+        foreach ($names as $name) {
             $key = $name.'|'.$shopName.'|'.$url;
             if (isset($existingKeys[$key])) {
                 $skipped[] = $name;

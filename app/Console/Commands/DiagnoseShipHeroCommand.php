@@ -5,7 +5,9 @@ namespace App\Console\Commands;
 use App\Models\ClientAccount;
 use App\Models\OrderDashboardSection;
 use App\Models\ShipHeroOrderQueueIndex;
+use App\Models\ShipHeroWebhookEvent;
 use App\Services\ShipHeroCredentialResolver;
+use App\Services\ShipHeroInventoryService;
 use App\Services\ShipHeroOrderQueueIndexService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -19,7 +21,7 @@ class DiagnoseShipHeroCommand extends Command
 
     protected $description = 'Report ShipHero token, queue jobs, sync status, and local index row counts';
 
-    public function handle(ShipHeroCredentialResolver $credentials): int
+    public function handle(ShipHeroCredentialResolver $credentials, ShipHeroInventoryService $inventory): int
     {
         $this->info('ShipHero diagnostics');
         $this->line('');
@@ -28,11 +30,15 @@ class DiagnoseShipHeroCommand extends Command
         $this->line('');
         $this->reportAccounts();
         $this->line('');
+        $this->reportWebhooks();
+        $this->line('');
         $this->reportJobs();
         $this->line('');
         $this->reportSyncStatuses();
         $this->line('');
         $this->reportIndexCounts();
+        $this->line('');
+        $this->reportInventoryRevisions($inventory);
         $this->line('');
         $this->reportDashboardSections();
 
@@ -76,6 +82,57 @@ class DiagnoseShipHeroCommand extends Command
 
         $this->line('With shiphero_customer_account_id: '.$withId);
         $this->line('Without shiphero_customer_account_id: '.$withoutId);
+    }
+
+    private function reportWebhooks(): void
+    {
+        $this->comment('Webhooks');
+
+        if (! Schema::hasTable('shiphero_webhook_events')) {
+            $this->warn('shiphero_webhook_events table not found.');
+
+            return;
+        }
+
+        $pending = (int) ShipHeroWebhookEvent::query()->whereNull('processed_at')->count();
+        $this->line('Unprocessed webhook events: '.$pending);
+
+        $lastProcessed = ShipHeroWebhookEvent::query()
+            ->whereNotNull('processed_at')
+            ->orderByDesc('processed_at')
+            ->value('processed_at');
+        if ($lastProcessed !== null) {
+            try {
+                $this->line('Last processed at: '.Carbon::parse($lastProcessed)->toIso8601String());
+            } catch (Throwable $e) {
+                $this->line('Last processed at: '.$lastProcessed);
+            }
+        } else {
+            $this->line('Last processed at: never');
+        }
+    }
+
+    private function reportInventoryRevisions(ShipHeroInventoryService $inventory): void
+    {
+        $this->comment('Inventory catalog revisions (sample)');
+
+        $accounts = ClientAccount::query()
+            ->whereNotNull('shiphero_customer_account_id')
+            ->where('shiphero_customer_account_id', '!=', '')
+            ->orderBy('id')
+            ->limit(5)
+            ->get(['id', 'company_name']);
+
+        if ($accounts->isEmpty()) {
+            $this->line('No linked accounts.');
+
+            return;
+        }
+
+        foreach ($accounts as $account) {
+            $revision = $inventory->getCatalogRevision((int) $account->id);
+            $this->line('  #'.$account->id.' '.$account->company_name.': revision '.$revision);
+        }
     }
 
     private function reportJobs(): void

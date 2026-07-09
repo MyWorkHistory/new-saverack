@@ -11,7 +11,7 @@ class RegisterShipHeroWebhooksCommand extends Command
         {--url= : Public webhook URL (defaults to SHIPHERO_WEBHOOK_URL)}
         {--shop=saverack : ShipHero shop_name identifier}';
 
-    protected $description = 'Register ShipHero order webhooks for near-real-time dashboard updates';
+    protected $description = 'Register ShipHero order and inventory webhooks for near-real-time updates';
 
     public function handle(ShipHeroWebhookRegistrationService $registration): int
     {
@@ -23,7 +23,11 @@ class RegisterShipHeroWebhooksCommand extends Command
         }
 
         $shop = trim((string) $this->option('shop'));
-        $result = $registration->registerOrderWebhooks($url, $shop);
+        $names = array_merge(
+            ShipHeroWebhookRegistrationService::ORDER_WEBHOOK_NAMES,
+            ShipHeroWebhookRegistrationService::INVENTORY_WEBHOOK_NAMES
+        );
+        $result = $registration->registerWebhooks($names, $url, $shop);
 
         foreach ($result['skipped'] as $name) {
             $this->line('Skipped (already registered): '.$name);

@@ -93,15 +93,81 @@ After recreating or wiping the database, local ShipHero index tables are empty. 
 
 7. **Optional** — register webhooks for near-real-time updates: `php artisan shiphero:register-webhooks`
 
+### Live ShipHero sync (scheduled + webhooks + UI)
+
+Near-real-time updates use webhooks when available, lightweight scheduled jobs as fallback, and revision polling in the CRM UI (~30s).
+
+**Production prerequisites**
+
+1. Laravel scheduler cron (single entry):
+
+   ```bash
+   * * * * * cd /path/to/app && php artisan schedule:run >> /dev/null 2>&1
+   ```
+
+2. Persistent queue worker:
+
+   ```bash
+   php artisan queue:work database-long --timeout=3700 --tries=1 --sleep=3
+   ```
+
+3. `.env`: `SHIPHERO_REFRESH_TOKEN`, `SHIPHERO_WEBHOOK_URL`, `SHIPHERO_WEBHOOK_SECRET`, `QUEUE_CONNECTION=database`
+
+4. Register webhooks after deploy: `php artisan shiphero:register-webhooks`
+
+**Scheduled cadence (America/New_York)**
+
+| Window | Cadence | Commands |
+|--------|---------|----------|
+| 7am–5pm | Every 15 min | `orders:sync-recent-updates`, `orders:refresh-home-dashboard --from-index`, `inventory:sync-catalog-incremental` |
+| Off-hours | Every 30 min | Same three commands |
+| 2:00am nightly | Once | `orders:sync-queue-index --sync` (full index safety net) |
+
+Lightweight scheduled sync reads/writes the local index — it does **not** run full `orders:sync-queue-index` every 15 minutes.
+
+**Webhook types**
+
+| Category | Types |
+|----------|-------|
+| Orders | Shipment Update, Order Canceled, Order Allocated, Order Deallocated, Order Packed Out |
+| Inventory | Inventory Update, Inventory Change |
+
+**UI revision polling**
+
+| Page | Endpoint | On bump |
+|------|----------|---------|
+| Admin Home / Fulfillment | `GET /api/home-dashboard/revision` | Reload dashboard |
+| Portal home | `GET /api/orders/queue-counts/revision` | Reload queue counts |
+| Orders list (queue tabs) | `GET /api/orders/queue-counts/revision` | Reload list from index |
+| Products list | `GET /api/inventory-beta/revision` | Reload list from index |
+
+**Diagnose**
+
+```bash
+php artisan crm:diagnose-shiphero
+```
+
+Reports pending webhook events, last processed webhook, sync status, index counts, and sample inventory revision counters.
+
+**Smoke test after deploy**
+
+| Step | Expected |
+|------|----------|
+| `php artisan schedule:list` | 15-min jobs 7–17 ET; 30-min off-hours; nightly full index at 2am |
+| `HEAD /api/shiphero/webhook` | 200 |
+| Ship order in ShipHero | `shiphero.webhook.processed` in log; Home/Fulfillment counts update within ~30s |
+| Change inventory qty in ShipHero | `shiphero.inventory_webhook.processed` in log; Products list updates within ~30s |
+| `GET /api/inventory-beta/revision?client_account_id=` | `{ "revision": N }` increments after webhook/sync |
+
 ### ShipHero order webhooks (near-real-time dashboard counts)
 
 1. Set in production `.env`:
    - `SHIPHERO_WEBHOOK_URL=https://your-domain/api/shiphero/webhook`
    - `SHIPHERO_WEBHOOK_SECRET=` (from ShipHero `webhook_create` response — shown once)
 2. `php artisan migrate --force` (creates `shiphero_webhook_events`)
-3. Ensure queue worker processes `ProcessShipHeroOrderWebhookJob` (same worker as other order jobs)
+3. Ensure queue worker processes `ProcessShipHeroOrderWebhookJob` and `ProcessShipHeroInventoryWebhookJob` (same worker as other jobs)
 4. Register webhooks: `php artisan shiphero:register-webhooks`
-5. Scheduled fallback: `orders:sync-recent-updates` every 15 minutes (7am–5pm ET) reconciles missed events
+5. Scheduled fallback: see **Live ShipHero sync** above (`orders:sync-recent-updates`, dashboard refresh from index, inventory incremental sync)
 
 **Smoke test after deploy**
 
@@ -112,7 +178,7 @@ After recreating or wiping the database, local ShipHero index tables are empty. 
 | Portal home within ~30s | `GET /api/orders/queue-counts/revision` revision increments; snapshot counts update |
 | `GET /api/orders/queue-counts/snapshot?client_account_id=` | Single fast response from `shiphero_order_queue_index` |
 
-Subscribed webhook types: Shipment Update, Order Canceled, Order Allocated, Order Deallocated, Order Packed Out.
+Subscribed webhook types: Shipment Update, Order Canceled, Order Allocated, Order Deallocated, Order Packed Out, Inventory Update, Inventory Change.
 
 ---
 

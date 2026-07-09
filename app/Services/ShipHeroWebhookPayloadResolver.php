@@ -66,6 +66,45 @@ class ShipHeroWebhookPayloadResolver
 
     /**
      * @param  array<string, mixed>  $payload
+     * @return list<string>
+     */
+    public function extractSkus(array $payload): array
+    {
+        $skus = [];
+
+        $inventory = $payload['inventory'] ?? null;
+        if (is_array($inventory)) {
+            foreach ($inventory as $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $sku = trim((string) ($row['sku'] ?? ''));
+                if ($sku !== '') {
+                    $skus[] = $sku;
+                }
+            }
+        }
+
+        $topSku = trim((string) ($payload['sku'] ?? ''));
+        if ($topSku !== '') {
+            $skus[] = $topSku;
+        }
+
+        return array_values(array_unique($skus));
+    }
+
+    public function isInventoryWebhookType(string $eventType): bool
+    {
+        return in_array(trim($eventType), ShipHeroWebhookRegistrationService::INVENTORY_WEBHOOK_NAMES, true);
+    }
+
+    public function isOrderWebhookType(string $eventType): bool
+    {
+        return in_array(trim($eventType), ShipHeroWebhookRegistrationService::ORDER_WEBHOOK_NAMES, true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
      */
     public function resolveClientAccount(array $payload): ?ClientAccount
     {

@@ -67,6 +67,20 @@ class InventoryBetaController extends Controller
         ]);
     }
 
+    public function revision(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+        ]);
+
+        $clientAccountId = (int) $validated['client_account_id'];
+        $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+
+        return response()->json([
+            'revision' => $this->inventory->getCatalogRevision($clientAccountId),
+        ]);
+    }
+
     public function list(Request $request): JsonResponse
     {
         $validated = $request->validate([

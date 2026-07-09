@@ -25,14 +25,21 @@ class Kernel extends ConsoleKernel
         $schedule->command('inventory:refresh-restock-report')
             ->dailyAt('14:30')
             ->timezone('America/New_York');
-        $schedule->command('orders:refresh-home-dashboard --sync')
-            ->cron('0,30 7-17 * * *')
-            ->timezone('America/New_York');
+        $lightweightSync = [
+            'orders:sync-recent-updates',
+            'orders:refresh-home-dashboard --from-index',
+            'inventory:sync-catalog-incremental',
+        ];
+        foreach ($lightweightSync as $command) {
+            $schedule->command($command)
+                ->cron('*/15 7-17 * * *')
+                ->timezone('America/New_York');
+            $schedule->command($command)
+                ->cron('*/30 0-6,18-23 * * *')
+                ->timezone('America/New_York');
+        }
         $schedule->command('orders:sync-queue-index --sync')
-            ->cron('0,30 7-17 * * *')
-            ->timezone('America/New_York');
-        $schedule->command('orders:sync-recent-updates')
-            ->cron('*/15 7-17 * * *')
+            ->dailyAt('02:00')
             ->timezone('America/New_York');
     }
 

@@ -20,6 +20,7 @@ import {
   formatShipmentCarrier,
 } from "../../utils/orderShippingDisplay.js";
 import { formatDateTimeUs } from "../../utils/formatUserDates.js";
+import { useShipHeroRevisionPoll } from "../../composables/useShipHeroRevisionPoll.js";
 
 const ORDER_QUEUE_TABS = new Set(["awaiting", "on_hold", "backorder", "shipped"]);
 
@@ -1312,6 +1313,12 @@ onMounted(async () => {
     selectedAccountId.value = String(portalClientAccountId.value);
   }
   startAutoSyncTimer();
+});
+
+useShipHeroRevisionPoll({
+  getClientAccountId: () => Number(selectedAccountId.value || 0),
+  pollQueueCounts: () => showOrderQueueRefresh.value,
+  onQueueRevision: () => fetchOrders(true),
 });
 
 watch(showOrderQueueRefresh, () => {

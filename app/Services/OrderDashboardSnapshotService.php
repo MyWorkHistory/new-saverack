@@ -293,7 +293,9 @@ class OrderDashboardSnapshotService
         }
 
         if ($this->orderIndex->indexHasRowsForSection($sectionKey)) {
-            return $this->orderIndex->aggregateDashboardSection($sectionKey);
+            $hybridShipped = $sectionKey === OrderDashboardSection::KEY_SHIPPED && ! $allowRemoteFallback;
+
+            return $this->orderIndex->aggregateDashboardSection($sectionKey, $hybridShipped);
         }
 
         if (! $allowRemoteFallback) {
@@ -305,7 +307,9 @@ class OrderDashboardSnapshotService
 
         $this->syncIndexForDashboardSection($sectionKey);
         if ($this->orderIndex->indexHasRowsForSection($sectionKey)) {
-            return $this->orderIndex->aggregateDashboardSection($sectionKey);
+            $hybridShipped = $sectionKey === OrderDashboardSection::KEY_SHIPPED;
+
+            return $this->orderIndex->aggregateDashboardSection($sectionKey, $hybridShipped);
         }
 
         return $this->buildShipHeroSectionPayload($sectionKey, true);

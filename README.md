@@ -172,7 +172,7 @@ Or manually: `php artisan orders:sync-queue-index --sync` then `php artisan orde
 
 **Historical order backfill (2026-01-01 → today)**
 
-Order list pages read `shiphero_order_queue_index`. The default `orders:sync-queue-index` only pulls recent windows (7–29 days). To seed Jan 2026 through today for all linked accounts:
+Order list pages read `shiphero_order_queue_index`. The default `orders:sync-queue-index` pulls awaiting from 2026-05-01+, shipped for today only, and on-hold/backorder from the last 29 days. To seed Jan 2026 through today for all linked accounts:
 
 ```bash
 # Deploy latest code first (includes shipped pagination + backfill command).
@@ -191,6 +191,26 @@ php artisan orders:refresh-home-dashboard --from-index --sync
 ```
 
 Shipped is chunked by month automatically. Use `--account=ID` for a single client. Use `--chunk=week` if a month hits pagination limits (watch logs for `truncated`). Optional `--purge` runs a final stale-row cleanup per tab after all chunks.
+
+**Repair dashboard counts after deploy**
+
+If Home shows low Shipped Today / Ready to Ship vs ShipHero (e.g. 22 / 19 instead of 200+ / 40+), unblock stuck syncs and re-seed the index:
+
+```bash
+# Clear stuck inventory catalog sync flags (separate from orders)
+php artisan inventory:reset-catalog-sync
+
+# Today's shipments (all accounts) — critical for Shipped Today tile
+php artisan orders:backfill-queue-index --from=$(date +%Y-%m-%d) --tab=shipped --sync
+
+# Ready to ship since May 1 (all accounts)
+php artisan orders:backfill-queue-index --from=2026-05-01 --tab=awaiting --sync
+
+# Rebuild home tiles from fixed index logic
+php artisan orders:refresh-home-dashboard --from-index --sync
+```
+
+Verify with `php artisan crm:diagnose-shiphero` — check **Order index health** for shipped-today label sum and awaiting totals.
 
 **Verify deploy**
 

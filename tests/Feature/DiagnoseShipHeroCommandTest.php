@@ -46,6 +46,8 @@ class DiagnoseShipHeroCommandTest extends TestCase
             ->expectsOutputToContain('shiphero_order_queue_index rows (total):')
             ->expectsOutputToContain('shiphero_order_queue_index by queue_kind:')
             ->expectsOutputToContain('awaiting:')
+            ->expectsOutputToContain('Order index health')
+            ->expectsOutputToContain('shipped today (index orders):')
             ->expectsOutputToContain('ready_to_ship:');
     }
 

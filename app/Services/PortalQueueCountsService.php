@@ -43,6 +43,9 @@ class PortalQueueCountsService
     /** On-hold and backorder dashboard totals include orders placed in this window. */
     public const OPEN_QUEUE_LOOKBACK_DAYS = 29;
 
+    /** Ready-to-ship sync / dashboard alignment window (order_date from). */
+    public const RTS_DASHBOARD_ORDER_FROM = '2026-05-01';
+
     /** @var ShipHeroOrderService */
     private $orders;
 
@@ -62,7 +65,7 @@ class PortalQueueCountsService
         $timezone = $this->accountTimezone($account);
 
         $now = Carbon::now($timezone);
-        $awaitingFrom = $this->dateStartIso($now->copy()->subDays(6)->toDateString(), $timezone);
+        $awaitingFrom = $this->dateStartIso(self::RTS_DASHBOARD_ORDER_FROM, $timezone);
         $awaitingTo = $this->dateEndIso($now->copy()->toDateString(), $timezone);
         $openFrom = $this->dateStartIso(
             $now->copy()->subDays(self::OPEN_QUEUE_LOOKBACK_DAYS)->toDateString(),
@@ -104,11 +107,17 @@ class PortalQueueCountsService
     {
         $context = $this->contextForAccount($account);
 
+        $timezone = (string) ($context['timezone'] ?? self::DEFAULT_ACCOUNT_TIMEZONE);
+
         if ($sectionKey === OrderDashboardSection::KEY_SHIPPED) {
-            $timezone = (string) ($context['timezone'] ?? self::DEFAULT_ACCOUNT_TIMEZONE);
             $today = Carbon::now($timezone)->toDateString();
             $context['shipped_from'] = $this->dateStartIso($today, $timezone);
             $context['shipped_to'] = $this->dateEndIso($today, $timezone);
+        }
+
+        if ($sectionKey === OrderDashboardSection::KEY_READY_TO_SHIP) {
+            $context['awaiting_from'] = $this->dateStartIso(self::RTS_DASHBOARD_ORDER_FROM, $timezone);
+            $context['awaiting_to'] = $this->dateEndIso(Carbon::now($timezone)->toDateString(), $timezone);
         }
 
         return $context;
@@ -324,6 +333,11 @@ class PortalQueueCountsService
                 if ($to !== null) {
                     $query->where('ship_date', '<=', $to);
                 }
+
+                return [
+                    'count' => $this->sumShippedLabelCountFromRows($query->get(['list_payload'])),
+                    'truncated' => false,
+                ];
             } else {
                 $from = $this->parseTimestamp($context['open_from'] ?? null);
                 $to = $this->parseTimestamp($context['open_to'] ?? null);
@@ -623,5 +637,25 @@ class PortalQueueCountsService
         } catch (Throwable $e) {
             return null;
         }
+    }
+
+    /**
+     * @param  iterable<\App\Models\ShipHeroOrderQueueIndex|object{list_payload?: mixed}>  $rows
+     */
+    private function sumShippedLabelCountFromRows(iterable $rows): int
+    {
+        $total = 0;
+        foreach ($rows as $row) {
+            $payload = $row->list_payload ?? null;
+            if (is_string($payload)) {
+                $payload = json_decode($payload, true);
+            }
+            if (! is_array($payload)) {
+                $payload = [];
+            }
+            $total += max(1, (int) ($payload['shipped_label_count'] ?? 1));
+        }
+
+        return $total;
     }
 }

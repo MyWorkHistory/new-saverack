@@ -2,10 +2,12 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\BackfillOrderQueueIndexChunkJob;
 use App\Models\ClientAccount;
 use App\Models\OrderDashboardSection;
 use App\Models\ShipHeroOrderQueueIndex;
 use App\Models\ShipHeroWebhookEvent;
+use App\Services\PortalQueueCountsService;
 use App\Services\ShipHeroCredentialResolver;
 use App\Services\ShipHeroInventoryService;
 use App\Services\ShipHeroOrderQueueIndexService;
@@ -42,6 +44,8 @@ class DiagnoseShipHeroCommand extends Command
         $this->reportSyncStatuses();
         $this->line('');
         $this->reportIndexCounts();
+        $this->line('');
+        $this->reportOrderIndexHealth();
         $this->line('');
         $this->reportInventoryRevisions($inventory);
         $this->line('');
@@ -319,6 +323,123 @@ class DiagnoseShipHeroCommand extends Command
 
         if ($onHoldOnly) {
             $this->warn('  Only on_hold has rows — list pages for Ready to Ship / Shipped / Backorder will be empty until you run orders:sync-queue-index --sync.');
+        }
+    }
+
+    private function reportOrderIndexHealth(): void
+    {
+        $this->comment('Order index health');
+
+        if (! Schema::hasTable('shiphero_order_queue_index')) {
+            $this->warn('shiphero_order_queue_index table not found.');
+
+            return;
+        }
+
+        $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
+        $todayStart = Carbon::now($timezone)->startOfDay();
+        $todayEnd = Carbon::now($timezone)->endOfDay();
+        $rtsFrom = Carbon::parse(PortalQueueCountsService::RTS_DASHBOARD_ORDER_FROM, $timezone)->startOfDay();
+
+        $shippedTodayOrders = (int) DB::table('shiphero_order_queue_index')
+            ->where('queue_kind', ShipHeroOrderQueueIndex::KIND_SHIPPED)
+            ->where('ship_date', '>=', $todayStart)
+            ->where('ship_date', '<=', $todayEnd)
+            ->count();
+
+        $shippedTodayRows = DB::table('shiphero_order_queue_index')
+            ->where('queue_kind', ShipHeroOrderQueueIndex::KIND_SHIPPED)
+            ->where('ship_date', '>=', $todayStart)
+            ->where('ship_date', '<=', $todayEnd)
+            ->get(['list_payload']);
+
+        $shippedTodayLabels = 0;
+        foreach ($shippedTodayRows as $row) {
+            $payload = json_decode((string) ($row->list_payload ?? '{}'), true);
+            if (! is_array($payload)) {
+                $payload = [];
+            }
+            $shippedTodayLabels += max(1, (int) ($payload['shipped_label_count'] ?? 1));
+        }
+
+        $awaitingTotal = (int) DB::table('shiphero_order_queue_index')
+            ->where('queue_kind', ShipHeroOrderQueueIndex::KIND_AWAITING)
+            ->count();
+
+        $awaitingSinceRts = (int) DB::table('shiphero_order_queue_index')
+            ->where('queue_kind', ShipHeroOrderQueueIndex::KIND_AWAITING)
+            ->where('order_date', '>=', $rtsFrom)
+            ->count();
+
+        $this->line('  shipped today (index orders): '.$shippedTodayOrders);
+        $this->line('  shipped today (sum shipped_label_count): '.$shippedTodayLabels);
+        $this->line('  awaiting total: '.$awaitingTotal);
+        $this->line('  awaiting order_date >= '.PortalQueueCountsService::RTS_DASHBOARD_ORDER_FROM.': '.$awaitingSinceRts);
+
+        if (Schema::hasTable('jobs')) {
+            $needle = class_basename(BackfillOrderQueueIndexChunkJob::class);
+            $pendingBackfill = (int) DB::table('jobs')
+                ->where('payload', 'like', '%'.$needle.'%')
+                ->count();
+            $this->line('  pending BackfillOrderQueueIndexChunkJob: '.$pendingBackfill);
+        }
+
+        $this->line('  top accounts shipped today (labels):');
+        $shippedByAccount = DB::table('shiphero_order_queue_index')
+            ->join('client_accounts', 'client_accounts.id', '=', 'shiphero_order_queue_index.client_account_id')
+            ->where('shiphero_order_queue_index.queue_kind', ShipHeroOrderQueueIndex::KIND_SHIPPED)
+            ->where('shiphero_order_queue_index.ship_date', '>=', $todayStart)
+            ->where('shiphero_order_queue_index.ship_date', '<=', $todayEnd)
+            ->select(
+                'shiphero_order_queue_index.client_account_id',
+                'client_accounts.company_name',
+                DB::raw('count(*) as order_count'),
+                DB::raw("COALESCE(SUM(GREATEST(1, CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(shiphero_order_queue_index.list_payload, '$.shipped_label_count')), '1') AS UNSIGNED))), 0) as label_count")
+            )
+            ->groupBy('shiphero_order_queue_index.client_account_id', 'client_accounts.company_name')
+            ->orderByDesc('label_count')
+            ->limit(5)
+            ->get();
+
+        if ($shippedByAccount->isEmpty()) {
+            $this->line('    (none)');
+        } else {
+            foreach ($shippedByAccount as $row) {
+                $this->line(sprintf(
+                    '    #%d %s: %d orders, %d labels',
+                    (int) $row->client_account_id,
+                    (string) $row->company_name,
+                    (int) $row->order_count,
+                    (int) $row->label_count
+                ));
+            }
+        }
+
+        $this->line('  top accounts awaiting (all):');
+        $awaitingByAccount = DB::table('shiphero_order_queue_index')
+            ->join('client_accounts', 'client_accounts.id', '=', 'shiphero_order_queue_index.client_account_id')
+            ->where('shiphero_order_queue_index.queue_kind', ShipHeroOrderQueueIndex::KIND_AWAITING)
+            ->select(
+                'shiphero_order_queue_index.client_account_id',
+                'client_accounts.company_name',
+                DB::raw('count(*) as order_count')
+            )
+            ->groupBy('shiphero_order_queue_index.client_account_id', 'client_accounts.company_name')
+            ->orderByDesc('order_count')
+            ->limit(5)
+            ->get();
+
+        if ($awaitingByAccount->isEmpty()) {
+            $this->line('    (none)');
+        } else {
+            foreach ($awaitingByAccount as $row) {
+                $this->line(sprintf(
+                    '    #%d %s: %d',
+                    (int) $row->client_account_id,
+                    (string) $row->company_name,
+                    (int) $row->order_count
+                ));
+            }
         }
     }
 

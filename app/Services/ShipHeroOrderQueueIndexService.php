@@ -606,7 +606,7 @@ class ShipHeroOrderQueueIndexService
     /**
      * @return array{payload: array<string, mixed>, total_count: int}
      */
-    public function aggregateDashboardSection(string $sectionKey): array
+    public function aggregateDashboardSection(string $sectionKey, bool $hybridShippedFallback = false): array
     {
         $mapping = $this->sectionIndexMapping($sectionKey);
         if ($mapping === null) {
@@ -621,9 +621,27 @@ class ShipHeroOrderQueueIndexService
 
         $rows = [];
         $total = 0;
+        $truncated = false;
         foreach ($accounts as $account) {
             $context = $this->queueCounts->contextForDashboardSection($account, $sectionKey);
             $count = $this->countForDashboardSection((int) $account->id, $sectionKey, $context);
+
+            if (
+                $hybridShippedFallback
+                && $sectionKey === OrderDashboardSection::KEY_SHIPPED
+                && $count <= 0
+            ) {
+                $live = $this->orders->countShipments([
+                    'customer_account_id' => trim((string) $account->shiphero_customer_account_id),
+                    'date_from' => $context['shipped_from'],
+                    'date_to' => $context['shipped_to'],
+                    'timezone' => $context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
+                    'max_pages' => 50,
+                ]);
+                $count = (int) ($live['count'] ?? 0);
+                $truncated = $truncated || (bool) ($live['truncated'] ?? false);
+            }
+
             if ($count <= 0) {
                 continue;
             }
@@ -641,7 +659,7 @@ class ShipHeroOrderQueueIndexService
         });
 
         return [
-            'payload' => ['accounts' => $rows, 'truncated' => false],
+            'payload' => ['accounts' => $rows, 'truncated' => $truncated],
             'total_count' => $total,
         ];
     }
@@ -678,6 +696,10 @@ class ShipHeroOrderQueueIndexService
             return 0;
         }
 
+        if ($sectionKey === OrderDashboardSection::KEY_SHIPPED) {
+            return $this->countShippedTodayFromIndex($clientAccountId, $context);
+        }
+
         $tab = $mapping['queue_kind'];
         $query = ShipHeroOrderQueueIndex::query()
             ->where('client_account_id', $clientAccountId)
@@ -687,9 +709,58 @@ class ShipHeroOrderQueueIndexService
             $this->applyHoldReasonFilterToQuery($query, $mapping['hold_reason']);
         }
 
-        $this->applyDateWindowToQuery($query, $tab, $context, []);
+        if ($sectionKey !== OrderDashboardSection::KEY_READY_TO_SHIP) {
+            $this->applyDateWindowToQuery($query, $tab, $context, []);
+        }
 
         return (int) $query->count();
+    }
+
+    /**
+     * Sum shipment labels for today's ship_date window (matches ShipHero shipments report).
+     *
+     * @param  array<string, mixed>  $context
+     */
+    public function countShippedTodayFromIndex(int $clientAccountId, array $context): int
+    {
+        if ($clientAccountId <= 0) {
+            return 0;
+        }
+
+        $query = ShipHeroOrderQueueIndex::query()
+            ->where('client_account_id', $clientAccountId)
+            ->where('queue_kind', ShipHeroOrderQueueIndex::KIND_SHIPPED);
+
+        $from = $this->parseTimestamp($context['shipped_from'] ?? null);
+        $to = $this->parseTimestamp($context['shipped_to'] ?? null);
+        if ($from !== null) {
+            $query->where('ship_date', '>=', $from);
+        }
+        if ($to !== null) {
+            $query->where('ship_date', '<=', $to);
+        }
+
+        return $this->sumShippedLabelCountFromRows($query->get(['list_payload']));
+    }
+
+    /**
+     * @param  iterable<ShipHeroOrderQueueIndex|object{list_payload?: mixed}>  $rows
+     */
+    private function sumShippedLabelCountFromRows(iterable $rows): int
+    {
+        $total = 0;
+        foreach ($rows as $row) {
+            $payload = $row->list_payload ?? null;
+            if (is_string($payload)) {
+                $payload = json_decode($payload, true);
+            }
+            if (! is_array($payload)) {
+                $payload = [];
+            }
+            $total += max(1, (int) ($payload['shipped_label_count'] ?? 1));
+        }
+
+        return $total;
     }
 
     /**
@@ -869,7 +940,7 @@ class ShipHeroOrderQueueIndexService
         $now = Carbon::now($timezone);
 
         return $this->queueCounts->contextForAccount($account, [
-            'order_date_from' => $now->copy()->subDays(6)->toDateString(),
+            'order_date_from' => $now->toDateString(),
             'order_date_to' => $now->toDateString(),
         ]);
     }

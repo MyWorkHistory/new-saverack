@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\ClientAccount;
 use App\Models\OrderDashboardSection;
+use App\Models\ShipHeroOrderQueueIndex;
 use App\Services\ShipHeroCredentialResolver;
 use App\Services\ShipHeroOrderQueueIndexService;
 use Carbon\Carbon;
@@ -162,9 +163,34 @@ class DiagnoseShipHeroCommand extends Command
         }
 
         if (Schema::hasTable('shiphero_order_queue_index')) {
-            $this->line('shiphero_order_queue_index rows: '.(int) DB::table('shiphero_order_queue_index')->count());
+            $total = (int) DB::table('shiphero_order_queue_index')->count();
+            $this->line('shiphero_order_queue_index rows (total): '.$total);
+            $this->reportOrderQueueIndexByKind();
         } else {
             $this->warn('shiphero_order_queue_index table not found.');
+        }
+    }
+
+    private function reportOrderQueueIndexByKind(): void
+    {
+        $this->line('  shiphero_order_queue_index by queue_kind:');
+
+        $counts = DB::table('shiphero_order_queue_index')
+            ->select('queue_kind', DB::raw('count(*) as aggregate'))
+            ->groupBy('queue_kind')
+            ->pluck('aggregate', 'queue_kind');
+
+        foreach (ShipHeroOrderQueueIndex::QUEUE_KINDS as $kind) {
+            $this->line('    '.$kind.': '.(int) ($counts[$kind] ?? 0));
+        }
+
+        $onHoldOnly = (int) ($counts[ShipHeroOrderQueueIndex::KIND_ON_HOLD] ?? 0) > 0
+            && (int) ($counts[ShipHeroOrderQueueIndex::KIND_AWAITING] ?? 0) === 0
+            && (int) ($counts[ShipHeroOrderQueueIndex::KIND_SHIPPED] ?? 0) === 0
+            && (int) ($counts[ShipHeroOrderQueueIndex::KIND_BACKORDER] ?? 0) === 0;
+
+        if ($onHoldOnly) {
+            $this->warn('  Only on_hold has rows — list pages for Ready to Ship / Shipped / Backorder will be empty until you run orders:sync-queue-index --sync.');
         }
     }
 

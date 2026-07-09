@@ -68,6 +68,8 @@ After recreating or wiping the database, local ShipHero index tables are empty. 
    php artisan orders:refresh-home-dashboard --sync
    ```
 
+   **Important:** Home and Fulfillment counts come from `order_dashboard_sections` and can be filled from live ShipHero during dashboard refresh. Order **list** pages (Ready to Ship, Shipped, Backorder) read only `shiphero_order_queue_index`. If counts show but lists are empty, run `orders:sync-queue-index --sync` — `orders:refresh-home-dashboard --sync` alone is not enough.
+
    Or use the combined helper:
 
    ```bash

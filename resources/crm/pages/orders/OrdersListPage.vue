@@ -85,6 +85,7 @@ const orderQueueSyncedAt = ref("");
 const orderQueueRefreshing = ref(false);
 const orderQueueSyncPending = ref(false);
 const orderQueueSyncMessage = ref("");
+const orderQueueSyncStatus = ref("");
 
 const AUTO_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 const ORDER_QUEUE_POLL_MS = 3000;
@@ -167,6 +168,25 @@ const showOrderQueueSyncBanner = computed(
 const orderQueueSyncBannerText = computed(() => {
   if (orderQueueSyncMessage.value) return orderQueueSyncMessage.value;
   return "Syncing from ShipHero…";
+});
+const ordersEmptyMessage = computed(() => {
+  if (displayedRows.value.length > 0) return "";
+  if (orderQueueSyncPending.value || orderQueueRefreshing.value) return "";
+
+  if (tabKey.value === "shipped" && query.datePreset === "today") {
+    return "No orders found for today. Shipped defaults to today — try Last 7 Days in the date filter.";
+  }
+
+  if (showOrderQueueRefresh.value) {
+    if (orderQueueSyncStatus.value === "failed") {
+      return "Order queue sync failed. Click Refresh or run orders:sync-queue-index --sync on the server.";
+    }
+    if (!orderQueueSyncedAt.value) {
+      return "Order index is empty for this tab. Click Refresh or run orders:sync-queue-index --sync on the server.";
+    }
+  }
+
+  return "No orders found.";
 });
 const isCustomDate = computed(() => query.datePreset === "custom");
 
@@ -553,6 +573,7 @@ async function fetchOrders(reset = true, options = {}) {
       stopOrderQueuePoll();
       orderQueueSyncPending.value = false;
       orderQueueSyncMessage.value = "";
+      orderQueueSyncStatus.value = "";
     }
     return;
   }
@@ -619,11 +640,13 @@ function applyOrderQueueSyncMeta(meta, rowCount, options = {}) {
   if (!showOrderQueueRefresh.value) {
     orderQueueSyncPending.value = false;
     orderQueueSyncMessage.value = "";
+    orderQueueSyncStatus.value = "";
     stopOrderQueuePoll();
     return;
   }
 
   const syncStatus = String(meta?.order_queue_sync_status || "");
+  orderQueueSyncStatus.value = syncStatus;
   const pending = Boolean(meta?.refresh_pending) || syncStatus === "running";
   orderQueueSyncPending.value = pending;
   orderQueueSyncMessage.value = String(meta?.message || "").trim();
@@ -1673,7 +1696,9 @@ onUnmounted(() => {
               </td>
             </tr>
             <tr v-else-if="hasSearched && displayedRows.length === 0">
-              <td :colspan="tableColspan" class="text-center text-secondary py-5">No orders found.</td>
+              <td :colspan="tableColspan" class="text-center text-secondary py-5 px-3">
+                {{ ordersEmptyMessage }}
+              </td>
             </tr>
             <tr v-for="row in displayedRows" :key="row.id" class="align-middle">
               <td class="text-center">

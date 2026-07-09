@@ -2510,7 +2510,6 @@ query ShipHeroOrderIndexReconcile($id: String!) {
       partner_order_id
       shop_name
       fulfillment_status
-      status
       order_date
       required_ship_date
       profile

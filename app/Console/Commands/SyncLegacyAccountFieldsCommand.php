@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
  * WhatsApp, CC fee, plus manager, contract date, Slack, payment prefs, notes, etc.).
  *
  * Prerequisites: import legacy SQL into MySQL and set LEGACY_DB_* (same as crm:import-legacy-clients).
+ * Import staff first: php artisan crm:import-legacy-staff-users (sets users.legacy_user_id for account managers).
  */
 class SyncLegacyAccountFieldsCommand extends Command
 {
@@ -163,7 +164,7 @@ class SyncLegacyAccountFieldsCommand extends Command
         );
 
         if ($unmappedManagers > 0) {
-            $this->warn('Some accounts have legacy manager ids with no matching users.legacy_user_id or users.name — import staff users first.');
+            $this->warn('Some accounts have legacy manager ids with no matching users.legacy_user_id or users.name — run crm:import-legacy-staff-users first.');
         }
 
         return self::SUCCESS;

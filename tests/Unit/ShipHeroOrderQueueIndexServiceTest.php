@@ -397,4 +397,113 @@ class ShipHeroOrderQueueIndexServiceTest extends TestCase
 
         $this->assertSame(1, $service->countForAccountTab(9, ShipHeroOrderQueueIndex::KIND_BACKORDER, $context));
     }
+
+    public function test_sync_account_queue_range_passes_date_filters_for_awaiting(): void
+    {
+        $account = $this->createLinkedAccount();
+        $accountId = (int) $account->id;
+
+        $queueCounts = Mockery::mock(PortalQueueCountsService::class);
+        $queueCounts->shouldReceive('contextForAccount')
+            ->once()
+            ->withArgs(function ($passedAccount, $validated) use ($account) {
+                return (int) $passedAccount->id === (int) $account->id
+                    && ($validated['order_date_from'] ?? null) === '2026-01-01'
+                    && ($validated['order_date_to'] ?? null) === '2026-06-30';
+            })
+            ->andReturn([
+                'timezone' => 'America/New_York',
+                'customer_id' => $account->shiphero_customer_account_id,
+                'awaiting_from' => 'ignored',
+                'awaiting_to' => 'ignored',
+                'open_from' => 'ignored',
+                'open_to' => 'ignored',
+                'shipped_from' => 'ignored',
+                'shipped_to' => 'ignored',
+            ]);
+
+        $orders = Mockery::mock(ShipHeroOrderService::class);
+        $orders->shouldReceive('listOrders')
+            ->once()
+            ->withArgs(function ($filters) use ($account) {
+                return ($filters['tab'] ?? '') === ShipHeroOrderQueueIndex::KIND_AWAITING
+                    && ($filters['customer_account_id'] ?? '') === $account->shiphero_customer_account_id
+                    && ($filters['order_date_from'] ?? '') === '2026-01-01'
+                    && ($filters['order_date_to'] ?? '') === '2026-06-30';
+            })
+            ->andReturn([
+                'rows' => [],
+                'pagination' => ['has_next_page' => false, 'end_cursor' => null],
+            ]);
+
+        $service = new ShipHeroOrderQueueIndexService($orders, $queueCounts);
+        $stats = $service->syncAccountQueueRange(
+            $accountId,
+            ShipHeroOrderQueueIndex::KIND_AWAITING,
+            '2026-01-01',
+            '2026-06-30',
+            false,
+            100,
+            false
+        );
+
+        $this->assertSame(0, $stats['rows_upserted']);
+        $this->assertFalse($stats['truncated']);
+    }
+
+    public function test_sync_account_queue_range_does_not_purge_when_purge_stale_false(): void
+    {
+        $account = $this->createLinkedAccount();
+        $accountId = (int) $account->id;
+        $now = now();
+
+        ShipHeroOrderQueueIndex::query()->insert([
+            'client_account_id' => $accountId,
+            'shiphero_order_id' => 'keep-me',
+            'queue_kind' => ShipHeroOrderQueueIndex::KIND_AWAITING,
+            'order_number' => 'KEEP',
+            'order_date' => $now,
+            'list_payload' => json_encode(['id' => 'keep-me']),
+            'indexed_at' => $now->copy()->subDay(),
+            'last_seen_at' => $now->copy()->subDay(),
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $queueCounts = Mockery::mock(PortalQueueCountsService::class);
+        $queueCounts->shouldReceive('contextForAccount')
+            ->andReturn([
+                'timezone' => 'America/New_York',
+                'customer_id' => $account->shiphero_customer_account_id,
+                'awaiting_from' => 'ignored',
+                'awaiting_to' => 'ignored',
+                'open_from' => 'ignored',
+                'open_to' => 'ignored',
+                'shipped_from' => 'ignored',
+                'shipped_to' => 'ignored',
+            ]);
+
+        $orders = Mockery::mock(ShipHeroOrderService::class);
+        $orders->shouldReceive('listOrders')
+            ->andReturn([
+                'rows' => [],
+                'pagination' => ['has_next_page' => false, 'end_cursor' => null],
+            ]);
+
+        $service = new ShipHeroOrderQueueIndexService($orders, $queueCounts);
+        $service->syncAccountQueueRange(
+            $accountId,
+            ShipHeroOrderQueueIndex::KIND_AWAITING,
+            '2026-01-01',
+            '2026-06-30',
+            false,
+            100,
+            false
+        );
+
+        $this->assertDatabaseHas('shiphero_order_queue_index', [
+            'client_account_id' => $accountId,
+            'shiphero_order_id' => 'keep-me',
+        ]);
+    }
 }

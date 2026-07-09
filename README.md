@@ -170,6 +170,28 @@ php artisan crm:warm-shiphero-data
 
 Or manually: `php artisan orders:sync-queue-index --sync` then `php artisan orders:refresh-home-dashboard --sync`.
 
+**Historical order backfill (2026-01-01 → today)**
+
+Order list pages read `shiphero_order_queue_index`. The default `orders:sync-queue-index` only pulls recent windows (7–29 days). To seed Jan 2026 through today for all linked accounts:
+
+```bash
+# Deploy latest code first (includes shipped pagination + backfill command).
+
+# Option A — queue (recommended on cPanel; database-long worker must be running)
+php artisan orders:backfill-queue-index --from=2026-01-01 --tab=shipped
+php artisan orders:backfill-queue-index --from=2026-01-01 --tab=awaiting
+php artisan orders:backfill-queue-index --from=2026-01-01 --tab=on_hold
+php artisan orders:backfill-queue-index --from=2026-01-01 --tab=backorder
+
+# Option B — inline (screen session; one tab at a time if API credits are tight)
+php artisan orders:backfill-queue-index --from=2026-01-01 --tab=shipped --sync --sleep=5
+
+# After queued jobs drain
+php artisan orders:refresh-home-dashboard --from-index --sync
+```
+
+Shipped is chunked by month automatically. Use `--account=ID` for a single client. Use `--chunk=week` if a month hits pagination limits (watch logs for `truncated`). Optional `--purge` runs a final stale-row cleanup per tab after all chunks.
+
 **Verify deploy**
 
 ```bash

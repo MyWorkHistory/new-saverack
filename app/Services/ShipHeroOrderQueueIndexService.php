@@ -286,17 +286,94 @@ class ShipHeroOrderQueueIndexService
             return;
         }
 
-        $this->markSyncRunning($account);
+        $context = $tab === ShipHeroOrderQueueIndex::KIND_SHIPPED
+            ? $this->shippedIndexSyncContext($account)
+            : $this->queueCounts->contextForAccount($account);
+
+        $this->executeQueueSync(
+            $clientAccountId,
+            $tab,
+            $customerId,
+            $account,
+            $context,
+            $full,
+            null,
+            true
+        );
+    }
+
+    /**
+     * Sync one queue tab for an explicit order/ship date window (backfill).
+     *
+     * @return array{pages: int, rows_upserted: int, truncated: bool}
+     */
+    public function syncAccountQueueRange(
+        int $clientAccountId,
+        string $tab,
+        string $dateFrom,
+        string $dateTo,
+        bool $purgeStale = false,
+        ?int $maxPages = null,
+        bool $updateAccountSyncStatus = false
+    ): array {
+        $tab = strtolower(trim($tab));
+        if (! $this->isQueueTab($tab)) {
+            throw new RuntimeException('Invalid order queue tab: '.$tab);
+        }
+
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            throw new RuntimeException('Client account not found.');
+        }
+
+        $customerId = trim((string) $account->shiphero_customer_account_id);
+        if ($customerId === '') {
+            return ['pages' => 0, 'rows_upserted' => 0, 'truncated' => false];
+        }
+
+        $context = $this->buildRangeContext($account, $tab, $dateFrom, $dateTo);
+
+        return $this->executeQueueSync(
+            $clientAccountId,
+            $tab,
+            $customerId,
+            $account,
+            $context,
+            $purgeStale,
+            $maxPages,
+            $updateAccountSyncStatus
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array{pages: int, rows_upserted: int, truncated: bool}
+     */
+    private function executeQueueSync(
+        int $clientAccountId,
+        string $tab,
+        string $customerId,
+        ClientAccount $account,
+        array $context,
+        bool $purgeStale,
+        ?int $maxPages,
+        bool $updateAccountSyncStatus
+    ): array {
+        if ($updateAccountSyncStatus) {
+            $this->markSyncRunning($account);
+        }
+
         $syncStarted = now();
+        $rowsUpserted = 0;
+        $truncated = false;
 
         try {
-            $context = $tab === ShipHeroOrderQueueIndex::KIND_SHIPPED
-                ? $this->shippedIndexSyncContext($account)
-                : $this->queueCounts->contextForAccount($account);
             $filters = $this->buildSyncFilters($tab, $customerId, $context);
             $after = null;
             $pages = 0;
-            $maxPages = $tab === ShipHeroOrderQueueIndex::KIND_SHIPPED ? 200 : 50;
+            if ($maxPages === null) {
+                $maxPages = $tab === ShipHeroOrderQueueIndex::KIND_SHIPPED ? 200 : 50;
+            }
 
             do {
                 $filters['after'] = $after;
@@ -306,12 +383,17 @@ class ShipHeroOrderQueueIndexService
                     : $this->orders->listOrders($filters);
                 $rows = is_array($page['rows'] ?? null) ? $page['rows'] : [];
                 $this->upsertRows($clientAccountId, $tab, $rows, $syncStarted);
+                $rowsUpserted += count($rows);
                 $after = $page['pagination']['end_cursor'] ?? null;
                 $hasNext = (bool) ($page['pagination']['has_next_page'] ?? false);
                 $pages++;
+                if ($hasNext && $after !== null && $pages >= $maxPages) {
+                    $truncated = true;
+                    break;
+                }
             } while ($hasNext && $after !== null && $pages < $maxPages);
 
-            if ($full) {
+            if ($purgeStale) {
                 ShipHeroOrderQueueIndex::query()
                     ->where('client_account_id', $clientAccountId)
                     ->where('queue_kind', $tab)
@@ -322,16 +404,55 @@ class ShipHeroOrderQueueIndexService
                     ->delete();
             }
 
-            $this->markSyncCompleted($account);
+            if ($updateAccountSyncStatus) {
+                $this->markSyncCompleted($account);
+            }
+
             Log::info('order_queue_index.synced', [
                 'client_account_id' => $clientAccountId,
                 'tab' => $tab,
                 'pages' => $pages,
+                'rows_upserted' => $rowsUpserted,
+                'truncated' => $truncated,
+                'purge_stale' => $purgeStale,
             ]);
+
+            return [
+                'pages' => $pages,
+                'rows_upserted' => $rowsUpserted,
+                'truncated' => $truncated,
+            ];
         } catch (Throwable $e) {
-            $this->markSyncFailed($account, $e->getMessage());
+            if ($updateAccountSyncStatus) {
+                $this->markSyncFailed($account, $e->getMessage());
+            }
             throw $e;
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildRangeContext(ClientAccount $account, string $tab, string $dateFrom, string $dateTo): array
+    {
+        $context = $this->queueCounts->contextForAccount($account, [
+            'order_date_from' => $dateFrom,
+            'order_date_to' => $dateTo,
+        ]);
+
+        $timezone = (string) ($context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE);
+        $fromBoundary = Carbon::parse($dateFrom, $timezone)->startOfDay()->toIso8601String();
+        $toBoundary = Carbon::parse($dateTo, $timezone)->endOfDay()->toIso8601String();
+
+        if ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
+            $context['awaiting_from'] = $fromBoundary;
+            $context['awaiting_to'] = $toBoundary;
+        } elseif ($tab !== ShipHeroOrderQueueIndex::KIND_SHIPPED) {
+            $context['open_from'] = $fromBoundary;
+            $context['open_to'] = $toBoundary;
+        }
+
+        return $context;
     }
 
     public function syncAllLinkedAccounts(?string $tab = null): void

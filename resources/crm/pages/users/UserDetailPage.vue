@@ -22,6 +22,11 @@ import {
 import { useToast } from "../../composables/useToast";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
+import {
+  avatarClassFromSeed,
+  staffUserAvatarUrl,
+  staffUserInitials,
+} from "../../utils/avatarDisplay.js";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -149,25 +154,18 @@ function statusBadgeClass(status) {
   return "badge bg-light text-secondary";
 }
 
-const avatarPalettes = [
-  "bg-primary-subtle text-primary-emphasis",
-  "bg-info-subtle text-info-emphasis",
-  "bg-warning-subtle text-warning-emphasis",
-  "bg-success-subtle text-success-emphasis",
-  "bg-danger-subtle text-danger-emphasis",
-];
+const heroAvatarLoadFailed = ref(false);
 
 function avatarClassForEmail(email) {
-  let h = 0;
-  const s = email || "";
-  for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i)) % 997;
-  return avatarPalettes[h % avatarPalettes.length];
+  return avatarClassFromSeed(email || "");
 }
 
-function initials(name) {
-  if (!name || typeof name !== "string") return "?";
-  const parts = name.trim().split(/\s+/).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
+function showHeroAvatarImage() {
+  return Boolean(staffUserAvatarUrl(user.value)) && !heroAvatarLoadFailed.value;
+}
+
+function markHeroAvatarLoadFailed() {
+  heroAvatarLoadFailed.value = true;
 }
 
 const timelinePreview = computed(() => historyItems.value.slice(0, 5));
@@ -179,10 +177,7 @@ function timelineActorAvatarUrl(row) {
 }
 
 function avatarClassForTimelineActor(label) {
-  let h = 0;
-  const s = label || "";
-  for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i)) % 997;
-  return avatarPalettes[h % avatarPalettes.length];
+  return avatarClassFromSeed(label || "");
 }
 
 async function loadPageData() {
@@ -190,6 +185,7 @@ async function loadPageData() {
   errorMsg.value = "";
   user.value = null;
   historyItems.value = [];
+  heroAvatarLoadFailed.value = false;
   try {
     const [userRes, histRes] = await Promise.all([
       api.get(`/users/${props.id}`),
@@ -330,32 +326,34 @@ function onPermissionsSaved() {
                 @click="openHeroAvatarPicker"
               >
                 <img
-                  v-if="profile.avatar_url"
-                  :src="resolvePublicUrl(profile.avatar_url)"
+                  v-if="showHeroAvatarImage()"
+                  :src="resolvePublicUrl(staffUserAvatarUrl(user))"
                   alt=""
                   class="staff-user-profile__avatar"
+                  @error="markHeroAvatarLoadFailed"
                 />
                 <span
                   v-else
                   class="staff-user-profile__avatar staff-user-profile__avatar--initials"
                   :class="avatarClassForEmail(user.email)"
                 >
-                  {{ initials(user.name) }}
+                  {{ staffUserInitials(user) }}
                 </span>
               </button>
               <div v-else>
                 <img
-                  v-if="profile.avatar_url"
-                  :src="resolvePublicUrl(profile.avatar_url)"
+                  v-if="showHeroAvatarImage()"
+                  :src="resolvePublicUrl(staffUserAvatarUrl(user))"
                   alt=""
                   class="staff-user-profile__avatar"
+                  @error="markHeroAvatarLoadFailed"
                 />
                 <span
                   v-else
                   class="staff-user-profile__avatar staff-user-profile__avatar--initials"
                   :class="avatarClassForEmail(user.email)"
                 >
-                  {{ initials(user.name) }}
+                  {{ staffUserInitials(user) }}
                 </span>
               </div>
             </div>

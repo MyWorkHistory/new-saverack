@@ -22,6 +22,11 @@ import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import StaffRoleIcon from "../../components/users/StaffRoleIcon.vue";
 import StaffBulkEditModal from "../../components/users/StaffBulkEditModal.vue";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
+import {
+  avatarClassFromSeed,
+  staffUserAvatarUrl,
+  staffUserInitials,
+} from "../../utils/avatarDisplay.js";
 import { formatBirthdayUs, formatDateUs } from "../../utils/formatUserDates";
 import { downloadListCsv } from "../../utils/downloadListCsv.js";
 
@@ -229,14 +234,6 @@ const statusBadgeClass = (status) => {
   return "bg-body-secondary text-body-secondary";
 };
 
-const avatarPalettes = [
-  "bg-info-subtle text-info-emphasis",
-  "bg-primary-subtle text-primary-emphasis",
-  "bg-warning-subtle text-warning-emphasis",
-  "bg-success-subtle text-success",
-  "bg-danger-subtle text-danger-emphasis",
-];
-
 function primaryRoleLabel(user) {
   const r = user.roles;
   if (!r || !r.length) return "—";
@@ -262,17 +259,20 @@ function roleIconMeta(user) {
   return variants[h % variants.length];
 }
 
-function avatarClassForUser(email) {
-  let h = 0;
-  const s = email || "";
-  for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i)) % 997;
-  return avatarPalettes[h % avatarPalettes.length];
+function avatarClassForUser(user) {
+  return avatarClassFromSeed(user?.email || user?.name || "");
 }
 
-function initials(name) {
-  if (!name || typeof name !== "string") return "?";
-  const parts = name.trim().split(/\s+/).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
+const avatarLoadFailedIds = ref(new Set());
+
+function markAvatarLoadFailed(userId) {
+  const next = new Set(avatarLoadFailedIds.value);
+  next.add(userId);
+  avatarLoadFailedIds.value = next;
+}
+
+function showStaffAvatarImage(user) {
+  return Boolean(staffUserAvatarUrl(user)) && !avatarLoadFailedIds.value.has(user.id);
 }
 
 const fetchMe = async () => {
@@ -334,6 +334,7 @@ const fetchUsers = async () => {
   loading.value = true;
   deleteError.value = "";
   manageOpenId.value = null;
+  avatarLoadFailedIds.value = new Set();
   try {
     const { data } = await api.get("/users", { params: buildParams() });
     rows.value = data.data;
@@ -1152,17 +1153,18 @@ onUnmounted(() => {
                     style="width: 2.75rem; height: 2.75rem"
                   >
                     <img
-                      v-if="user.profile?.avatar_url"
-                      :src="resolvePublicUrl(user.profile.avatar_url)"
+                      v-if="showStaffAvatarImage(user)"
+                      :src="resolvePublicUrl(staffUserAvatarUrl(user))"
                       alt=""
                       class="w-100 h-100 object-fit-cover"
+                      @error="markAvatarLoadFailed(user.id)"
                     />
                     <span
                       v-else
-                      class="d-flex w-100 h-100 align-items-center justify-content-center fw-semibold staff-user-cell__meta"
-                      :class="avatarClassForUser(user.email)"
+                      class="d-flex w-100 h-100 align-items-center justify-content-center fw-semibold staff-user-cell__meta text-uppercase"
+                      :class="avatarClassForUser(user)"
                     >
-                      {{ initials(user.name) }}
+                      {{ staffUserInitials(user) }}
                     </span>
                   </span>
                   <div class="min-w-0">

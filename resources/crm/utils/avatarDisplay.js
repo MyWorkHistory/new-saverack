@@ -37,6 +37,18 @@ export function accountRowInitials(row) {
   return initialsFromName(name);
 }
 
+export function staffUserAvatarUrl(user) {
+  if (!user || typeof user !== "object") return null;
+  const url = String(user.profile?.avatar_url || user.avatar_url || "").trim();
+  return url || null;
+}
+
+export function staffUserInitials(user) {
+  if (!user || typeof user !== "object") return "?";
+  const name = String(user.name || user.email || "").trim();
+  return initialsFromName(name);
+}
+
 export function avatarClassFromSeed(seed) {
   const s = String(seed ?? "");
   let hash = 0;

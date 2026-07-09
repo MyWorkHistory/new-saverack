@@ -8,8 +8,33 @@ const AVATAR_PALETTES = [
 
 export function initialsFromName(name) {
   if (!name || typeof name !== "string") return "?";
-  const parts = name.trim().split(/\s+/).filter(Boolean).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
+  const trimmed = name.trim();
+  if (!trimmed) return "?";
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  const word = parts[0] || trimmed;
+  if (word.length >= 2) {
+    return word.slice(0, 2).toUpperCase();
+  }
+  return word[0]?.toUpperCase() ?? "?";
+}
+
+/** Brand logo, then portal user avatar — for account directory rows. */
+export function accountRowAvatarUrl(row) {
+  if (!row || typeof row !== "object") return null;
+  const brand = String(row.brand_logo_url || "").trim();
+  if (brand) return brand;
+  const primary = String(row.primary_avatar_url || "").trim();
+  if (primary) return primary;
+  return null;
+}
+
+export function accountRowInitials(row) {
+  if (!row || typeof row !== "object") return "?";
+  const name = String(row.company_name || row.contact_full_name || row.brand_name || "").trim();
+  return initialsFromName(name);
 }
 
 export function avatarClassFromSeed(seed) {

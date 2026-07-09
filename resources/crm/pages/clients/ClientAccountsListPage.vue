@@ -28,6 +28,11 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { getPublicSignupUrl } from "../../utils/publicSignupUrl.js";
 import { downloadListCsv } from "../../utils/downloadListCsv.js";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
+import {
+  accountRowAvatarUrl,
+  accountRowInitials,
+  avatarClassFromSeed,
+} from "../../utils/avatarDisplay.js";
 import { warnIfShipheroSyncFailed } from "../../utils/clientAccountShipheroSync.js";
 import {
   ONBOARDING_ACTIVATION_BLOCKED_MESSAGE,
@@ -258,23 +263,22 @@ const statusBadgeClass = (status) => {
   return "bg-body-secondary text-body-secondary";
 };
 
-const avatarPalettes = [
-  "bg-info-subtle text-info-emphasis",
-  "bg-primary-subtle text-primary-emphasis",
-  "bg-warning-subtle text-warning-emphasis",
-];
-
-function avatarClassForRow(email) {
-  let h = 0;
-  const s = email || "";
-  for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i)) % 997;
-  return avatarPalettes[h % avatarPalettes.length];
+function avatarClassForRow(row) {
+  const seed = row?.email || row?.company_name || "";
+  return avatarClassFromSeed(seed);
 }
 
-function initialsFromName(name) {
-  if (!name || typeof name !== "string") return "?";
-  const parts = name.trim().split(/\s+/).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
+/** Row ids whose avatar image failed to load — show initials instead. */
+const avatarLoadFailedIds = ref(new Set());
+
+function markAvatarLoadFailed(rowId) {
+  const next = new Set(avatarLoadFailedIds.value);
+  next.add(rowId);
+  avatarLoadFailedIds.value = next;
+}
+
+function showAccountAvatarImage(row) {
+  return Boolean(accountRowAvatarUrl(row)) && !avatarLoadFailedIds.value.has(row.id);
 }
 
 const TABLE_SORT_COLUMNS = [
@@ -396,6 +400,7 @@ async function fetchMeta() {
 async function fetchRows() {
   loading.value = true;
   manageOpenId.value = null;
+  avatarLoadFailedIds.value = new Set();
   try {
     const { data } = await api.get("/client-accounts", { params: buildParams() });
     rows.value = data.data;
@@ -1142,21 +1147,18 @@ onUnmounted(() => {
                     style="width: 2.75rem; height: 2.75rem"
                   >
                     <img
-                      v-if="row.primary_avatar_url"
-                      :src="resolvePublicUrl(row.primary_avatar_url)"
+                      v-if="showAccountAvatarImage(row)"
+                      :src="resolvePublicUrl(accountRowAvatarUrl(row))"
                       alt=""
                       class="w-100 h-100 object-fit-cover"
+                      @error="markAvatarLoadFailed(row.id)"
                     />
                     <span
                       v-else
-                      class="d-flex w-100 h-100 align-items-center justify-content-center small fw-semibold"
-                      :class="avatarClassForRow(row.email)"
+                      class="d-flex w-100 h-100 align-items-center justify-content-center small fw-semibold text-uppercase"
+                      :class="avatarClassForRow(row)"
                     >
-                      {{
-                        initialsFromName(
-                          row.contact_full_name || row.company_name,
-                        )
-                      }}
+                      {{ accountRowInitials(row) }}
                     </span>
                   </span>
                   <div class="min-w-0">

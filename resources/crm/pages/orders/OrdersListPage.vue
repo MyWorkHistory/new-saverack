@@ -83,9 +83,14 @@ const nextCursor = ref(null);
 const hasNextPage = ref(false);
 const orderQueueSyncedAt = ref("");
 const orderQueueRefreshing = ref(false);
+const orderQueueSyncPending = ref(false);
+const orderQueueSyncMessage = ref("");
 
 const AUTO_SYNC_INTERVAL_MS = 30 * 60 * 1000;
+const ORDER_QUEUE_POLL_MS = 3000;
 let autoSyncTimer = null;
+let orderQueuePollTimer = null;
+let orderQueueUserRefresh = false;
 
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
@@ -155,6 +160,13 @@ const showOrderQueueRefresh = computed(
 const orderQueueSyncedLabel = computed(() => {
   if (!orderQueueSyncedAt.value) return "";
   return formatDateTimeUs(orderQueueSyncedAt.value);
+});
+const showOrderQueueSyncBanner = computed(
+  () => showOrderQueueRefresh.value && (orderQueueSyncPending.value || orderQueueRefreshing.value),
+);
+const orderQueueSyncBannerText = computed(() => {
+  if (orderQueueSyncMessage.value) return orderQueueSyncMessage.value;
+  return "Syncing from ShipHero…";
 });
 const isCustomDate = computed(() => query.datePreset === "custom");
 
@@ -538,11 +550,16 @@ async function fetchOrders(reset = true, options = {}) {
       hasNextPage.value = false;
       nextCursor.value = null;
       clearRowSelection();
+      stopOrderQueuePoll();
+      orderQueueSyncPending.value = false;
+      orderQueueSyncMessage.value = "";
     }
     return;
   }
-  loading.value = true;
-  if (reset) {
+  if (!options.poll) {
+    loading.value = true;
+  }
+  if (reset && !options.poll) {
     rows.value = [];
     nextCursor.value = null;
     hasNextPage.value = false;
@@ -584,13 +601,80 @@ async function fetchOrders(reset = true, options = {}) {
         emit("queue-refreshed", data.meta.order_queue_synced_at);
       }
     }
+    applyOrderQueueSyncMeta(data?.meta, incoming.length, options);
   } catch (e) {
-    toast.errorFrom(e, "Could not load orders.");
+    if (!options.poll) {
+      toast.errorFrom(e, "Could not load orders.");
+    }
   } finally {
-    loading.value = false;
+    if (!options.poll) {
+      loading.value = false;
+    }
     /** Always set after an attempt so the table never sits in a blank state (no row matched v-if / v-for). */
     hasSearched.value = true;
   }
+}
+
+function applyOrderQueueSyncMeta(meta, rowCount, options = {}) {
+  if (!showOrderQueueRefresh.value) {
+    orderQueueSyncPending.value = false;
+    orderQueueSyncMessage.value = "";
+    stopOrderQueuePoll();
+    return;
+  }
+
+  const syncStatus = String(meta?.order_queue_sync_status || "");
+  const pending = Boolean(meta?.refresh_pending) || syncStatus === "running";
+  orderQueueSyncPending.value = pending;
+  orderQueueSyncMessage.value = String(meta?.message || "").trim();
+
+  if (pending) {
+    startOrderQueuePoll();
+    return;
+  }
+
+  stopOrderQueuePoll();
+  orderQueueRefreshing.value = false;
+
+  if (!options.userRefresh) {
+    return;
+  }
+
+  orderQueueUserRefresh = false;
+  if (rowCount > 0 || syncStatus === "idle") {
+    toast.success("Order queue refreshed.");
+  } else if (syncStatus === "failed") {
+    toast.error("Order queue sync failed. Try again.");
+  }
+}
+
+function stopOrderQueuePoll() {
+  if (orderQueuePollTimer !== null) {
+    window.clearInterval(orderQueuePollTimer);
+    orderQueuePollTimer = null;
+  }
+}
+
+async function pollOrderQueue() {
+  if (!showOrderQueueRefresh.value || !selectedAccountId.value) {
+    stopOrderQueuePoll();
+    return;
+  }
+  try {
+    await fetchOrders(true, { poll: true, userRefresh: orderQueueUserRefresh });
+  } catch {
+    /* keep polling on transient errors */
+  }
+}
+
+function startOrderQueuePoll() {
+  if (orderQueuePollTimer !== null) {
+    return;
+  }
+  orderQueuePollTimer = window.setInterval(() => {
+    void pollOrderQueue();
+  }, ORDER_QUEUE_POLL_MS);
+  void pollOrderQueue();
 }
 
 function stopAutoSyncTimer() {
@@ -617,13 +701,13 @@ async function refreshOrderQueue() {
     return;
   }
   orderQueueRefreshing.value = true;
+  orderQueueUserRefresh = true;
   try {
-    await fetchOrders(true, { refresh: true });
-    toast.success("Order queue refreshed.");
+    await fetchOrders(true, { refresh: true, userRefresh: true });
   } catch {
     /* toast handled in fetchOrders */
-  } finally {
     orderQueueRefreshing.value = false;
+    orderQueueUserRefresh = false;
   }
 }
 
@@ -1196,6 +1280,7 @@ watch(showOrderQueueRefresh, () => {
 onUnmounted(() => {
   document.removeEventListener("click", onDocClick);
   stopAutoSyncTimer();
+  stopOrderQueuePoll();
 });
 </script>
 
@@ -1527,6 +1612,15 @@ onUnmounted(() => {
         </template>
       </div>
 
+      <div class="position-relative">
+        <div
+          v-if="showOrderQueueSyncBanner"
+          class="user-inv-sync-banner small text-secondary px-3 py-2 border-bottom bg-body-tertiary"
+          role="status"
+          aria-live="polite"
+        >
+          {{ orderQueueSyncBannerText }}
+        </div>
       <div class="table-responsive staff-table-wrap">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
@@ -1703,6 +1797,7 @@ onUnmounted(() => {
         >
           {{ hasNextPage ? "Load More" : "No more orders" }}
         </button>
+      </div>
       </div>
     </div>
 

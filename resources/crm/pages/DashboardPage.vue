@@ -36,6 +36,7 @@ const {
   pendingAsnPreview,
   restockPreview,
   restockActiveCount,
+  anySectionPending,
   load,
   refreshSection,
 } = useAdminHomeDashboard({
@@ -95,6 +96,15 @@ onMounted(async () => {
     </div>
 
     <template v-else>
+      <div
+        v-if="anySectionPending"
+        class="user-inv-sync-banner small text-secondary px-3 py-2 border rounded mb-3 bg-body-tertiary"
+        role="status"
+        aria-live="polite"
+      >
+        Syncing dashboard…
+      </div>
+
       <HomeSummaryStatCards
         :totals="totals"
         :sections="sections"

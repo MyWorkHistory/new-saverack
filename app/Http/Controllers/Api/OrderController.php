@@ -143,11 +143,14 @@ class OrderController extends Controller
                 $customerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
 
                 if ($this->orderQueueIndex->indexHasRows($clientAccountId, $tab)) {
+                    $account = ClientAccount::query()->find($clientAccountId);
                     $payload = $this->orderQueueIndex->listFromIndex($indexFilters);
+                    $syncRunning = $account !== null
+                        && (string) ($account->order_queue_sync_status ?? '') === ShipHeroOrderQueueIndexService::SYNC_STATUS_RUNNING;
                     $payload['meta'] = array_merge($payload['meta'] ?? [], [
                         'client_account_id' => $clientAccountId,
                         'shiphero_customer_account_id' => $customerId,
-                        'refresh_pending' => $refresh,
+                        'refresh_pending' => $refresh && $syncRunning,
                     ]);
 
                     return response()->json($payload);

@@ -44,6 +44,53 @@ Open the app via Laravel: `http://127.0.0.1:8000/` (SPA) and sign in with `ADMIN
 
 If `inventory_beta.list.start` never appears in the log, the request is not reaching Laravel (undeployed code, OPcache, or PHP-FPM pool exhaustion).
 
+### Post DB recovery
+
+After recreating or wiping the database, local ShipHero index tables are empty. The CRM reads from those tables for inventory, order queue tabs, and admin Home metrics — not live ShipHero on every page load. Run this sequence on production:
+
+1. **Prerequisites**
+   - `SHIPHERO_REFRESH_TOKEN` set in `.env`
+   - `crm:import-shiphero-customer-ids` (or manual `shiphero_customer_account_id` on accounts)
+   - `QUEUE_CONNECTION=database` (not `sync` only)
+
+2. **Start a persistent queue worker** (critical — without it, refresh jobs never run):
+
+   ```bash
+   php artisan queue:work database-long --timeout=3700 --tries=1 --sleep=3
+   ```
+
+   If `database-long` is not configured, use `database` instead.
+
+3. **Warm snapshots** (inline, no worker required for these two):
+
+   ```bash
+   php artisan orders:sync-queue-index --sync
+   php artisan orders:refresh-home-dashboard --sync
+   ```
+
+   Or use the combined helper:
+
+   ```bash
+   php artisan crm:warm-shiphero-data
+   ```
+
+4. **Inventory** — per account: Products → **Refresh Inventory** (or **Sync Products** for a full rebuild). Inventory has no bulk-all-accounts artisan command unless you run `crm:warm-shiphero-data` without `--skip-inventory` (queues catalog jobs; worker required).
+
+5. **Diagnose** after any incident:
+
+   ```bash
+   php artisan crm:diagnose-shiphero
+   ```
+
+6. **Reset stuck sync** if a catalog sync is stuck `running`:
+
+   ```bash
+   php artisan inventory:reset-catalog-sync
+   php artisan inventory:reset-catalog-sync {client_account_id}
+   ```
+
+7. **Optional** — register webhooks for near-real-time updates: `php artisan shiphero:register-webhooks`
+
 ### ShipHero order webhooks (near-real-time dashboard counts)
 
 1. Set in production `.env`:

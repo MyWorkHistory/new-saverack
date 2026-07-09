@@ -89,6 +89,11 @@ class ShipHeroOrderQueueIndexService
      */
     public function emptyListPayload(ClientAccount $account, int $clientAccountId, bool $refreshPending = false): array
     {
+        $syncStatus = (string) ($account->order_queue_sync_status ?? self::SYNC_STATUS_IDLE);
+        $pending = $refreshPending
+            || $syncStatus === self::SYNC_STATUS_RUNNING
+            || ($account->order_queue_synced_at === null && $syncStatus !== self::SYNC_STATUS_FAILED);
+
         return [
             'rows' => [],
             'pagination' => [
@@ -98,11 +103,12 @@ class ShipHeroOrderQueueIndexService
             'meta' => [
                 'client_account_id' => $clientAccountId,
                 'from_index' => true,
-                'refresh_pending' => $refreshPending,
+                'refresh_pending' => $pending,
+                'order_queue_sync_status' => $syncStatus,
                 'order_queue_synced_at' => $account->order_queue_synced_at !== null
                     ? $account->order_queue_synced_at->toIso8601String()
                     : null,
-                'message' => $refreshPending
+                'message' => $pending
                     ? 'Order index is syncing from ShipHero. Refresh again shortly.'
                     : '',
             ],
@@ -187,6 +193,8 @@ class ShipHeroOrderQueueIndexService
             'meta' => [
                 'client_account_id' => $clientAccountId,
                 'from_index' => true,
+                'refresh_pending' => (string) ($account->order_queue_sync_status ?? self::SYNC_STATUS_IDLE) === self::SYNC_STATUS_RUNNING,
+                'order_queue_sync_status' => (string) ($account->order_queue_sync_status ?? self::SYNC_STATUS_IDLE),
                 'order_queue_synced_at' => $account->order_queue_synced_at !== null
                     ? $account->order_queue_synced_at->toIso8601String()
                     : null,

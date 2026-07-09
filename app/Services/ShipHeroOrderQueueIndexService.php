@@ -101,6 +101,8 @@ class ShipHeroOrderQueueIndexService
             'meta' => [
                 'client_account_id' => $clientAccountId,
                 'from_index' => true,
+                'queue_total' => 0,
+                'queue_count_metric' => $this->queueCountMetricForTab($tab),
                 'refresh_pending' => $pending,
                 'order_queue_sync_status' => $syncStatus,
                 'order_queue_synced_at' => $account->order_queue_synced_at !== null
@@ -210,8 +212,11 @@ class ShipHeroOrderQueueIndexService
             ->where('queue_kind', $tab);
 
         $holdReason = strtolower(trim((string) ($filters['hold_reason'] ?? '')));
-        if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD && $holdReason !== '') {
-            $this->applyHoldReasonFilterToQuery($query, $holdReason);
+        if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
+            $query->where('has_backorder', false);
+            if ($holdReason !== '') {
+                $this->applyHoldReasonFilterToQuery($query, $holdReason);
+            }
         }
 
         $orderNumber = ltrim(trim((string) ($filters['order_number'] ?? '')), '#');
@@ -224,6 +229,10 @@ class ShipHeroOrderQueueIndexService
         } else {
             $this->applyDateWindowToQuery($query, $tab, $context, $filters);
         }
+
+        $queueTotal = $orderNumber === ''
+            ? $this->countForAccountTabWithSemantics($clientAccountId, $tab, $context, $filters, $holdReason !== '' ? $holdReason : null)
+            : (clone $query)->count();
 
         $total = (clone $query)->count();
         $indexRows = $query
@@ -258,6 +267,8 @@ class ShipHeroOrderQueueIndexService
             'meta' => [
                 'client_account_id' => $clientAccountId,
                 'from_index' => true,
+                'queue_total' => $queueTotal,
+                'queue_count_metric' => $this->queueCountMetricForTab($tab),
                 'refresh_pending' => $this->isTabSyncPending($account, $clientAccountId, $tab, false),
                 'order_queue_sync_status' => (string) ($account->order_queue_sync_status ?? self::SYNC_STATUS_IDLE),
                 'order_queue_synced_at' => $account->order_queue_synced_at !== null
@@ -507,6 +518,10 @@ class ShipHeroOrderQueueIndexService
                 continue;
             }
 
+            if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD && ! empty($row['has_backorder'])) {
+                continue;
+            }
+
             $orderNumber = trim((string) ($row['order_number'] ?? ''));
             $holdReason = $this->machineHoldReasonFromRow($row);
 
@@ -534,6 +549,12 @@ class ShipHeroOrderQueueIndexService
                     'created_at' => $now,
                 ]
             );
+
+            ShipHeroOrderQueueIndex::query()
+                ->where('client_account_id', $clientAccountId)
+                ->where('shiphero_order_id', $orderId)
+                ->where('queue_kind', '!=', $tab)
+                ->delete();
         }
     }
 
@@ -626,11 +647,7 @@ class ShipHeroOrderQueueIndexService
             $context = $this->queueCounts->contextForDashboardSection($account, $sectionKey);
             $count = $this->countForDashboardSection((int) $account->id, $sectionKey, $context);
 
-            if (
-                $hybridShippedFallback
-                && $sectionKey === OrderDashboardSection::KEY_SHIPPED
-                && $count <= 0
-            ) {
+            if ($hybridShippedFallback && $sectionKey === OrderDashboardSection::KEY_SHIPPED) {
                 $customerId = trim((string) ($context['customer_id'] ?? $account->shiphero_customer_account_id ?? ''));
                 if ($customerId !== '') {
                     $live = $this->orders->countShipments([
@@ -640,7 +657,10 @@ class ShipHeroOrderQueueIndexService
                         'timezone' => $context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
                         'max_pages' => 50,
                     ]);
-                    $count = (int) ($live['count'] ?? 0);
+                    $liveCount = (int) ($live['count'] ?? 0);
+                    if ($liveCount > $count) {
+                        $count = $liveCount;
+                    }
                     $truncated = $truncated || (bool) ($live['truncated'] ?? false);
                 }
             }
@@ -681,6 +701,10 @@ class ShipHeroOrderQueueIndexService
             $this->applyHoldReasonFilterToQuery($query, $mapping['hold_reason']);
         }
 
+        if ($mapping['queue_kind'] === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
+            $query->where('has_backorder', false);
+        }
+
         return $query->exists();
     }
 
@@ -699,22 +723,59 @@ class ShipHeroOrderQueueIndexService
             return 0;
         }
 
-        if ($sectionKey === OrderDashboardSection::KEY_SHIPPED) {
-            return $this->countShippedTodayFromIndex($clientAccountId, $context);
+        return $this->countForAccountTabWithSemantics(
+            $clientAccountId,
+            $mapping['queue_kind'],
+            $context,
+            [],
+            $mapping['hold_reason']
+        );
+    }
+
+    public function queueCountMetricForTab(string $tab): string
+    {
+        return strtolower(trim($tab)) === ShipHeroOrderQueueIndex::KIND_SHIPPED ? 'shipments' : 'orders';
+    }
+
+    /**
+     * Shared queue total semantics for dashboard pills and orders list header.
+     *
+     * @param  array<string, mixed>  $context
+     * @param  array<string, mixed>  $filters
+     */
+    public function countForAccountTabWithSemantics(
+        int $clientAccountId,
+        string $tab,
+        array $context,
+        array $filters = [],
+        ?string $holdReason = null
+    ): int {
+        $tab = strtolower(trim($tab));
+        if ($clientAccountId <= 0 || ! $this->isQueueTab($tab)) {
+            return 0;
         }
 
-        $tab = $mapping['queue_kind'];
+        if ($tab === ShipHeroOrderQueueIndex::KIND_SHIPPED) {
+            $query = ShipHeroOrderQueueIndex::query()
+                ->where('client_account_id', $clientAccountId)
+                ->where('queue_kind', $tab);
+            $this->applyDateWindowToQuery($query, $tab, $context, $filters);
+
+            return $this->sumShippedLabelCountFromRows($query->get(['list_payload']));
+        }
+
         $query = ShipHeroOrderQueueIndex::query()
             ->where('client_account_id', $clientAccountId)
             ->where('queue_kind', $tab);
 
-        if ($mapping['hold_reason'] !== null) {
-            $this->applyHoldReasonFilterToQuery($query, $mapping['hold_reason']);
+        if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
+            $query->where('has_backorder', false);
+            if ($holdReason !== null && trim($holdReason) !== '') {
+                $this->applyHoldReasonFilterToQuery($query, $holdReason);
+            }
         }
 
-        if ($sectionKey !== OrderDashboardSection::KEY_READY_TO_SHIP) {
-            $this->applyDateWindowToQuery($query, $tab, $context, []);
-        }
+        $this->applyDateWindowToQuery($query, $tab, $context, $filters);
 
         return (int) $query->count();
     }
@@ -726,24 +787,11 @@ class ShipHeroOrderQueueIndexService
      */
     public function countShippedTodayFromIndex(int $clientAccountId, array $context): int
     {
-        if ($clientAccountId <= 0) {
-            return 0;
-        }
-
-        $query = ShipHeroOrderQueueIndex::query()
-            ->where('client_account_id', $clientAccountId)
-            ->where('queue_kind', ShipHeroOrderQueueIndex::KIND_SHIPPED);
-
-        $from = $this->parseTimestamp($context['shipped_from'] ?? null);
-        $to = $this->parseTimestamp($context['shipped_to'] ?? null);
-        if ($from !== null) {
-            $query->where('ship_date', '>=', $from);
-        }
-        if ($to !== null) {
-            $query->where('ship_date', '<=', $to);
-        }
-
-        return $this->sumShippedLabelCountFromRows($query->get(['list_payload']));
+        return $this->countForAccountTabWithSemantics(
+            $clientAccountId,
+            ShipHeroOrderQueueIndex::KIND_SHIPPED,
+            $context
+        );
     }
 
     /**
@@ -771,18 +819,7 @@ class ShipHeroOrderQueueIndexService
      */
     public function countForAccountTab(int $clientAccountId, string $tab, array $context): int
     {
-        $tab = strtolower(trim($tab));
-        if ($clientAccountId <= 0 || ! $this->isQueueTab($tab)) {
-            return 0;
-        }
-
-        $query = ShipHeroOrderQueueIndex::query()
-            ->where('client_account_id', $clientAccountId)
-            ->where('queue_kind', $tab);
-
-        $this->applyDateWindowToQuery($query, $tab, $context, []);
-
-        return (int) $query->count();
+        return $this->countForAccountTabWithSemantics($clientAccountId, $tab, $context);
     }
 
     /**

@@ -57,9 +57,13 @@ function isSectionRefreshing(key) {
 }
 
 function accountRoute(section, accountId) {
+  const query = { client_account_id: String(accountId) };
+  if (section.key === "shipped") {
+    query.date_preset = "today";
+  }
   return {
     name: section.routeName,
-    query: { client_account_id: String(accountId) },
+    query,
   };
 }
 

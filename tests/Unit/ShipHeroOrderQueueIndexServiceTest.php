@@ -191,7 +191,7 @@ class ShipHeroOrderQueueIndexServiceTest extends TestCase
         $this->assertFalse($service->indexHasRowsForSection('hold_operator'));
     }
 
-    public function test_aggregate_dashboard_section_counts_all_awaiting_for_dashboard(): void
+    public function test_aggregate_dashboard_section_excludes_awaiting_outside_window(): void
     {
         $now = now();
         $account = $this->createLinkedAccount();
@@ -231,7 +231,7 @@ class ShipHeroOrderQueueIndexServiceTest extends TestCase
 
         $result = $service->aggregateDashboardSection('ready_to_ship');
 
-        $this->assertSame(2, $result['total_count']);
+        $this->assertSame(1, $result['total_count']);
     }
 
     public function test_aggregate_dashboard_section_shipped_only_counts_today(): void
@@ -311,6 +311,99 @@ class ShipHeroOrderQueueIndexServiceTest extends TestCase
         );
 
         $this->assertSame(5, $service->countShippedTodayFromIndex(77, $context));
+    }
+
+    public function test_on_hold_count_excludes_backorder_rows(): void
+    {
+        $now = now();
+        $context = [
+            'awaiting_from' => $now->copy()->subDays(6)->toIso8601String(),
+            'awaiting_to' => $now->toIso8601String(),
+            'open_from' => $now->copy()->subDays(29)->startOfDay()->toIso8601String(),
+            'open_to' => $now->endOfDay()->toIso8601String(),
+            'shipped_from' => $now->copy()->startOfDay()->toIso8601String(),
+            'shipped_to' => $now->endOfDay()->toIso8601String(),
+        ];
+
+        ShipHeroOrderQueueIndex::query()->insert([
+            'client_account_id' => 42,
+            'shiphero_order_id' => 'hold-only',
+            'queue_kind' => ShipHeroOrderQueueIndex::KIND_ON_HOLD,
+            'has_backorder' => false,
+            'hold_reason' => 'operator',
+            'order_date' => $now,
+            'list_payload' => json_encode(['id' => 'hold-only']),
+            'indexed_at' => $now,
+            'last_seen_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        ShipHeroOrderQueueIndex::query()->insert([
+            'client_account_id' => 42,
+            'shiphero_order_id' => 'hold-backorder',
+            'queue_kind' => ShipHeroOrderQueueIndex::KIND_ON_HOLD,
+            'has_backorder' => true,
+            'hold_reason' => 'operator',
+            'order_date' => $now,
+            'list_payload' => json_encode(['id' => 'hold-backorder', 'has_backorder' => true]),
+            'indexed_at' => $now,
+            'last_seen_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $service = new ShipHeroOrderQueueIndexService(
+            Mockery::mock(ShipHeroOrderService::class),
+            Mockery::mock(PortalQueueCountsService::class)
+        );
+
+        $this->assertSame(1, $service->countForAccountTabWithSemantics(42, ShipHeroOrderQueueIndex::KIND_ON_HOLD, $context));
+    }
+
+    public function test_list_from_index_returns_queue_total_for_shipped_labels(): void
+    {
+        $now = now();
+        $account = $this->createLinkedAccount();
+        $accountId = (int) $account->id;
+
+        $queueCounts = Mockery::mock(PortalQueueCountsService::class);
+        $queueCounts->shouldReceive('contextForAccount')->andReturn([
+            'timezone' => 'America/New_York',
+            'customer_id' => $account->shiphero_customer_account_id,
+            'awaiting_from' => $now->copy()->subDays(6)->startOfDay()->toIso8601String(),
+            'awaiting_to' => $now->endOfDay()->toIso8601String(),
+            'open_from' => $now->copy()->subDays(29)->startOfDay()->toIso8601String(),
+            'open_to' => $now->endOfDay()->toIso8601String(),
+            'shipped_from' => $now->copy()->startOfDay()->toIso8601String(),
+            'shipped_to' => $now->endOfDay()->toIso8601String(),
+        ]);
+
+        ShipHeroOrderQueueIndex::query()->insert([
+            'client_account_id' => $accountId,
+            'shiphero_order_id' => 'ship-1',
+            'queue_kind' => ShipHeroOrderQueueIndex::KIND_SHIPPED,
+            'ship_date' => $now,
+            'list_payload' => json_encode(['id' => 'ship-1', 'shipped_label_count' => 2]),
+            'indexed_at' => $now,
+            'last_seen_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $service = new ShipHeroOrderQueueIndexService(
+            Mockery::mock(ShipHeroOrderService::class),
+            $queueCounts
+        );
+
+        $result = $service->listFromIndex([
+            'client_account_id' => $accountId,
+            'tab' => ShipHeroOrderQueueIndex::KIND_SHIPPED,
+            'first' => 20,
+        ]);
+
+        $this->assertSame(2, $result['meta']['queue_total']);
+        $this->assertSame('shipments', $result['meta']['queue_count_metric']);
+        $this->assertCount(1, $result['rows']);
     }
 
     public function test_context_for_dashboard_section_ready_to_ship_uses_may_first_window(): void

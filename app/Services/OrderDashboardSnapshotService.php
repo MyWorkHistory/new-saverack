@@ -121,6 +121,9 @@ class OrderDashboardSnapshotService
 
         $holdTotal = 0;
         foreach (OrderDashboardSection::HOLD_KEYS as $holdKey) {
+            if ($holdKey === OrderDashboardSection::KEY_HOLD_BACKORDER) {
+                continue;
+            }
             $holdTotal += (int) ($sections[$holdKey]['total_count'] ?? 0);
         }
 

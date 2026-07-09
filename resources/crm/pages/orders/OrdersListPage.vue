@@ -62,6 +62,10 @@ function applyOrdersRouteQuery() {
       selectedAccountId.value = accountFromRoute;
     }
   }
+  const presetFromRoute = String(route.query.date_preset || "").trim();
+  if (presetFromRoute === "today" || presetFromRoute === "all" || presetFromRoute === "last_7" || presetFromRoute === "last_30") {
+    query.datePreset = presetFromRoute;
+  }
   if (tabKey.value === "on_hold") {
     const holdFromRoute = normalizeRouteHoldReason(route.query.hold_reason);
     if (holdFromRoute) {
@@ -90,6 +94,8 @@ const orderQueueSyncMessage = ref("");
 const orderQueueSyncStatus = ref("");
 const orderQueueIndexHasRows = ref(false);
 const orderQueueDateFilterExcludes = ref(false);
+const queueTotal = ref(null);
+const queueCountMetric = ref("orders");
 
 const AUTO_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 const ORDER_QUEUE_POLL_MS = 3000;
@@ -202,6 +208,17 @@ const ordersEmptyMessage = computed(() => {
 
   return "No orders found.";
 });
+const ordersListCountLabel = computed(() => {
+  if (queueTotal.value === null) {
+    return `(${displayedRows.value.length} loaded)`;
+  }
+  const n = Number(queueTotal.value);
+  const unit = queueCountMetric.value === "shipments"
+    ? (n === 1 ? "shipment" : "shipments")
+    : (n === 1 ? "order" : "orders");
+  return `(${n} ${unit})`;
+});
+
 const isCustomDate = computed(() => query.datePreset === "custom");
 
 const showAccountColumn = computed(() => !isEmbeddedOrders.value);
@@ -600,6 +617,7 @@ async function fetchOrders(reset = true, options = {}) {
     rows.value = [];
     nextCursor.value = null;
     hasNextPage.value = false;
+    queueTotal.value = null;
     clearRowSelection();
   }
   try {
@@ -639,6 +657,13 @@ async function fetchOrders(reset = true, options = {}) {
       }
     }
     applyOrderQueueSyncMeta(data?.meta, incoming.length, options);
+    if (data?.meta && typeof data.meta.queue_total === "number") {
+      queueTotal.value = data.meta.queue_total;
+      queueCountMetric.value = data.meta.queue_count_metric === "shipments" ? "shipments" : "orders";
+    } else {
+      queueTotal.value = null;
+      queueCountMetric.value = tabKey.value === "shipped" ? "shipments" : "orders";
+    }
   } catch (e) {
     if (!options.poll) {
       toast.errorFrom(e, "Could not load orders.");
@@ -805,7 +830,7 @@ watch([allPageSelected, somePageSelected, displayedRows], () => {
 
 function defaultDatePresetForCurrentTab() {
   if (tabKey.value === "awaiting") {
-    return "last_7";
+    return "all";
   }
   if (tabKey.value === "on_hold" || tabKey.value === "backorder") {
     return "last_30";
@@ -1343,7 +1368,7 @@ onUnmounted(() => {
             v-if="(selectedAccountId || crossAccountMode) && hasSearched"
             class="small text-secondary fw-normal ms-1"
           >
-            ({{ displayedRows.length }} {{ displayedRows.length === 1 ? "order" : "orders" }})
+            {{ ordersListCountLabel }}
           </span>
         </h1>
         <p v-if="isOrdersSearchPage" class="text-secondary small mb-0">
@@ -1476,10 +1501,9 @@ onUnmounted(() => {
                         <strong>Shipped</strong> defaults to <strong>today</strong> by <strong>ship date</strong> (when the label was created). Widen the date range if you need older fulfilled orders.
                       </template>
                       <template v-else-if="tabKey === 'awaiting'">
-                        This tab lists <strong>orders awaiting shipment</strong>. The default <strong>order date</strong> window
-                        is the <strong>last 7 days</strong> so the list stays fast; choose <strong>Today</strong>,
-                        <strong>Any Order Date</strong>, or a custom range if you need a different window (including the same
-                        window used for dashboard totals).
+                        This tab lists <strong>orders awaiting shipment</strong>. The default window matches the
+                        dashboard (<strong>May 1 through today</strong> by order date). Choose a different preset or
+                        custom range if you need another window.
                       </template>
                       <template v-else>
                         Defaults to <strong>today</strong> by order date. Use <strong>Any Order Date</strong> or a custom range if the list looks empty.

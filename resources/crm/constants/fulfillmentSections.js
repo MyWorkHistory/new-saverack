@@ -14,7 +14,7 @@ export const FULFILLMENT_SECTIONS = [
     key: "shipped",
     label: "Shipped Today",
     titleUpper: "SHIPPED TODAY",
-    sub: "Total Orders",
+    sub: "Total Shipments",
     icon: "truck",
     titleColor: "#16a34a",
     iconStyle: { background: "#dcfce7", color: "#16a34a" },

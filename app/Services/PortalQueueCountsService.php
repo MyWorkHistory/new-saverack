@@ -315,6 +315,10 @@ class PortalQueueCountsService
 
             $query = clone $baseQuery;
 
+            if ($tab === 'on_hold') {
+                $query->where('has_backorder', false);
+            }
+
             if ($tab === 'awaiting') {
                 $from = $this->parseTimestamp($context['awaiting_from'] ?? null);
                 $to = $this->parseTimestamp($context['awaiting_to'] ?? null);

@@ -78,7 +78,7 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         $this->assertSame(10, $payload['totals']['ready_to_ship']);
         $this->assertSame(5, $payload['totals']['shipped']);
         $this->assertSame(7, $payload['totals']['asn_pending']);
-        $this->assertSame(11, $payload['totals']['on_hold']);
+        $this->assertSame(7, $payload['totals']['on_hold']);
     }
 
     public function test_bootstrap_dispatches_shiphero_sections_and_marks_running(): void

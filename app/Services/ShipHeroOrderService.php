@@ -3491,6 +3491,9 @@ GQL;
                     continue;
                 }
             }
+            if ($tab === 'on_hold' && ! empty($row['has_backorder'])) {
+                continue;
+            }
             // ShipHero can keep `has_hold` on historical rows after the order is shipped/fulfilled.
             if ($tab === 'on_hold' && ! $skipTabScopeForOrderLookup && $this->orderRowIsFulfilledOrShipped($row)) {
                 continue;

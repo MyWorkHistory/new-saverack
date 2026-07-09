@@ -288,6 +288,10 @@ class OrderDashboardSnapshotService
             return $this->buildAsnPendingPayload();
         }
 
+        if ($sectionKey === OrderDashboardSection::KEY_SHIPPED && $allowRemoteFallback) {
+            return $this->buildShipHeroSectionPayload($sectionKey, true);
+        }
+
         if ($this->orderIndex->indexHasRowsForSection($sectionKey)) {
             return $this->orderIndex->aggregateDashboardSection($sectionKey);
         }
@@ -304,7 +308,7 @@ class OrderDashboardSnapshotService
             return $this->orderIndex->aggregateDashboardSection($sectionKey);
         }
 
-        return $this->buildShipHeroSectionPayload($sectionKey);
+        return $this->buildShipHeroSectionPayload($sectionKey, true);
     }
 
     /**
@@ -502,9 +506,9 @@ class OrderDashboardSnapshotService
     /**
      * @return array{payload: array<string, mixed>, total_count: int}
      */
-    private function buildShipHeroSectionPayload(string $sectionKey): array
+    private function buildShipHeroSectionPayload(string $sectionKey, bool $preferRemoteApi = false): array
     {
-        if ($this->orderIndex->indexHasRowsForSection($sectionKey)) {
+        if (! $preferRemoteApi && $this->orderIndex->indexHasRowsForSection($sectionKey)) {
             return $this->orderIndex->aggregateDashboardSection($sectionKey);
         }
 

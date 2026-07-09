@@ -834,13 +834,17 @@ GQL;
             $rows[] = $row;
         }
 
-        $pageFilled = count($orderSequence) >= $targetFirst;
+        $hasMoreShipments = $hasNextPage
+            && is_string($endCursor)
+            && $endCursor !== '';
 
         return [
             'rows' => $rows,
             'pagination' => [
-                'has_next_page' => $pageFilled && $hasNextPage,
-                'end_cursor' => $pageFilled ? $endCursor : null,
+                // Keep paginating while ShipHero has more shipment pages, even when this
+                // batch returned fewer than $targetFirst orders (common on busy ship days).
+                'has_next_page' => $hasMoreShipments,
+                'end_cursor' => $hasMoreShipments ? $endCursor : null,
             ],
         ];
     }

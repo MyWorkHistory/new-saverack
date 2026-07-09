@@ -131,16 +131,14 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         }
 
         $orderIndex = Mockery::mock(ShipHeroOrderQueueIndexService::class);
-        $orderIndex->shouldReceive('syncAccountQueue')->andReturnNull();
-        $orderIndex->shouldReceive('indexHasRowsForSection')
-            ->with(OrderDashboardSection::KEY_SHIPPED)
-            ->once()
-            ->andReturn(false);
+        $orderIndex->shouldNotReceive('syncAccountQueue');
+        $orderIndex->shouldNotReceive('indexHasRowsForSection');
+        $orderIndex->shouldNotReceive('aggregateDashboardSection');
 
         $orders = Mockery::mock(ShipHeroOrderService::class);
         $orders->shouldReceive('countShipments')
             ->once()
-            ->andReturn(['count' => 0, 'truncated' => false]);
+            ->andReturn(['count' => 212, 'truncated' => false]);
 
         $queueCounts = Mockery::mock(PortalQueueCountsService::class);
         $queueCounts->shouldReceive('contextForDashboardSection')
@@ -175,6 +173,12 @@ class OrderDashboardSnapshotServiceTest extends TestCase
 
         $service->refreshSection(OrderDashboardSection::KEY_SHIPPED);
 
+        $this->assertSame(
+            212,
+            (int) OrderDashboardSection::query()
+                ->where('section_key', OrderDashboardSection::KEY_SHIPPED)
+                ->value('total_count')
+        );
         $this->assertSame(
             OrderDashboardSection::STATUS_IDLE,
             OrderDashboardSection::query()

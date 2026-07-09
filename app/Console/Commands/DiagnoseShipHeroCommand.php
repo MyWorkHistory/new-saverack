@@ -11,6 +11,7 @@ use App\Services\ShipHeroInventoryService;
 use App\Services\ShipHeroOrderQueueIndexService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
@@ -27,6 +28,10 @@ class DiagnoseShipHeroCommand extends Command
         $this->line('');
 
         $this->reportToken($credentials);
+        $this->line('');
+        $this->reportQueueConfig();
+        $this->line('');
+        $this->reportScheduledSyncHints();
         $this->line('');
         $this->reportAccounts();
         $this->line('');
@@ -62,6 +67,64 @@ class DiagnoseShipHeroCommand extends Command
         } catch (Throwable $e) {
             $this->warn('Token resolves: no — '.$e->getMessage());
         }
+    }
+
+    private function reportQueueConfig(): void
+    {
+        $this->comment('Queue configuration');
+
+        $connection = (string) config('queue.default', 'sync');
+        $this->line('QUEUE_CONNECTION (config): '.$connection);
+
+        if ($connection === 'sync') {
+            $this->warn('QUEUE_CONNECTION=sync — background jobs run inline or not at all. Set QUEUE_CONNECTION=database in .env and run a queue worker.');
+        }
+
+        if (Schema::hasTable('failed_jobs')) {
+            $failed = (int) DB::table('failed_jobs')->count();
+            $this->line('failed_jobs rows: '.$failed);
+            if ($failed > 0) {
+                $latest = DB::table('failed_jobs')->orderByDesc('id')->value('failed_at');
+                $this->warn('Latest failed job at: '.($latest ?? 'unknown').' — run: php artisan queue:failed');
+            }
+        }
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function scheduledSyncCacheKeys(): array
+    {
+        return [
+            'orders:sync-recent-updates' => 'shiphero:schedule:last_run:orders_sync_recent_updates',
+            'orders:refresh-home-dashboard --from-index' => 'shiphero:schedule:last_run:orders_refresh_home_dashboard_index',
+            'inventory:sync-catalog-incremental' => 'shiphero:schedule:last_run:inventory_sync_catalog_incremental',
+        ];
+    }
+
+    private function reportScheduledSyncHints(): void
+    {
+        $this->comment('Scheduled sync (last successful run)');
+
+        $hasIncrementalCmd = class_exists(SyncInventoryCatalogIncrementalCommand::class);
+        $this->line('inventory:sync-catalog-incremental command present: '.($hasIncrementalCmd ? 'yes' : 'no (deploy latest code)'));
+
+        foreach ($this->scheduledSyncCacheKeys() as $label => $cacheKey) {
+            $ranAt = Cache::get($cacheKey);
+            if ($ranAt === null) {
+                $this->line('  '.$label.': never (or cron not running this command)');
+                continue;
+            }
+            try {
+                $this->line('  '.$label.': '.Carbon::parse($ranAt)->toIso8601String());
+            } catch (Throwable $e) {
+                $this->line('  '.$label.': '.$ranAt);
+            }
+        }
+
+        $this->line('');
+        $this->line('Lightweight schedule does NOT full-rebuild empty order/inventory indexes.');
+        $this->line('If index row counts are 0, run once: php artisan crm:warm-shiphero-data');
     }
 
     private function reportAccounts(): void

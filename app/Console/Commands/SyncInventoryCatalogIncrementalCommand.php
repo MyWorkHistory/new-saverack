@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\ClientAccount;
 use App\Services\ShipHeroInventoryService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -70,6 +71,7 @@ class SyncInventoryCatalogIncrementalCommand extends Command
         }
 
         $this->info('Queued '.$queued.' account(s), skipped '.$skipped.'.');
+        Cache::put('shiphero:schedule:last_run:inventory_sync_catalog_incremental', now()->toIso8601String(), now()->addDays(7));
 
         return self::SUCCESS;
     }

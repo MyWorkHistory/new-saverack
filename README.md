@@ -147,7 +147,36 @@ Lightweight scheduled sync reads/writes the local index — it does **not** run 
 php artisan crm:diagnose-shiphero
 ```
 
-Reports pending webhook events, last processed webhook, sync status, index counts, and sample inventory revision counters.
+Reports `QUEUE_CONNECTION`, pending/failed jobs, last scheduled sync run times, pending webhook events, sync status, index counts, and sample inventory revision counters.
+
+**cPanel: queue worker must stay running**
+
+SSH `php artisan queue:work` stops when you disconnect. Use a **second cron** (every minute) so jobs drain without an open SSH session:
+
+```bash
+* * * * * cd /home/saverack/app.saverack.com && /opt/cpanel/ea-php74/root/usr/bin/php artisan queue:work database --stop-when-empty --max-time=55 >> storage/logs/queue-worker.log 2>&1
+* * * * * cd /home/saverack/app.saverack.com && /opt/cpanel/ea-php74/root/usr/bin/php artisan queue:work database-long --stop-when-empty --max-time=55 >> storage/logs/queue-worker-long.log 2>&1
+```
+
+Adjust paths to your app root and PHP binary. Check `storage/logs/queue-worker*.log` if jobs pile up.
+
+**If lists are empty but Home shows counts**
+
+Lightweight cron does not full-rebuild indexes. Run once after deploy or DB wipe:
+
+```bash
+php artisan crm:warm-shiphero-data
+```
+
+Or manually: `php artisan orders:sync-queue-index --sync` then `php artisan orders:refresh-home-dashboard --sync`.
+
+**Verify deploy**
+
+```bash
+php artisan schedule:list | grep inventory:sync-catalog-incremental
+```
+
+If that line is missing, pull latest code (`git pull`) and reload PHP-FPM / clear OPcache.
 
 **Smoke test after deploy**
 

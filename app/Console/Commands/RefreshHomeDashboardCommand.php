@@ -6,6 +6,7 @@ use App\Jobs\RefreshOrderDashboardSectionJob;
 use App\Models\OrderDashboardSection;
 use App\Services\OrderDashboardSnapshotService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 
 class RefreshHomeDashboardCommand extends Command
 {
@@ -54,6 +55,10 @@ class RefreshHomeDashboardCommand extends Command
         foreach ($keys as $key) {
             RefreshOrderDashboardSectionJob::dispatch($key, $fromIndex);
             $this->info('Queued refresh for '.$key.($fromIndex ? ' (from index)' : ''));
+        }
+
+        if ($fromIndex) {
+            Cache::put('shiphero:schedule:last_run:orders_refresh_home_dashboard_index', now()->toIso8601String(), now()->addDays(7));
         }
 
         return self::SUCCESS;

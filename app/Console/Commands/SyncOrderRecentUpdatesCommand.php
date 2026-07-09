@@ -10,6 +10,7 @@ use App\Services\ShipHeroOrderQueueIndexService;
 use App\Services\ShipHeroOrderService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -112,6 +113,7 @@ class SyncOrderRecentUpdatesCommand extends Command
         }
 
         $this->info('Reconciled '.$reconciled.' order(s).');
+        Cache::put('shiphero:schedule:last_run:orders_sync_recent_updates', now()->toIso8601String(), now()->addDays(7));
 
         return self::SUCCESS;
     }

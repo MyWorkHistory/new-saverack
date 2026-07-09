@@ -617,7 +617,7 @@ class ShipHeroOrderQueueIndexService
             ->whereNotNull('shiphero_customer_account_id')
             ->where('shiphero_customer_account_id', '!=', '')
             ->orderBy('company_name')
-            ->get(['id', 'company_name', 'status']);
+            ->get(['id', 'company_name', 'status', 'shiphero_customer_account_id']);
 
         $rows = [];
         $total = 0;
@@ -631,15 +631,18 @@ class ShipHeroOrderQueueIndexService
                 && $sectionKey === OrderDashboardSection::KEY_SHIPPED
                 && $count <= 0
             ) {
-                $live = $this->orders->countShipments([
-                    'customer_account_id' => trim((string) $account->shiphero_customer_account_id),
-                    'date_from' => $context['shipped_from'],
-                    'date_to' => $context['shipped_to'],
-                    'timezone' => $context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
-                    'max_pages' => 50,
-                ]);
-                $count = (int) ($live['count'] ?? 0);
-                $truncated = $truncated || (bool) ($live['truncated'] ?? false);
+                $customerId = trim((string) ($context['customer_id'] ?? $account->shiphero_customer_account_id ?? ''));
+                if ($customerId !== '') {
+                    $live = $this->orders->countShipments([
+                        'customer_account_id' => $customerId,
+                        'date_from' => $context['shipped_from'],
+                        'date_to' => $context['shipped_to'],
+                        'timezone' => $context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
+                        'max_pages' => 50,
+                    ]);
+                    $count = (int) ($live['count'] ?? 0);
+                    $truncated = $truncated || (bool) ($live['truncated'] ?? false);
+                }
             }
 
             if ($count <= 0) {

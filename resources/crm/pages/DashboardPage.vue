@@ -2,6 +2,7 @@
 import { computed, inject, onMounted, ref } from "vue";
 import CrmLoadingSpinner from "../components/common/CrmLoadingSpinner.vue";
 import CrmRefreshToolbarButton from "../components/common/CrmRefreshToolbarButton.vue";
+import CrmSyncToolbar from "../components/common/CrmSyncToolbar.vue";
 import HomeCalendarPanel from "../components/home/HomeCalendarPanel.vue";
 import HomePausedAccountsPanel from "../components/home/HomePausedAccountsPanel.vue";
 import HomePendingAccountsPanel from "../components/home/HomePendingAccountsPanel.vue";
@@ -11,6 +12,7 @@ import HomeSummaryStatCards from "../components/home/HomeSummaryStatCards.vue";
 import { setCrmPageMeta } from "../composables/useCrmPageMeta.js";
 import { useAdminHomeDashboard } from "../composables/useAdminHomeDashboard.js";
 import { useToast } from "../composables/useToast.js";
+import { formatDateTimeUs } from "../utils/formatUserDates.js";
 import { crmIsAdmin } from "../utils/crmUser.js";
 
 const toast = useToast();
@@ -41,6 +43,18 @@ const {
   refreshSection,
 } = useAdminHomeDashboard({
   onError: (e) => toast.errorFrom(e, "Could not load Home dashboard."),
+});
+
+const dashboardLastSyncedLabel = computed(() => {
+  let latestMs = null;
+  for (const section of Object.values(sections.value || {})) {
+    const at = section?.refreshed_at;
+    if (!at) continue;
+    const ms = new Date(at).getTime();
+    if (!Number.isFinite(ms)) continue;
+    if (latestMs === null || ms > latestMs) latestMs = ms;
+  }
+  return latestMs !== null ? formatDateTimeUs(new Date(latestMs).toISOString()) : "";
 });
 
 function refreshToastMessage(data, fallbackQueued) {
@@ -82,13 +96,15 @@ onMounted(async () => {
   <div class="staff-page staff-page--wide admin-home-dashboard">
     <div class="mb-4 d-flex align-items-center justify-content-between gap-2 flex-wrap">
       <h1 class="h4 mb-0 fw-semibold text-body">Home</h1>
-      <CrmRefreshToolbarButton
-        :disabled="loading || refreshing"
-        :loading="refreshing"
-        label="Refresh All"
-        title="Refresh all sections"
-        @click="onRefreshAll"
-      />
+      <CrmSyncToolbar :last-synced-label="dashboardLastSyncedLabel">
+        <CrmRefreshToolbarButton
+          :disabled="loading || refreshing"
+          :loading="refreshing"
+          label="Refresh All"
+          title="Refresh all sections"
+          @click="onRefreshAll"
+        />
+      </CrmSyncToolbar>
     </div>
 
     <div v-if="loading" class="d-flex justify-content-center py-5">

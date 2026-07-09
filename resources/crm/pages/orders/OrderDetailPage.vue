@@ -3,6 +3,7 @@ import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmSyncToolbar from "../../components/common/CrmSyncToolbar.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import ShopifyBrandIcon from "../../components/common/ShopifyBrandIcon.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
@@ -1922,27 +1923,26 @@ function goToOrdersList() {
             </button>
             <template v-if="!isDraftOrder">
               <template v-if="isPortalUser">
-                <p v-if="lastRefreshedLabel" class="small text-secondary mb-0">
-                  Last refreshed: {{ lastRefreshedLabel }}
-                </p>
-                <button
-                  type="button"
-                  class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
-                  :disabled="loading || refreshing"
-                  title="Refresh"
-                  aria-label="Refresh order from ShipHero"
-                  @click="refreshOrderDetail"
-                >
-                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                    />
-                  </svg>
-                  {{ refreshing ? "Refreshing…" : "Refresh" }}
-                </button>
+                <CrmSyncToolbar :last-synced-label="lastRefreshedLabel">
+                  <button
+                    type="button"
+                    class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+                    :disabled="refreshing"
+                    title="Refresh"
+                    aria-label="Refresh order from ShipHero"
+                    @click="refreshOrderDetail"
+                  >
+                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                      />
+                    </svg>
+                    {{ refreshing ? "Refreshing…" : "Refresh" }}
+                  </button>
+                </CrmSyncToolbar>
               </template>
             </template>
             <div v-if="showStaffMoreActions" class="dropdown order-detail-page__more-actions position-relative">

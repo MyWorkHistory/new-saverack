@@ -174,9 +174,14 @@ class InventoryBetaController extends Controller
             } catch (RuntimeException $e) {
                 if ($e->getMessage() === 'Catalog sync is already in progress.') {
                     return response()->json([
-                        'message' => $e->getMessage(),
+                        'rows' => [],
+                        'page_info' => [
+                            'has_next_page' => false,
+                            'end_cursor' => null,
+                        ],
                         'catalog_sync' => $this->inventory->catalogSyncMetaForAccount($clientAccountId),
-                    ], 409);
+                        'message' => 'Catalog sync already in progress.',
+                    ], 202);
                 }
 
                 throw $e;

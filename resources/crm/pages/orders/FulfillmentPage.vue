@@ -1,7 +1,8 @@
 <script setup>
-import { onMounted } from "vue";
+import { computed, onMounted } from "vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarButton.vue";
+import CrmSyncToolbar from "../../components/common/CrmSyncToolbar.vue";
 import FulfillmentSummaryCards from "../../components/orders/FulfillmentSummaryCards.vue";
 import OrdersAccountSectionPanel from "../../components/orders/OrdersAccountSectionPanel.vue";
 import { FULFILLMENT_SECTIONS } from "../../constants/fulfillmentSections.js";
@@ -37,6 +38,18 @@ function lastUpdatedLabel(key) {
   if (!at) return "Not refreshed yet";
   return formatDateTimeUs(at);
 }
+
+const fulfillmentLastSyncedLabel = computed(() => {
+  let latestMs = null;
+  for (const section of FULFILLMENT_SECTIONS) {
+    const at = sectionData(section.key).refreshed_at;
+    if (!at) continue;
+    const ms = new Date(at).getTime();
+    if (!Number.isFinite(ms)) continue;
+    if (latestMs === null || ms > latestMs) latestMs = ms;
+  }
+  return latestMs !== null ? formatDateTimeUs(new Date(latestMs).toISOString()) : "";
+});
 
 function isSectionRefreshing(key) {
   const s = sectionData(key);
@@ -108,13 +121,15 @@ onMounted(async () => {
         <h1 class="h4 mb-1 fw-semibold text-body staff-page__heading">Fulfillment</h1>
         <p class="staff-page__intro mb-0">Ready to ship and shipped orders by account.</p>
       </div>
-      <CrmRefreshToolbarButton
-        :disabled="loading || refreshing"
-        :loading="refreshing"
-        label="Refresh All"
-        title="Refresh ready to ship and shipped"
-        @click="onRefreshAll"
-      />
+      <CrmSyncToolbar :last-synced-label="fulfillmentLastSyncedLabel">
+        <CrmRefreshToolbarButton
+          :disabled="loading || refreshing"
+          :loading="refreshing"
+          label="Refresh All"
+          title="Refresh ready to ship and shipped"
+          @click="onRefreshAll"
+        />
+      </CrmSyncToolbar>
     </div>
 
     <div v-if="loading" class="d-flex justify-content-center py-5">

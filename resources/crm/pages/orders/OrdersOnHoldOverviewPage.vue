@@ -1,7 +1,8 @@
 <script setup>
-import { onMounted } from "vue";
+import { computed, onMounted } from "vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarButton.vue";
+import CrmSyncToolbar from "../../components/common/CrmSyncToolbar.vue";
 import OnHoldSectionPanel from "../../components/orders/OnHoldSectionPanel.vue";
 import OnHoldSummaryCards from "../../components/orders/OnHoldSummaryCards.vue";
 import { HOLD_SECTIONS } from "../../constants/holdSummaryCards.js";
@@ -37,6 +38,18 @@ function lastUpdatedLabel(key) {
   if (!at) return "Not refreshed yet";
   return formatDateTimeUs(at);
 }
+
+const onHoldLastSyncedLabel = computed(() => {
+  let latestMs = null;
+  for (const hold of HOLD_SECTIONS) {
+    const at = sectionData(hold.key).refreshed_at;
+    if (!at) continue;
+    const ms = new Date(at).getTime();
+    if (!Number.isFinite(ms)) continue;
+    if (latestMs === null || ms > latestMs) latestMs = ms;
+  }
+  return latestMs !== null ? formatDateTimeUs(new Date(latestMs).toISOString()) : "";
+});
 
 function isSectionRefreshing(key) {
   const s = sectionData(key);
@@ -117,13 +130,15 @@ onMounted(async () => {
         <h1 class="h4 mb-1 fw-semibold text-body staff-page__heading">On-Hold</h1>
         <p class="staff-page__intro mb-0">Orders on hold by account and hold type.</p>
       </div>
-      <CrmRefreshToolbarButton
-        :disabled="loading || refreshing"
-        :loading="refreshing"
-        label="Refresh All"
-        title="Refresh all hold sections"
-        @click="onRefreshAll"
-      />
+      <CrmSyncToolbar :last-synced-label="onHoldLastSyncedLabel">
+        <CrmRefreshToolbarButton
+          :disabled="loading || refreshing"
+          :loading="refreshing"
+          label="Refresh All"
+          title="Refresh all hold sections"
+          @click="onRefreshAll"
+        />
+      </CrmSyncToolbar>
     </div>
 
     <div v-if="loading" class="d-flex justify-content-center py-5">

@@ -989,12 +989,32 @@ class InventoryController extends Controller
         InventoryProductCrmStatusService $crmStatus
     ): JsonResponse {
         $validated = $request->validated();
+        $clientAccountId = (int) $validated['client_account_id'];
+
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['Client account not found.'],
+            ]);
+        }
+
+        $user = $request->user();
+        if (! $user instanceof User) {
+            abort(401);
+        }
+
+        Gate::forUser($user)->authorize('view', $account);
+
+        $portalAccountId = (int) ($user->client_account_id ?? 0);
+        if ($portalAccountId > 0 && $clientAccountId !== $portalAccountId) {
+            abort(403);
+        }
 
         $updated = $crmStatus->bulkSetActive(
-            (int) $validated['client_account_id'],
+            $clientAccountId,
             $validated['skus'],
             (bool) $validated['active'],
-            $request->user() instanceof User ? (int) $request->user()->id : null
+            $user->id
         );
 
         return response()->json(['updated' => $updated]);

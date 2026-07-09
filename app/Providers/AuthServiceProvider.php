@@ -167,6 +167,21 @@ class AuthServiceProvider extends ServiceProvider
         });
 
         /**
+         * CRM-only product active/inactive (portal own account; staff with inventory.update).
+         */
+        Gate::define('inventory.crm-status.update', function ($user) {
+            if (! $user) {
+                return false;
+            }
+
+            if (Gate::forUser($user)->allows('inventory.update')) {
+                return true;
+            }
+
+            return (int) ($user->client_account_id ?? 0) > 0;
+        });
+
+        /**
          * ShipHero order mutations: requires explicit orders.update for CRM staff.
          */
         Gate::define('shiphero.orders.write', function ($user) {

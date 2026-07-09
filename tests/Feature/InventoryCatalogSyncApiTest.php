@@ -103,7 +103,7 @@ class InventoryCatalogSyncApiTest extends TestCase
         ]);
     }
 
-    public function test_concurrent_catalog_refresh_returns_409_while_running(): void
+    public function test_concurrent_catalog_refresh_returns_202_while_running(): void
     {
         $user = User::factory()->create();
         $user->permissions()->sync([$this->inventoryViewPermission()->id]);
@@ -123,8 +123,8 @@ class InventoryCatalogSyncApiTest extends TestCase
             'client_account_id' => $account->id,
             'refresh' => 1,
         ]))
-            ->assertStatus(409)
-            ->assertJsonPath('message', 'Catalog sync is already in progress.')
+            ->assertStatus(202)
+            ->assertJsonPath('message', 'Catalog sync already in progress.')
             ->assertJsonPath('catalog_sync.inventory_catalog_sync_status', 'running');
 
         $this->assertDatabaseHas('client_accounts', [

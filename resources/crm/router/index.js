@@ -1022,7 +1022,7 @@ export function setInventoryNavFromUser(user) {
     return;
   }
   if (crmIsPortalUser(user)) {
-    inventoryNavCache = { view: true, update: false };
+    inventoryNavCache = { view: true, update: true };
     return;
   }
   const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];

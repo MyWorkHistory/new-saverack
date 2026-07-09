@@ -4,6 +4,7 @@ import { RouterLink, useRoute } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmSyncToolbar from "../../components/common/CrmSyncToolbar.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates.js";
@@ -27,6 +28,7 @@ const canManageInventoryLocations = computed(() => true);
 const loading = ref(true);
 const refreshing = ref(false);
 const syncingSku = ref(false);
+const catalogSync = ref({ inventory_catalog_synced_at: null });
 const barcodePdfLoading = ref(false);
 const imageUploadBusy = ref(false);
 const imageInputRef = ref(null);
@@ -136,6 +138,26 @@ const detailClientAccountId = computed(() => {
   const queryAccountId = Number(route.query.client_account_id || 0);
   return isPortalView.value ? portalAccountId || queryAccountId : queryAccountId || portalAccountId;
 });
+
+const catalogSyncedLabel = computed(() => {
+  const raw = catalogSync.value?.inventory_catalog_synced_at;
+  if (!raw) return "";
+  return formatDateTimeUs(raw);
+});
+
+async function loadCatalogSyncMeta() {
+  if (detailClientAccountId.value <= 0) return;
+  try {
+    const { data } = await api.get("/inventory-beta/catalog-sync", {
+      params: { client_account_id: detailClientAccountId.value },
+    });
+    if (data?.catalog_sync) {
+      catalogSync.value = { ...catalogSync.value, ...data.catalog_sync };
+    }
+  } catch {
+    /* non-blocking */
+  }
+}
 
 function sectionActionLabel({ loading, loaded }) {
   if (loading) return loaded ? "Refreshing…" : "Loading…";
@@ -302,6 +324,7 @@ onMounted(() => {
   });
   loadAdjustmentReasons();
   loadDetail();
+  void loadCatalogSyncMeta();
   document.addEventListener("click", onDocClick);
 });
 
@@ -647,6 +670,7 @@ async function refreshDetail() {
   if (loading.value || refreshing.value) return;
   refreshing.value = true;
   const ok = await loadProduct({ refresh: true });
+  await loadCatalogSyncMeta();
   refreshing.value = false;
   if (ok) {
     toast.success("Live inventory data refreshed.");
@@ -664,6 +688,7 @@ async function syncCatalogSku() {
     });
     toast.success("SKU catalog synced from ShipHero.");
     await loadProduct({ refresh: true });
+    await loadCatalogSyncMeta();
   } catch (e) {
     toast.errorFrom(e, "Could not sync SKU catalog.");
   } finally {
@@ -935,12 +960,14 @@ async function togglePickable(loc) {
             View in ShipHero
           </a>
           <div v-else class="me-auto" />
-          <div class="d-flex align-items-center gap-2 flex-shrink-0 flex-wrap justify-content-end">
+          <CrmSyncToolbar
+            v-if="detailClientAccountId > 0"
+            :last-synced-label="catalogSyncedLabel"
+          >
             <button
-              v-if="detailClientAccountId > 0"
               type="button"
               class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
-              :disabled="loading || syncingSku || refreshing"
+              :disabled="syncingSku || refreshing"
               @click="syncCatalogSku"
             >
               {{ syncingSku ? "Syncing…" : "Sync Product" }}
@@ -948,7 +975,7 @@ async function togglePickable(loc) {
             <button
               type="button"
               class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
-              :disabled="loading || refreshing || syncingSku"
+              :disabled="refreshing || syncingSku"
               title="Refresh Inventory"
               aria-label="Refresh inventory from ShipHero"
               @click="refreshDetail"
@@ -970,7 +997,33 @@ async function togglePickable(loc) {
               </svg>
               {{ refreshing ? "Refreshing…" : "Refresh Inventory" }}
             </button>
-          </div>
+          </CrmSyncToolbar>
+          <button
+            v-else
+            type="button"
+            class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+            :disabled="loading || refreshing"
+            title="Refresh Inventory"
+            aria-label="Refresh inventory from ShipHero"
+            @click="refreshDetail"
+          >
+            <svg
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
+            </svg>
+            {{ refreshing ? "Refreshing…" : "Refresh Inventory" }}
+          </button>
         </div>
 
         <p v-if="product.asn_line_only" class="alert alert-info small py-2 mb-3">

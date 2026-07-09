@@ -7,6 +7,7 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { exportPortalInventoryCsv } from "../../utils/portalInventoryExport.js";
 import { formatDateTimeUs } from "../../utils/formatUserDates.js";
+import CrmSyncToolbar from "../../components/common/CrmSyncToolbar.vue";
 import { useShipHeroRevisionPoll } from "../../composables/useShipHeroRevisionPoll.js";
 
 const props = defineProps({
@@ -34,6 +35,7 @@ const loading = ref(false);
 const loadingMore = ref(false);
 const searchAutoLoading = ref(false);
 const refreshing = ref(false);
+const backgroundSyncing = ref(false);
 const currentSyncMode = ref("incremental");
 const catalogSync = ref({
   inventory_catalog_synced_at: null,
@@ -95,6 +97,14 @@ const catalogSyncRunning = computed(
   () => catalogSync.value?.inventory_catalog_sync_status === "running",
 );
 
+const showInventorySyncBanner = computed(
+  () => backgroundSyncing.value || catalogSyncRunning.value,
+);
+
+const syncToolbarBusy = computed(
+  () => backgroundSyncing.value || catalogSyncRunning.value || refreshing.value,
+);
+
 const showQtySnapshotHint = computed(
   () => !crossAccountMode.value && accountId.value > 0 && Boolean(catalogSyncedLabel.value),
 );
@@ -133,6 +143,19 @@ const canInventoryUpdate = computed(() => {
   const u = crmUser.value;
   if (!u || !Array.isArray(u.permission_keys)) return false;
   return u.permission_keys.includes("inventory.update");
+});
+
+const canEditCrmStatus = computed(() => {
+  const u = crmUser.value;
+  if (!u) return false;
+  if (isPortalList.value) {
+    return accountId.value > 0 && Number(u.client_account_id || 0) === accountId.value;
+  }
+  if (u.is_crm_owner || u.is_administrator) return accountId.value > 0 || isStaffPickerMode.value;
+  return (
+    canInventoryUpdate.value ||
+    (Array.isArray(u.permission_keys) && u.permission_keys.includes("inventory.crm-status.update"))
+  );
 });
 
 function rowKey(row) {
@@ -174,16 +197,27 @@ async function fetchPage(append, forceRefresh = false, syncMode = "incremental")
     currentSyncMode.value = syncMode;
   }
   listLoadFailed.value = false;
-  const response = await api.get("/inventory-beta/list", {
-    params,
-    timeout: LIST_FETCH_TIMEOUT_MS,
-  });
+  let response;
+  try {
+    response = await api.get("/inventory-beta/list", {
+      params,
+      timeout: LIST_FETCH_TIMEOUT_MS,
+      validateStatus: (status) => status < 500,
+    });
+  } catch (e) {
+    throw e;
+  }
   const data = response.data;
   if (data?.catalog_sync && typeof data.catalog_sync === "object") {
     catalogSync.value = { ...catalogSync.value, ...data.catalog_sync };
   }
-  if (forceRefresh && response.status === 202) {
+  if (forceRefresh && (response.status === 202 || response.status === 409)) {
     return { backgroundSyncStarted: true, chunkLength: 0 };
+  }
+  if (forceRefresh && response.status >= 400) {
+    const err = new Error(data?.message || "Could not start catalog sync.");
+    err.response = response;
+    throw err;
   }
   const chunk = normalizeRows(data?.rows);
   if (Boolean(data?.meta?.cross_account)) {
@@ -226,15 +260,17 @@ async function loadRows(reset, forceRefresh = false) {
   }
   if (!canLoadInventory.value) return;
   const runId = reset ? ++searchRunSeq : searchRunSeq;
-  const previousRows = forceRefresh ? rows.value : [];
   if (reset) {
-    loading.value = !forceRefresh;
-    refreshing.value = forceRefresh;
+    if (forceRefresh) {
+      backgroundSyncing.value = true;
+    } else {
+      loading.value = true;
+      rows.value = [];
+      selectedKeys.value = [];
+      searchSkipNext.value = 0;
+    }
     searchAutoLoading.value = false;
     pageInfo.value = { has_next_page: false, end_cursor: null };
-    rows.value = [];
-    selectedKeys.value = [];
-    searchSkipNext.value = 0;
   } else {
     loadingMore.value = true;
   }
@@ -242,11 +278,24 @@ async function loadRows(reset, forceRefresh = false) {
     const pageResult = await fetchPage(!reset, forceRefresh);
     if (pageResult?.backgroundSyncStarted) {
       startCatalogSyncPoll();
+      if (reset) {
+        await fetchPage(false, false);
+      }
       return;
     }
   } catch (e) {
     if (forceRefresh) {
-      rows.value = previousRows;
+      const status = Number(e?.response?.status || 0);
+      if (status === 409 || status === 202) {
+        if (e?.response?.data?.catalog_sync) {
+          catalogSync.value = { ...catalogSync.value, ...e.response.data.catalog_sync };
+        }
+        startCatalogSyncPoll();
+        if (reset) {
+          await fetchPage(false, false);
+        }
+        return;
+      }
     } else {
       const status = Number(e?.response?.status || 0);
       const isTimeout = e?.code === "ECONNABORTED";
@@ -262,7 +311,10 @@ async function loadRows(reset, forceRefresh = false) {
   } finally {
     loading.value = false;
     loadingMore.value = false;
-    refreshing.value = false;
+    if (!catalogSyncPollTimer) {
+      backgroundSyncing.value = false;
+      refreshing.value = false;
+    }
   }
   if (reset && searchCommitted.value.trim() && pageInfo.value.has_next_page) {
     continueSearchInBackground(runId);
@@ -406,7 +458,7 @@ function crmStatusLabel(row) {
 const statusModalAccountId = computed(() => effectiveRowAccountId(statusModalRow.value));
 
 const statusModalCanEdit = computed(
-  () => canInventoryUpdate.value && statusModalAccountId.value > 0,
+  () => canEditCrmStatus.value && statusModalAccountId.value > 0,
 );
 
 function openStatusModal(row) {
@@ -481,7 +533,7 @@ function clearSearch() {
 }
 
 async function syncAccountRows(syncMode = "incremental") {
-  if (!canLoadInventory.value || loading.value || loadingMore.value || refreshing.value) return;
+  if (!canLoadInventory.value || loading.value || loadingMore.value) return;
   if (catalogSyncRunning.value) {
     startCatalogSyncPoll();
     return;
@@ -490,26 +542,22 @@ async function syncAccountRows(syncMode = "incremental") {
     toast.error("Select an account to sync a single catalog.");
     return;
   }
-  const previousRows = rows.value;
   const refreshId = ++refreshRunSeq;
   ++searchRunSeq;
+  backgroundSyncing.value = true;
   refreshing.value = true;
   searchAutoLoading.value = false;
   loading.value = false;
   loadingMore.value = false;
   try {
-    pageInfo.value = { has_next_page: false, end_cursor: null };
-    rows.value = [];
-    selectedKeys.value = [];
-    searchSkipNext.value = 0;
     const pageResult = await fetchPage(false, true, syncMode);
     if (pageResult?.backgroundSyncStarted) {
       startCatalogSyncPoll();
+      await fetchPage(false, false);
       return;
     }
     if (refreshId !== refreshRunSeq) return;
     pageInfo.value = { has_next_page: false, end_cursor: null };
-    rows.value = [];
     searchSkipNext.value = 0;
     await fetchPage(false, false);
     toast.success(
@@ -518,17 +566,19 @@ async function syncAccountRows(syncMode = "incremental") {
         : "Inventory refreshed from ShipHero.",
     );
   } catch (e) {
-    if (e.response?.status === 409 || e.response?.status === 202) {
-      if (e.response?.data?.catalog_sync) {
+    const status = Number(e?.response?.status || 0);
+    if (status === 409 || status === 202) {
+      if (e?.response?.data?.catalog_sync) {
         catalogSync.value = { ...catalogSync.value, ...e.response.data.catalog_sync };
       }
       startCatalogSyncPoll();
+      await fetchPage(false, false);
       return;
     }
-    rows.value = previousRows;
     toast.errorFrom(e, "Could not sync inventory catalog.");
   } finally {
     if (refreshId === refreshRunSeq && !catalogSyncPollTimer) {
+      backgroundSyncing.value = false;
       refreshing.value = false;
     }
   }
@@ -772,6 +822,7 @@ async function pollCatalogSyncStatus() {
     const status = catalogSync.value?.inventory_catalog_sync_status;
     if (status !== "running") {
       stopCatalogSyncPoll();
+      backgroundSyncing.value = false;
       refreshing.value = false;
       if (status === "idle") {
         await loadRows(true);
@@ -787,6 +838,7 @@ async function pollCatalogSyncStatus() {
 
 function startCatalogSyncPoll() {
   stopCatalogSyncPoll();
+  backgroundSyncing.value = true;
   refreshing.value = true;
   catalogSyncPollTimer = setInterval(pollCatalogSyncStatus, 3000);
   pollCatalogSyncStatus();
@@ -881,45 +933,45 @@ onUnmounted(() => {
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-bold text-body">Products</h1>
       </div>
-      <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-md-auto flex-wrap justify-content-md-end w-100 w-md-auto">
-        <p v-if="catalogSyncedLabel && accountId > 0 && !crossAccountMode" class="small text-secondary mb-0">
-          Catalog synced: {{ catalogSyncedLabel }}
-        </p>
+      <CrmSyncToolbar
+        v-if="accountId > 0 && !crossAccountMode"
+        :last-synced-label="catalogSyncedLabel"
+        class="flex-shrink-0 ms-md-auto w-100 w-md-auto"
+      >
         <button
-          v-if="accountId > 0 && !crossAccountMode"
           type="button"
           class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
-          :disabled="loading || loadingMore || refreshing || catalogSyncRunning"
+          :disabled="loading || loadingMore"
           @click="rebuildCatalogRows"
         >
           Sync Products
         </button>
         <button
-        type="button"
-        class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
-        :disabled="loading || loadingMore || refreshing || catalogSyncRunning || (isStaffPickerMode && !canLoadInventory)"
-        title="Refresh Inventory"
-        aria-label="Refresh inventory catalog from ShipHero"
-        @click="refreshRows"
-      >
-        <svg
-          width="18"
-          height="18"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-          aria-hidden="true"
+          type="button"
+          class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+          :disabled="loading || loadingMore || (isStaffPickerMode && !canLoadInventory)"
+          title="Refresh Inventory"
+          aria-label="Refresh inventory catalog from ShipHero"
+          @click="refreshRows"
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-          />
-        </svg>
-        {{ refreshing || catalogSyncRunning ? "Syncing…" : "Refresh Inventory" }}
-      </button>
-      </div>
+          <svg
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            />
+          </svg>
+          {{ syncToolbarBusy ? "Syncing…" : "Refresh Inventory" }}
+        </button>
+      </CrmSyncToolbar>
     </div>
 
     <div
@@ -1048,21 +1100,15 @@ onUnmounted(() => {
               </div>
             </div>
           </div>
-          <div
-            v-if="isEmbeddedInventory"
-            class="inventory-toolbar-actions ms-md-auto d-flex flex-wrap align-items-center justify-content-end gap-2"
+          <CrmSyncToolbar
+            v-if="isEmbeddedInventory && accountId > 0 && !crossAccountMode"
+            :last-synced-label="catalogSyncedLabel"
+            class="inventory-toolbar-actions ms-md-auto"
           >
-            <p
-              v-if="catalogSyncedLabel && accountId > 0 && !crossAccountMode"
-              class="small text-secondary mb-0"
-            >
-              Catalog synced: {{ catalogSyncedLabel }}
-            </p>
             <button
-              v-if="accountId > 0 && !crossAccountMode"
               type="button"
               class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
-              :disabled="loading || loadingMore || refreshing || catalogSyncRunning"
+              :disabled="loading || loadingMore"
               @click="rebuildCatalogRows"
             >
               Sync Products
@@ -1070,7 +1116,7 @@ onUnmounted(() => {
             <button
               type="button"
               class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
-              :disabled="loading || loadingMore || refreshing || catalogSyncRunning || !canLoadInventory"
+              :disabled="loading || loadingMore || !canLoadInventory"
               title="Refresh Inventory"
               aria-label="Refresh inventory catalog from ShipHero"
               @click="refreshRows"
@@ -1090,14 +1136,14 @@ onUnmounted(() => {
                   d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                 />
               </svg>
-              {{ refreshing || catalogSyncRunning ? "Syncing…" : "Refresh Inventory" }}
+              {{ syncToolbarBusy ? "Syncing…" : "Refresh Inventory" }}
             </button>
-          </div>
+          </CrmSyncToolbar>
         </div>
       </div>
 
       <div
-        v-if="isStaffPickerMode && selectedRows.length > 0"
+        v-if="selectedRows.length > 0 && (isStaffPickerMode || isPortalList)"
         class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
       >
         <span class="small staff-bulk-selection-bar__count me-md-1">{{ selectedRows.length }} selected</span>
@@ -1144,7 +1190,7 @@ onUnmounted(() => {
             <button type="button" class="dropdown-item small" role="menuitem" :disabled="bulkBusy" @click="runBulkEdit">
               Edit
             </button>
-            <template v-if="canInventoryUpdate">
+            <template v-if="canEditCrmStatus">
               <div class="dropdown-divider" />
               <button
                 type="button"
@@ -1179,7 +1225,7 @@ onUnmounted(() => {
 
       <div class="position-relative">
         <div
-          v-if="refreshing"
+          v-if="showInventorySyncBanner"
           class="user-inv-sync-banner small text-secondary px-3 py-2 border-bottom bg-body-tertiary"
           role="status"
           aria-live="polite"
@@ -1192,7 +1238,7 @@ onUnmounted(() => {
         >
           On Hand, Allocated, and Backorder are snapshots from the last account sync. Open a product for live quantities.
         </p>
-        <div class="table-responsive staff-table-wrap" :class="{ 'user-inv-table--syncing': refreshing }">
+        <div class="table-responsive staff-table-wrap">
         <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table">
           <thead class="table-light staff-table-head">
             <tr>

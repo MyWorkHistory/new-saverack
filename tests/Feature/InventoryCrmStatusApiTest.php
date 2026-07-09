@@ -136,15 +136,57 @@ class InventoryCrmStatusApiTest extends TestCase
             ->assertJsonFragment(['sku' => 'HIDDEN-SKU', 'crm_active' => false]);
     }
 
-    public function test_bulk_crm_active_requires_update_permission(): void
+    public function test_staff_view_only_cannot_bulk_crm_active(): void
+    {
+        $account = $this->makeAccountWithShipHero();
+        $user = User::factory()->create(['client_account_id' => null]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $this->patchJson('/api/inventory/products/bulk-crm-active', [
+            'client_account_id' => $account->id,
+            'active' => false,
+            'skus' => ['SKU-1'],
+        ])->assertForbidden();
+    }
+
+    public function test_portal_user_can_bulk_crm_active_on_own_account_with_view_only(): void
     {
         $account = $this->makeAccountWithShipHero();
         $user = User::factory()->create(['client_account_id' => $account->id]);
         $user->permissions()->attach($this->inventoryViewPermission()->id);
         Sanctum::actingAs($user);
 
+        $this->seedIndexRow($account, 'PORTAL-SKU', true);
+
         $this->patchJson('/api/inventory/products/bulk-crm-active', [
             'client_account_id' => $account->id,
+            'active' => false,
+            'skus' => ['PORTAL-SKU'],
+        ])->assertOk()
+            ->assertJsonPath('updated', 1);
+
+        $this->assertDatabaseHas('inventory_product_crm_status', [
+            'client_account_id' => $account->id,
+            'sku' => 'PORTAL-SKU',
+            'crm_active' => false,
+        ]);
+    }
+
+    public function test_portal_user_cannot_bulk_crm_active_on_other_account(): void
+    {
+        $ownAccount = $this->makeAccountWithShipHero();
+        $otherAccount = ClientAccount::create([
+            'company_name' => 'Other CRM Status Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-crm-status-other',
+        ]);
+        $user = User::factory()->create(['client_account_id' => $ownAccount->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $this->patchJson('/api/inventory/products/bulk-crm-active', [
+            'client_account_id' => $otherAccount->id,
             'active' => false,
             'skus' => ['SKU-1'],
         ])->assertForbidden();

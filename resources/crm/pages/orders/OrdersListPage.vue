@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarButton.vue";
+import CrmSyncToolbar from "../../components/common/CrmSyncToolbar.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
@@ -592,10 +593,10 @@ async function fetchOrders(reset = true, options = {}) {
     }
     return;
   }
-  if (!options.poll) {
+  if (!options.poll && !options.refresh) {
     loading.value = true;
   }
-  if (reset && !options.poll) {
+  if (reset && !options.poll && !options.refresh) {
     rows.value = [];
     nextCursor.value = null;
     hasNextPage.value = false;
@@ -643,7 +644,7 @@ async function fetchOrders(reset = true, options = {}) {
       toast.errorFrom(e, "Could not load orders.");
     }
   } finally {
-    if (!options.poll) {
+    if (!options.poll && !options.refresh) {
       loading.value = false;
     }
     /** Always set after an attempt so the table never sits in a blank state (no row matched v-if / v-for). */
@@ -1559,20 +1560,18 @@ onUnmounted(() => {
               </div>
           </template>
 
-          <div
+          <CrmSyncToolbar
             v-if="showOrderQueueRefresh"
-            class="d-flex align-items-center gap-2 ms-auto flex-shrink-0"
+            :last-synced-label="orderQueueSyncedLabel"
+            class="ms-auto flex-shrink-0"
           >
-            <p v-if="orderQueueSyncedLabel" class="small text-secondary mb-0 d-none d-md-block">
-              Synced: {{ orderQueueSyncedLabel }}
-            </p>
             <CrmRefreshToolbarButton
-              :disabled="loading || orderQueueRefreshing || !selectedAccountId"
+              :disabled="orderQueueRefreshing || !selectedAccountId"
               :loading="orderQueueRefreshing"
               title="Refresh order queue from ShipHero"
               @click="refreshOrderQueue"
             />
-          </div>
+          </CrmSyncToolbar>
         </div>
         <p v-if="!isPortalOrderList" class="small text-secondary mb-0 mt-2 px-1">Only accounts with a ShipHero customer ID appear here.</p>
       </div>

@@ -2,6 +2,7 @@
 import { computed, inject, onMounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmSyncToolbar from "../../components/common/CrmSyncToolbar.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { usePortalDashboardCounts } from "../../composables/usePortalDashboardCounts.js";
 import { usePortalOutOfStockPreview } from "../../composables/usePortalOutOfStockPreview.js";
@@ -207,10 +208,7 @@ onMounted(() => {
   <div class="staff-page staff-page--wide">
     <div class="mb-4 d-flex align-items-center justify-content-between gap-2 flex-wrap">
       <h1 class="h4 mb-0 fw-semibold text-body">{{ accountDisplayName || "Home" }}</h1>
-      <div class="d-flex align-items-center gap-2 flex-shrink-0">
-        <p v-if="lastRefreshedLabel" class="small text-secondary mb-0">
-          Last refreshed: {{ lastRefreshedLabel }}
-        </p>
+      <CrmSyncToolbar :last-synced-label="lastRefreshedLabel">
         <button
           type="button"
           class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
@@ -236,7 +234,7 @@ onMounted(() => {
           </svg>
           {{ refreshing ? "Refreshing…" : "Refresh" }}
         </button>
-      </div>
+      </CrmSyncToolbar>
     </div>
 
     <div class="user-dashboard__content position-relative">

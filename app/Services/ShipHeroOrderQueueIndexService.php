@@ -650,18 +650,25 @@ class ShipHeroOrderQueueIndexService
             if ($hybridShippedFallback && $sectionKey === OrderDashboardSection::KEY_SHIPPED) {
                 $customerId = trim((string) ($context['customer_id'] ?? $account->shiphero_customer_account_id ?? ''));
                 if ($customerId !== '') {
-                    $live = $this->orders->countShipments([
-                        'customer_account_id' => $customerId,
-                        'date_from' => $context['shipped_from'],
-                        'date_to' => $context['shipped_to'],
-                        'timezone' => $context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
-                        'max_pages' => 50,
-                    ]);
-                    $liveCount = (int) ($live['count'] ?? 0);
-                    if ($liveCount > $count) {
-                        $count = $liveCount;
+                    try {
+                        $live = $this->orders->countShipments([
+                            'customer_account_id' => $customerId,
+                            'date_from' => $context['shipped_from'],
+                            'date_to' => $context['shipped_to'],
+                            'timezone' => $context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
+                            'max_pages' => 50,
+                        ]);
+                        $liveCount = (int) ($live['count'] ?? 0);
+                        if ($liveCount > $count) {
+                            $count = $liveCount;
+                        }
+                        $truncated = $truncated || (bool) ($live['truncated'] ?? false);
+                    } catch (Throwable $e) {
+                        Log::warning('order_queue_index.hybrid_shipped_count_failed', [
+                            'client_account_id' => (int) $account->id,
+                            'message' => $e->getMessage(),
+                        ]);
                     }
-                    $truncated = $truncated || (bool) ($live['truncated'] ?? false);
                 }
             }
 

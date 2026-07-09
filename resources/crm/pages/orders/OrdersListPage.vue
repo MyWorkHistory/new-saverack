@@ -86,6 +86,8 @@ const orderQueueRefreshing = ref(false);
 const orderQueueSyncPending = ref(false);
 const orderQueueSyncMessage = ref("");
 const orderQueueSyncStatus = ref("");
+const orderQueueIndexHasRows = ref(false);
+const orderQueueDateFilterExcludes = ref(false);
 
 const AUTO_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 const ORDER_QUEUE_POLL_MS = 3000;
@@ -173,6 +175,13 @@ const ordersEmptyMessage = computed(() => {
   if (displayedRows.value.length > 0) return "";
   if (orderQueueSyncPending.value || orderQueueRefreshing.value) return "";
 
+  if (orderQueueDateFilterExcludes.value) {
+    if (tabKey.value === "shipped") {
+      return "Shipped orders exist in the index outside the selected date range. Try Last 7 Days in the date filter.";
+    }
+    return "Orders exist in the index outside the selected date range. Widen the date filter.";
+  }
+
   if (tabKey.value === "shipped" && query.datePreset === "today") {
     return "No orders found for today. Shipped defaults to today — try Last 7 Days in the date filter.";
   }
@@ -181,8 +190,11 @@ const ordersEmptyMessage = computed(() => {
     if (orderQueueSyncStatus.value === "failed") {
       return "Order queue sync failed. Click Refresh or run orders:sync-queue-index --sync on the server.";
     }
-    if (!orderQueueSyncedAt.value) {
+    if (!orderQueueIndexHasRows.value && !orderQueueSyncedAt.value) {
       return "Order index is empty for this tab. Click Refresh or run orders:sync-queue-index --sync on the server.";
+    }
+    if (!orderQueueIndexHasRows.value) {
+      return "No shipped orders in the index for this account yet. Click Refresh to sync from ShipHero.";
     }
   }
 
@@ -574,6 +586,8 @@ async function fetchOrders(reset = true, options = {}) {
       orderQueueSyncPending.value = false;
       orderQueueSyncMessage.value = "";
       orderQueueSyncStatus.value = "";
+      orderQueueIndexHasRows.value = false;
+      orderQueueDateFilterExcludes.value = false;
     }
     return;
   }
@@ -641,13 +655,17 @@ function applyOrderQueueSyncMeta(meta, rowCount, options = {}) {
     orderQueueSyncPending.value = false;
     orderQueueSyncMessage.value = "";
     orderQueueSyncStatus.value = "";
+    orderQueueIndexHasRows.value = false;
+    orderQueueDateFilterExcludes.value = false;
     stopOrderQueuePoll();
     return;
   }
 
   const syncStatus = String(meta?.order_queue_sync_status || "");
   orderQueueSyncStatus.value = syncStatus;
-  const pending = Boolean(meta?.refresh_pending) || syncStatus === "running";
+  orderQueueIndexHasRows.value = Boolean(meta?.index_has_rows);
+  orderQueueDateFilterExcludes.value = Boolean(meta?.date_filter_excludes_index);
+  const pending = Boolean(meta?.refresh_pending);
   orderQueueSyncPending.value = pending;
   orderQueueSyncMessage.value = String(meta?.message || "").trim();
 

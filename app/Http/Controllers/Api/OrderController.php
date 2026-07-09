@@ -136,26 +136,6 @@ class OrderController extends Controller
             ]);
 
             if ($this->orderQueueIndex->isQueueTab($tab)) {
-                if ($refresh || ! $this->orderQueueIndex->indexHasRows($clientAccountId, $tab)) {
-                    $this->orderQueueIndex->dispatchAccountQueueSync($clientAccountId, $tab);
-                }
-
-                $customerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
-
-                if ($this->orderQueueIndex->indexHasRows($clientAccountId, $tab)) {
-                    $account = ClientAccount::query()->find($clientAccountId);
-                    $payload = $this->orderQueueIndex->listFromIndex($indexFilters);
-                    $syncRunning = $account !== null
-                        && (string) ($account->order_queue_sync_status ?? '') === ShipHeroOrderQueueIndexService::SYNC_STATUS_RUNNING;
-                    $payload['meta'] = array_merge($payload['meta'] ?? [], [
-                        'client_account_id' => $clientAccountId,
-                        'shiphero_customer_account_id' => $customerId,
-                        'refresh_pending' => $refresh && $syncRunning,
-                    ]);
-
-                    return response()->json($payload);
-                }
-
                 $account = ClientAccount::query()->find($clientAccountId);
                 if ($account === null) {
                     throw ValidationException::withMessages([
@@ -163,7 +143,35 @@ class OrderController extends Controller
                     ]);
                 }
 
-                $payload = $this->orderQueueIndex->emptyListPayload($account, $clientAccountId, true);
+                $dispatched = false;
+                if ($refresh) {
+                    $this->orderQueueIndex->dispatchAccountQueueSync($clientAccountId, $tab);
+                    $dispatched = true;
+                } elseif ($this->orderQueueIndex->shouldAutoDispatchTabSync($account, $clientAccountId, $tab)) {
+                    $this->orderQueueIndex->dispatchAccountQueueSync($clientAccountId, $tab);
+                    $dispatched = true;
+                }
+
+                $customerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
+                $account->refresh();
+
+                if ($this->orderQueueIndex->indexHasRows($clientAccountId, $tab)) {
+                    $payload = $this->orderQueueIndex->listFromIndex($indexFilters);
+                    $payload['meta'] = array_merge($payload['meta'] ?? [], [
+                        'client_account_id' => $clientAccountId,
+                        'shiphero_customer_account_id' => $customerId,
+                        'refresh_pending' => $this->orderQueueIndex->isTabSyncPending(
+                            $account,
+                            $clientAccountId,
+                            $tab,
+                            $dispatched
+                        ),
+                    ]);
+
+                    return response()->json($payload);
+                }
+
+                $payload = $this->orderQueueIndex->emptyListPayload($account, $clientAccountId, $tab, $dispatched);
                 $payload['meta']['shiphero_customer_account_id'] = $customerId;
 
                 return response()->json($payload);

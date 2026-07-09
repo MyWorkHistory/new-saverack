@@ -149,6 +149,14 @@ class DiagnoseShipHeroCommand extends Command
                 ->pluck('id')
                 ->all();
             $this->line('  order queue running account ids: '.implode(', ', $ids).($ordersRunning > 20 ? ' …' : ''));
+
+            $stale = ClientAccount::query()
+                ->where('order_queue_sync_status', ShipHeroOrderQueueIndexService::SYNC_STATUS_RUNNING)
+                ->where('order_queue_sync_started_at', '<', now()->subMinutes(75))
+                ->count();
+            if ($stale > 0) {
+                $this->warn('  '.$stale.' account(s) stuck order_queue_sync_status=running >75m (reset or re-run sync).');
+            }
         }
     }
 

@@ -87,12 +87,10 @@ class ShipHeroOrderQueueIndexService
     /**
      * @return array<string, mixed>
      */
-    public function emptyListPayload(ClientAccount $account, int $clientAccountId, bool $refreshPending = false): array
+    public function emptyListPayload(ClientAccount $account, int $clientAccountId, string $tab, bool $dispatchRequested = false): array
     {
         $syncStatus = (string) ($account->order_queue_sync_status ?? self::SYNC_STATUS_IDLE);
-        $pending = $refreshPending
-            || $syncStatus === self::SYNC_STATUS_RUNNING
-            || ($account->order_queue_synced_at === null && $syncStatus !== self::SYNC_STATUS_FAILED);
+        $pending = $this->isTabSyncPending($account, $clientAccountId, $tab, $dispatchRequested);
 
         return [
             'rows' => [],
@@ -108,11 +106,74 @@ class ShipHeroOrderQueueIndexService
                 'order_queue_synced_at' => $account->order_queue_synced_at !== null
                     ? $account->order_queue_synced_at->toIso8601String()
                     : null,
+                'index_has_rows' => $this->indexHasRows($clientAccountId, $tab),
                 'message' => $pending
                     ? 'Order index is syncing from ShipHero. Refresh again shortly.'
                     : '',
             ],
         ];
+    }
+
+    public function isTabSyncPending(ClientAccount $account, int $clientAccountId, string $tab, bool $dispatchRequested = false): bool
+    {
+        $tab = strtolower(trim($tab));
+        $syncStatus = (string) ($account->order_queue_sync_status ?? self::SYNC_STATUS_IDLE);
+
+        if ($syncStatus === self::SYNC_STATUS_FAILED) {
+            return false;
+        }
+
+        if ($syncStatus === self::SYNC_STATUS_RUNNING) {
+            $started = $account->order_queue_sync_started_at;
+            if ($started !== null && $started->diffInMinutes(now()) > 75) {
+                return false;
+            }
+
+            $lockKey = sprintf('order_queue_sync_dispatch:%d:%s', $clientAccountId, $tab);
+            if (Cache::has($lockKey)) {
+                return true;
+            }
+
+            return ! $this->indexHasRows($clientAccountId, $tab);
+        }
+
+        $lockKey = sprintf('order_queue_sync_dispatch:%d:%s', $clientAccountId, $tab);
+        if (Cache::has($lockKey)) {
+            return true;
+        }
+
+        if ($this->indexHasRows($clientAccountId, $tab)) {
+            return false;
+        }
+
+        return $dispatchRequested;
+    }
+
+    public function shouldAutoDispatchTabSync(ClientAccount $account, int $clientAccountId, string $tab): bool
+    {
+        $tab = strtolower(trim($tab));
+        if ($clientAccountId <= 0 || ! $this->isQueueTab($tab)) {
+            return false;
+        }
+
+        if ($this->indexHasRows($clientAccountId, $tab)) {
+            return false;
+        }
+
+        $syncStatus = (string) ($account->order_queue_sync_status ?? self::SYNC_STATUS_IDLE);
+        if ($syncStatus === self::SYNC_STATUS_RUNNING) {
+            $started = $account->order_queue_sync_started_at;
+            if ($started !== null && $started->diffInMinutes(now()) <= 75) {
+                return false;
+            }
+        }
+
+        $lockKey = sprintf('order_queue_sync_dispatch:%d:%s', $clientAccountId, $tab);
+        if (Cache::has($lockKey)) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -184,6 +245,10 @@ class ShipHeroOrderQueueIndexService
         $next = $offset + $indexRows->count();
         $hasMore = $next < $total;
 
+        $unfilteredExists = $orderNumber === '' && $total === 0
+            ? $this->indexHasRows($clientAccountId, $tab)
+            : false;
+
         return [
             'rows' => $rows,
             'pagination' => [
@@ -193,11 +258,13 @@ class ShipHeroOrderQueueIndexService
             'meta' => [
                 'client_account_id' => $clientAccountId,
                 'from_index' => true,
-                'refresh_pending' => (string) ($account->order_queue_sync_status ?? self::SYNC_STATUS_IDLE) === self::SYNC_STATUS_RUNNING,
+                'refresh_pending' => $this->isTabSyncPending($account, $clientAccountId, $tab, false),
                 'order_queue_sync_status' => (string) ($account->order_queue_sync_status ?? self::SYNC_STATUS_IDLE),
                 'order_queue_synced_at' => $account->order_queue_synced_at !== null
                     ? $account->order_queue_synced_at->toIso8601String()
                     : null,
+                'index_has_rows' => $this->indexHasRows($clientAccountId, $tab),
+                'date_filter_excludes_index' => $unfilteredExists,
             ],
         ];
     }
@@ -224,7 +291,7 @@ class ShipHeroOrderQueueIndexService
 
         try {
             $context = $tab === ShipHeroOrderQueueIndex::KIND_SHIPPED
-                ? $this->queueCounts->contextForDashboardSection($account, OrderDashboardSection::KEY_SHIPPED)
+                ? $this->shippedIndexSyncContext($account)
                 : $this->queueCounts->contextForAccount($account);
             $filters = $this->buildSyncFilters($tab, $customerId, $context);
             $after = null;
@@ -672,6 +739,18 @@ class ShipHeroOrderQueueIndexService
         }
 
         return $filters;
+    }
+
+    private function shippedIndexSyncContext(ClientAccount $account): array
+    {
+        $timezone = $this->queueCounts->contextForAccount($account)['timezone']
+            ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
+        $now = Carbon::now($timezone);
+
+        return $this->queueCounts->contextForAccount($account, [
+            'order_date_from' => $now->copy()->subDays(6)->toDateString(),
+            'order_date_to' => $now->toDateString(),
+        ]);
     }
 
     private function markSyncRunning(ClientAccount $account): void

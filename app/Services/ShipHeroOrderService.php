@@ -133,9 +133,8 @@ class ShipHeroOrderService
 
         $tab = strtolower(trim((string) ($filters['tab'] ?? 'manage')));
         if ($tab === 'on_hold') {
-            // On-hold import: unfulfilled + at least one active hold (ShipHero has_hold).
+            // On-hold import: unfulfilled in order_date window; active hold verified in post-filter (holds[]).
             $vars['fulfillment_status'] = 'unfulfilled';
-            $vars['has_hold'] = true;
             $timezone = trim((string) ($filters['timezone'] ?? ''));
             if ($timezone === '' || ! in_array($timezone, timezone_identifiers_list(), true)) {
                 $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
@@ -176,9 +175,23 @@ class ShipHeroOrderService
                 }
             }
         } elseif ($tab === 'backorder') {
-            // Backorder import: unfulfilled + on backorder (separate from on-hold).
+            // Backorder import: unfulfilled + on backorder, same order_date window as on-hold (Feb 1 → today).
             $vars['fulfillment_status'] = 'unfulfilled';
             $vars['has_backorder'] = true;
+            $timezone = trim((string) ($filters['timezone'] ?? ''));
+            if ($timezone === '' || ! in_array($timezone, timezone_identifiers_list(), true)) {
+                $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
+            }
+            $hasOrderWindow = is_string($vars['order_date_from']) && trim((string) $vars['order_date_from']) !== ''
+                && is_string($vars['order_date_to']) && trim((string) $vars['order_date_to']) !== '';
+            if ($hasOrderWindow) {
+                $this->applyOrderDateWindowToGraphVars($vars, $timezone);
+            } else {
+                $today = Carbon::now($timezone)->toDateString();
+                $vars['order_date_from'] = PortalQueueCountsService::ON_HOLD_DASHBOARD_ORDER_FROM;
+                $vars['order_date_to'] = $today;
+                $this->applyOrderDateWindowToGraphVars($vars, $timezone);
+            }
         } elseif ($tab === 'shipped') {
             // ShipHero typically uses "fulfilled" for shipped/completed orders; "shipped" often returns nothing.
             $vars['fulfillment_status'] = 'fulfilled';
@@ -3625,6 +3638,7 @@ GQL;
             $dateField = $tab === 'shipped' ? 'ship_date' : 'order_date';
             if ($tab !== 'awaiting'
                 && $tab !== 'on_hold'
+                && $tab !== 'backorder'
                 && ! $skipTabScopeForOrderLookup
                 && ! $this->rowInDateRange($row, $from, $to, $dateField)) {
                 continue;
@@ -3821,7 +3835,13 @@ GQL;
             return false;
         }
 
-        return ! empty($row['has_active_hold']);
+        if (! empty($row['has_active_hold'])) {
+            return true;
+        }
+
+        $holdReason = trim((string) ($row['hold_reason'] ?? ''));
+
+        return $holdReason !== '';
     }
 
     /**
@@ -3857,7 +3877,8 @@ GQL;
             }
         }
 
-        return false;
+        // Upstream API already scoped to fulfillment_status=unfulfilled when field is omitted.
+        return true;
     }
 
     /**

@@ -129,6 +129,7 @@ class PortalQueueCountsService
             OrderDashboardSection::KEY_HOLD_FRAUD,
             OrderDashboardSection::KEY_HOLD_PAYMENT,
             OrderDashboardSection::KEY_HOLD_USER,
+            OrderDashboardSection::KEY_HOLD_BACKORDER,
         ], true)) {
             $context['open_from'] = $this->dateStartIso(self::ON_HOLD_DASHBOARD_ORDER_FROM, $timezone);
             $context['open_to'] = $this->dateEndIso(Carbon::now($timezone)->toDateString(), $timezone);
@@ -138,7 +139,7 @@ class PortalQueueCountsService
     }
 
     /**
-     * Context for admin Home on-hold total (order_date Feb 1 → today, unfulfilled + active hold).
+     * Context for on-hold / backorder index sync and dashboard totals (order_date Feb 1 → today).
      *
      * @return array<string, mixed>
      */

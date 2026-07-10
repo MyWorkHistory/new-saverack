@@ -312,8 +312,8 @@ class ShipHeroOrderQueueIndexService
 
         $context = $tab === ShipHeroOrderQueueIndex::KIND_SHIPPED
             ? $this->shippedIndexSyncContext($account)
-            : ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD
-                ? $this->onHoldIndexSyncContext($account)
+            : ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD || $tab === ShipHeroOrderQueueIndex::KIND_BACKORDER
+                ? $this->openQueueIndexSyncContext($account)
                 : ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING
                     ? $this->queueCounts->contextForDashboardSection($account, OrderDashboardSection::KEY_READY_TO_SHIP)
                     : $this->queueCounts->contextForAccount($account)));
@@ -1351,6 +1351,9 @@ class ShipHeroOrderQueueIndexService
         } elseif ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
             $filters['order_date_from'] = $context['open_from'] ?? null;
             $filters['order_date_to'] = $context['open_to'] ?? null;
+        } elseif ($tab === ShipHeroOrderQueueIndex::KIND_BACKORDER) {
+            $filters['order_date_from'] = $context['open_from'] ?? null;
+            $filters['order_date_to'] = $context['open_to'] ?? null;
         } else {
             $filters['order_date_from'] = $context['open_from'] ?? null;
             $filters['order_date_to'] = $context['open_to'] ?? null;
@@ -1371,9 +1374,14 @@ class ShipHeroOrderQueueIndexService
         ]);
     }
 
-    private function onHoldIndexSyncContext(ClientAccount $account): array
+    private function openQueueIndexSyncContext(ClientAccount $account): array
     {
         return $this->queueCounts->contextForOnHoldDashboardTotal($account);
+    }
+
+    private function onHoldIndexSyncContext(ClientAccount $account): array
+    {
+        return $this->openQueueIndexSyncContext($account);
     }
 
     private function markSyncRunning(ClientAccount $account): void

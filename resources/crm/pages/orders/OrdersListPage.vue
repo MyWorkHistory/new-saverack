@@ -845,7 +845,7 @@ function defaultDatePresetForCurrentTab() {
     return "since_feb_1";
   }
   if (tabKey.value === "backorder") {
-    return "last_30";
+    return "since_feb_1";
   }
   return "today";
 }
@@ -1532,6 +1532,7 @@ onUnmounted(() => {
                     >
                       <option v-if="tabKey === 'awaiting'" value="since_may_1">Since May 1 (Dashboard)</option>
                       <option v-if="tabKey === 'on_hold'" value="since_feb_1">Since Feb 1 (Dashboard)</option>
+                      <option v-if="tabKey === 'backorder'" value="since_feb_1">Since Feb 1 (Dashboard)</option>
                       <option value="all">Any Order Date</option>
                       <option value="today">Today</option>
                       <option value="last_7">Last 7 Days</option>

@@ -163,9 +163,15 @@ final class ShipHeroOrderServiceFulfillmentStatusTest extends TestCase
             'raw_fulfillment_status' => 'unfulfilled',
             'has_active_hold' => true,
         ]));
+        $this->assertTrue($this->svc->orderQualifiesForOnHoldQueue([
+            'raw_fulfillment_status' => 'unfulfilled',
+            'has_active_hold' => false,
+            'hold_reason' => 'Operator Hold',
+        ]));
         $this->assertFalse($this->svc->orderQualifiesForOnHoldQueue([
             'raw_fulfillment_status' => 'unfulfilled',
             'has_active_hold' => false,
+            'hold_reason' => '',
         ]));
         $this->assertFalse($this->svc->orderQualifiesForOnHoldQueue([
             'raw_fulfillment_status' => 'fulfilled',

@@ -46,6 +46,9 @@ class PortalQueueCountsService
     /** Ready-to-ship sync / dashboard alignment window (order_date from). */
     public const RTS_DASHBOARD_ORDER_FROM = '2026-05-01';
 
+    /** On-hold sync / dashboard alignment window (order_date from). */
+    public const ON_HOLD_DASHBOARD_ORDER_FROM = '2026-02-01';
+
     /** @var ShipHeroOrderService */
     private $orders;
 
@@ -127,16 +130,15 @@ class PortalQueueCountsService
             OrderDashboardSection::KEY_HOLD_PAYMENT,
             OrderDashboardSection::KEY_HOLD_USER,
         ], true)) {
-            $today = Carbon::now($timezone)->toDateString();
-            $context['open_from'] = $this->dateStartIso($today, $timezone);
-            $context['open_to'] = $this->dateEndIso($today, $timezone);
+            $context['open_from'] = $this->dateStartIso(self::ON_HOLD_DASHBOARD_ORDER_FROM, $timezone);
+            $context['open_to'] = $this->dateEndIso(Carbon::now($timezone)->toDateString(), $timezone);
         }
 
         return $context;
     }
 
     /**
-     * Context for admin Home on-hold total (order placement date = today, fulfillment_status = unfulfilled).
+     * Context for admin Home on-hold total (order_date Feb 1 → today, fulfillment_status = unfulfilled).
      *
      * @return array<string, mixed>
      */
@@ -144,9 +146,8 @@ class PortalQueueCountsService
     {
         $context = $this->contextForAccount($account);
         $timezone = (string) ($context['timezone'] ?? self::DEFAULT_ACCOUNT_TIMEZONE);
-        $today = Carbon::now($timezone)->toDateString();
-        $context['open_from'] = $this->dateStartIso($today, $timezone);
-        $context['open_to'] = $this->dateEndIso($today, $timezone);
+        $context['open_from'] = $this->dateStartIso(self::ON_HOLD_DASHBOARD_ORDER_FROM, $timezone);
+        $context['open_to'] = $this->dateEndIso(Carbon::now($timezone)->toDateString(), $timezone);
 
         return $context;
     }

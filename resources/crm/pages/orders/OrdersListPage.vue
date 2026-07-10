@@ -38,7 +38,7 @@ const props = defineProps({
 
 const emit = defineEmits(["queue-refreshed"]);
 
-import { RTS_ORDER_DATE_FROM } from "../../constants/fulfillmentSections.js";
+import { ON_HOLD_ORDER_DATE_FROM, RTS_ORDER_DATE_FROM } from "../../constants/fulfillmentSections.js";
 const route = useRoute();
 const router = useRouter();
 const crmUser = inject("crmUser", ref(null));
@@ -69,6 +69,7 @@ function applyOrdersRouteQuery() {
     || presetFromRoute === "last_7"
     || presetFromRoute === "last_30"
     || presetFromRoute === "since_may_1"
+    || presetFromRoute === "since_feb_1"
   ) {
     query.datePreset = presetFromRoute;
   }
@@ -526,6 +527,7 @@ function dateRangeFromPreset() {
   const today = toDateInput(now);
   if (query.datePreset === "all") return { from: null, to: null };
   if (query.datePreset === "since_may_1") return { from: RTS_ORDER_DATE_FROM, to: today };
+  if (query.datePreset === "since_feb_1") return { from: ON_HOLD_ORDER_DATE_FROM, to: today };
   if (query.datePreset === "today") return { from: today, to: today };
   if (query.datePreset === "last_7") {
     const d = new Date(now);
@@ -840,7 +842,7 @@ function defaultDatePresetForCurrentTab() {
     return "since_may_1";
   }
   if (tabKey.value === "on_hold") {
-    return "today";
+    return "since_feb_1";
   }
   if (tabKey.value === "backorder") {
     return "last_30";
@@ -1515,9 +1517,11 @@ onUnmounted(() => {
                         dashboard (<strong>May 1 through today</strong> by order date). Choose a different preset or
                         custom range if you need another window.
                       </template>
-                      <template v-else>
-                        Defaults to <strong>today</strong> by order date. Use <strong>Any Order Date</strong> or a custom range if the list looks empty.
+                      <template v-else-if="tabKey === 'on_hold'">
+                        This tab lists <strong>unfulfilled on-hold orders</strong>. The default window matches the
+                        dashboard (<strong>Feb 1 through today</strong> by order date).
                       </template>
+                      <template v-else>
                     </p>
                     <label class="form-label" for="orders-filter-date-preset">Date Range</label>
                     <select
@@ -1527,6 +1531,7 @@ onUnmounted(() => {
                       :disabled="loading"
                     >
                       <option v-if="tabKey === 'awaiting'" value="since_may_1">Since May 1 (Dashboard)</option>
+                      <option v-if="tabKey === 'on_hold'" value="since_feb_1">Since Feb 1 (Dashboard)</option>
                       <option value="all">Any Order Date</option>
                       <option value="today">Today</option>
                       <option value="last_7">Last 7 Days</option>

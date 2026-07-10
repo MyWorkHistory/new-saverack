@@ -207,6 +207,13 @@ class ShipHeroOrderQueueIndexService
             'order_date_from' => $filters['order_date_from'] ?? null,
             'order_date_to' => $filters['order_date_to'] ?? null,
         ]);
+        if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
+            $holdContext = $this->queueCounts->contextForOnHoldDashboardTotal($account);
+            if (empty($filters['order_date_from']) && empty($filters['order_date_to'])) {
+                $context['open_from'] = $holdContext['open_from'];
+                $context['open_to'] = $holdContext['open_to'];
+            }
+        }
 
         $query = ShipHeroOrderQueueIndex::query()
             ->where('client_account_id', $clientAccountId)
@@ -1014,10 +1021,11 @@ class ShipHeroOrderQueueIndexService
         }
 
         if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
+            $rtsFrom = Carbon::parse(PortalQueueCountsService::ON_HOLD_DASHBOARD_ORDER_FROM, $timezone)->startOfDay();
+
             return ShipHeroOrderQueueIndex::query()
                 ->where('queue_kind', $tab)
-                ->where('order_date', '>=', $todayStart)
-                ->where('order_date', '<=', $todayEnd)
+                ->where('order_date', '>=', $rtsFrom)
                 ->exists();
         }
 
@@ -1276,13 +1284,14 @@ class ShipHeroOrderQueueIndexService
         }
 
         if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
-            $from = $this->parseTimestamp($context['open_from'] ?? null);
-            $to = $this->parseTimestamp($context['open_to'] ?? null);
+            $timezone = (string) ($context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE);
+            $from = $this->parseContextBoundary($context['open_from'] ?? null, $timezone, true);
+            $to = $this->parseContextBoundary($context['open_to'] ?? null, $timezone, false);
             if (! empty($filters['order_date_from'])) {
-                $from = $this->parseTimestamp($filters['order_date_from'].' 00:00:00');
+                $from = $this->parseContextBoundary((string) $filters['order_date_from'], $timezone, true);
             }
             if (! empty($filters['order_date_to'])) {
-                $to = $this->parseTimestamp($filters['order_date_to'].' 23:59:59');
+                $to = $this->parseContextBoundary((string) $filters['order_date_to'], $timezone, false);
             }
             if ($from !== null) {
                 $query->where('order_date', '>=', $from);

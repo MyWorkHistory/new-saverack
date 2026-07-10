@@ -133,7 +133,7 @@ class ShipHeroOrderService
 
         $tab = strtolower(trim((string) ($filters['tab'] ?? 'manage')));
         if ($tab === 'on_hold') {
-            // ShipHero on-hold (per client): order_date today + fulfillment_status unfulfilled (no has_hold filter).
+            // ShipHero on-hold (per client): order_date Feb 1 → today + fulfillment_status unfulfilled (no has_hold filter).
             $vars['fulfillment_status'] = 'unfulfilled';
             $timezone = trim((string) ($filters['timezone'] ?? ''));
             if ($timezone === '' || ! in_array($timezone, timezone_identifiers_list(), true)) {
@@ -145,7 +145,7 @@ class ShipHeroOrderService
                 $this->applyOrderDateWindowToGraphVars($vars, $timezone);
             } else {
                 $today = Carbon::now($timezone)->toDateString();
-                $vars['order_date_from'] = $today;
+                $vars['order_date_from'] = PortalQueueCountsService::ON_HOLD_DASHBOARD_ORDER_FROM;
                 $vars['order_date_to'] = $today;
                 $this->applyOrderDateWindowToGraphVars($vars, $timezone);
             }
@@ -3794,7 +3794,7 @@ GQL;
     }
 
     /**
-     * On-hold queue/import: order_date today + fulfillment_status unfulfilled (ShipHero; no has_hold filter).
+     * On-hold queue/import: order_date Feb 1 → today + fulfillment_status unfulfilled (ShipHero; no has_hold filter).
      *
      * @param  array<string, mixed>  $row
      */

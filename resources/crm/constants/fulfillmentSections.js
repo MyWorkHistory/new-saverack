@@ -1,4 +1,5 @@
 export const RTS_ORDER_DATE_FROM = "2026-05-01";
+export const ON_HOLD_ORDER_DATE_FROM = "2026-02-01";
 
 export const FULFILLMENT_SECTIONS = [
   {

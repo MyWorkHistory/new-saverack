@@ -883,7 +883,9 @@ class OrderDashboardSnapshotService
         $patched = false;
         foreach ($this->dashboardSectionsForQueueTab($queueTab) as $sectionKey) {
             try {
-                $count = $this->liveCountForAccountDashboardSection($account, $sectionKey);
+                $count = $sectionKey === OrderDashboardSection::KEY_ON_HOLD
+                    ? $this->onHoldCountAfterImport($account, $clientAccountId)
+                    : $this->liveCountForAccountDashboardSection($account, $sectionKey);
                 $this->mergeAccountIntoSection($sectionKey, $account, $count);
                 $patched = true;
             } catch (Throwable $e) {
@@ -1019,6 +1021,21 @@ class OrderDashboardSnapshotService
         });
 
         return max(0, (int) ($result['count'] ?? 0));
+    }
+
+    private function onHoldCountAfterImport(ClientAccount $account, int $clientAccountId): int
+    {
+        $context = $this->queueCounts->contextForOnHoldDashboardTotal($account);
+        $indexCount = $this->orderIndex->countForAccountTabWithSemantics(
+            $clientAccountId,
+            ShipHeroOrderQueueIndex::KIND_ON_HOLD,
+            $context
+        );
+        if ($indexCount > 0) {
+            return $indexCount;
+        }
+
+        return $this->liveCountForAccountDashboardSection($account, OrderDashboardSection::KEY_ON_HOLD);
     }
 
     /**

@@ -3611,6 +3611,7 @@ GQL;
             }
             $dateField = $tab === 'shipped' ? 'ship_date' : 'order_date';
             if ($tab !== 'awaiting'
+                && $tab !== 'on_hold'
                 && ! $skipTabScopeForOrderLookup
                 && ! $this->rowInDateRange($row, $from, $to, $dateField)) {
                 continue;
@@ -3809,7 +3810,7 @@ GQL;
 
         foreach (['raw_fulfillment_status', 'status'] as $key) {
             $normalized = strtolower(trim((string) ($row[$key] ?? '')));
-            if ($normalized === 'unfulfilled') {
+            if ($normalized === 'unfulfilled' || $normalized === 'pending') {
                 return true;
             }
             if ($normalized !== '') {
@@ -3817,7 +3818,8 @@ GQL;
             }
         }
 
-        return false;
+        // API query already scoped to fulfillment_status=unfulfilled; accept when field is omitted.
+        return true;
     }
 
     /**

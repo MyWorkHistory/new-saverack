@@ -163,6 +163,10 @@ final class ShipHeroOrderServiceFulfillmentStatusTest extends TestCase
             'raw_fulfillment_status' => 'unfulfilled',
             'has_backorder' => false,
         ]));
+        $this->assertTrue($this->svc->orderQualifiesForOnHoldQueue([
+            'raw_fulfillment_status' => 'pending',
+            'has_backorder' => false,
+        ]));
         $this->assertFalse($this->svc->orderQualifiesForOnHoldQueue([
             'raw_fulfillment_status' => 'fulfilled',
             'has_backorder' => false,

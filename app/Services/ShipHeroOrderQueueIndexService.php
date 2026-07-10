@@ -930,8 +930,8 @@ class ShipHeroOrderQueueIndexService
         $query->where('has_backorder', false);
         $query->where(function ($q) {
             $q->whereRaw(
-                "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(list_payload, '$.raw_fulfillment_status')), '')) = 'unfulfilled'"
-            )->orWhereRaw("LOWER(COALESCE(display_status, '')) = 'unfulfilled'");
+                "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(list_payload, '$.raw_fulfillment_status')), '')) IN ('unfulfilled', 'pending')"
+            )->orWhereRaw("LOWER(COALESCE(display_status, '')) IN ('unfulfilled', 'pending')");
         });
     }
 

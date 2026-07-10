@@ -53,4 +53,40 @@ class ShipHeroOrderClassifyTest extends TestCase
 
         $this->assertNull($tab);
     }
+
+    public function test_classify_on_hold_requires_active_hold(): void
+    {
+        $service = app(ShipHeroOrderService::class);
+        $tab = $service->classifyOrderQueueTab([
+            'raw_fulfillment_status' => 'unfulfilled',
+            'has_backorder' => false,
+            'has_active_hold' => true,
+        ]);
+
+        $this->assertSame('on_hold', $tab);
+    }
+
+    public function test_classify_backorder_requires_unfulfilled_backorder_flag(): void
+    {
+        $service = app(ShipHeroOrderService::class);
+        $tab = $service->classifyOrderQueueTab([
+            'raw_fulfillment_status' => 'unfulfilled',
+            'has_backorder' => true,
+            'has_active_hold' => false,
+        ]);
+
+        $this->assertSame('backorder', $tab);
+    }
+
+    public function test_classify_can_return_both_backorder_and_on_hold_tabs(): void
+    {
+        $service = app(ShipHeroOrderService::class);
+        $tabs = $service->classifyOrderQueueTabs([
+            'raw_fulfillment_status' => 'unfulfilled',
+            'has_backorder' => true,
+            'has_active_hold' => true,
+        ]);
+
+        $this->assertSame(['backorder', 'on_hold'], $tabs);
+    }
 }

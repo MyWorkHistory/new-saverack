@@ -138,7 +138,7 @@ class PortalQueueCountsService
     }
 
     /**
-     * Context for admin Home on-hold total (order_date Feb 1 → today, fulfillment_status = unfulfilled).
+     * Context for admin Home on-hold total (order_date Feb 1 → today, unfulfilled + active hold).
      *
      * @return array<string, mixed>
      */

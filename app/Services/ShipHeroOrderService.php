@@ -133,8 +133,9 @@ class ShipHeroOrderService
 
         $tab = strtolower(trim((string) ($filters['tab'] ?? 'manage')));
         if ($tab === 'on_hold') {
-            // ShipHero on-hold (per client): order_date Feb 1 → today + fulfillment_status unfulfilled (no has_hold filter).
+            // On-hold import: unfulfilled + at least one active hold (ShipHero has_hold).
             $vars['fulfillment_status'] = 'unfulfilled';
+            $vars['has_hold'] = true;
             $timezone = trim((string) ($filters['timezone'] ?? ''));
             if ($timezone === '' || ! in_array($timezone, timezone_identifiers_list(), true)) {
                 $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
@@ -175,7 +176,8 @@ class ShipHeroOrderService
                 }
             }
         } elseif ($tab === 'backorder') {
-            // ShipHero uses `has_backorder`, not fulfillment_status = "backorder" (see public API schema).
+            // Backorder import: unfulfilled + on backorder (separate from on-hold).
+            $vars['fulfillment_status'] = 'unfulfilled';
             $vars['has_backorder'] = true;
         } elseif ($tab === 'shipped') {
             // ShipHero typically uses "fulfilled" for shipped/completed orders; "shipped" often returns nothing.
@@ -1290,32 +1292,47 @@ GQL;
      */
     public function classifyOrderQueueTab(array $row): ?string
     {
+        $tabs = $this->classifyOrderQueueTabs($row);
+
+        return $tabs[0] ?? null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return list<string>
+     */
+    public function classifyOrderQueueTabs(array $row): array
+    {
         foreach (['status', 'raw_fulfillment_status', 'raw_status'] as $key) {
             $normalized = strtolower(trim((string) ($row[$key] ?? '')));
             if ($normalized !== '' && str_contains($normalized, 'cancel')) {
-                return null;
+                return [];
             }
         }
 
         if ($this->orderRowIsFulfilledOrShipped($row)) {
-            return 'shipped';
+            return ['shipped'];
+        }
+
+        $tabs = [];
+        if ($this->orderQualifiesForBackorderQueue($row)) {
+            $tabs[] = 'backorder';
+        }
+        if ($this->orderQualifiesForOnHoldQueue($row)) {
+            $tabs[] = 'on_hold';
+        }
+
+        if ($tabs !== []) {
+            return array_values(array_unique($tabs));
         }
 
         if (! empty($row['ready_to_ship'])) {
-            return 'awaiting';
-        }
-
-        if (! empty($row['has_backorder'])) {
-            return 'backorder';
-        }
-
-        if (! empty($row['has_active_hold'])) {
-            return 'on_hold';
+            return ['awaiting'];
         }
 
         $display = strtolower(trim((string) ($row['display_status'] ?? '')));
         if ($display === 'ready to ship') {
-            return 'awaiting';
+            return ['awaiting'];
         }
 
         $holds = is_array($row['holds'] ?? null) ? $row['holds'] : [];
@@ -1326,14 +1343,14 @@ GQL;
             'shipping_lines' => $method !== '' ? [['method' => $method]] : [],
         ];
         if ($this->orderListNodeIsReadyToShip($pseudoNode, $holds)) {
-            return 'awaiting';
+            return ['awaiting'];
         }
 
         if ($this->orderQualifiesForAwaitingQueue($row)) {
-            return 'awaiting';
+            return ['awaiting'];
         }
 
-        return null;
+        return [];
     }
 
     /**
@@ -3585,19 +3602,15 @@ GQL;
             if (! $skipStatusTabFilter && ! $skipTabScopeForOrderLookup && ! $this->statusMatchesTab($status, $tab)) {
                 continue;
             }
-            if ($tab === 'on_hold' && ! $skipStatusTabFilter && $holdReason !== '') {
-                if (! $this->rowMatchesHoldReasonFilter($row, $holdReason)) {
+            if ($tab === 'on_hold') {
+                if ($holdReason !== '' && ! $this->rowMatchesHoldReasonFilter($row, $holdReason)) {
+                    continue;
+                }
+                if (! $this->orderQualifiesForOnHoldQueue($row)) {
                     continue;
                 }
             }
-            if ($tab === 'on_hold' && ! $skipStatusTabFilter && ! empty($row['has_backorder'])) {
-                continue;
-            }
-            if ($tab === 'on_hold' && ! $skipStatusTabFilter && ! $this->orderQualifiesForOnHoldQueue($row)) {
-                continue;
-            }
-            // ShipHero can keep `has_hold` on historical rows after the order is shipped/fulfilled.
-            if ($tab === 'on_hold' && ! $skipStatusTabFilter && ! $skipTabScopeForOrderLookup && $this->orderRowIsFulfilledOrShipped($row)) {
+            if ($tab === 'backorder' && ! $this->orderQualifiesForBackorderQueue($row)) {
                 continue;
             }
             if ($tab === 'shipped' && ! $skipTabScopeForOrderLookup && isset($row['shipment_dates']) && is_array($row['shipment_dates'])) {
@@ -3794,20 +3807,46 @@ GQL;
     }
 
     /**
-     * On-hold queue/import: order_date Feb 1 → today + fulfillment_status unfulfilled (ShipHero; no has_hold filter).
+     * On-hold queue/import: unfulfilled + at least one active hold reason.
      *
      * @param  array<string, mixed>  $row
      */
     public function orderQualifiesForOnHoldQueue(array $row): bool
     {
-        if (! empty($row['has_backorder'])) {
-            return false;
-        }
-
         if ($this->orderRowIsFulfilledOrShipped($row)) {
             return false;
         }
 
+        if (! $this->orderRowIsUnfulfilled($row)) {
+            return false;
+        }
+
+        return ! empty($row['has_active_hold']);
+    }
+
+    /**
+     * Backorder queue/import: unfulfilled + on backorder.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    public function orderQualifiesForBackorderQueue(array $row): bool
+    {
+        if ($this->orderRowIsFulfilledOrShipped($row)) {
+            return false;
+        }
+
+        if (! $this->orderRowIsUnfulfilled($row)) {
+            return false;
+        }
+
+        return ! empty($row['has_backorder']);
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function orderRowIsUnfulfilled(array $row): bool
+    {
         foreach (['raw_fulfillment_status', 'status'] as $key) {
             $normalized = strtolower(trim((string) ($row[$key] ?? '')));
             if ($normalized === 'unfulfilled' || $normalized === 'pending') {
@@ -3818,8 +3857,7 @@ GQL;
             }
         }
 
-        // API query already scoped to fulfillment_status=unfulfilled; accept when field is omitted.
-        return true;
+        return false;
     }
 
     /**
@@ -4613,7 +4651,7 @@ GQL;
             $vars['after'] = trim($after);
         }
         if ($mode === 'backorder') {
-            // Match Orders list backorder tab: has_backorder only (not fulfillment_status).
+            $vars['fulfillment_status'] = 'unfulfilled';
             $vars['has_backorder'] = true;
         } else {
             $vars['ready_to_ship'] = true;

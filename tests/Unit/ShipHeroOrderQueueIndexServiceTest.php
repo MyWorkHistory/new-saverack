@@ -313,7 +313,7 @@ class ShipHeroOrderQueueIndexServiceTest extends TestCase
         $this->assertSame(5, $service->countShippedTodayFromIndex(77, $context));
     }
 
-    public function test_on_hold_count_includes_backorder_rows_in_sync_scope(): void
+    public function test_on_hold_count_excludes_backorder_queue_rows(): void
     {
         $now = now();
         $context = [
@@ -332,7 +332,7 @@ class ShipHeroOrderQueueIndexServiceTest extends TestCase
             'has_backorder' => false,
             'hold_reason' => 'operator',
             'order_date' => $now,
-            'list_payload' => json_encode(['id' => 'hold-only']),
+            'list_payload' => json_encode(['id' => 'hold-only', 'has_active_hold' => true]),
             'indexed_at' => $now,
             'last_seen_at' => $now,
             'created_at' => $now,
@@ -340,12 +340,12 @@ class ShipHeroOrderQueueIndexServiceTest extends TestCase
         ]);
         ShipHeroOrderQueueIndex::query()->insert([
             'client_account_id' => 42,
-            'shiphero_order_id' => 'hold-backorder',
-            'queue_kind' => ShipHeroOrderQueueIndex::KIND_ON_HOLD,
+            'shiphero_order_id' => 'backorder-only',
+            'queue_kind' => ShipHeroOrderQueueIndex::KIND_BACKORDER,
             'has_backorder' => true,
-            'hold_reason' => 'operator',
+            'hold_reason' => null,
             'order_date' => $now,
-            'list_payload' => json_encode(['id' => 'hold-backorder', 'has_backorder' => true]),
+            'list_payload' => json_encode(['id' => 'backorder-only', 'has_backorder' => true]),
             'indexed_at' => $now,
             'last_seen_at' => $now,
             'created_at' => $now,
@@ -357,7 +357,8 @@ class ShipHeroOrderQueueIndexServiceTest extends TestCase
             Mockery::mock(PortalQueueCountsService::class)
         );
 
-        $this->assertSame(2, $service->countForAccountTabWithSemantics(42, ShipHeroOrderQueueIndex::KIND_ON_HOLD, $context));
+        $this->assertSame(1, $service->countForAccountTabWithSemantics(42, ShipHeroOrderQueueIndex::KIND_ON_HOLD, $context));
+        $this->assertSame(1, $service->countForAccountTabWithSemantics(42, ShipHeroOrderQueueIndex::KIND_BACKORDER, $context));
     }
 
     public function test_on_hold_count_applies_date_window_only_with_explicit_filters(): void

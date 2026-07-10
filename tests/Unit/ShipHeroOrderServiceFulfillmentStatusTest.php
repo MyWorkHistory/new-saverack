@@ -157,26 +157,39 @@ final class ShipHeroOrderServiceFulfillmentStatusTest extends TestCase
         $this->assertSame('Ready To Ship', $this->resolveOrderListDisplayStatus($node, $holds));
     }
 
-    public function test_order_qualifies_for_on_hold_queue_requires_unfulfilled(): void
+    public function test_order_qualifies_for_on_hold_queue_requires_unfulfilled_and_active_hold(): void
     {
         $this->assertTrue($this->svc->orderQualifiesForOnHoldQueue([
             'raw_fulfillment_status' => 'unfulfilled',
-            'has_backorder' => false,
-        ]));
-        $this->assertTrue($this->svc->orderQualifiesForOnHoldQueue([
-            'raw_fulfillment_status' => 'pending',
-            'has_backorder' => false,
-        ]));
-        $this->assertFalse($this->svc->orderQualifiesForOnHoldQueue([
-            'raw_fulfillment_status' => 'fulfilled',
-            'has_backorder' => false,
+            'has_active_hold' => true,
         ]));
         $this->assertFalse($this->svc->orderQualifiesForOnHoldQueue([
             'raw_fulfillment_status' => 'unfulfilled',
-            'has_backorder' => true,
+            'has_active_hold' => false,
+        ]));
+        $this->assertFalse($this->svc->orderQualifiesForOnHoldQueue([
+            'raw_fulfillment_status' => 'fulfilled',
+            'has_active_hold' => true,
         ]));
         $this->assertFalse($this->svc->orderQualifiesForOnHoldQueue([
             'status' => 'shipped',
+            'has_active_hold' => true,
+        ]));
+    }
+
+    public function test_order_qualifies_for_backorder_queue_requires_unfulfilled_and_backorder_flag(): void
+    {
+        $this->assertTrue($this->svc->orderQualifiesForBackorderQueue([
+            'raw_fulfillment_status' => 'unfulfilled',
+            'has_backorder' => true,
+        ]));
+        $this->assertFalse($this->svc->orderQualifiesForBackorderQueue([
+            'raw_fulfillment_status' => 'unfulfilled',
+            'has_backorder' => false,
+        ]));
+        $this->assertFalse($this->svc->orderQualifiesForBackorderQueue([
+            'raw_fulfillment_status' => 'fulfilled',
+            'has_backorder' => true,
         ]));
     }
 

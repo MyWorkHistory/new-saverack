@@ -15,7 +15,8 @@ use Throwable;
  *
  * Matches ShipHero UI semantics:
  * - Ready to ship: order_date May 1 → today, ready_to_ship + unfulfilled
- * - On-hold: order_date today, has_hold + unfulfilled (excludes backorder via listOrders post-filter)
+ * - On-hold: order_date Feb 1 → today, unfulfilled + has_hold (active hold reason)
+ * - Backorder: unfulfilled + has_backorder
  * - Shipped today: shipments API label count for today
  */
 class ShipHeroDashboardMetricsService

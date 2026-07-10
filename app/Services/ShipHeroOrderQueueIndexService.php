@@ -578,11 +578,13 @@ class ShipHeroOrderQueueIndexService
                 ]
             );
 
-            ShipHeroOrderQueueIndex::query()
-                ->where('client_account_id', $clientAccountId)
-                ->where('shiphero_order_id', $orderId)
-                ->where('queue_kind', '!=', $tab)
-                ->delete();
+            if (in_array($tab, [ShipHeroOrderQueueIndex::KIND_AWAITING, ShipHeroOrderQueueIndex::KIND_SHIPPED], true)) {
+                ShipHeroOrderQueueIndex::query()
+                    ->where('client_account_id', $clientAccountId)
+                    ->where('shiphero_order_id', $orderId)
+                    ->where('queue_kind', '!=', $tab)
+                    ->delete();
+            }
         }
     }
 
@@ -642,9 +644,14 @@ class ShipHeroOrderQueueIndexService
             return array_values(array_unique($affected));
         }
 
-        $tab = $this->orders->classifyOrderQueueTab($listRow);
-        if ($tab !== null && $this->isQueueTab($tab)) {
-            $listRow['ready_to_ship'] = $tab === ShipHeroOrderQueueIndex::KIND_AWAITING;
+        $tabs = $this->orders->classifyOrderQueueTabs($listRow);
+        foreach ($tabs as $tab) {
+            if (! $this->isQueueTab($tab)) {
+                continue;
+            }
+            if ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
+                $listRow['ready_to_ship'] = true;
+            }
             $this->upsertRows($clientAccountId, $tab, [$listRow]);
             $affected[] = $tab;
         }

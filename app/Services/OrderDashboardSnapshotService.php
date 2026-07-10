@@ -216,6 +216,8 @@ class OrderDashboardSnapshotService
             (int) round((microtime(true) - $startedAt) * 1000)
         );
 
+        sleep(2);
+
         $shippedStarted = microtime(true);
         $shipped = $this->dashboardMetrics->aggregateShippedToday(false);
         $this->saveMetricSectionPayload(
@@ -224,7 +226,8 @@ class OrderDashboardSnapshotService
             (int) round((microtime(true) - $shippedStarted) * 1000)
         );
 
-        $this->dashboardMetrics->aggregateOnHoldToday(false);
+        $onHoldTotal = $this->orderIndex->aggregateOnHoldTodayFromIndex();
+        $this->dashboardMetrics->putOnHoldTotalCache($onHoldTotal);
 
         $this->bumpDashboardRevision();
         Cache::forget('orders:primary_totals_refresh_queued');
@@ -232,6 +235,7 @@ class OrderDashboardSnapshotService
         Log::info('order_dashboard.primary_totals_refreshed', [
             'ready_to_ship' => (int) ($rts['total_count'] ?? 0),
             'shipped' => (int) ($shipped['total_count'] ?? 0),
+            'on_hold_index' => $onHoldTotal,
             'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
         ]);
     }

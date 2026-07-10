@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ClientAccount;
 use App\Models\OrderDashboardSection;
+use App\Support\ShipHeroCreditLimit;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -130,19 +131,29 @@ class ShipHeroDashboardMetricsService
         $total = 0;
         $truncated = false;
         $failures = 0;
+        $accountIndex = 0;
 
         foreach ($accounts as $account) {
+            if ($accountIndex > 0) {
+                usleep(ShipHeroCreditLimit::INTER_ACCOUNT_SLEEP_MICROS);
+            }
+            $accountIndex++;
+
             $context = $sectionKey !== null
                 ? $this->queueCounts->contextForDashboardSection($account, $sectionKey)
                 : $this->queueCounts->contextForOnHoldDashboardTotal($account);
 
             try {
-                $result = $countForAccount($account, $context);
+                $result = ShipHeroCreditLimit::run(function () use ($countForAccount, $account, $context) {
+                    return $countForAccount($account, $context);
+                });
             } catch (Throwable $e) {
                 $failures++;
+                $isCredit = ShipHeroCreditLimit::isCreditLimitError($e->getMessage());
                 Log::warning('shiphero_dashboard_metrics.account_count_failed', [
                     'client_account_id' => (int) $account->id,
                     'section_key' => $sectionKey,
+                    'credit_limit' => $isCredit,
                     'message' => $e->getMessage(),
                 ]);
 
@@ -232,6 +243,21 @@ class ShipHeroDashboardMetricsService
         }
 
         return 0;
+    }
+
+    /**
+     * Store on-hold total from local index (no ShipHero API credits).
+     */
+    public function putOnHoldTotalCache(int $totalCount, array $payloadExtras = []): void
+    {
+        $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
+        $today = Carbon::now($timezone)->toDateString();
+        $cacheKey = sprintf('orders:dashboard_metrics:v1:%s:%s', 'on_hold_today', $today);
+
+        Cache::put($cacheKey, [
+            'payload' => array_merge(['accounts' => [], 'from_index' => true], $payloadExtras),
+            'total_count' => max(0, $totalCount),
+        ], now()->addMinutes(self::CACHE_TTL_MINUTES));
     }
 
     public function clearCacheForToday(): void

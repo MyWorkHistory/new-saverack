@@ -73,12 +73,9 @@ class WarmShipHeroDataCommand extends Command
         }
 
         $this->line('');
-        $this->comment('Home dashboard');
+        $this->comment('Home dashboard (from index)');
         try {
-            $dashboard->refreshPrimaryTotals();
-            foreach (OrderDashboardSection::HOLD_KEYS as $key) {
-                $dashboard->refreshSectionFromIndex($key);
-            }
+            $dashboard->refreshPrimaryTotals(false);
             $dashboard->refreshSection(OrderDashboardSection::KEY_ASN_PENDING);
         } catch (Throwable $e) {
             $failures[] = 'dashboard: '.$e->getMessage();

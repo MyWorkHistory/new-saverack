@@ -107,13 +107,6 @@ class OrderDashboardSnapshotService
 
         Cache::put($lockKey, now()->toIso8601String(), now()->addMinutes(20));
 
-        foreach ([
-            OrderDashboardSection::KEY_READY_TO_SHIP,
-            OrderDashboardSection::KEY_SHIPPED,
-        ] as $key) {
-            $this->markSectionRunning($key);
-        }
-
         RefreshPrimaryTotalsJob::dispatch();
     }
 
@@ -156,6 +149,13 @@ class OrderDashboardSnapshotService
             ->get()
             ->keyBy('section_key');
 
+        foreach (OrderDashboardSection::ALL_KEYS as $key) {
+            $row = $rows->get($key);
+            if ($row instanceof OrderDashboardSection) {
+                $rows->put($key, $this->recoverZombieSection($row));
+            }
+        }
+
         $sections = [];
         foreach (OrderDashboardSection::ALL_KEYS as $key) {
             $row = $rows->get($key);
@@ -196,13 +196,87 @@ class OrderDashboardSnapshotService
     }
 
     /**
-     * Refresh RTS, on-hold (today), and shipped totals from live ShipHero API into snapshots.
-     * Run via cron/CLI only — never from a web request.
+     * Refresh RTS, shipped, and on-hold totals into snapshots.
+     *
+     * @param  bool  $live  When true, call ShipHero live API (slow, uses credits). Default reads local index only.
      */
-    public function refreshPrimaryTotals(): void
+    public function refreshPrimaryTotals(bool $live = false): void
+    {
+        if ($live) {
+            $this->refreshPrimaryTotalsLive();
+
+            return;
+        }
+
+        $this->refreshPrimaryTotalsFromIndex();
+    }
+
+    /**
+     * Fast path — aggregate from shiphero_order_queue_index (no ShipHero API credits).
+     */
+    public function refreshPrimaryTotalsFromIndex(): void
+    {
+        $this->clearStalePrimaryRunning();
+
+        $startedAt = microtime(true);
+
+        foreach ([
+            OrderDashboardSection::KEY_READY_TO_SHIP,
+            OrderDashboardSection::KEY_SHIPPED,
+        ] as $sectionKey) {
+            $sectionStarted = microtime(true);
+            $result = $this->orderIndex->aggregateDashboardSection($sectionKey, false);
+            $this->saveSectionPayload(
+                $sectionKey,
+                is_array($result['payload'] ?? null) ? $result['payload'] : ['accounts' => [], 'truncated' => false],
+                (int) ($result['total_count'] ?? 0),
+                (int) round((microtime(true) - $sectionStarted) * 1000)
+            );
+        }
+
+        $onHoldTotal = $this->orderIndex->aggregateOnHoldTodayFromIndex();
+        $this->dashboardMetrics->putOnHoldTotalCache($onHoldTotal);
+
+        foreach (OrderDashboardSection::HOLD_KEYS as $key) {
+            try {
+                $this->refreshSectionFromIndex($key);
+            } catch (Throwable $e) {
+                Log::warning('order_dashboard.hold_section_index_refresh_failed', [
+                    'section_key' => $key,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $this->bumpDashboardRevision();
+        Cache::forget('orders:primary_totals_refresh_queued');
+
+        Log::info('order_dashboard.primary_totals_refreshed_from_index', [
+            'ready_to_ship' => (int) OrderDashboardSection::query()
+                ->where('section_key', OrderDashboardSection::KEY_READY_TO_SHIP)
+                ->value('total_count'),
+            'shipped' => (int) OrderDashboardSection::query()
+                ->where('section_key', OrderDashboardSection::KEY_SHIPPED)
+                ->value('total_count'),
+            'on_hold_index' => $onHoldTotal,
+            'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+        ]);
+    }
+
+    /**
+     * Live ShipHero API refresh — use sparingly ({@see --live} on refresh command).
+     */
+    public function refreshPrimaryTotalsLive(): void
     {
         if (function_exists('set_time_limit')) {
             @set_time_limit(0);
+        }
+
+        foreach ([
+            OrderDashboardSection::KEY_READY_TO_SHIP,
+            OrderDashboardSection::KEY_SHIPPED,
+        ] as $key) {
+            $this->markSectionRunning($key);
         }
 
         $this->dashboardMetrics->clearCacheForToday();
@@ -232,12 +306,27 @@ class OrderDashboardSnapshotService
         $this->bumpDashboardRevision();
         Cache::forget('orders:primary_totals_refresh_queued');
 
-        Log::info('order_dashboard.primary_totals_refreshed', [
+        Log::info('order_dashboard.primary_totals_refreshed_live', [
             'ready_to_ship' => (int) ($rts['total_count'] ?? 0),
             'shipped' => (int) ($shipped['total_count'] ?? 0),
             'on_hold_index' => $onHoldTotal,
             'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
         ]);
+    }
+
+    private function clearStalePrimaryRunning(): void
+    {
+        OrderDashboardSection::query()
+            ->whereIn('section_key', [
+                OrderDashboardSection::KEY_READY_TO_SHIP,
+                OrderDashboardSection::KEY_SHIPPED,
+            ])
+            ->where('status', OrderDashboardSection::STATUS_RUNNING)
+            ->update([
+                'status' => OrderDashboardSection::STATUS_IDLE,
+                'refresh_started_at' => null,
+                'error_message' => null,
+            ]);
     }
 
     /**
@@ -247,12 +336,16 @@ class OrderDashboardSnapshotService
     {
         $indexTotal = $this->indexAggregateTotal($sectionKey);
 
-        if ($snapshotTotal <= 0) {
-            return $indexTotal ?? 0;
+        if ($indexTotal !== null) {
+            return max($snapshotTotal, $indexTotal);
         }
 
-        if ($this->snapshotLooksPartial($metricPayload) && $indexTotal !== null && $indexTotal > $snapshotTotal) {
-            return $indexTotal;
+        if ($snapshotTotal <= 0) {
+            return 0;
+        }
+
+        if ($this->snapshotLooksPartial($metricPayload)) {
+            return $snapshotTotal;
         }
 
         return $snapshotTotal;
@@ -336,16 +429,18 @@ class OrderDashboardSnapshotService
 
     private function resolveOnHoldTotal(): int
     {
-        $cached = $this->dashboardMetrics->cachedOnHoldTotal();
-        if ($cached > 0) {
-            return $cached;
-        }
-
+        $indexTotal = null;
         if ($this->orderIndex->indexHasRowsForQueueTab(ShipHeroOrderQueueIndex::KIND_ON_HOLD)) {
-            return $this->orderIndex->aggregateOnHoldTodayFromIndex();
+            $indexTotal = $this->orderIndex->aggregateOnHoldTodayFromIndex();
         }
 
-        return 0;
+        $cached = $this->dashboardMetrics->cachedOnHoldTotal();
+
+        if ($indexTotal !== null) {
+            return max($cached, $indexTotal);
+        }
+
+        return $cached;
     }
 
     public function getDashboardRevision(): int

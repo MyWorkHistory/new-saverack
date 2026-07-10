@@ -27,7 +27,7 @@ class Kernel extends ConsoleKernel
             ->timezone('America/New_York');
         $lightweightSync = [
             'orders:sync-recent-updates',
-            'orders:refresh-home-dashboard',
+            'orders:refresh-home-dashboard --sync --from-index',
             'inventory:sync-catalog-incremental',
         ];
         foreach ($lightweightSync as $command) {

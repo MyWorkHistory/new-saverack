@@ -117,7 +117,7 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         $this->assertSame(7, $payload['totals']['on_hold']);
     }
 
-    public function test_bootstrap_dispatches_primary_totals_job_and_marks_running(): void
+    public function test_bootstrap_dispatches_primary_totals_job(): void
     {
         Queue::fake();
         $now = now();
@@ -142,36 +142,21 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         $service->bootstrapIfNeeded();
 
         Queue::assertPushed(RefreshPrimaryTotalsJob::class, 1);
-
-        $running = OrderDashboardSection::query()
-            ->whereIn('section_key', [
-                OrderDashboardSection::KEY_READY_TO_SHIP,
-                OrderDashboardSection::KEY_SHIPPED,
-            ])
-            ->where('status', OrderDashboardSection::STATUS_RUNNING)
-            ->count();
-
-        $this->assertSame(2, $running);
     }
 
-    public function test_get_dashboard_payload_falls_back_to_index_when_snapshot_zero(): void
+    public function test_get_dashboard_payload_uses_higher_index_total(): void
     {
         $now = now();
         foreach (
             [
-                OrderDashboardSection::KEY_READY_TO_SHIP => 0,
-                OrderDashboardSection::KEY_SHIPPED => 38,
+                OrderDashboardSection::KEY_READY_TO_SHIP => 6,
+                OrderDashboardSection::KEY_SHIPPED => 233,
                 OrderDashboardSection::KEY_ASN_PENDING => 0,
             ] as $key => $total
         ) {
             OrderDashboardSection::query()->insert([
                 'section_key' => $key,
-                'payload' => json_encode([
-                    'accounts' => [],
-                    'truncated' => false,
-                    'accounts_failed' => 60,
-                    'accounts_total' => 64,
-                ]),
+                'payload' => json_encode(['accounts' => [], 'truncated' => false]),
                 'total_count' => $total,
                 'status' => OrderDashboardSection::STATUS_IDLE,
                 'refreshed_at' => $now,

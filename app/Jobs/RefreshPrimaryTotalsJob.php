@@ -32,20 +32,17 @@ class RefreshPrimaryTotalsJob implements ShouldQueue
 
     public function handle(OrderDashboardSnapshotService $snapshots): void
     {
-        $snapshots->refreshPrimaryTotals();
-
-        foreach (OrderDashboardSection::HOLD_KEYS as $key) {
-            $snapshots->refreshSectionFromIndex($key);
-        }
+        $snapshots->refreshPrimaryTotals(false);
     }
 
     public function failed(Throwable $e): void
     {
+        $snapshots = app(OrderDashboardSnapshotService::class);
         foreach ([
             OrderDashboardSection::KEY_READY_TO_SHIP,
             OrderDashboardSection::KEY_SHIPPED,
         ] as $key) {
-            app(OrderDashboardSnapshotService::class)->markSectionFailed(
+            $snapshots->markSectionFailed(
                 $key,
                 $e->getMessage() !== '' ? $e->getMessage() : 'Primary totals refresh failed.'
             );

@@ -88,10 +88,7 @@ class HomeDashboardController extends Controller
     private function refreshAllSections(bool $sync): void
     {
         if ($sync) {
-            $this->snapshots->refreshPrimaryTotals();
-            foreach (OrderDashboardSection::HOLD_KEYS as $key) {
-                $this->snapshots->refreshSectionFromIndex($key);
-            }
+            $this->snapshots->refreshPrimaryTotals(false);
             $this->snapshots->refreshSection(OrderDashboardSection::KEY_ASN_PENDING);
 
             return;

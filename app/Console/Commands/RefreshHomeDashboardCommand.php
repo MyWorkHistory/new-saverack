@@ -14,9 +14,9 @@ class RefreshHomeDashboardCommand extends Command
         {--section=all : Section key or all}
         {--sync : Run inline instead of queueing}
         {--from-index : Refresh from local index only (no blocking ShipHero API in scheduler)}
-        {--live : Force live ShipHero API for shipped (uses API credits; default uses index when populated)}';
+        {--live : Force live ShipHero API for RTS/shipped (slow, uses API credits; default uses local index)}';
 
-    protected $description = 'Refresh admin Home dashboard order/ASN snapshot sections (run with --sync after deploy to warm snapshots)';
+    protected $description = 'Refresh admin Home dashboard order/ASN snapshot sections (default: local index — fast, no API credits)';
 
     public function handle(OrderDashboardSnapshotService $snapshots): int
     {
@@ -41,12 +41,13 @@ class RefreshHomeDashboardCommand extends Command
         $forceLive = (bool) $this->option('live');
 
         if ($this->option('sync')) {
-            if (! $fromIndex && $section === 'all') {
-                $this->info('Refreshing primary totals (RTS, on-hold today, shipped) from ShipHero…');
-                $snapshots->refreshPrimaryTotals();
-                $this->info('Refreshing hold sections from index…');
-                foreach (OrderDashboardSection::HOLD_KEYS as $key) {
-                    $snapshots->refreshSectionFromIndex($key);
+            if ($section === 'all') {
+                if ($forceLive) {
+                    $this->info('Refreshing primary totals from live ShipHero API (slow)…');
+                    $snapshots->refreshPrimaryTotals(true);
+                } else {
+                    $this->info('Refreshing primary totals from local index…');
+                    $snapshots->refreshPrimaryTotals(false);
                 }
                 $this->info('Refreshing ASN pending…');
                 $snapshots->refreshSection(OrderDashboardSection::KEY_ASN_PENDING);

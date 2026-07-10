@@ -1381,6 +1381,13 @@ class OrderDashboardSnapshotService
      */
     private function overlaySectionsFromIndexWhenHealthy(array $sections): array
     {
+        if ($this->orderIndex->indexHasRowsForQueueTab(ShipHeroOrderQueueIndex::KIND_ON_HOLD)) {
+            $distinctOnHold = $this->orderIndex->aggregateDistinctOnHoldTotal();
+            if (isset($sections[OrderDashboardSection::KEY_ON_HOLD])) {
+                $sections[OrderDashboardSection::KEY_ON_HOLD]['total_count'] = $distinctOnHold;
+            }
+        }
+
         return $sections;
     }
 

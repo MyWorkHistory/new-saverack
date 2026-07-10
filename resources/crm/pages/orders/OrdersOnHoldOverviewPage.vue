@@ -5,7 +5,10 @@ import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarBu
 import CrmSyncToolbar from "../../components/common/CrmSyncToolbar.vue";
 import OnHoldSectionPanel from "../../components/orders/OnHoldSectionPanel.vue";
 import OnHoldSummaryCards from "../../components/orders/OnHoldSummaryCards.vue";
-import { HOLD_SECTIONS } from "../../constants/holdSummaryCards.js";
+import {
+  HOLD_TYPE_SECTIONS,
+  ON_HOLD_TOTAL_CARD,
+} from "../../constants/holdSummaryCards.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useAdminHomeDashboard } from "../../composables/useAdminHomeDashboard.js";
 import { useToast } from "../../composables/useToast.js";
@@ -29,8 +32,14 @@ function sectionData(key) {
   );
 }
 
+const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+
 function getTotalCount(key) {
   return sectionData(key).total_count;
+}
+
+function formatCount(key) {
+  return nf.format(Number(getTotalCount(key) || 0));
 }
 
 function lastUpdatedLabel(key) {
@@ -39,9 +48,11 @@ function lastUpdatedLabel(key) {
   return formatDateTimeUs(at);
 }
 
+const onHoldOverviewSections = computed(() => [ON_HOLD_TOTAL_CARD, ...HOLD_TYPE_SECTIONS]);
+
 const onHoldLastSyncedLabel = computed(() => {
   let latestMs = null;
-  for (const hold of HOLD_SECTIONS) {
+  for (const hold of onHoldOverviewSections.value) {
     const at = sectionData(hold.key).refreshed_at;
     if (!at) continue;
     const ms = new Date(at).getTime();
@@ -126,7 +137,9 @@ onMounted(async () => {
     <div class="mb-4 d-flex align-items-center justify-content-between gap-2 flex-wrap">
       <div>
         <h1 class="h4 mb-1 fw-semibold text-body staff-page__heading">On-Hold</h1>
-        <p class="staff-page__intro mb-0">Orders on hold by account and hold type.</p>
+        <p class="staff-page__intro mb-0">
+          {{ formatCount("on_hold") }} orders on hold across all accounts — same total as Home.
+        </p>
       </div>
       <CrmSyncToolbar :last-synced-label="onHoldLastSyncedLabel">
         <CrmRefreshToolbarButton
@@ -148,7 +161,7 @@ onMounted(async () => {
 
       <div class="row g-3">
         <div
-          v-for="hold in HOLD_SECTIONS"
+          v-for="hold in HOLD_TYPE_SECTIONS"
           :key="hold.key"
           class="col-12 col-md-6 col-xl-4"
         >

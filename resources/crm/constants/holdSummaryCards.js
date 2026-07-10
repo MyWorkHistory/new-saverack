@@ -1,4 +1,17 @@
-export const HOLD_SECTIONS = [
+/** Matches Home dashboard pill — distinct on-hold orders (not a sum of hold-type cards). */
+export const ON_HOLD_TOTAL_CARD = {
+  key: "on_hold",
+  label: "On-Hold",
+  titleUpper: "ALL ON-HOLD",
+  sub: "Distinct orders on hold (matches Home)",
+  icon: "hourglass",
+  holdReason: null,
+  titleColor: "#b45309",
+  iconStyle: { background: "#fef3c7", color: "#b45309" },
+};
+
+/** Hold-type breakdown cards — orders with multiple holds appear in more than one card. */
+export const HOLD_TYPE_SECTIONS = [
   {
     key: "hold_operator",
     label: "Operator Hold",
@@ -49,6 +62,11 @@ export const HOLD_SECTIONS = [
     titleColor: "#7c3aed",
     iconStyle: { background: "#f3e8ff", color: "#7c3aed" },
   },
+];
+
+/** @deprecated Prefer ON_HOLD_TOTAL_CARD + HOLD_TYPE_SECTIONS on the on-hold overview page. */
+export const HOLD_SECTIONS = [
+  ...HOLD_TYPE_SECTIONS,
   {
     key: "hold_backorder",
     label: "Backorder",

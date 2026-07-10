@@ -64,17 +64,19 @@ export const HOLD_TYPE_SECTIONS = [
   },
 ];
 
-/** @deprecated Prefer ON_HOLD_TOTAL_CARD + HOLD_TYPE_SECTIONS on the on-hold overview page. */
+export const HOLD_BACKORDER_CARD = {
+  key: "hold_backorder",
+  label: "Backorder",
+  titleUpper: "BACKORDER",
+  sub: "Open orders with inventory shortage (separate queue)",
+  icon: "localShipping",
+  holdReason: null,
+  titleColor: "#dc2626",
+  iconStyle: { background: "#fee2e2", color: "#dc2626" },
+};
+
+/** @deprecated Prefer ON_HOLD_TOTAL_CARD + HOLD_TYPE_SECTIONS + HOLD_BACKORDER_CARD. */
 export const HOLD_SECTIONS = [
   ...HOLD_TYPE_SECTIONS,
-  {
-    key: "hold_backorder",
-    label: "Backorder",
-    titleUpper: "BACKORDER HOLD",
-    sub: "Orders on hold due to inventory shortage",
-    icon: "localShipping",
-    holdReason: null,
-    titleColor: "#dc2626",
-    iconStyle: { background: "#fee2e2", color: "#dc2626" },
-  },
+  HOLD_BACKORDER_CARD,
 ];

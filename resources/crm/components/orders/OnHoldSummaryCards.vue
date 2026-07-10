@@ -1,6 +1,7 @@
 <script setup>
 import CrmMaterialIcon from "../common/CrmMaterialIcon.vue";
 import {
+  HOLD_BACKORDER_CARD,
   HOLD_TYPE_SECTIONS,
   ON_HOLD_TOTAL_CARD,
 } from "../../constants/holdSummaryCards.js";
@@ -25,7 +26,7 @@ function onSelect(key) {
 <template>
   <div class="on-hold-summary-cards mb-4">
     <div class="row g-3 mb-2">
-      <div class="col-12">
+      <div class="col-12 col-lg-6">
         <button
           type="button"
           class="staff-datatable-card staff-datatable-card--white on-hold-summary-card on-hold-summary-card--total h-100 w-100"
@@ -55,11 +56,41 @@ function onSelect(key) {
           </p>
         </button>
       </div>
+      <div class="col-12 col-lg-6">
+        <button
+          type="button"
+          class="staff-datatable-card staff-datatable-card--white on-hold-summary-card on-hold-summary-card--total h-100 w-100"
+          @click="onSelect(HOLD_BACKORDER_CARD.key)"
+        >
+          <div
+            class="on-hold-summary-card__icon"
+            :style="HOLD_BACKORDER_CARD.iconStyle"
+            aria-hidden="true"
+          >
+            <CrmMaterialIcon :name="HOLD_BACKORDER_CARD.icon" :size="24" />
+          </div>
+          <div class="on-hold-summary-card__body min-w-0">
+            <p
+              class="on-hold-summary-card__title"
+              :style="{ color: HOLD_BACKORDER_CARD.titleColor }"
+            >
+              {{ HOLD_BACKORDER_CARD.titleUpper }}
+            </p>
+            <p class="on-hold-summary-card__sub">{{ HOLD_BACKORDER_CARD.sub }}</p>
+          </div>
+          <p
+            class="on-hold-summary-card__value on-hold-summary-card__value--total"
+            :style="{ color: HOLD_BACKORDER_CARD.titleColor }"
+          >
+            {{ formatCount(HOLD_BACKORDER_CARD.key) }}
+          </p>
+        </button>
+      </div>
     </div>
 
     <p class="text-muted small mb-2">
       Hold-type counts below are a breakdown; orders with multiple holds may appear in more than one
-      category. Backorders are tracked separately on the Out of Stock page.
+      category. Backorder is a separate queue and is not included in All On-Hold.
     </p>
 
     <div class="row g-3">

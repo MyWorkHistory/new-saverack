@@ -883,10 +883,13 @@ class OrderDashboardSnapshotService
         $patched = false;
         foreach ($this->dashboardSectionsForQueueTab($queueTab) as $sectionKey) {
             try {
-                $count = $sectionKey === OrderDashboardSection::KEY_ON_HOLD
-                    ? $this->onHoldCountAfterImport($account, $clientAccountId)
-                    : $this->liveCountForAccountDashboardSection($account, $sectionKey);
-                $this->mergeAccountIntoSection($sectionKey, $account, $count);
+                $count = $this->indexCountForAccountPatch($account, $sectionKey);
+                if ($count === null) {
+                    $count = $sectionKey === OrderDashboardSection::KEY_ON_HOLD
+                        ? $this->onHoldCountAfterImport($account, $clientAccountId)
+                        : $this->liveCountForAccountDashboardSection($account, $sectionKey);
+                }
+                $this->mergeAccountIntoSection($sectionKey, $account, $count, true);
                 $patched = true;
             } catch (Throwable $e) {
                 Log::warning('order_dashboard.patch_account_failed', [
@@ -922,8 +925,12 @@ class OrderDashboardSnapshotService
         $this->mergeAccountIntoSection(OrderDashboardSection::KEY_ASN_PENDING, $account, $count);
     }
 
-    private function mergeAccountIntoSection(string $sectionKey, ClientAccount $account, int $count): void
-    {
+    private function mergeAccountIntoSection(
+        string $sectionKey,
+        ClientAccount $account,
+        int $count,
+        bool $force = false
+    ): void {
         $this->validateSectionKey($sectionKey);
         $this->ensureSectionRows();
 
@@ -932,7 +939,7 @@ class OrderDashboardSnapshotService
             return;
         }
 
-        if ($row->status === OrderDashboardSection::STATUS_RUNNING) {
+        if (! $force && $row->status === OrderDashboardSection::STATUS_RUNNING) {
             return;
         }
 
@@ -1026,16 +1033,37 @@ class OrderDashboardSnapshotService
     private function onHoldCountAfterImport(ClientAccount $account, int $clientAccountId): int
     {
         $context = $this->queueCounts->contextForOnHoldDashboardTotal($account);
-        $indexCount = $this->orderIndex->countForAccountTabWithSemantics(
-            $clientAccountId,
-            ShipHeroOrderQueueIndex::KIND_ON_HOLD,
-            $context
-        );
-        if ($indexCount > 0) {
-            return $indexCount;
+
+        return $this->orderIndex->countDistinctOnHoldForAccount($clientAccountId, $context);
+    }
+
+    /**
+     * Prefer local index counts when patching after webhook/cron reconcile (fast, matches reconcile).
+     */
+    private function indexCountForAccountPatch(ClientAccount $account, string $sectionKey): ?int
+    {
+        $clientAccountId = (int) $account->id;
+        if ($clientAccountId <= 0) {
+            return null;
         }
 
-        return $this->liveCountForAccountDashboardSection($account, OrderDashboardSection::KEY_ON_HOLD);
+        if ($sectionKey === OrderDashboardSection::KEY_ON_HOLD) {
+            $context = $this->queueCounts->contextForOnHoldDashboardTotal($account);
+
+            return $this->orderIndex->countDistinctOnHoldForAccount($clientAccountId, $context);
+        }
+
+        if (! in_array($sectionKey, [
+            OrderDashboardSection::KEY_READY_TO_SHIP,
+            OrderDashboardSection::KEY_SHIPPED,
+            ...OrderDashboardSection::HOLD_KEYS,
+        ], true)) {
+            return null;
+        }
+
+        $context = $this->queueCounts->contextForDashboardSection($account, $sectionKey);
+
+        return $this->orderIndex->countForDashboardSection($clientAccountId, $sectionKey, $context);
     }
 
     /**
@@ -1374,17 +1402,66 @@ class OrderDashboardSnapshotService
     }
 
     /**
-     * Dashboard sections use live snapshot rows only (no index overlay on read).
+     * When the local index is healthy, overlay primary Home totals from index reads so webhooks/cron
+     * updates show immediately without waiting for a full live ShipHero refresh.
      *
      * @param  array<string, array<string, mixed>>  $sections
      * @return array<string, array<string, mixed>>
      */
     private function overlaySectionsFromIndexWhenHealthy(array $sections): array
     {
+        foreach ([
+            OrderDashboardSection::KEY_READY_TO_SHIP,
+            OrderDashboardSection::KEY_SHIPPED,
+        ] as $sectionKey) {
+            if (! $this->orderIndex->indexIsHealthyForSection($sectionKey)) {
+                continue;
+            }
+
+            try {
+                $result = $this->orderIndex->aggregateDashboardSection($sectionKey, false);
+                if (! isset($sections[$sectionKey])) {
+                    continue;
+                }
+                $sections[$sectionKey]['total_count'] = (int) ($result['total_count'] ?? 0);
+                $payload = is_array($result['payload'] ?? null) ? $result['payload'] : [];
+                if (isset($payload['accounts']) && is_array($payload['accounts'])) {
+                    $sections[$sectionKey]['accounts'] = $payload['accounts'];
+                }
+                $sections[$sectionKey]['truncated'] = (bool) ($payload['truncated'] ?? false);
+            } catch (Throwable $e) {
+                Log::warning('order_dashboard.index_overlay_failed', [
+                    'section_key' => $sectionKey,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
         if ($this->orderIndex->indexHasRowsForQueueTab(ShipHeroOrderQueueIndex::KIND_ON_HOLD)) {
             $distinctOnHold = $this->orderIndex->aggregateDistinctOnHoldTotal();
             if (isset($sections[OrderDashboardSection::KEY_ON_HOLD])) {
                 $sections[OrderDashboardSection::KEY_ON_HOLD]['total_count'] = $distinctOnHold;
+            }
+        }
+
+        if ($this->orderIndex->indexIsHealthyForSection(OrderDashboardSection::KEY_HOLD_BACKORDER)) {
+            try {
+                $result = $this->orderIndex->aggregateDashboardSection(
+                    OrderDashboardSection::KEY_HOLD_BACKORDER,
+                    false
+                );
+                if (isset($sections[OrderDashboardSection::KEY_HOLD_BACKORDER])) {
+                    $sections[OrderDashboardSection::KEY_HOLD_BACKORDER]['total_count'] = (int) ($result['total_count'] ?? 0);
+                    $payload = is_array($result['payload'] ?? null) ? $result['payload'] : [];
+                    if (isset($payload['accounts']) && is_array($payload['accounts'])) {
+                        $sections[OrderDashboardSection::KEY_HOLD_BACKORDER]['accounts'] = $payload['accounts'];
+                    }
+                }
+            } catch (Throwable $e) {
+                Log::warning('order_dashboard.index_overlay_failed', [
+                    'section_key' => OrderDashboardSection::KEY_HOLD_BACKORDER,
+                    'message' => $e->getMessage(),
+                ]);
             }
         }
 

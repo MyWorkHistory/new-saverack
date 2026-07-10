@@ -6,6 +6,7 @@ use App\Jobs\PatchHomeDashboardAccountJob;
 use App\Models\ClientAccount;
 use App\Models\OrderDashboardSection;
 use App\Models\ShipHeroOrderQueueIndex;
+use App\Support\ShipHeroCreditLimit;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -396,9 +397,11 @@ class ShipHeroOrderQueueIndexService
             do {
                 $filters['after'] = $after;
                 $filters['first'] = 100;
-                $page = $tab === ShipHeroOrderQueueIndex::KIND_SHIPPED
-                    ? $this->orders->listShippedOrders($filters)
-                    : $this->orders->listOrders($filters);
+                $page = ShipHeroCreditLimit::run(function () use ($tab, $filters) {
+                    return $tab === ShipHeroOrderQueueIndex::KIND_SHIPPED
+                        ? $this->orders->listShippedOrders($filters)
+                        : $this->orders->listOrders($filters);
+                });
                 $rows = is_array($page['rows'] ?? null) ? $page['rows'] : [];
                 $this->upsertRows($clientAccountId, $tab, $rows, $syncStarted);
                 $rowsUpserted += count($rows);
@@ -486,11 +489,16 @@ class ShipHeroOrderQueueIndexService
             ? [strtolower(trim($tab))]
             : ShipHeroOrderQueueIndex::QUEUE_KINDS;
 
+        $step = 0;
         foreach ($accounts as $account) {
             foreach ($tabs as $queueTab) {
                 if (! $this->isQueueTab($queueTab)) {
                     continue;
                 }
+                if ($step > 0) {
+                    usleep(ShipHeroCreditLimit::INTER_ACCOUNT_SLEEP_MICROS);
+                }
+                $step++;
                 try {
                     $this->syncAccountQueue((int) $account->id, $queueTab);
                 } catch (Throwable $e) {

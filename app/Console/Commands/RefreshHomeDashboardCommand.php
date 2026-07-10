@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Jobs\RefreshOrderDashboardSectionJob;
+use App\Jobs\RefreshPrimaryTotalsLiveJob;
 use App\Models\OrderDashboardSection;
 use App\Services\OrderDashboardSnapshotService;
 use Illuminate\Console\Command;
@@ -14,7 +15,7 @@ class RefreshHomeDashboardCommand extends Command
         {--section=all : Section key or all}
         {--sync : Run inline instead of queueing}
         {--from-index : Refresh from local index only (no blocking ShipHero API in scheduler)}
-        {--live : Force live ShipHero API for RTS/shipped (slow, uses API credits; default uses local index)}';
+        {--live : Queue accurate live ShipHero refresh (~5 min, uses API credits; default uses local index)}';
 
     protected $description = 'Refresh admin Home dashboard order/ASN snapshot sections (default: local index — fast, no API credits)';
 
@@ -43,7 +44,7 @@ class RefreshHomeDashboardCommand extends Command
         if ($this->option('sync')) {
             if ($section === 'all') {
                 if ($forceLive) {
-                    $this->info('Refreshing primary totals from live ShipHero API (slow)…');
+                    $this->info('Refreshing from live ShipHero API (one account every ~1.2s, expect ~5 min)…');
                     $snapshots->refreshPrimaryTotals(true);
                 } else {
                     $this->info('Refreshing primary totals from local index…');
@@ -75,10 +76,14 @@ class RefreshHomeDashboardCommand extends Command
                     RefreshOrderDashboardSectionJob::dispatch($key, true);
                     $this->info('Queued refresh for '.$key.' (from index)');
                 }
+            } elseif ($forceLive) {
+                RefreshPrimaryTotalsLiveJob::dispatch();
+                RefreshOrderDashboardSectionJob::dispatch(OrderDashboardSection::KEY_ASN_PENDING);
+                $this->info('Queued accurate live refresh (~5 min on database-long queue) and ASN pending.');
             } else {
                 $snapshots->dispatchPrimaryTotalsRefresh();
                 RefreshOrderDashboardSectionJob::dispatch(OrderDashboardSection::KEY_ASN_PENDING);
-                $this->info('Queued primary totals refresh (RTS, on-hold today, shipped) and ASN pending.');
+                $this->info('Queued primary totals refresh (from index) and ASN pending.');
             }
 
             if ($fromIndex) {

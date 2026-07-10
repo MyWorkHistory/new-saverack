@@ -8,6 +8,7 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
 use App\Models\OrderDashboardSection;
 use App\Models\ShipHeroOrderQueueIndex;
+use App\Support\ShipHeroCreditLimit;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -264,7 +265,7 @@ class OrderDashboardSnapshotService
     }
 
     /**
-     * Live ShipHero API refresh — use sparingly ({@see --live} on refresh command).
+     * Live ShipHero API refresh — one account at a time with credit pacing (~3–5 min for 64 accounts).
      */
     public function refreshPrimaryTotalsLive(): void
     {
@@ -272,49 +273,151 @@ class OrderDashboardSnapshotService
             @set_time_limit(0);
         }
 
+        $this->clearStalePrimaryRunning();
+
         foreach ([
             OrderDashboardSection::KEY_READY_TO_SHIP,
             OrderDashboardSection::KEY_SHIPPED,
         ] as $key) {
-            $this->markSectionRunning($key);
+            $this->resetSectionAccountBreakdown($key);
         }
 
         $this->dashboardMetrics->clearCacheForToday();
 
         $startedAt = microtime(true);
+        $accounts = ClientAccount::query()
+            ->whereNotNull('shiphero_customer_account_id')
+            ->where('shiphero_customer_account_id', '!=', '')
+            ->orderBy('company_name')
+            ->get(['id', 'company_name', 'status', 'shiphero_customer_account_id']);
 
-        $rts = $this->dashboardMetrics->aggregateReadyToShip(false);
-        $this->saveMetricSectionPayload(
-            OrderDashboardSection::KEY_READY_TO_SHIP,
-            $rts,
-            (int) round((microtime(true) - $startedAt) * 1000)
-        );
+        $onHoldTotal = 0;
+        $failures = 0;
 
-        sleep(2);
+        foreach ($accounts as $index => $account) {
+            if ($index > 0) {
+                usleep(ShipHeroCreditLimit::INTER_ACCOUNT_SLEEP_MICROS);
+            }
 
-        $shippedStarted = microtime(true);
-        $shipped = $this->dashboardMetrics->aggregateShippedToday(false);
-        $this->saveMetricSectionPayload(
-            OrderDashboardSection::KEY_SHIPPED,
-            $shipped,
-            (int) round((microtime(true) - $shippedStarted) * 1000)
-        );
+            $customerId = trim((string) $account->shiphero_customer_account_id);
+            if ($customerId === '') {
+                continue;
+            }
 
-        $onHoldTotal = $this->orderIndex->aggregateOnHoldTodayFromIndex();
+            try {
+                $rtsContext = $this->queueCounts->contextForDashboardSection(
+                    $account,
+                    OrderDashboardSection::KEY_READY_TO_SHIP
+                );
+                $rts = ShipHeroCreditLimit::run(function () use ($rtsContext, $customerId) {
+                    return $this->orders->countOrders([
+                        'customer_account_id' => $customerId,
+                        'tab' => 'awaiting',
+                        'order_date_from' => $this->isoDateOnly($rtsContext['awaiting_from'] ?? null),
+                        'order_date_to' => $this->isoDateOnly($rtsContext['awaiting_to'] ?? null),
+                        'timezone' => $rtsContext['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
+                        'max_pages' => 50,
+                    ]);
+                });
+                $this->mergeAccountIntoSection(
+                    OrderDashboardSection::KEY_READY_TO_SHIP,
+                    $account,
+                    (int) ($rts['count'] ?? 0)
+                );
+            } catch (Throwable $e) {
+                $failures++;
+                Log::warning('order_dashboard.live_rts_account_failed', [
+                    'client_account_id' => (int) $account->id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                $shippedContext = $this->queueCounts->contextForDashboardSection(
+                    $account,
+                    OrderDashboardSection::KEY_SHIPPED
+                );
+                $shipped = ShipHeroCreditLimit::run(function () use ($shippedContext, $customerId) {
+                    return $this->orders->countShipments([
+                        'customer_account_id' => $customerId,
+                        'date_from' => $shippedContext['shipped_from'],
+                        'date_to' => $shippedContext['shipped_to'],
+                        'timezone' => $shippedContext['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
+                        'max_pages' => 200,
+                    ]);
+                });
+                $this->mergeAccountIntoSection(
+                    OrderDashboardSection::KEY_SHIPPED,
+                    $account,
+                    (int) ($shipped['count'] ?? 0)
+                );
+            } catch (Throwable $e) {
+                $failures++;
+                Log::warning('order_dashboard.live_shipped_account_failed', [
+                    'client_account_id' => (int) $account->id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                $holdContext = $this->queueCounts->contextForOnHoldDashboardTotal($account);
+                $hold = ShipHeroCreditLimit::run(function () use ($holdContext, $customerId) {
+                    return $this->orders->countOrders([
+                        'customer_account_id' => $customerId,
+                        'tab' => 'on_hold',
+                        'order_date_from' => $this->isoDateOnly($holdContext['open_from'] ?? null),
+                        'order_date_to' => $this->isoDateOnly($holdContext['open_to'] ?? null),
+                        'timezone' => $holdContext['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
+                        'max_pages' => 50,
+                    ]);
+                });
+                $onHoldTotal += (int) ($hold['count'] ?? 0);
+            } catch (Throwable $e) {
+                $failures++;
+                Log::warning('order_dashboard.live_on_hold_account_failed', [
+                    'client_account_id' => (int) $account->id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+
+            if ($index > 0 && $index % 10 === 0) {
+                $this->bumpDashboardRevision();
+            }
+        }
+
         $this->dashboardMetrics->putOnHoldTotalCache($onHoldTotal);
 
         $this->bumpDashboardRevision();
         Cache::forget('orders:primary_totals_refresh_queued');
 
+        $rtsTotal = (int) OrderDashboardSection::query()
+            ->where('section_key', OrderDashboardSection::KEY_READY_TO_SHIP)
+            ->value('total_count');
+        $shippedTotal = (int) OrderDashboardSection::query()
+            ->where('section_key', OrderDashboardSection::KEY_SHIPPED)
+            ->value('total_count');
+
         Log::info('order_dashboard.primary_totals_refreshed_live', [
-            'ready_to_ship' => (int) ($rts['total_count'] ?? 0),
-            'shipped' => (int) ($shipped['total_count'] ?? 0),
-            'on_hold_index' => $onHoldTotal,
+            'ready_to_ship' => $rtsTotal,
+            'shipped' => $shippedTotal,
+            'on_hold' => $onHoldTotal,
+            'accounts_failed' => $failures,
+            'accounts_total' => $accounts->count(),
             'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
         ]);
     }
 
-    private function clearStalePrimaryRunning(): void
+    private function resetSectionAccountBreakdown(string $sectionKey): void
+    {
+        $this->saveSectionPayload(
+            $sectionKey,
+            ['accounts' => [], 'truncated' => false],
+            0,
+            0
+        );
+    }
+
+    public function clearStalePrimaryRunning(): void
     {
         OrderDashboardSection::query()
             ->whereIn('section_key', [

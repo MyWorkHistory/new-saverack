@@ -57,13 +57,16 @@ class SyncOrderQueueIndexCommand extends Command
             ->get(['id']);
 
         $tabs = $tab === 'all' ? ShipHeroOrderQueueIndex::QUEUE_KINDS : [$tab];
+        $delaySeconds = 0;
         foreach ($accounts as $account) {
             foreach ($tabs as $queueTab) {
                 if (! $index->isQueueTab($queueTab)) {
                     continue;
                 }
-                RefreshOrderQueueIndexJob::dispatch((int) $account->id, $queueTab);
-                $this->info('Queued '.$queueTab.' sync for account #'.$account->id);
+                RefreshOrderQueueIndexJob::dispatch((int) $account->id, $queueTab)
+                    ->delay(now()->addSeconds($delaySeconds));
+                $this->line('Queued '.$queueTab.' for account #'.$account->id.' in '.$delaySeconds.'s');
+                $delaySeconds += 3;
             }
         }
 

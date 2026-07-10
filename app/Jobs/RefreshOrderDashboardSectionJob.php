@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\OrderDashboardSection;
 use App\Services\OrderDashboardSnapshotService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -20,7 +21,7 @@ class RefreshOrderDashboardSectionJob implements ShouldQueue
     /** @var bool */
     public $fromIndex;
 
-    public $timeout = 3600;
+    public $timeout = 7200;
 
     public $tries = 1;
 
@@ -34,13 +35,13 @@ class RefreshOrderDashboardSectionJob implements ShouldQueue
 
     public function handle(OrderDashboardSnapshotService $snapshots): void
     {
-        if ($this->sectionKey === OrderDashboardSection::KEY_ASN_PENDING) {
-            $snapshots->refreshSection($this->sectionKey);
+        if ($this->fromIndex && $this->sectionKey !== OrderDashboardSection::KEY_ASN_PENDING) {
+            $snapshots->refreshSectionFromIndex($this->sectionKey);
 
             return;
         }
 
-        $snapshots->refreshSectionFromIndex($this->sectionKey);
+        $snapshots->refreshSection($this->sectionKey, $this->fromIndex);
     }
 
     public function failed(Throwable $e): void

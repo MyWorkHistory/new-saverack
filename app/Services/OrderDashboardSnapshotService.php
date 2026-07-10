@@ -211,9 +211,9 @@ class OrderDashboardSnapshotService
     /**
      * Refresh RTS, shipped, and on-hold totals into snapshots.
      *
-     * @param  bool  $live  When true, call ShipHero live API (slow, uses credits). Default reads local index only.
+     * @param  bool  $live  When false, reads local index only (fast, no API credits). Default is live ShipHero.
      */
-    public function refreshPrimaryTotals(bool $live = false): void
+    public function refreshPrimaryTotals(bool $live = true): void
     {
         if ($live) {
             $this->refreshPrimaryTotalsLive();
@@ -289,6 +289,13 @@ class OrderDashboardSnapshotService
         $this->clearStalePrimaryRunning();
 
         $this->dashboardMetrics->clearCacheForToday();
+
+        foreach (array_merge([
+            OrderDashboardSection::KEY_READY_TO_SHIP,
+            OrderDashboardSection::KEY_SHIPPED,
+        ], OrderDashboardSection::HOLD_KEYS) as $sectionKey) {
+            $this->resetSectionAccountBreakdown($sectionKey);
+        }
 
         $startedAt = microtime(true);
         $accounts = ClientAccount::query()
@@ -386,6 +393,27 @@ class OrderDashboardSnapshotService
                 ]);
             }
 
+            foreach (OrderDashboardSection::HOLD_KEYS as $holdSectionKey) {
+                try {
+                    $holdSectionContext = $this->queueCounts->contextForDashboardSection($account, $holdSectionKey);
+                    $holdSectionCount = ShipHeroCreditLimit::run(function () use ($holdSectionKey, $holdSectionContext) {
+                        return $this->countForSection($holdSectionKey, $holdSectionContext);
+                    });
+                    $this->mergeAccountIntoSection(
+                        $holdSectionKey,
+                        $account,
+                        (int) ($holdSectionCount['count'] ?? 0)
+                    );
+                } catch (Throwable $e) {
+                    $failures++;
+                    Log::warning('order_dashboard.live_hold_section_account_failed', [
+                        'section_key' => $holdSectionKey,
+                        'client_account_id' => (int) $account->id,
+                        'message' => $e->getMessage(),
+                    ]);
+                }
+            }
+
             if ($index > 0 && $index % 10 === 0) {
                 $this->bumpDashboardRevision();
             }
@@ -423,7 +451,8 @@ class OrderDashboardSnapshotService
             $sectionKey,
             ['accounts' => [], 'truncated' => false],
             0,
-            0
+            0,
+            true
         );
     }
 
@@ -447,21 +476,9 @@ class OrderDashboardSnapshotService
      */
     private function resolveMetricTotal(string $sectionKey, int $snapshotTotal, array $metricPayload = []): int
     {
-        $indexTotal = $this->indexAggregateTotal($sectionKey);
+        unset($sectionKey, $metricPayload);
 
-        if ($indexTotal !== null) {
-            return max($snapshotTotal, $indexTotal);
-        }
-
-        if ($snapshotTotal <= 0) {
-            return 0;
-        }
-
-        if ($this->snapshotLooksPartial($metricPayload)) {
-            return $snapshotTotal;
-        }
-
-        return $snapshotTotal;
+        return max(0, $snapshotTotal);
     }
 
     private function indexAggregateTotal(string $sectionKey): ?int
@@ -542,18 +559,7 @@ class OrderDashboardSnapshotService
 
     private function resolveOnHoldTotal(): int
     {
-        $indexTotal = null;
-        if ($this->orderIndex->indexHasRowsForQueueTab(ShipHeroOrderQueueIndex::KIND_ON_HOLD)) {
-            $indexTotal = $this->orderIndex->aggregateOnHoldTodayFromIndex();
-        }
-
-        $cached = $this->dashboardMetrics->cachedOnHoldTotal();
-
-        if ($indexTotal !== null) {
-            return max($cached, $indexTotal);
-        }
-
-        return $cached;
+        return max(0, $this->dashboardMetrics->cachedOnHoldTotal());
     }
 
     public function getDashboardRevision(): int
@@ -680,11 +686,11 @@ class OrderDashboardSnapshotService
         return sprintf('orders:dashboard:last_good:%s:%s', $metric, $today);
     }
 
-    public function refreshSection(string $sectionKey, bool $forceLive = false): void
+    public function refreshSection(string $sectionKey, bool $useIndexOnly = false): void
     {
         $this->validateSectionKey($sectionKey);
 
-        if ($sectionKey !== OrderDashboardSection::KEY_ASN_PENDING && ! $forceLive) {
+        if ($sectionKey !== OrderDashboardSection::KEY_ASN_PENDING && $useIndexOnly) {
             $this->refreshSectionFromIndex($sectionKey);
 
             return;
@@ -695,7 +701,7 @@ class OrderDashboardSnapshotService
         $this->markSectionRunning($sectionKey);
 
         try {
-            $result = $this->buildSectionPayload($sectionKey, true, $forceLive);
+            $result = $this->buildSectionPayload($sectionKey, true, $useIndexOnly);
 
             $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
             $this->saveSectionPayload(
@@ -772,13 +778,13 @@ class OrderDashboardSnapshotService
     /**
      * @return array{payload: array<string, mixed>, total_count: int}
      */
-    private function buildSectionPayload(string $sectionKey, bool $allowRemoteFallback, bool $forceLiveShipped = false): array
+    private function buildSectionPayload(string $sectionKey, bool $allowRemoteFallback, bool $useIndexOnly = false): array
     {
         if ($sectionKey === OrderDashboardSection::KEY_ASN_PENDING) {
             return $this->buildAsnPendingPayload();
         }
 
-        if ($allowRemoteFallback) {
+        if ($allowRemoteFallback && ! $useIndexOnly) {
             if ($sectionKey === OrderDashboardSection::KEY_READY_TO_SHIP) {
                 return $this->dashboardMetrics->aggregateReadyToShip(false);
             }
@@ -786,6 +792,8 @@ class OrderDashboardSnapshotService
             if ($sectionKey === OrderDashboardSection::KEY_SHIPPED) {
                 return $this->dashboardMetrics->aggregateShippedToday(false);
             }
+
+            return $this->buildShipHeroSectionPayload($sectionKey, true);
         }
 
         if ($this->orderIndex->indexIsHealthyForSection($sectionKey)) {
@@ -1227,46 +1235,13 @@ class OrderDashboardSnapshotService
     }
 
     /**
-     * Replace snapshot totals with live index aggregates so the UI never shows stale section rows.
-     *
-     * @param  array<string, array<string, mixed>>  $sections
-     * @return array<string, array<string, mixed>>
-     */
-    /**
-     * Overlay hold-type section breakdowns from index when that tab is healthy (not primary totals).
+     * Dashboard sections use live snapshot rows only (no index overlay on read).
      *
      * @param  array<string, array<string, mixed>>  $sections
      * @return array<string, array<string, mixed>>
      */
     private function overlaySectionsFromIndexWhenHealthy(array $sections): array
     {
-        foreach (OrderDashboardSection::HOLD_KEYS as $key) {
-            if (! $this->orderIndex->indexHasRowsForSection($key)) {
-                continue;
-            }
-
-            try {
-                $result = $this->orderIndex->aggregateDashboardSection($key, false);
-                $payload = is_array($result['payload'] ?? null) ? $result['payload'] : [];
-                $total = (int) ($result['total_count'] ?? 0);
-                $sections[$key]['total_count'] = max(
-                    (int) ($sections[$key]['total_count'] ?? 0),
-                    $total
-                );
-                if ($total > 0) {
-                    $sections[$key]['accounts'] = isset($payload['accounts']) && is_array($payload['accounts'])
-                        ? $payload['accounts']
-                        : [];
-                    $sections[$key]['truncated'] = (bool) ($payload['truncated'] ?? false);
-                }
-            } catch (Throwable $e) {
-                Log::warning('order_dashboard.index_overlay_failed', [
-                    'section_key' => $key,
-                    'message' => $e->getMessage(),
-                ]);
-            }
-        }
-
         return $sections;
     }
 

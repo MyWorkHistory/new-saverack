@@ -3,7 +3,6 @@
 namespace App\Console\Commands;
 
 use App\Jobs\RefreshOrderDashboardSectionJob;
-use App\Jobs\RefreshPrimaryTotalsLiveJob;
 use App\Models\OrderDashboardSection;
 use App\Services\OrderDashboardSnapshotService;
 use Illuminate\Console\Command;
@@ -14,10 +13,9 @@ class RefreshHomeDashboardCommand extends Command
     protected $signature = 'orders:refresh-home-dashboard
         {--section=all : Section key or all}
         {--sync : Run inline instead of queueing}
-        {--from-index : Refresh from local index only (no blocking ShipHero API in scheduler)}
-        {--live : Queue accurate live ShipHero refresh (~5 min, uses API credits; default uses local index)}';
+        {--from-index : Refresh from local index only (no ShipHero API; skips live totals)}';
 
-    protected $description = 'Refresh admin Home dashboard order/ASN snapshot sections (default: local index — fast, no API credits)';
+    protected $description = 'Refresh admin Home dashboard order/ASN snapshot sections (default: live ShipHero API)';
 
     public function handle(OrderDashboardSnapshotService $snapshots): int
     {
@@ -39,16 +37,15 @@ class RefreshHomeDashboardCommand extends Command
         }
 
         $fromIndex = (bool) $this->option('from-index');
-        $forceLive = (bool) $this->option('live');
 
         if ($this->option('sync')) {
             if ($section === 'all') {
-                if ($forceLive) {
-                    $this->info('Refreshing from live ShipHero API (one account every ~1.2s, expect ~5 min)…');
-                    $snapshots->refreshPrimaryTotals(true);
-                } else {
+                if ($fromIndex) {
                     $this->info('Refreshing primary totals from local index…');
                     $snapshots->refreshPrimaryTotals(false);
+                } else {
+                    $this->info('Refreshing from live ShipHero API (one account every ~1.2s, expect ~5–10 min)…');
+                    $snapshots->refreshPrimaryTotals(true);
                 }
                 $this->info('Refreshing ASN pending…');
                 $snapshots->refreshSection(OrderDashboardSection::KEY_ASN_PENDING);
@@ -59,10 +56,10 @@ class RefreshHomeDashboardCommand extends Command
 
             foreach ($keys as $key) {
                 $this->info('Refreshing '.$key.'…');
-                if ($fromIndex) {
+                if ($fromIndex && $key !== OrderDashboardSection::KEY_ASN_PENDING) {
                     $snapshots->refreshSectionFromIndex($key);
                 } else {
-                    $snapshots->refreshSection($key, $forceLive);
+                    $snapshots->refreshSection($key, $fromIndex);
                 }
             }
             $this->info('Home dashboard refresh complete.');
@@ -76,14 +73,10 @@ class RefreshHomeDashboardCommand extends Command
                     RefreshOrderDashboardSectionJob::dispatch($key, true);
                     $this->info('Queued refresh for '.$key.' (from index)');
                 }
-            } elseif ($forceLive) {
-                RefreshPrimaryTotalsLiveJob::dispatch();
-                RefreshOrderDashboardSectionJob::dispatch(OrderDashboardSection::KEY_ASN_PENDING);
-                $this->info('Queued accurate live refresh (~5 min on database-long queue) and ASN pending.');
             } else {
                 $snapshots->dispatchPrimaryTotalsRefresh();
                 RefreshOrderDashboardSectionJob::dispatch(OrderDashboardSection::KEY_ASN_PENDING);
-                $this->info('Queued primary totals refresh (from index) and ASN pending.');
+                $this->info('Queued live primary totals refresh (~5–10 min on database-long queue) and ASN pending.');
             }
 
             if ($fromIndex) {
@@ -95,7 +88,7 @@ class RefreshHomeDashboardCommand extends Command
 
         foreach ($keys as $key) {
             RefreshOrderDashboardSectionJob::dispatch($key, $fromIndex);
-            $this->info('Queued refresh for '.$key.($fromIndex ? ' (from index)' : ''));
+            $this->info('Queued refresh for '.$key.($fromIndex ? ' (from index)' : ' (live)'));
         }
 
         if ($fromIndex) {

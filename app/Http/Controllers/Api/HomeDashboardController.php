@@ -66,11 +66,7 @@ class HomeDashboardController extends Controller
         if ($section === 'all') {
             $this->refreshAllSections($sync);
         } elseif ($sync) {
-            if ($section === OrderDashboardSection::KEY_ASN_PENDING) {
-                $this->snapshots->refreshSection($section);
-            } else {
-                $this->snapshots->refreshSectionFromIndex($section);
-            }
+            $this->snapshots->refreshSection($section);
         } else {
             $this->snapshots->dispatchSectionRefresh($section);
         }
@@ -90,7 +86,7 @@ class HomeDashboardController extends Controller
     private function refreshAllSections(bool $sync): void
     {
         if ($sync) {
-            $this->snapshots->refreshPrimaryTotals(false);
+            $this->snapshots->refreshPrimaryTotals(true);
             $this->snapshots->refreshSection(OrderDashboardSection::KEY_ASN_PENDING);
 
             return;

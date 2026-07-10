@@ -3504,6 +3504,9 @@ GQL;
             if ($tab === 'on_hold' && ! empty($row['has_backorder'])) {
                 continue;
             }
+            if ($tab === 'on_hold' && ! $this->orderQualifiesForOnHoldQueue($row)) {
+                continue;
+            }
             // ShipHero can keep `has_hold` on historical rows after the order is shipped/fulfilled.
             if ($tab === 'on_hold' && ! $skipTabScopeForOrderLookup && $this->orderRowIsFulfilledOrShipped($row)) {
                 continue;
@@ -3696,6 +3699,34 @@ GQL;
             default:
                 return str_contains($segmentLc, $needleLc);
         }
+    }
+
+    /**
+     * On-hold queue/import: must be unfulfilled (ShipHero fulfillment_status), not backorder, not shipped/fulfilled.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    public function orderQualifiesForOnHoldQueue(array $row): bool
+    {
+        if (! empty($row['has_backorder'])) {
+            return false;
+        }
+
+        if ($this->orderRowIsFulfilledOrShipped($row)) {
+            return false;
+        }
+
+        foreach (['raw_fulfillment_status', 'status'] as $key) {
+            $normalized = strtolower(trim((string) ($row[$key] ?? '')));
+            if ($normalized === 'unfulfilled') {
+                return true;
+            }
+            if ($normalized !== '') {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     /**

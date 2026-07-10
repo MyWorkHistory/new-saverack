@@ -144,7 +144,7 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         Queue::assertPushed(RefreshPrimaryTotalsJob::class, 1);
     }
 
-    public function test_get_dashboard_payload_uses_higher_index_total(): void
+    public function test_get_dashboard_payload_uses_snapshot_totals_without_index_overlay(): void
     {
         $now = now();
         foreach (
@@ -167,19 +167,7 @@ class OrderDashboardSnapshotServiceTest extends TestCase
 
         $orderIndex = Mockery::mock(ShipHeroOrderQueueIndexService::class);
         $orderIndex->shouldReceive('indexIsHealthyForSection')->andReturn(false);
-        $orderIndex->shouldReceive('indexHasRowsForSection')
-            ->with(OrderDashboardSection::KEY_READY_TO_SHIP)
-            ->andReturn(true);
-        $orderIndex->shouldReceive('indexHasRowsForSection')
-            ->with(OrderDashboardSection::KEY_SHIPPED)
-            ->andReturn(true);
-        $orderIndex->shouldReceive('aggregateDashboardSection')
-            ->with(OrderDashboardSection::KEY_READY_TO_SHIP, false)
-            ->andReturn(['total_count' => 128, 'payload' => ['accounts' => []]]);
-        $orderIndex->shouldReceive('aggregateDashboardSection')
-            ->with(OrderDashboardSection::KEY_SHIPPED, false)
-            ->andReturn(['total_count' => 279, 'payload' => ['accounts' => []]]);
-        $orderIndex->shouldReceive('indexHasRowsForQueueTab')->andReturn(false);
+        $orderIndex->shouldNotReceive('aggregateDashboardSection');
 
         $metrics = Mockery::mock(ShipHeroDashboardMetricsService::class);
         $metrics->shouldReceive('cachedOnHoldTotal')->andReturn(0);
@@ -193,8 +181,8 @@ class OrderDashboardSnapshotServiceTest extends TestCase
 
         $payload = $service->getDashboardPayload();
 
-        $this->assertSame(128, $payload['totals']['ready_to_ship']);
-        $this->assertSame(279, $payload['totals']['shipped']);
+        $this->assertSame(6, $payload['totals']['ready_to_ship']);
+        $this->assertSame(233, $payload['totals']['shipped']);
     }
 
     public function test_refresh_section_uses_live_shipped_metrics(): void
@@ -230,7 +218,7 @@ class OrderDashboardSnapshotServiceTest extends TestCase
             $metrics
         );
 
-        $service->refreshSection(OrderDashboardSection::KEY_SHIPPED, true);
+        $service->refreshSection(OrderDashboardSection::KEY_SHIPPED);
 
         $this->assertSame(
             212,
@@ -477,7 +465,7 @@ class OrderDashboardSnapshotServiceTest extends TestCase
             $metrics
         );
 
-        $service->refreshSection(OrderDashboardSection::KEY_SHIPPED, true);
+        $service->refreshSection(OrderDashboardSection::KEY_SHIPPED);
 
         $this->assertSame(
             279,

@@ -534,7 +534,7 @@ class ShipHeroOrderQueueIndexService
                 continue;
             }
 
-            if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD && ! empty($row['has_backorder'])) {
+            if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD && ! $this->orders->orderQualifiesForOnHoldQueue($row)) {
                 continue;
             }
 
@@ -773,16 +773,9 @@ class ShipHeroOrderQueueIndexService
     {
         $query->where('has_backorder', false);
         $query->where(function ($q) {
-            $q->where(function ($inner) {
-                $inner->whereNull('display_status')
-                    ->orWhere('display_status', '=', '')
-                    ->orWhereRaw("LOWER(display_status) NOT LIKE '%fulfilled%'")
-                    ->orWhereRaw("LOWER(display_status) NOT LIKE '%shipped%'");
-            })->where(function ($inner) {
-                $inner->whereRaw(
-                    "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(list_payload, '$.raw_fulfillment_status')), '')) NOT IN ('fulfilled', 'shipped')"
-                );
-            });
+            $q->whereRaw(
+                "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(list_payload, '$.raw_fulfillment_status')), '')) = 'unfulfilled'"
+            )->orWhereRaw("LOWER(COALESCE(display_status, '')) = 'unfulfilled'");
         });
     }
 

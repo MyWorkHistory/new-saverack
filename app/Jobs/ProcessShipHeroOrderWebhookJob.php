@@ -30,6 +30,7 @@ class ProcessShipHeroOrderWebhookJob implements ShouldQueue
     public function __construct(int $webhookEventId)
     {
         $this->webhookEventId = $webhookEventId;
+        $this->onConnection((string) config('queue.default', 'database'));
     }
 
     public function handle(

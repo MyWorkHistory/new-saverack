@@ -160,6 +160,11 @@ class DiagnoseShipHeroCommand extends Command
     {
         $this->comment('Webhooks');
 
+        $secret = trim((string) config('services.shiphero.webhook_secret', ''));
+        $url = trim((string) config('services.shiphero.webhook_url', ''));
+        $this->line('SHIPHERO_WEBHOOK_SECRET set: '.($secret !== '' ? 'yes' : 'no'));
+        $this->line('SHIPHERO_WEBHOOK_URL: '.($url !== '' ? $url : '(not set)'));
+
         if (! Schema::hasTable('shiphero_webhook_events')) {
             $this->warn('shiphero_webhook_events table not found.');
 
@@ -168,6 +173,37 @@ class DiagnoseShipHeroCommand extends Command
 
         $pending = (int) ShipHeroWebhookEvent::query()->whereNull('processed_at')->count();
         $this->line('Unprocessed webhook events: '.$pending);
+
+        if ($pending > 0) {
+            $oldest = ShipHeroWebhookEvent::query()
+                ->whereNull('processed_at')
+                ->orderBy('id')
+                ->first(['id', 'event_type', 'created_at', 'processing_error']);
+            if ($oldest !== null) {
+                $this->warn('Oldest pending: #'.$oldest->id.' '.$oldest->event_type.' (created '.$oldest->created_at.')');
+                if (is_string($oldest->processing_error) && trim($oldest->processing_error) !== '') {
+                    $this->warn('  Error: '.$oldest->processing_error);
+                }
+            }
+        }
+
+        $recentErrors = (int) ShipHeroWebhookEvent::query()
+            ->whereNotNull('processing_error')
+            ->where('created_at', '>=', now()->subDay())
+            ->count();
+        if ($recentErrors > 0) {
+            $this->warn('Webhook events with errors (24h): '.$recentErrors);
+        }
+
+        if (Schema::hasTable('jobs')) {
+            $webhookJobs = (int) DB::table('jobs')
+                ->where('payload', 'like', '%ProcessShipHeroOrderWebhookJob%')
+                ->count();
+            if ($webhookJobs > 0) {
+                $this->warn('Pending ProcessShipHeroOrderWebhookJob in jobs table: '.$webhookJobs);
+                $this->line('  Run: php artisan queue:work '.config('queue.default', 'database').' --stop-when-empty');
+            }
+        }
 
         $lastProcessed = ShipHeroWebhookEvent::query()
             ->whereNotNull('processed_at')

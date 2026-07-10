@@ -52,11 +52,15 @@ class ImportDashboardAccountCommand extends Command
         $this->info('Importing account #'.$accountId.' ('.$account->company_name.') tab='.$tab.'…');
 
         try {
-            $snapshots->importDashboardAccount($accountId, $tab);
+            $syncResult = $snapshots->importDashboardAccount($accountId, $tab);
         } catch (\Throwable $e) {
             $this->error($e->getMessage());
 
             return self::FAILURE;
+        }
+
+        if (! empty($syncResult['truncated'])) {
+            $this->warn('Sync was truncated (pagination limit). Some stale rows may remain until webhooks or orders:sync-recent-updates runs.');
         }
 
         $payload = $snapshots->getDashboardPayload();

@@ -286,7 +286,7 @@ class ShipHeroOrderQueueIndexService
      * Incremental queue sync — upserts only; does not purge stale rows (avoids dropping today's
      * shipments when API pagination is truncated). Use syncAccountQueueRange with purge for rebuilds.
      */
-    public function syncAccountQueue(int $clientAccountId, string $tab, bool $purgeStale = false): void
+    public function syncAccountQueue(int $clientAccountId, string $tab, bool $purgeStale = false): array
     {
         $tab = strtolower(trim($tab));
         if (! $this->isQueueTab($tab)) {
@@ -300,7 +300,7 @@ class ShipHeroOrderQueueIndexService
 
         $customerId = trim((string) $account->shiphero_customer_account_id);
         if ($customerId === '') {
-            return;
+            return ['pages' => 0, 'rows_upserted' => 0, 'truncated' => false];
         }
 
         $context = $tab === ShipHeroOrderQueueIndex::KIND_SHIPPED
@@ -311,7 +311,7 @@ class ShipHeroOrderQueueIndexService
                     ? $this->queueCounts->contextForDashboardSection($account, OrderDashboardSection::KEY_READY_TO_SHIP)
                     : $this->queueCounts->contextForAccount($account)));
 
-        $this->executeQueueSync(
+        return $this->executeQueueSync(
             $clientAccountId,
             $tab,
             $customerId,
@@ -540,6 +540,13 @@ class ShipHeroOrderQueueIndexService
                 continue;
             }
 
+            if ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
+                $classified = $this->orders->classifyOrderQueueTab($row);
+                if ($classified !== ShipHeroOrderQueueIndex::KIND_AWAITING) {
+                    continue;
+                }
+            }
+
             $orderNumber = trim((string) ($row['order_number'] ?? ''));
             $holdReason = $this->machineHoldReasonFromRow($row);
 
@@ -640,6 +647,38 @@ class ShipHeroOrderQueueIndexService
         }
 
         return array_values(array_unique($affected));
+    }
+
+    /**
+     * Remove awaiting index rows whose cached payload no longer qualifies (e.g. shipped after import).
+     */
+    public function pruneNonAwaitingRows(int $clientAccountId): int
+    {
+        if ($clientAccountId <= 0) {
+            return 0;
+        }
+
+        $pruned = 0;
+        $rows = ShipHeroOrderQueueIndex::query()
+            ->where('client_account_id', $clientAccountId)
+            ->where('queue_kind', ShipHeroOrderQueueIndex::KIND_AWAITING)
+            ->get(['shiphero_order_id', 'list_payload']);
+
+        foreach ($rows as $row) {
+            $payload = $row->list_payload;
+            if (is_string($payload)) {
+                $payload = json_decode($payload, true);
+            }
+            if (! is_array($payload)) {
+                continue;
+            }
+            if ($this->orders->classifyOrderQueueTab($payload) !== ShipHeroOrderQueueIndex::KIND_AWAITING) {
+                $this->invalidateOrder($clientAccountId, (string) $row->shiphero_order_id);
+                $pruned++;
+            }
+        }
+
+        return $pruned;
     }
 
     /**

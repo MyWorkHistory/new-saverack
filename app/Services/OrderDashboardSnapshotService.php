@@ -817,7 +817,7 @@ class OrderDashboardSnapshotService
      * Pull one account from ShipHero into the local index and update dashboard counts for that account.
      * Run per account after resetting the section to zero.
      */
-    public function importDashboardAccount(int $clientAccountId, string $queueTab = 'awaiting'): void
+    public function importDashboardAccount(int $clientAccountId, string $queueTab = 'awaiting'): array
     {
         if ($clientAccountId <= 0) {
             throw new RuntimeException('client_account_id is required.');
@@ -825,20 +825,29 @@ class OrderDashboardSnapshotService
 
         $tab = strtolower(trim($queueTab));
         if ($tab === 'all') {
+            $results = [];
             foreach (['awaiting', 'on_hold', 'shipped', 'backorder'] as $queueKind) {
-                $this->importDashboardAccount($clientAccountId, $queueKind);
+                $results[$queueKind] = $this->importDashboardAccount($clientAccountId, $queueKind);
             }
 
-            return;
+            return ['tabs' => $results];
         }
 
         if (! $this->orderIndex->isQueueTab($tab)) {
             throw new RuntimeException('Invalid queue tab: '.$queueTab);
         }
 
-        $this->orderIndex->syncAccountQueue($clientAccountId, $tab);
+        if ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
+            ShipHeroOrderQueueIndex::query()
+                ->where('client_account_id', $clientAccountId)
+                ->where('queue_kind', $tab)
+                ->delete();
+        }
+
+        $syncResult = $this->orderIndex->syncAccountQueue($clientAccountId, $tab);
         if ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
             $this->orderIndex->supplementAwaitingFromRecentUpdates($clientAccountId);
+            $this->orderIndex->pruneNonAwaitingRows($clientAccountId);
         }
         $this->patchAccountFromQueueTab($clientAccountId, $tab);
         $this->queueCounts->refreshQueueCacheFromIndex($clientAccountId, [$tab]);
@@ -847,7 +856,12 @@ class OrderDashboardSnapshotService
         Log::info('order_dashboard.account_imported', [
             'client_account_id' => $clientAccountId,
             'queue_tab' => $tab,
+            'sync_truncated' => (bool) ($syncResult['truncated'] ?? false),
+            'sync_pages' => (int) ($syncResult['pages'] ?? 0),
+            'sync_rows_upserted' => (int) ($syncResult['rows_upserted'] ?? 0),
         ]);
+
+        return $syncResult;
     }
 
     public function patchAccountFromQueueTab(int $clientAccountId, string $queueTab): void

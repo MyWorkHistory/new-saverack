@@ -3585,19 +3585,19 @@ GQL;
             if (! $skipStatusTabFilter && ! $skipTabScopeForOrderLookup && ! $this->statusMatchesTab($status, $tab)) {
                 continue;
             }
-            if ($tab === 'on_hold' && $holdReason !== '') {
+            if ($tab === 'on_hold' && ! $skipStatusTabFilter && $holdReason !== '') {
                 if (! $this->rowMatchesHoldReasonFilter($row, $holdReason)) {
                     continue;
                 }
             }
-            if ($tab === 'on_hold' && ! empty($row['has_backorder'])) {
+            if ($tab === 'on_hold' && ! $skipStatusTabFilter && ! empty($row['has_backorder'])) {
                 continue;
             }
-            if ($tab === 'on_hold' && ! $this->orderQualifiesForOnHoldQueue($row)) {
+            if ($tab === 'on_hold' && ! $skipStatusTabFilter && ! $this->orderQualifiesForOnHoldQueue($row)) {
                 continue;
             }
             // ShipHero can keep `has_hold` on historical rows after the order is shipped/fulfilled.
-            if ($tab === 'on_hold' && ! $skipTabScopeForOrderLookup && $this->orderRowIsFulfilledOrShipped($row)) {
+            if ($tab === 'on_hold' && ! $skipStatusTabFilter && ! $skipTabScopeForOrderLookup && $this->orderRowIsFulfilledOrShipped($row)) {
                 continue;
             }
             if ($tab === 'shipped' && ! $skipTabScopeForOrderLookup && isset($row['shipment_dates']) && is_array($row['shipment_dates'])) {

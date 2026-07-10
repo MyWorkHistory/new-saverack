@@ -715,8 +715,14 @@ class PortalQueueCountsService
         $query->where('has_backorder', false);
         $query->where(function ($q) {
             $q->whereRaw(
-                "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(list_payload, '$.raw_fulfillment_status')), '')) IN ('unfulfilled', 'pending')"
-            )->orWhereRaw("LOWER(COALESCE(display_status, '')) IN ('unfulfilled', 'pending')");
+                "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(list_payload, '$.raw_fulfillment_status')), '')) NOT IN ('fulfilled', 'shipped', 'complete')"
+            )->whereRaw(
+                "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(list_payload, '$.raw_fulfillment_status')), '')) NOT LIKE 'shipped%'"
+            )->whereRaw(
+                "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(list_payload, '$.status')), '')) NOT IN ('fulfilled', 'shipped', 'complete')"
+            )->whereRaw(
+                "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(list_payload, '$.status')), '')) NOT LIKE 'shipped%'"
+            );
         });
     }
 

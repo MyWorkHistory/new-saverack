@@ -120,11 +120,15 @@ class OrderDashboardSnapshotService
         }
 
         $holdTotal = 0;
-        foreach (OrderDashboardSection::HOLD_KEYS as $holdKey) {
-            if ($holdKey === OrderDashboardSection::KEY_HOLD_BACKORDER) {
-                continue;
+        if ($this->orderIndex->indexHasRowsForSection(OrderDashboardSection::KEY_HOLD_OPERATOR)) {
+            $holdTotal = $this->orderIndex->aggregateDistinctOnHoldTotal();
+        } else {
+            foreach (OrderDashboardSection::HOLD_KEYS as $holdKey) {
+                if ($holdKey === OrderDashboardSection::KEY_HOLD_BACKORDER) {
+                    continue;
+                }
+                $holdTotal += (int) ($sections[$holdKey]['total_count'] ?? 0);
             }
-            $holdTotal += (int) ($sections[$holdKey]['total_count'] ?? 0);
         }
 
         return [
@@ -207,7 +211,7 @@ class OrderDashboardSnapshotService
         ]);
     }
 
-    public function refreshSection(string $sectionKey): void
+    public function refreshSection(string $sectionKey, bool $forceLiveShipped = false): void
     {
         $this->validateSectionKey($sectionKey);
         $startedAt = microtime(true);
@@ -215,7 +219,7 @@ class OrderDashboardSnapshotService
         $this->markSectionRunning($sectionKey);
 
         try {
-            $result = $this->buildSectionPayload($sectionKey, true);
+            $result = $this->buildSectionPayload($sectionKey, true, $forceLiveShipped);
 
             $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
             $this->saveSectionPayload(
@@ -285,13 +289,17 @@ class OrderDashboardSnapshotService
     /**
      * @return array{payload: array<string, mixed>, total_count: int}
      */
-    private function buildSectionPayload(string $sectionKey, bool $allowRemoteFallback): array
+    private function buildSectionPayload(string $sectionKey, bool $allowRemoteFallback, bool $forceLiveShipped = false): array
     {
         if ($sectionKey === OrderDashboardSection::KEY_ASN_PENDING) {
             return $this->buildAsnPendingPayload();
         }
 
         if ($sectionKey === OrderDashboardSection::KEY_SHIPPED && $allowRemoteFallback) {
+            if (! $forceLiveShipped && $this->orderIndex->indexHasRowsForSection($sectionKey)) {
+                return $this->orderIndex->aggregateDashboardSection($sectionKey, false);
+            }
+
             return $this->buildShipHeroSectionPayload($sectionKey, true);
         }
 
@@ -533,7 +541,17 @@ class OrderDashboardSnapshotService
 
         foreach ($accounts as $account) {
             $context = $this->queueCounts->contextForDashboardSection($account, $sectionKey);
-            $countResult = $this->countForSection($sectionKey, $context);
+            try {
+                $countResult = $this->countForSection($sectionKey, $context);
+            } catch (Throwable $e) {
+                Log::warning('order_dashboard.live_section_count_failed', [
+                    'section_key' => $sectionKey,
+                    'client_account_id' => (int) $account->id,
+                    'message' => $e->getMessage(),
+                ]);
+
+                continue;
+            }
             $count = (int) ($countResult['count'] ?? 0);
             $truncated = $truncated || (bool) ($countResult['truncated'] ?? false);
             if ($count <= 0) {
@@ -789,7 +807,7 @@ class OrderDashboardSnapshotService
 
         foreach ($this->shipHeroLinkedAccounts() as $account) {
             try {
-                $this->orderIndex->syncAccountQueue((int) $account->id, $tab, true);
+                $this->orderIndex->syncAccountQueue((int) $account->id, $tab);
             } catch (Throwable $e) {
                 Log::warning('order_dashboard.index_sync_failed', [
                     'section_key' => $sectionKey,

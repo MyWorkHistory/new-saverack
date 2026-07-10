@@ -51,7 +51,7 @@ class PatchHomeDashboardAccountJob implements ShouldQueue
         }
 
         if ($index->isQueueTab($this->queueTab)) {
-            $index->syncAccountQueue($this->clientAccountId, $this->queueTab, true);
+            $index->syncAccountQueue($this->clientAccountId, $this->queueTab);
         }
 
         $snapshots->patchAccountFromQueueTab($this->clientAccountId, $this->queueTab);

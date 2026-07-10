@@ -354,7 +354,7 @@ class PortalQueueCountsService
             }
 
             return [
-                'count' => (int) $query->count(),
+                'count' => (int) $query->distinct()->count('shiphero_order_id'),
                 'truncated' => false,
             ];
         } catch (Throwable $e) {

@@ -64,7 +64,7 @@ class WarmShipHeroDataCommand extends Command
             $this->line('  Syncing orders for account #'.$accountId.'…');
             foreach (ShipHeroOrderQueueIndex::QUEUE_KINDS as $tab) {
                 try {
-                    $orderIndex->syncAccountQueue($accountId, $tab, true);
+                    $orderIndex->syncAccountQueue($accountId, $tab);
                 } catch (Throwable $e) {
                     $failures[] = 'orders #'.$accountId.' '.$tab.': '.$e->getMessage();
                     $this->warn('    '.$tab.' failed: '.$e->getMessage());

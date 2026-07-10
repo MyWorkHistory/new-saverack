@@ -13,7 +13,8 @@ class RefreshHomeDashboardCommand extends Command
     protected $signature = 'orders:refresh-home-dashboard
         {--section=all : Section key or all}
         {--sync : Run inline instead of queueing}
-        {--from-index : Refresh from local index only (no blocking ShipHero API in scheduler)}';
+        {--from-index : Refresh from local index only (no blocking ShipHero API in scheduler)}
+        {--live : Force live ShipHero API for shipped (uses API credits; default uses index when populated)}';
 
     protected $description = 'Refresh admin Home dashboard order/ASN snapshot sections (run with --sync after deploy to warm snapshots)';
 
@@ -37,6 +38,7 @@ class RefreshHomeDashboardCommand extends Command
         }
 
         $fromIndex = (bool) $this->option('from-index');
+        $forceLive = (bool) $this->option('live');
 
         if ($this->option('sync')) {
             foreach ($keys as $key) {
@@ -44,7 +46,7 @@ class RefreshHomeDashboardCommand extends Command
                 if ($fromIndex) {
                     $snapshots->refreshSectionFromIndex($key);
                 } else {
-                    $snapshots->refreshSection($key);
+                    $snapshots->refreshSection($key, $forceLive);
                 }
             }
             $this->info('Home dashboard refresh complete.');

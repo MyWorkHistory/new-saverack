@@ -32,7 +32,7 @@ class RefreshOrderQueueIndexJob implements ShouldQueue
 
     public function handle(ShipHeroOrderQueueIndexService $index): void
     {
-        $index->syncAccountQueue($this->clientAccountId, $this->tab, true);
+        $index->syncAccountQueue($this->clientAccountId, $this->tab);
     }
 
     public function failed(Throwable $e): void

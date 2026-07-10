@@ -280,7 +280,11 @@ class ShipHeroOrderQueueIndexService
         ];
     }
 
-    public function syncAccountQueue(int $clientAccountId, string $tab, bool $full = true): void
+    /**
+     * Incremental queue sync — upserts only; does not purge stale rows (avoids dropping today's
+     * shipments when API pagination is truncated). Use syncAccountQueueRange with purge for rebuilds.
+     */
+    public function syncAccountQueue(int $clientAccountId, string $tab, bool $purgeStale = false): void
     {
         $tab = strtolower(trim($tab));
         if (! $this->isQueueTab($tab)) {
@@ -307,7 +311,7 @@ class ShipHeroOrderQueueIndexService
             $customerId,
             $account,
             $context,
-            $full,
+            $purgeStale,
             null,
             true
         );
@@ -484,7 +488,7 @@ class ShipHeroOrderQueueIndexService
                     continue;
                 }
                 try {
-                    $this->syncAccountQueue((int) $account->id, $queueTab, true);
+                    $this->syncAccountQueue((int) $account->id, $queueTab);
                 } catch (Throwable $e) {
                     Log::warning('order_queue_index.account_sync_failed', [
                         'client_account_id' => (int) $account->id,
@@ -694,6 +698,45 @@ class ShipHeroOrderQueueIndexService
         ];
     }
 
+    /**
+     * Unique on-hold orders across all accounts (excludes backorder). Matches ShipHero "orders on hold"
+     * rather than summing per-hold-type sections (which double-counts multi-hold orders).
+     */
+    public function aggregateDistinctOnHoldTotal(): int
+    {
+        $accounts = ClientAccount::query()
+            ->whereNotNull('shiphero_customer_account_id')
+            ->where('shiphero_customer_account_id', '!=', '')
+            ->get(['id']);
+
+        $total = 0;
+        foreach ($accounts as $account) {
+            $context = $this->queueCounts->contextForAccount($account);
+            $total += $this->countDistinctOnHoldForAccount((int) $account->id, $context);
+        }
+
+        return $total;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    public function countDistinctOnHoldForAccount(int $clientAccountId, array $context): int
+    {
+        if ($clientAccountId <= 0) {
+            return 0;
+        }
+
+        $query = ShipHeroOrderQueueIndex::query()
+            ->where('client_account_id', $clientAccountId)
+            ->where('queue_kind', ShipHeroOrderQueueIndex::KIND_ON_HOLD)
+            ->where('has_backorder', false);
+
+        $this->applyDateWindowToQuery($query, ShipHeroOrderQueueIndex::KIND_ON_HOLD, $context, []);
+
+        return (int) $query->distinct()->count('shiphero_order_id');
+    }
+
     public function indexHasRowsForSection(string $sectionKey): bool
     {
         $mapping = $this->sectionIndexMapping($sectionKey);
@@ -780,6 +823,10 @@ class ShipHeroOrderQueueIndexService
             if ($holdReason !== null && trim($holdReason) !== '') {
                 $this->applyHoldReasonFilterToQuery($query, $holdReason);
             }
+
+            $this->applyDateWindowToQuery($query, $tab, $context, $filters);
+
+            return (int) $query->distinct()->count('shiphero_order_id');
         }
 
         $this->applyDateWindowToQuery($query, $tab, $context, $filters);

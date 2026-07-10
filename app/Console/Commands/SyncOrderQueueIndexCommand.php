@@ -74,7 +74,7 @@ class SyncOrderQueueIndexCommand extends Command
     {
         $this->info('Syncing '.$tab.' for account #'.$accountId.'…');
         if ($this->option('sync')) {
-            $index->syncAccountQueue($accountId, $tab, true);
+            $index->syncAccountQueue($accountId, $tab);
             $this->info('Done.');
 
             return;

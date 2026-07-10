@@ -67,10 +67,15 @@ class OrderDashboardSnapshotServiceTest extends TestCase
             ]);
         }
 
+        $orderIndex = Mockery::mock(ShipHeroOrderQueueIndexService::class);
+        $orderIndex->shouldReceive('indexHasRowsForSection')
+            ->with(OrderDashboardSection::KEY_HOLD_OPERATOR)
+            ->andReturn(false);
+
         $service = new OrderDashboardSnapshotService(
             Mockery::mock(PortalQueueCountsService::class),
             Mockery::mock(ShipHeroOrderService::class),
-            Mockery::mock(ShipHeroOrderQueueIndexService::class)
+            $orderIndex
         );
 
         $payload = $service->getDashboardPayload();
@@ -132,7 +137,9 @@ class OrderDashboardSnapshotServiceTest extends TestCase
 
         $orderIndex = Mockery::mock(ShipHeroOrderQueueIndexService::class);
         $orderIndex->shouldNotReceive('syncAccountQueue');
-        $orderIndex->shouldNotReceive('indexHasRowsForSection');
+        $orderIndex->shouldReceive('indexHasRowsForSection')
+            ->with(OrderDashboardSection::KEY_SHIPPED)
+            ->andReturn(false);
         $orderIndex->shouldNotReceive('aggregateDashboardSection');
 
         $orders = Mockery::mock(ShipHeroOrderService::class);
@@ -387,5 +394,97 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         $this->assertNotNull($row);
         $this->assertSame(2, (int) $row->total_count);
         $this->assertSame(OrderDashboardSection::STATUS_RUNNING, $row->status);
+    }
+
+    public function test_refresh_shipped_uses_index_when_populated(): void
+    {
+        $now = now();
+        foreach (OrderDashboardSection::ALL_KEYS as $key) {
+            OrderDashboardSection::query()->insert([
+                'section_key' => $key,
+                'payload' => json_encode(['accounts' => [], 'truncated' => false]),
+                'total_count' => 0,
+                'status' => OrderDashboardSection::STATUS_IDLE,
+                'refreshed_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
+        $orderIndex = Mockery::mock(ShipHeroOrderQueueIndexService::class);
+        $orderIndex->shouldReceive('indexHasRowsForSection')
+            ->with(OrderDashboardSection::KEY_SHIPPED)
+            ->andReturn(true);
+        $orderIndex->shouldReceive('aggregateDashboardSection')
+            ->once()
+            ->with(OrderDashboardSection::KEY_SHIPPED, false)
+            ->andReturn([
+                'payload' => ['accounts' => [], 'truncated' => false],
+                'total_count' => 279,
+            ]);
+
+        $orders = Mockery::mock(ShipHeroOrderService::class);
+        $orders->shouldNotReceive('countShipments');
+
+        $service = new OrderDashboardSnapshotService(
+            Mockery::mock(PortalQueueCountsService::class),
+            $orders,
+            $orderIndex
+        );
+
+        $service->refreshSection(OrderDashboardSection::KEY_SHIPPED);
+
+        $this->assertSame(
+            279,
+            (int) OrderDashboardSection::query()
+                ->where('section_key', OrderDashboardSection::KEY_SHIPPED)
+                ->value('total_count')
+        );
+    }
+
+    public function test_on_hold_total_uses_distinct_index_count_when_populated(): void
+    {
+        $now = now();
+        foreach (
+            [
+                OrderDashboardSection::KEY_READY_TO_SHIP => 0,
+                OrderDashboardSection::KEY_SHIPPED => 0,
+                OrderDashboardSection::KEY_HOLD_OPERATOR => 8,
+                OrderDashboardSection::KEY_HOLD_ADDRESS => 5,
+                OrderDashboardSection::KEY_HOLD_FRAUD => 0,
+                OrderDashboardSection::KEY_HOLD_PAYMENT => 6,
+                OrderDashboardSection::KEY_HOLD_USER => 4,
+                OrderDashboardSection::KEY_HOLD_BACKORDER => 4,
+                OrderDashboardSection::KEY_ASN_PENDING => 0,
+            ] as $key => $total
+        ) {
+            OrderDashboardSection::query()->insert([
+                'section_key' => $key,
+                'payload' => json_encode(['accounts' => [], 'truncated' => false]),
+                'total_count' => $total,
+                'status' => OrderDashboardSection::STATUS_IDLE,
+                'refreshed_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
+        $orderIndex = Mockery::mock(ShipHeroOrderQueueIndexService::class);
+        $orderIndex->shouldReceive('indexHasRowsForSection')
+            ->with(OrderDashboardSection::KEY_HOLD_OPERATOR)
+            ->andReturn(true);
+        $orderIndex->shouldReceive('aggregateDistinctOnHoldTotal')
+            ->once()
+            ->andReturn(13);
+
+        $service = new OrderDashboardSnapshotService(
+            Mockery::mock(PortalQueueCountsService::class),
+            Mockery::mock(ShipHeroOrderService::class),
+            $orderIndex
+        );
+
+        $payload = $service->getDashboardPayload();
+
+        $this->assertSame(13, $payload['totals']['on_hold']);
     }
 }

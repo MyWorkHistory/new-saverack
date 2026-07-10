@@ -1521,7 +1521,10 @@ onUnmounted(() => {
                         This tab lists <strong>unfulfilled on-hold orders</strong>. The default window matches the
                         dashboard (<strong>Feb 1 through today</strong> by order date).
                       </template>
-                      <template v-else>
+                      <template v-else-if="tabKey === 'backorder'">
+                        This tab lists <strong>backorder</strong> orders (open fulfillment with inventory shortage). The
+                        default window matches the dashboard (<strong>Feb 1 through today</strong> by order date).
+                      </template>
                     </p>
                     <label class="form-label" for="orders-filter-date-preset">Date Range</label>
                     <select

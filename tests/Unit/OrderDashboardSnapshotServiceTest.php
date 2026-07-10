@@ -230,19 +230,13 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         );
     }
 
-    public function test_patch_account_does_not_mutate_dashboard_snapshot(): void
+    public function test_patch_account_updates_ready_to_ship_from_live_count(): void
     {
         $now = now();
         OrderDashboardSection::query()->insert([
             'section_key' => OrderDashboardSection::KEY_READY_TO_SHIP,
             'payload' => json_encode([
                 'accounts' => [
-                    [
-                        'account_id' => 1,
-                        'account_name' => 'Alpha Co',
-                        'account_status' => 'active',
-                        'orders_count' => 5,
-                    ],
                     [
                         'account_id' => 2,
                         'account_name' => 'Beta Co',
@@ -252,16 +246,47 @@ class OrderDashboardSnapshotServiceTest extends TestCase
                 ],
                 'truncated' => false,
             ]),
-            'total_count' => 8,
+            'total_count' => 3,
             'status' => OrderDashboardSection::STATUS_IDLE,
             'refreshed_at' => $now,
             'created_at' => $now,
             'updated_at' => $now,
         ]);
 
+        Schema::dropIfExists('client_accounts');
+        Schema::create('client_accounts', function (Blueprint $table) {
+            $table->id();
+            $table->string('status')->default('active');
+            $table->string('company_name')->nullable();
+            $table->string('shiphero_customer_account_id')->nullable();
+            $table->timestamps();
+        });
+        \App\Models\ClientAccount::query()->create([
+            'id' => 1,
+            'status' => 'active',
+            'company_name' => 'Alpha Co',
+            'shiphero_customer_account_id' => 'sh-alpha',
+        ]);
+
+        $queueCounts = Mockery::mock(PortalQueueCountsService::class);
+        $queueCounts->shouldReceive('contextForDashboardSection')
+            ->once()
+            ->with(Mockery::type(\App\Models\ClientAccount::class), OrderDashboardSection::KEY_READY_TO_SHIP)
+            ->andReturn([
+                'customer_id' => 'sh-alpha',
+                'awaiting_from' => '2026-05-01T00:00:00-04:00',
+                'awaiting_to' => '2026-07-10T23:59:59-04:00',
+                'timezone' => 'America/New_York',
+            ]);
+
+        $orders = Mockery::mock(ShipHeroOrderService::class);
+        $orders->shouldReceive('countOrders')
+            ->once()
+            ->andReturn(['count' => 12, 'truncated' => false]);
+
         $service = $this->makeService(
-            Mockery::mock(PortalQueueCountsService::class),
-            Mockery::mock(ShipHeroOrderService::class),
+            $queueCounts,
+            $orders,
             Mockery::mock(ShipHeroOrderQueueIndexService::class)
         );
 
@@ -272,10 +297,15 @@ class OrderDashboardSnapshotServiceTest extends TestCase
             ->first();
 
         $this->assertNotNull($row);
-        $this->assertSame(8, (int) $row->total_count);
+        $this->assertSame(15, (int) $row->total_count);
+        $accounts = is_array($row->payload) ? ($row->payload['accounts'] ?? []) : [];
+        $this->assertCount(2, $accounts);
+        $this->assertSame(12, (int) $accounts[0]['orders_count']);
+        $this->assertSame('Alpha Co', $accounts[0]['account_name']);
+        $this->assertSame(3, (int) $accounts[1]['orders_count']);
     }
 
-    public function test_patch_account_leaves_zero_count_snapshot_unchanged(): void
+    public function test_patch_account_removes_account_row_when_live_count_is_zero(): void
     {
         $now = now();
         OrderDashboardSection::query()->insert([
@@ -298,9 +328,39 @@ class OrderDashboardSnapshotServiceTest extends TestCase
             'updated_at' => $now,
         ]);
 
+        Schema::dropIfExists('client_accounts');
+        Schema::create('client_accounts', function (Blueprint $table) {
+            $table->id();
+            $table->string('status')->default('active');
+            $table->string('company_name')->nullable();
+            $table->string('shiphero_customer_account_id')->nullable();
+            $table->timestamps();
+        });
+        \App\Models\ClientAccount::query()->create([
+            'id' => 9,
+            'status' => 'active',
+            'company_name' => 'Solo Co',
+            'shiphero_customer_account_id' => 'sh-solo',
+        ]);
+
+        $queueCounts = Mockery::mock(PortalQueueCountsService::class);
+        $queueCounts->shouldReceive('contextForDashboardSection')
+            ->once()
+            ->andReturn([
+                'customer_id' => 'sh-solo',
+                'shipped_from' => '2026-07-10T00:00:00-04:00',
+                'shipped_to' => '2026-07-10T23:59:59-04:00',
+                'timezone' => 'America/New_York',
+            ]);
+
+        $orders = Mockery::mock(ShipHeroOrderService::class);
+        $orders->shouldReceive('countShipments')
+            ->once()
+            ->andReturn(['count' => 0, 'truncated' => false]);
+
         $service = $this->makeService(
-            Mockery::mock(PortalQueueCountsService::class),
-            Mockery::mock(ShipHeroOrderService::class),
+            $queueCounts,
+            $orders,
             Mockery::mock(ShipHeroOrderQueueIndexService::class)
         );
 
@@ -311,10 +371,12 @@ class OrderDashboardSnapshotServiceTest extends TestCase
             ->first();
 
         $this->assertNotNull($row);
-        $this->assertSame(4, (int) $row->total_count);
+        $this->assertSame(0, (int) $row->total_count);
+        $accounts = is_array($row->payload) ? ($row->payload['accounts'] ?? []) : [];
+        $this->assertSame([], $accounts);
     }
 
-    public function test_patch_account_leaves_running_section_unchanged(): void
+    public function test_patch_account_skips_section_when_running(): void
     {
         $now = now();
         OrderDashboardSection::query()->insert([

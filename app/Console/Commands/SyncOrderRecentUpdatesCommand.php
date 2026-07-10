@@ -103,12 +103,8 @@ class SyncOrderRecentUpdatesCommand extends Command
 
             $tabs = array_keys($affectedTabs);
             if ($tabs !== []) {
-                foreach ($tabs as $tab) {
-                    $snapshots->patchAccountFromQueueTab($clientAccountId, $tab);
-                }
                 $queueCounts->refreshQueueCacheFromIndex($clientAccountId, $tabs);
                 $queueCounts->bumpCountsRevision($clientAccountId);
-                $snapshots->bumpDashboardRevision();
             }
         }
 

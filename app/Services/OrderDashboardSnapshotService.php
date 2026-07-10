@@ -794,12 +794,94 @@ class OrderDashboardSnapshotService
         }
     }
 
+    public function resetDashboardSection(string $sectionKey): void
+    {
+        $this->validateSectionKey($sectionKey);
+        $this->resetSectionAccountBreakdown($sectionKey);
+        $this->bumpDashboardRevision();
+
+        Log::info('order_dashboard.section_reset', ['section_key' => $sectionKey]);
+    }
+
+    /**
+     * Clear Home primary pill sections (ready to ship, shipped, on-hold) to zero.
+     */
+    public function resetPrimaryDashboardSections(): void
+    {
+        foreach (OrderDashboardSection::PRIMARY_PILL_KEYS as $sectionKey) {
+            $this->resetDashboardSection($sectionKey);
+        }
+    }
+
+    /**
+     * Pull one account from ShipHero into the local index and update dashboard counts for that account.
+     * Run per account after resetting the section to zero.
+     */
+    public function importDashboardAccount(int $clientAccountId, string $queueTab = 'awaiting'): void
+    {
+        if ($clientAccountId <= 0) {
+            throw new RuntimeException('client_account_id is required.');
+        }
+
+        $tab = strtolower(trim($queueTab));
+        if ($tab === 'all') {
+            foreach (['awaiting', 'on_hold', 'shipped', 'backorder'] as $queueKind) {
+                $this->importDashboardAccount($clientAccountId, $queueKind);
+            }
+
+            return;
+        }
+
+        if (! $this->orderIndex->isQueueTab($tab)) {
+            throw new RuntimeException('Invalid queue tab: '.$queueTab);
+        }
+
+        $this->orderIndex->syncAccountQueue($clientAccountId, $tab);
+        $this->patchAccountFromQueueTab($clientAccountId, $tab);
+        $this->queueCounts->refreshQueueCacheFromIndex($clientAccountId, [$tab]);
+        $this->queueCounts->bumpCountsRevision($clientAccountId);
+
+        Log::info('order_dashboard.account_imported', [
+            'client_account_id' => $clientAccountId,
+            'queue_tab' => $tab,
+        ]);
+    }
+
     public function patchAccountFromQueueTab(int $clientAccountId, string $queueTab): void
     {
-        // Dashboard primary totals come from live ShipHero refresh only.
-        // Index reconciliation must not patch order_dashboard_sections (it mixed stale
-        // index rows into live snapshots and inflated/deflated Home pill counts).
-        unset($clientAccountId, $queueTab);
+        if ($clientAccountId <= 0) {
+            return;
+        }
+
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            return;
+        }
+
+        $customerId = trim((string) $account->shiphero_customer_account_id);
+        if ($customerId === '') {
+            return;
+        }
+
+        $patched = false;
+        foreach ($this->dashboardSectionsForQueueTab($queueTab) as $sectionKey) {
+            try {
+                $count = $this->liveCountForAccountDashboardSection($account, $sectionKey);
+                $this->mergeAccountIntoSection($sectionKey, $account, $count);
+                $patched = true;
+            } catch (Throwable $e) {
+                Log::warning('order_dashboard.patch_account_failed', [
+                    'client_account_id' => $clientAccountId,
+                    'queue_tab' => $queueTab,
+                    'section_key' => $sectionKey,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if ($patched) {
+            $this->bumpDashboardRevision();
+        }
     }
 
     public function patchAccountAsnPending(int $clientAccountId): void
@@ -873,6 +955,53 @@ class OrderDashboardSnapshotService
             'refreshed_at' => now(),
             'error_message' => null,
         ]);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function dashboardSectionsForQueueTab(string $queueTab): array
+    {
+        $tab = strtolower(trim($queueTab));
+
+        switch ($tab) {
+            case ShipHeroOrderQueueIndex::KIND_AWAITING:
+            case 'awaiting':
+                return [OrderDashboardSection::KEY_READY_TO_SHIP];
+            case ShipHeroOrderQueueIndex::KIND_SHIPPED:
+            case 'shipped':
+                return [OrderDashboardSection::KEY_SHIPPED];
+            case ShipHeroOrderQueueIndex::KIND_ON_HOLD:
+            case 'on_hold':
+                return array_merge(
+                    [OrderDashboardSection::KEY_ON_HOLD],
+                    OrderDashboardSection::HOLD_KEYS
+                );
+            case ShipHeroOrderQueueIndex::KIND_BACKORDER:
+            case 'backorder':
+                return [OrderDashboardSection::KEY_HOLD_BACKORDER];
+            default:
+                return [];
+        }
+    }
+
+    private function liveCountForAccountDashboardSection(ClientAccount $account, string $sectionKey): int
+    {
+        if (in_array($sectionKey, OrderDashboardSection::HOLD_KEYS, true)) {
+            $context = $this->queueCounts->contextForDashboardSection($account, $sectionKey);
+
+            return $this->orderIndex->countForDashboardSection((int) $account->id, $sectionKey, $context);
+        }
+
+        $context = $sectionKey === OrderDashboardSection::KEY_ON_HOLD
+            ? $this->queueCounts->contextForOnHoldDashboardTotal($account)
+            : $this->queueCounts->contextForDashboardSection($account, $sectionKey);
+
+        $result = ShipHeroCreditLimit::run(function () use ($sectionKey, $context) {
+            return $this->countForSection($sectionKey, $context);
+        });
+
+        return max(0, (int) ($result['count'] ?? 0));
     }
 
     /**
@@ -1099,6 +1228,28 @@ class OrderDashboardSnapshotService
      */
     private function countForSection(string $sectionKey, array $context): array
     {
+        if ($sectionKey === OrderDashboardSection::KEY_READY_TO_SHIP) {
+            return $this->orders->countOrders([
+                'customer_account_id' => $context['customer_id'],
+                'tab' => 'awaiting',
+                'order_date_from' => $this->isoDateOnly($context['awaiting_from'] ?? null),
+                'order_date_to' => $this->isoDateOnly($context['awaiting_to'] ?? null),
+                'timezone' => $context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
+                'max_pages' => 50,
+            ]);
+        }
+
+        if ($sectionKey === OrderDashboardSection::KEY_ON_HOLD) {
+            return $this->orders->countOrders([
+                'customer_account_id' => $context['customer_id'],
+                'tab' => 'on_hold',
+                'order_date_from' => $this->isoDateOnly($context['open_from'] ?? null),
+                'order_date_to' => $this->isoDateOnly($context['open_to'] ?? null),
+                'timezone' => $context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
+                'max_pages' => 50,
+            ]);
+        }
+
         if ($sectionKey === OrderDashboardSection::KEY_SHIPPED) {
             return $this->orders->countShipments([
                 'customer_account_id' => $context['customer_id'],

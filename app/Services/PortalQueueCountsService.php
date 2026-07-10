@@ -371,14 +371,6 @@ class PortalQueueCountsService
                     $context = $this->contextForOnHoldDashboardTotal($account);
                 }
                 $this->applyActiveOnHoldScopeToIndexQuery($query);
-                $from = $this->parseTimestamp($context['open_from'] ?? null);
-                $to = $this->parseTimestamp($context['open_to'] ?? null);
-                if ($from !== null) {
-                    $query->where('order_date', '>=', $from);
-                }
-                if ($to !== null) {
-                    $query->where('order_date', '<=', $to);
-                }
 
                 return [
                     'count' => (int) $query->distinct()->count('shiphero_order_id'),
@@ -713,7 +705,6 @@ class PortalQueueCountsService
      */
     private function applyActiveOnHoldScopeToIndexQuery($query): void
     {
-        $query->where('has_backorder', false);
         $query->where(function ($q) {
             $q->whereRaw(
                 "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(list_payload, '$.raw_fulfillment_status')), '')) NOT IN ('fulfilled', 'shipped', 'complete')"

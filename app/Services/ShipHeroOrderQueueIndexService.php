@@ -903,8 +903,6 @@ class ShipHeroOrderQueueIndexService
             ->where('queue_kind', ShipHeroOrderQueueIndex::KIND_ON_HOLD);
         $this->applyActiveOnHoldScopeToQuery($query);
 
-        $this->applyDateWindowToQuery($query, ShipHeroOrderQueueIndex::KIND_ON_HOLD, $context, []);
-
         return (int) $query->distinct()->count('shiphero_order_id');
     }
 
@@ -925,12 +923,12 @@ class ShipHeroOrderQueueIndexService
 
     /**
      * On-hold rows that are fulfilled/shipped are stale index state — exclude from counts.
+     * Backorder is not excluded here; the on-hold sync/API scope is unfulfilled in the date window.
      *
      * @param  \Illuminate\Database\Eloquent\Builder  $query
      */
     private function applyActiveOnHoldScopeToQuery($query): void
     {
-        $query->where('has_backorder', false);
         $query->where(function ($q) {
             $q->whereRaw(
                 "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(list_payload, '$.raw_fulfillment_status')), '')) NOT IN ('fulfilled', 'shipped', 'complete')"
@@ -1115,7 +1113,9 @@ class ShipHeroOrderQueueIndexService
             }
             $this->applyActiveOnHoldScopeToQuery($query);
 
-            $this->applyDateWindowToQuery($query, $tab, $context, $filters);
+            if ($this->shouldApplyOnHoldDateWindowToIndexQuery($filters)) {
+                $this->applyDateWindowToQuery($query, $tab, $context, $filters);
+            }
 
             return (int) $query->distinct()->count('shiphero_order_id');
         }
@@ -1284,6 +1284,10 @@ class ShipHeroOrderQueueIndexService
         }
 
         if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
+            if (! $this->shouldApplyOnHoldDateWindowToIndexQuery($filters)) {
+                return;
+            }
+
             $timezone = (string) ($context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE);
             $from = $this->parseContextBoundary($context['open_from'] ?? null, $timezone, true);
             $to = $this->parseContextBoundary($context['open_to'] ?? null, $timezone, false);
@@ -1389,6 +1393,14 @@ class ShipHeroOrderQueueIndexService
             'client_account_id' => (int) $account->id,
             'message' => $message,
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function shouldApplyOnHoldDateWindowToIndexQuery(array $filters): bool
+    {
+        return ! empty($filters['order_date_from']) || ! empty($filters['order_date_to']);
     }
 
     private function parseTimestamp($value): ?Carbon

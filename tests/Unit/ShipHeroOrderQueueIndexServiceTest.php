@@ -313,7 +313,7 @@ class ShipHeroOrderQueueIndexServiceTest extends TestCase
         $this->assertSame(5, $service->countShippedTodayFromIndex(77, $context));
     }
 
-    public function test_on_hold_count_excludes_backorder_rows(): void
+    public function test_on_hold_count_includes_backorder_rows_in_sync_scope(): void
     {
         $now = now();
         $context = [
@@ -357,7 +357,53 @@ class ShipHeroOrderQueueIndexServiceTest extends TestCase
             Mockery::mock(PortalQueueCountsService::class)
         );
 
-        $this->assertSame(1, $service->countForAccountTabWithSemantics(42, ShipHeroOrderQueueIndex::KIND_ON_HOLD, $context));
+        $this->assertSame(2, $service->countForAccountTabWithSemantics(42, ShipHeroOrderQueueIndex::KIND_ON_HOLD, $context));
+    }
+
+    public function test_on_hold_count_applies_date_window_only_with_explicit_filters(): void
+    {
+        $now = now();
+        $context = [
+            'timezone' => 'America/New_York',
+            'open_from' => $now->copy()->startOfDay()->toIso8601String(),
+            'open_to' => $now->endOfDay()->toIso8601String(),
+        ];
+
+        ShipHeroOrderQueueIndex::query()->insert([
+            'client_account_id' => 42,
+            'shiphero_order_id' => 'hold-in-range',
+            'queue_kind' => ShipHeroOrderQueueIndex::KIND_ON_HOLD,
+            'has_backorder' => false,
+            'order_date' => $now,
+            'list_payload' => json_encode(['id' => 'hold-in-range']),
+            'indexed_at' => $now,
+            'last_seen_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        ShipHeroOrderQueueIndex::query()->insert([
+            'client_account_id' => 42,
+            'shiphero_order_id' => 'hold-old',
+            'queue_kind' => ShipHeroOrderQueueIndex::KIND_ON_HOLD,
+            'has_backorder' => false,
+            'order_date' => $now->copy()->subMonths(2),
+            'list_payload' => json_encode(['id' => 'hold-old']),
+            'indexed_at' => $now,
+            'last_seen_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $service = new ShipHeroOrderQueueIndexService(
+            Mockery::mock(ShipHeroOrderService::class),
+            Mockery::mock(PortalQueueCountsService::class)
+        );
+
+        $this->assertSame(2, $service->countForAccountTabWithSemantics(42, ShipHeroOrderQueueIndex::KIND_ON_HOLD, $context));
+        $this->assertSame(1, $service->countForAccountTabWithSemantics(42, ShipHeroOrderQueueIndex::KIND_ON_HOLD, $context, [
+            'order_date_from' => $now->toDateString(),
+            'order_date_to' => $now->toDateString(),
+        ]));
     }
 
     public function test_list_from_index_returns_queue_total_for_shipped_labels(): void

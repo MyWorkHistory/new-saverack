@@ -120,6 +120,34 @@ class PortalQueueCountsService
             $context['awaiting_to'] = $this->dateEndIso(Carbon::now($timezone)->toDateString(), $timezone);
         }
 
+        if (in_array($sectionKey, [
+            OrderDashboardSection::KEY_HOLD_OPERATOR,
+            OrderDashboardSection::KEY_HOLD_ADDRESS,
+            OrderDashboardSection::KEY_HOLD_FRAUD,
+            OrderDashboardSection::KEY_HOLD_PAYMENT,
+            OrderDashboardSection::KEY_HOLD_USER,
+        ], true)) {
+            $today = Carbon::now($timezone)->toDateString();
+            $context['open_from'] = $this->dateStartIso($today, $timezone);
+            $context['open_to'] = $this->dateEndIso($today, $timezone);
+        }
+
+        return $context;
+    }
+
+    /**
+     * Context for admin Home on-hold total (order placement date = today).
+     *
+     * @return array<string, mixed>
+     */
+    public function contextForOnHoldDashboardTotal(ClientAccount $account): array
+    {
+        $context = $this->contextForAccount($account);
+        $timezone = (string) ($context['timezone'] ?? self::DEFAULT_ACCOUNT_TIMEZONE);
+        $today = Carbon::now($timezone)->toDateString();
+        $context['open_from'] = $this->dateStartIso($today, $timezone);
+        $context['open_to'] = $this->dateEndIso($today, $timezone);
+
         return $context;
     }
 
@@ -263,6 +291,14 @@ class PortalQueueCountsService
         if ($tab === 'awaiting') {
             $from = $context['awaiting_from'];
             $to = $context['awaiting_to'];
+        } elseif ($tab === 'on_hold') {
+            $accountId = (int) ($context['client_account_id'] ?? 0);
+            $account = $accountId > 0 ? ClientAccount::query()->find($accountId) : null;
+            if ($account instanceof ClientAccount) {
+                $holdContext = $this->contextForOnHoldDashboardTotal($account);
+                $from = $holdContext['open_from'];
+                $to = $holdContext['open_to'];
+            }
         } elseif ($tab === 'shipped') {
             $from = $context['shipped_from'];
             $to = $context['shipped_to'];
@@ -282,11 +318,23 @@ class PortalQueueCountsService
         return $this->orders->countOrders([
             'customer_account_id' => $context['customer_id'],
             'tab' => $tab,
-            'order_date_from' => $from,
-            'order_date_to' => $to,
+            'order_date_from' => $this->isoDateOnlyFromContext($from),
+            'order_date_to' => $this->isoDateOnlyFromContext($to),
             'max_pages' => $maxPages,
             'count_deadline' => microtime(true) + $deadlineSeconds,
         ]);
+    }
+
+    private function isoDateOnlyFromContext($value): ?string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+        try {
+            return Carbon::parse($value)->toDateString();
+        } catch (Throwable $e) {
+            return null;
+        }
     }
 
     /**
@@ -316,7 +364,24 @@ class PortalQueueCountsService
             $query = clone $baseQuery;
 
             if ($tab === 'on_hold') {
+                $account = ClientAccount::query()->find($accountId);
+                if ($account instanceof ClientAccount) {
+                    $context = $this->contextForOnHoldDashboardTotal($account);
+                }
                 $this->applyActiveOnHoldScopeToIndexQuery($query);
+                $from = $this->parseTimestamp($context['open_from'] ?? null);
+                $to = $this->parseTimestamp($context['open_to'] ?? null);
+                if ($from !== null) {
+                    $query->where('order_date', '>=', $from);
+                }
+                if ($to !== null) {
+                    $query->where('order_date', '<=', $to);
+                }
+
+                return [
+                    'count' => (int) $query->distinct()->count('shiphero_order_id'),
+                    'truncated' => false,
+                ];
             } elseif ($tab === 'awaiting') {
                 $from = $this->parseTimestamp($context['awaiting_from'] ?? null);
                 $to = $this->parseTimestamp($context['awaiting_to'] ?? null);
@@ -338,11 +403,6 @@ class PortalQueueCountsService
 
                 return [
                     'count' => $this->sumShippedLabelCountFromRows($query->get(['list_payload'])),
-                    'truncated' => false,
-                ];
-            } elseif ($tab === 'on_hold') {
-                return [
-                    'count' => (int) $query->distinct()->count('shiphero_order_id'),
                     'truncated' => false,
                 ];
             } else {

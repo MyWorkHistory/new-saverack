@@ -227,7 +227,7 @@ class ShipHeroOrderQueueIndexService
                 $q->where('order_number_search', 'like', '%'.$needle.'%')
                     ->orWhere('order_number_search', $needle);
             });
-        } elseif ($tab !== ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
+        } else {
             $this->applyDateWindowToQuery($query, $tab, $context, $filters);
         }
 
@@ -304,7 +304,9 @@ class ShipHeroOrderQueueIndexService
 
         $context = $tab === ShipHeroOrderQueueIndex::KIND_SHIPPED
             ? $this->shippedIndexSyncContext($account)
-            : $this->queueCounts->contextForAccount($account);
+            : ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD
+                ? $this->onHoldIndexSyncContext($account)
+                : $this->queueCounts->contextForAccount($account));
 
         $this->executeQueueSync(
             $clientAccountId,
@@ -713,7 +715,7 @@ class ShipHeroOrderQueueIndexService
 
         $total = 0;
         foreach ($accounts as $account) {
-            $context = $this->queueCounts->contextForAccount($account);
+            $context = $this->queueCounts->contextForOnHoldDashboardTotal($account);
             $total += $this->countDistinctOnHoldForAccount((int) $account->id, $context);
         }
 
@@ -800,6 +802,89 @@ class ShipHeroOrderQueueIndexService
     public function indexHasAnyRows(): bool
     {
         return ShipHeroOrderQueueIndex::query()->exists();
+    }
+
+    /**
+     * Index is trustworthy enough to overlay dashboard section breakdowns (not primary totals).
+     */
+    public function indexIsHealthyForSection(string $sectionKey): bool
+    {
+        $mapping = $this->sectionIndexMapping($sectionKey);
+        if ($mapping === null) {
+            return false;
+        }
+
+        $tab = $mapping['queue_kind'];
+        $linkedCount = ClientAccount::query()
+            ->whereNotNull('shiphero_customer_account_id')
+            ->where('shiphero_customer_account_id', '!=', '')
+            ->count();
+
+        if ($linkedCount <= 0) {
+            return false;
+        }
+
+        $accountsWithRows = (int) ShipHeroOrderQueueIndex::query()
+            ->where('queue_kind', $tab)
+            ->distinct()
+            ->count('client_account_id');
+
+        if ($accountsWithRows < max(1, (int) ceil($linkedCount * 0.5))) {
+            return false;
+        }
+
+        $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
+        $todayStart = Carbon::now($timezone)->startOfDay();
+        $todayEnd = Carbon::now($timezone)->endOfDay();
+
+        if ($tab === ShipHeroOrderQueueIndex::KIND_SHIPPED) {
+            return ShipHeroOrderQueueIndex::query()
+                ->where('queue_kind', $tab)
+                ->where('ship_date', '>=', $todayStart)
+                ->where('ship_date', '<=', $todayEnd)
+                ->exists();
+        }
+
+        if ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
+            $rtsFrom = Carbon::parse(PortalQueueCountsService::RTS_DASHBOARD_ORDER_FROM, $timezone)->startOfDay();
+
+            return ShipHeroOrderQueueIndex::query()
+                ->where('queue_kind', $tab)
+                ->where('order_date', '>=', $rtsFrom)
+                ->exists();
+        }
+
+        if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
+            return ShipHeroOrderQueueIndex::query()
+                ->where('queue_kind', $tab)
+                ->where('order_date', '>=', $todayStart)
+                ->where('order_date', '<=', $todayEnd)
+                ->exists();
+        }
+
+        return $accountsWithRows > 0;
+    }
+
+    /**
+     * Index-backed totals for diagnose parity checks.
+     */
+    public function aggregateReadyToShipFromIndex(): int
+    {
+        $result = $this->aggregateDashboardSection(OrderDashboardSection::KEY_READY_TO_SHIP, false);
+
+        return (int) ($result['total_count'] ?? 0);
+    }
+
+    public function aggregateShippedTodayFromIndex(): int
+    {
+        $result = $this->aggregateDashboardSection(OrderDashboardSection::KEY_SHIPPED, false);
+
+        return (int) ($result['total_count'] ?? 0);
+    }
+
+    public function aggregateOnHoldTodayFromIndex(): int
+    {
+        return $this->aggregateDistinctOnHoldTotal();
     }
 
     /**
@@ -1025,6 +1110,21 @@ class ShipHeroOrderQueueIndexService
         }
 
         if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
+            $from = $this->parseTimestamp($context['open_from'] ?? null);
+            $to = $this->parseTimestamp($context['open_to'] ?? null);
+            if (! empty($filters['order_date_from'])) {
+                $from = $this->parseTimestamp($filters['order_date_from'].' 00:00:00');
+            }
+            if (! empty($filters['order_date_to'])) {
+                $to = $this->parseTimestamp($filters['order_date_to'].' 23:59:59');
+            }
+            if ($from !== null) {
+                $query->where('order_date', '>=', $from);
+            }
+            if ($to !== null) {
+                $query->where('order_date', '<=', $to);
+            }
+
             return;
         }
 
@@ -1063,8 +1163,8 @@ class ShipHeroOrderQueueIndexService
             $filters['order_date_from'] = $this->isoDateOnly($context['shipped_from'] ?? null);
             $filters['order_date_to'] = $this->isoDateOnly($context['shipped_to'] ?? null);
         } elseif ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
-            // listOrders bounds by updated_at when no order_date window (all current holds).
-            unset($filters['order_date_from'], $filters['order_date_to']);
+            $filters['order_date_from'] = $this->isoDateOnly($context['open_from'] ?? null);
+            $filters['order_date_to'] = $this->isoDateOnly($context['open_to'] ?? null);
         } else {
             $filters['order_date_from'] = $this->isoDateOnly($context['open_from'] ?? null);
             $filters['order_date_to'] = $this->isoDateOnly($context['open_to'] ?? null);
@@ -1083,6 +1183,11 @@ class ShipHeroOrderQueueIndexService
             'order_date_from' => $now->toDateString(),
             'order_date_to' => $now->toDateString(),
         ]);
+    }
+
+    private function onHoldIndexSyncContext(ClientAccount $account): array
+    {
+        return $this->queueCounts->contextForOnHoldDashboardTotal($account);
     }
 
     private function markSyncRunning(ClientAccount $account): void

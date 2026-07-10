@@ -9,6 +9,7 @@ use App\Models\ShipHeroOrderQueueIndex;
 use App\Models\ShipHeroWebhookEvent;
 use App\Services\PortalQueueCountsService;
 use App\Services\ShipHeroCredentialResolver;
+use App\Services\ShipHeroDashboardMetricsService;
 use App\Services\ShipHeroInventoryService;
 use App\Services\ShipHeroOrderQueueIndexService;
 use Carbon\Carbon;
@@ -24,8 +25,12 @@ class DiagnoseShipHeroCommand extends Command
 
     protected $description = 'Report ShipHero token, queue jobs, sync status, and local index row counts';
 
-    public function handle(ShipHeroCredentialResolver $credentials, ShipHeroInventoryService $inventory): int
-    {
+    public function handle(
+        ShipHeroCredentialResolver $credentials,
+        ShipHeroInventoryService $inventory,
+        ShipHeroDashboardMetricsService $metrics,
+        ShipHeroOrderQueueIndexService $orderIndex
+    ): int {
         $this->info('ShipHero diagnostics');
         $this->line('');
 
@@ -45,7 +50,7 @@ class DiagnoseShipHeroCommand extends Command
         $this->line('');
         $this->reportIndexCounts();
         $this->line('');
-        $this->reportOrderIndexHealth();
+        $this->reportOrderIndexHealth($metrics, $orderIndex);
         $this->line('');
         $this->reportInventoryRevisions($inventory);
         $this->line('');
@@ -326,8 +331,10 @@ class DiagnoseShipHeroCommand extends Command
         }
     }
 
-    private function reportOrderIndexHealth(): void
-    {
+    private function reportOrderIndexHealth(
+        ShipHeroDashboardMetricsService $metrics,
+        ShipHeroOrderQueueIndexService $orderIndex
+    ): void {
         $this->comment('Order index health');
 
         if (! Schema::hasTable('shiphero_order_queue_index')) {
@@ -440,6 +447,47 @@ class DiagnoseShipHeroCommand extends Command
                     (int) $row->order_count
                 ));
             }
+        }
+
+        $this->line('');
+        $this->comment('  Live API vs index (dashboard totals)');
+
+        try {
+            $liveRts = (int) ($metrics->aggregateReadyToShip(false)['total_count'] ?? 0);
+            $liveOnHold = (int) ($metrics->aggregateOnHoldToday(false)['total_count'] ?? 0);
+            $liveShipped = (int) ($metrics->aggregateShippedToday(false)['total_count'] ?? 0);
+        } catch (Throwable $e) {
+            $this->warn('  Could not fetch live ShipHero totals: '.$e->getMessage());
+            $liveRts = 0;
+            $liveOnHold = 0;
+            $liveShipped = 0;
+        }
+
+        $indexRts = $orderIndex->aggregateReadyToShipFromIndex();
+        $indexOnHold = $orderIndex->aggregateOnHoldTodayFromIndex();
+        $indexShipped = $orderIndex->aggregateShippedTodayFromIndex();
+
+        $rows = [
+            ['Ready to ship (May 1+)', $liveRts, $indexRts],
+            ['On-hold (order date today)', $liveOnHold, $indexOnHold],
+            ['Shipped today (labels)', $liveShipped, $indexShipped],
+        ];
+
+        $this->line(sprintf('  %-28s %8s %8s %8s', 'Metric', 'Live', 'Index', 'Delta'));
+        foreach ($rows as [$label, $live, $index]) {
+            $delta = $live - $index;
+            $this->line(sprintf('  %-28s %8d %8d %+8d', $label, $live, $index, $delta));
+        }
+
+        $needsWarm = $indexShipped < $liveShipped
+            || $indexRts < $liveRts
+            || $indexOnHold < $liveOnHold;
+
+        if ($needsWarm) {
+            $this->warn('  Index is behind live ShipHero — run: php artisan crm:warm-shiphero-data');
+            $this->warn('  Then refresh dashboard: php artisan orders:refresh-home-dashboard --sync');
+        } else {
+            $this->line('  Index matches live API within counts above.');
         }
     }
 

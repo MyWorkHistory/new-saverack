@@ -66,7 +66,7 @@ class HomeDashboardController extends Controller
         if ($section === 'all') {
             $this->refreshAllSections($sync);
         } elseif ($sync && $section !== OrderDashboardSection::KEY_ASN_PENDING) {
-            $this->snapshots->refreshSectionFromIndex($section);
+            $this->snapshots->refreshSection($section);
         } elseif ($sync || $section === OrderDashboardSection::KEY_ASN_PENDING) {
             $this->snapshots->refreshSection($section);
         } else {
@@ -80,9 +80,7 @@ class HomeDashboardController extends Controller
                 'section' => $section,
                 'refresh_enqueued' => ! $sync && $section !== OrderDashboardSection::KEY_ASN_PENDING,
                 'refresh_synced' => $sync || $section === OrderDashboardSection::KEY_ASN_PENDING,
-                'refresh_index_only' => $sync
-                    && $section !== 'all'
-                    && $section !== OrderDashboardSection::KEY_ASN_PENDING,
+                'refresh_index_only' => false,
             ]
         ));
     }

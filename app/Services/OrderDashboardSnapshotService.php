@@ -26,14 +26,19 @@ class OrderDashboardSnapshotService
     /** @var ShipHeroOrderQueueIndexService */
     private $orderIndex;
 
+    /** @var ShipHeroDashboardMetricsService */
+    private $dashboardMetrics;
+
     public function __construct(
         PortalQueueCountsService $queueCounts,
         ShipHeroOrderService $orders,
-        ShipHeroOrderQueueIndexService $orderIndex
+        ShipHeroOrderQueueIndexService $orderIndex,
+        ShipHeroDashboardMetricsService $dashboardMetrics
     ) {
         $this->queueCounts = $queueCounts;
         $this->orders = $orders;
         $this->orderIndex = $orderIndex;
+        $this->dashboardMetrics = $dashboardMetrics;
     }
 
     public function bootstrapIfNeeded(): void
@@ -119,30 +124,52 @@ class OrderDashboardSnapshotService
             $sections[$key] = $this->serializeSection($row instanceof OrderDashboardSection ? $row : null, $key);
         }
 
-        $sections = $this->overlaySectionsFromIndex($sections);
+        $sections = $this->overlaySectionsFromIndexWhenHealthy($sections);
 
-        $holdTotal = 0;
-        if ($this->orderIndex->indexHasRowsForQueueTab(ShipHeroOrderQueueIndex::KIND_ON_HOLD)) {
-            $holdTotal = $this->orderIndex->aggregateDistinctOnHoldTotal();
-        } else {
-            foreach (OrderDashboardSection::HOLD_KEYS as $holdKey) {
-                if ($holdKey === OrderDashboardSection::KEY_HOLD_BACKORDER) {
-                    continue;
-                }
-                $holdTotal += (int) ($sections[$holdKey]['total_count'] ?? 0);
-            }
-        }
+        $rtsMetrics = $this->dashboardMetrics->aggregateReadyToShip(true);
+        $shippedMetrics = $this->dashboardMetrics->aggregateShippedToday(true);
+        $onHoldMetrics = $this->dashboardMetrics->aggregateOnHoldToday(true);
+
+        $sections[OrderDashboardSection::KEY_READY_TO_SHIP] = $this->applyMetricsToSection(
+            $sections[OrderDashboardSection::KEY_READY_TO_SHIP] ?? [],
+            $rtsMetrics
+        );
+        $sections[OrderDashboardSection::KEY_SHIPPED] = $this->applyMetricsToSection(
+            $sections[OrderDashboardSection::KEY_SHIPPED] ?? [],
+            $shippedMetrics
+        );
 
         return [
             'totals' => [
-                'ready_to_ship' => (int) ($sections[OrderDashboardSection::KEY_READY_TO_SHIP]['total_count'] ?? 0),
-                'on_hold' => $holdTotal,
-                'shipped' => (int) ($sections[OrderDashboardSection::KEY_SHIPPED]['total_count'] ?? 0),
+                'ready_to_ship' => (int) ($rtsMetrics['total_count'] ?? 0),
+                'on_hold' => (int) ($onHoldMetrics['total_count'] ?? 0),
+                'shipped' => (int) ($shippedMetrics['total_count'] ?? 0),
                 'asn_pending' => (int) ($sections[OrderDashboardSection::KEY_ASN_PENDING]['total_count'] ?? 0),
             ],
             'sections' => $sections,
             'revision' => $this->getDashboardRevision(),
+            'metrics_truncated' => (bool) (($rtsMetrics['payload']['truncated'] ?? false)
+                || ($shippedMetrics['payload']['truncated'] ?? false)
+                || ($onHoldMetrics['payload']['truncated'] ?? false)),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $section
+     * @param  array{payload: array<string, mixed>, total_count: int}  $metrics
+     * @return array<string, mixed>
+     */
+    private function applyMetricsToSection(array $section, array $metrics): array
+    {
+        $payload = is_array($metrics['payload'] ?? null) ? $metrics['payload'] : [];
+
+        $section['total_count'] = (int) ($metrics['total_count'] ?? 0);
+        $section['accounts'] = isset($payload['accounts']) && is_array($payload['accounts'])
+            ? $payload['accounts']
+            : [];
+        $section['truncated'] = (bool) ($payload['truncated'] ?? false);
+
+        return $section;
     }
 
     public function getDashboardRevision(): int
@@ -231,6 +258,13 @@ class OrderDashboardSnapshotService
                 $durationMs
             );
 
+            if (in_array($sectionKey, [
+                OrderDashboardSection::KEY_READY_TO_SHIP,
+                OrderDashboardSection::KEY_SHIPPED,
+            ], true)) {
+                $this->dashboardMetrics->clearCacheForToday();
+            }
+
             Log::info('order_dashboard.section_refreshed', [
                 'section_key' => $sectionKey,
                 'total_count' => (int) $result['total_count'],
@@ -297,15 +331,17 @@ class OrderDashboardSnapshotService
             return $this->buildAsnPendingPayload();
         }
 
-        if ($sectionKey === OrderDashboardSection::KEY_SHIPPED && $allowRemoteFallback) {
-            if (! $forceLiveShipped && $this->orderIndex->indexHasRowsForSection($sectionKey)) {
-                return $this->orderIndex->aggregateDashboardSection($sectionKey, false);
+        if ($allowRemoteFallback) {
+            if ($sectionKey === OrderDashboardSection::KEY_READY_TO_SHIP) {
+                return $this->dashboardMetrics->aggregateReadyToShip(false);
             }
 
-            return $this->buildShipHeroSectionPayload($sectionKey, true);
+            if ($sectionKey === OrderDashboardSection::KEY_SHIPPED) {
+                return $this->dashboardMetrics->aggregateShippedToday(false);
+            }
         }
 
-        if ($this->orderIndex->indexHasRowsForSection($sectionKey)) {
+        if ($this->orderIndex->indexIsHealthyForSection($sectionKey)) {
             return $this->orderIndex->aggregateDashboardSection($sectionKey, false);
         }
 
@@ -317,7 +353,7 @@ class OrderDashboardSnapshotService
         }
 
         $this->syncIndexForDashboardSection($sectionKey);
-        if ($this->orderIndex->indexHasRowsForSection($sectionKey)) {
+        if ($this->orderIndex->indexIsHealthyForSection($sectionKey)) {
             return $this->orderIndex->aggregateDashboardSection($sectionKey, false);
         }
 
@@ -749,14 +785,16 @@ class OrderDashboardSnapshotService
      * @param  array<string, array<string, mixed>>  $sections
      * @return array<string, array<string, mixed>>
      */
-    private function overlaySectionsFromIndex(array $sections): array
+    /**
+     * Overlay hold-type section breakdowns from index when that tab is healthy (not primary totals).
+     *
+     * @param  array<string, array<string, mixed>>  $sections
+     * @return array<string, array<string, mixed>>
+     */
+    private function overlaySectionsFromIndexWhenHealthy(array $sections): array
     {
-        if (! $this->orderIndex->indexHasAnyRows()) {
-            return $sections;
-        }
-
-        foreach (OrderDashboardSection::SHIPHERO_KEYS as $key) {
-            if (! $this->orderIndex->indexHasRowsForSection($key)) {
+        foreach (OrderDashboardSection::HOLD_KEYS as $key) {
+            if (! $this->orderIndex->indexIsHealthyForSection($key)) {
                 continue;
             }
 

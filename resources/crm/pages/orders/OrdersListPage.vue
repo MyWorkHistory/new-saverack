@@ -839,8 +839,11 @@ function defaultDatePresetForCurrentTab() {
   if (tabKey.value === "awaiting") {
     return "since_may_1";
   }
-  if (tabKey.value === "on_hold" || tabKey.value === "backorder") {
-    return "all";
+  if (tabKey.value === "on_hold") {
+    return "today";
+  }
+  if (tabKey.value === "backorder") {
+    return "last_30";
   }
   return "today";
 }

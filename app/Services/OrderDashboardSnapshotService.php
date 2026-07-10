@@ -84,10 +84,7 @@ class OrderDashboardSnapshotService
 
                 continue;
             }
-            if (in_array($key, [
-                OrderDashboardSection::KEY_READY_TO_SHIP,
-                OrderDashboardSection::KEY_SHIPPED,
-            ], true)
+            if (in_array($key, OrderDashboardSection::PRIMARY_PILL_KEYS, true)
                 && (int) $row->total_count === 0
                 && $row->refreshed_at->lessThan(now()->subMinutes(30))) {
                 $needsPrimaryRefresh = true;
@@ -165,17 +162,9 @@ class OrderDashboardSnapshotService
 
         $sections = $this->overlaySectionsFromIndexWhenHealthy($sections);
 
-        $rtsTotal = $this->resolvePrimaryTotal(
-            'ready_to_ship',
-            OrderDashboardSection::KEY_READY_TO_SHIP,
-            (int) ($sections[OrderDashboardSection::KEY_READY_TO_SHIP]['total_count'] ?? 0)
-        );
-        $shippedTotal = $this->resolvePrimaryTotal(
-            'shipped_today',
-            OrderDashboardSection::KEY_SHIPPED,
-            (int) ($sections[OrderDashboardSection::KEY_SHIPPED]['total_count'] ?? 0)
-        );
-        $onHoldTotal = $this->resolveOnHoldTotal();
+        $rtsTotal = (int) ($sections[OrderDashboardSection::KEY_READY_TO_SHIP]['total_count'] ?? 0);
+        $shippedTotal = (int) ($sections[OrderDashboardSection::KEY_SHIPPED]['total_count'] ?? 0);
+        $onHoldTotal = (int) ($sections[OrderDashboardSection::KEY_ON_HOLD]['total_count'] ?? 0);
 
         $sections[OrderDashboardSection::KEY_READY_TO_SHIP]['total_count'] = $rtsTotal;
         $sections[OrderDashboardSection::KEY_SHIPPED]['total_count'] = $shippedTotal;
@@ -231,12 +220,19 @@ class OrderDashboardSnapshotService
                 $sectionKey,
                 is_array($result['payload'] ?? null) ? $result['payload'] : ['accounts' => [], 'truncated' => false],
                 (int) ($result['total_count'] ?? 0),
-                (int) round((microtime(true) - $sectionStarted) * 1000)
+                (int) round((microtime(true) - $sectionStarted) * 1000),
+                true
             );
         }
 
         $onHoldTotal = $this->orderIndex->aggregateOnHoldTodayFromIndex();
-        $this->dashboardMetrics->putOnHoldTotalCache($onHoldTotal);
+        $this->saveSectionPayload(
+            OrderDashboardSection::KEY_ON_HOLD,
+            ['accounts' => [], 'truncated' => false, 'from_index' => true],
+            $onHoldTotal,
+            0,
+            true
+        );
 
         foreach (OrderDashboardSection::HOLD_KEYS as $key) {
             try {
@@ -275,12 +271,7 @@ class OrderDashboardSnapshotService
 
         $this->clearStalePrimaryRunning();
 
-        $this->dashboardMetrics->clearCacheForToday();
-
-        foreach (array_merge([
-            OrderDashboardSection::KEY_READY_TO_SHIP,
-            OrderDashboardSection::KEY_SHIPPED,
-        ], OrderDashboardSection::HOLD_KEYS) as $sectionKey) {
+        foreach (OrderDashboardSection::PRIMARY_PILL_KEYS as $sectionKey) {
             $this->resetSectionAccountBreakdown($sectionKey);
         }
 
@@ -372,6 +363,11 @@ class OrderDashboardSnapshotService
                     ]);
                 });
                 $onHoldTotal += (int) ($hold['count'] ?? 0);
+                $this->mergeAccountIntoSection(
+                    OrderDashboardSection::KEY_ON_HOLD,
+                    $account,
+                    (int) ($hold['count'] ?? 0)
+                );
             } catch (Throwable $e) {
                 $failures++;
                 Log::warning('order_dashboard.live_on_hold_account_failed', [
@@ -380,29 +376,19 @@ class OrderDashboardSnapshotService
                 ]);
             }
 
-            foreach (OrderDashboardSection::HOLD_KEYS as $holdSectionKey) {
-                try {
-                    $holdSectionContext = $this->queueCounts->contextForDashboardSection($account, $holdSectionKey);
-                    $holdSectionCount = ShipHeroCreditLimit::run(function () use ($holdSectionKey, $holdSectionContext) {
-                        return $this->countForSection($holdSectionKey, $holdSectionContext);
-                    });
-                    $this->mergeAccountIntoSection(
-                        $holdSectionKey,
-                        $account,
-                        (int) ($holdSectionCount['count'] ?? 0)
-                    );
-                } catch (Throwable $e) {
-                    $failures++;
-                    Log::warning('order_dashboard.live_hold_section_account_failed', [
-                        'section_key' => $holdSectionKey,
-                        'client_account_id' => (int) $account->id,
-                        'message' => $e->getMessage(),
-                    ]);
-                }
-            }
-
             if ($index > 0 && $index % 10 === 0) {
                 $this->bumpDashboardRevision();
+            }
+        }
+
+        foreach (OrderDashboardSection::HOLD_KEYS as $holdSectionKey) {
+            try {
+                $this->refreshSectionFromIndex($holdSectionKey);
+            } catch (Throwable $e) {
+                Log::warning('order_dashboard.hold_section_index_refresh_failed', [
+                    'section_key' => $holdSectionKey,
+                    'message' => $e->getMessage(),
+                ]);
             }
         }
 
@@ -411,6 +397,9 @@ class OrderDashboardSnapshotService
             ->value('total_count');
         $shippedTotal = (int) OrderDashboardSection::query()
             ->where('section_key', OrderDashboardSection::KEY_SHIPPED)
+            ->value('total_count');
+        $onHoldTotal = (int) OrderDashboardSection::query()
+            ->where('section_key', OrderDashboardSection::KEY_ON_HOLD)
             ->value('total_count');
 
         $this->dashboardMetrics->putLiveMetricCache('ready_to_ship', $rtsTotal);
@@ -444,46 +433,13 @@ class OrderDashboardSnapshotService
     public function clearStalePrimaryRunning(): void
     {
         OrderDashboardSection::query()
-            ->whereIn('section_key', [
-                OrderDashboardSection::KEY_READY_TO_SHIP,
-                OrderDashboardSection::KEY_SHIPPED,
-            ])
+            ->whereIn('section_key', OrderDashboardSection::PRIMARY_PILL_KEYS)
             ->where('status', OrderDashboardSection::STATUS_RUNNING)
             ->update([
                 'status' => OrderDashboardSection::STATUS_IDLE,
                 'refresh_started_at' => null,
                 'error_message' => null,
             ]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $metricPayload
-     */
-    private function resolvePrimaryTotal(string $metricKey, string $sectionKey, int $snapshotTotal): int
-    {
-        if ($metricKey === 'ready_to_ship') {
-            $cached = $this->dashboardMetrics->cachedReadyToShipTotal();
-        } elseif ($metricKey === 'shipped_today') {
-            $cached = $this->dashboardMetrics->cachedShippedTodayTotal();
-        } else {
-            $cached = null;
-        }
-
-        if ($cached !== null) {
-            return $cached;
-        }
-
-        return max(0, $snapshotTotal);
-    }
-
-    private function resolveOnHoldTotal(): int
-    {
-        $cached = $this->dashboardMetrics->cachedOnHoldTotal();
-        if ($cached !== null) {
-            return $cached;
-        }
-
-        return 0;
     }
 
     private function indexAggregateTotal(string $sectionKey): ?int
@@ -718,13 +674,12 @@ class OrderDashboardSnapshotService
                     $this->dashboardMetrics->putLiveMetricCache('ready_to_ship', $totalCount);
                 } elseif ($sectionKey === OrderDashboardSection::KEY_SHIPPED) {
                     $this->dashboardMetrics->putLiveMetricCache('shipped_today', $totalCount);
+                } elseif ($sectionKey === OrderDashboardSection::KEY_ON_HOLD) {
+                    $this->dashboardMetrics->putLiveMetricCache('on_hold_today', $totalCount);
                 }
             }
 
-            if (in_array($sectionKey, [
-                OrderDashboardSection::KEY_READY_TO_SHIP,
-                OrderDashboardSection::KEY_SHIPPED,
-            ], true)) {
+            if (in_array($sectionKey, OrderDashboardSection::PRIMARY_PILL_KEYS, true)) {
                 $this->dashboardMetrics->clearCacheForToday();
             }
 
@@ -801,6 +756,10 @@ class OrderDashboardSnapshotService
 
             if ($sectionKey === OrderDashboardSection::KEY_SHIPPED) {
                 return $this->dashboardMetrics->aggregateShippedToday(false);
+            }
+
+            if ($sectionKey === OrderDashboardSection::KEY_ON_HOLD) {
+                return $this->dashboardMetrics->aggregateOnHoldToday(false);
             }
 
             return $this->buildShipHeroSectionPayload($sectionKey, true);

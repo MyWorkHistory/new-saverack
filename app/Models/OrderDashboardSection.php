@@ -16,6 +16,8 @@ class OrderDashboardSection extends Model
 
     public const KEY_SHIPPED = 'shipped';
 
+    public const KEY_ON_HOLD = 'on_hold';
+
     public const KEY_HOLD_OPERATOR = 'hold_operator';
 
     public const KEY_HOLD_ADDRESS = 'hold_address';
@@ -31,10 +33,18 @@ class OrderDashboardSection extends Model
     public const KEY_ASN_PENDING = 'asn_pending';
 
     /** @var list<string> */
+    public const PRIMARY_PILL_KEYS = [
+        self::KEY_READY_TO_SHIP,
+        self::KEY_SHIPPED,
+        self::KEY_ON_HOLD,
+    ];
+
+    /** @var list<string> */
     public const ALL_KEYS = [
         self::KEY_ASN_PENDING,
         self::KEY_READY_TO_SHIP,
         self::KEY_SHIPPED,
+        self::KEY_ON_HOLD,
         self::KEY_HOLD_OPERATOR,
         self::KEY_HOLD_ADDRESS,
         self::KEY_HOLD_FRAUD,
@@ -57,6 +67,7 @@ class OrderDashboardSection extends Model
     public const SHIPHERO_KEYS = [
         self::KEY_READY_TO_SHIP,
         self::KEY_SHIPPED,
+        self::KEY_ON_HOLD,
         self::KEY_HOLD_OPERATOR,
         self::KEY_HOLD_ADDRESS,
         self::KEY_HOLD_FRAUD,

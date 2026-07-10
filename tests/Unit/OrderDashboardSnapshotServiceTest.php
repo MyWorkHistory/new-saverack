@@ -74,6 +74,7 @@ class OrderDashboardSnapshotServiceTest extends TestCase
             [
                 OrderDashboardSection::KEY_READY_TO_SHIP => 10,
                 OrderDashboardSection::KEY_SHIPPED => 5,
+                OrderDashboardSection::KEY_ON_HOLD => 7,
                 OrderDashboardSection::KEY_HOLD_OPERATOR => 2,
                 OrderDashboardSection::KEY_HOLD_ADDRESS => 1,
                 OrderDashboardSection::KEY_HOLD_FRAUD => 0,
@@ -99,16 +100,10 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         $orderIndex->shouldReceive('indexHasRowsForSection')->andReturn(false);
         $orderIndex->shouldReceive('indexHasRowsForQueueTab')->andReturn(false);
 
-        $metrics = Mockery::mock(ShipHeroDashboardMetricsService::class);
-        $metrics->shouldReceive('cachedReadyToShipTotal')->andReturn(null);
-        $metrics->shouldReceive('cachedShippedTodayTotal')->andReturn(null);
-        $metrics->shouldReceive('cachedOnHoldTotal')->andReturn(7);
-
         $service = $this->makeService(
             Mockery::mock(PortalQueueCountsService::class),
             Mockery::mock(ShipHeroOrderService::class),
-            $orderIndex,
-            $metrics
+            $orderIndex
         );
 
         $payload = $service->getDashboardPayload();
@@ -171,16 +166,10 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         $orderIndex->shouldReceive('indexIsHealthyForSection')->andReturn(false);
         $orderIndex->shouldNotReceive('aggregateDashboardSection');
 
-        $metrics = Mockery::mock(ShipHeroDashboardMetricsService::class);
-        $metrics->shouldReceive('cachedReadyToShipTotal')->andReturn(null);
-        $metrics->shouldReceive('cachedShippedTodayTotal')->andReturn(null);
-        $metrics->shouldReceive('cachedOnHoldTotal')->andReturn(null);
-
         $service = $this->makeService(
             Mockery::mock(PortalQueueCountsService::class),
             Mockery::mock(ShipHeroOrderService::class),
-            $orderIndex,
-            $metrics
+            $orderIndex
         );
 
         $payload = $service->getDashboardPayload();
@@ -407,14 +396,14 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         );
     }
 
-    public function test_on_hold_total_uses_live_metrics(): void
+    public function test_on_hold_total_reads_snapshot_section(): void
     {
         $now = now();
         foreach (OrderDashboardSection::ALL_KEYS as $key) {
             OrderDashboardSection::query()->insert([
                 'section_key' => $key,
                 'payload' => json_encode(['accounts' => [], 'truncated' => false]),
-                'total_count' => 0,
+                'total_count' => $key === OrderDashboardSection::KEY_ON_HOLD ? 78 : 0,
                 'status' => OrderDashboardSection::STATUS_IDLE,
                 'refreshed_at' => $now,
                 'created_at' => $now,
@@ -425,16 +414,10 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         $orderIndex = Mockery::mock(ShipHeroOrderQueueIndexService::class);
         $orderIndex->shouldReceive('indexIsHealthyForSection')->andReturn(false);
 
-        $metrics = Mockery::mock(ShipHeroDashboardMetricsService::class);
-        $metrics->shouldReceive('cachedReadyToShipTotal')->andReturn(null);
-        $metrics->shouldReceive('cachedShippedTodayTotal')->andReturn(null);
-        $metrics->shouldReceive('cachedOnHoldTotal')->andReturn(78);
-
         $service = $this->makeService(
             Mockery::mock(PortalQueueCountsService::class),
             Mockery::mock(ShipHeroOrderService::class),
-            $orderIndex,
-            $metrics
+            $orderIndex
         );
 
         $payload = $service->getDashboardPayload();

@@ -34,13 +34,13 @@ class RefreshOrderDashboardSectionJob implements ShouldQueue
 
     public function handle(OrderDashboardSnapshotService $snapshots): void
     {
-        if ($this->fromIndex) {
-            $snapshots->refreshSectionFromIndex($this->sectionKey);
+        if ($this->sectionKey === OrderDashboardSection::KEY_ASN_PENDING) {
+            $snapshots->refreshSection($this->sectionKey);
 
             return;
         }
 
-        $snapshots->refreshSection($this->sectionKey);
+        $snapshots->refreshSectionFromIndex($this->sectionKey);
     }
 
     public function failed(Throwable $e): void

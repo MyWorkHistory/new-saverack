@@ -92,10 +92,8 @@ function refreshToastMessage(data, fallbackQueued) {
 
 async function onRefreshAll() {
   try {
-    for (const hold of HOLD_SECTIONS) {
-      await refreshSection(hold.key, { sync: true });
-    }
-    toast.success("All hold sections refreshed.");
+    const data = await refreshSection("all", { sync: true });
+    toast.success(refreshToastMessage(data, false));
   } catch {
     /* toast handled */
   }

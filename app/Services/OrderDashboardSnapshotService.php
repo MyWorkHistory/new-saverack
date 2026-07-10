@@ -177,8 +177,20 @@ class OrderDashboardSnapshotService
         );
         $onHoldTotal = $this->resolveOnHoldTotal();
 
+        $rtsTotal = max($rtsTotal, $this->lastGoodTotal('ready_to_ship'));
+        $shippedTotal = max($shippedTotal, $this->lastGoodTotal('shipped'));
+        $onHoldTotal = max($onHoldTotal, $this->lastGoodTotal('on_hold'));
+
         $sections[OrderDashboardSection::KEY_READY_TO_SHIP]['total_count'] = $rtsTotal;
         $sections[OrderDashboardSection::KEY_SHIPPED]['total_count'] = $shippedTotal;
+
+        if (isset($sections[OrderDashboardSection::KEY_HOLD_BACKORDER])) {
+            $backorder = (int) ($sections[OrderDashboardSection::KEY_HOLD_BACKORDER]['total_count'] ?? 0);
+            $sections[OrderDashboardSection::KEY_HOLD_BACKORDER]['total_count'] = max(
+                $backorder,
+                $this->lastGoodTotal('hold_backorder')
+            );
+        }
 
         return [
             'totals' => [
@@ -237,6 +249,7 @@ class OrderDashboardSnapshotService
 
         $onHoldTotal = $this->orderIndex->aggregateOnHoldTodayFromIndex();
         $this->dashboardMetrics->putOnHoldTotalCache($onHoldTotal);
+        $this->rememberLastGoodTotal('on_hold', $onHoldTotal);
 
         foreach (OrderDashboardSection::HOLD_KEYS as $key) {
             try {
@@ -274,13 +287,6 @@ class OrderDashboardSnapshotService
         }
 
         $this->clearStalePrimaryRunning();
-
-        foreach ([
-            OrderDashboardSection::KEY_READY_TO_SHIP,
-            OrderDashboardSection::KEY_SHIPPED,
-        ] as $key) {
-            $this->resetSectionAccountBreakdown($key);
-        }
 
         $this->dashboardMetrics->clearCacheForToday();
 
@@ -405,6 +411,10 @@ class OrderDashboardSnapshotService
             'accounts_total' => $accounts->count(),
             'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
         ]);
+
+        $this->rememberLastGoodTotal('ready_to_ship', $rtsTotal);
+        $this->rememberLastGoodTotal('shipped', $shippedTotal);
+        $this->rememberLastGoodTotal('on_hold', $onHoldTotal);
     }
 
     private function resetSectionAccountBreakdown(string $sectionKey): void
@@ -598,31 +608,94 @@ class OrderDashboardSnapshotService
     /**
      * @param  array<string, mixed>  $payload
      */
-    public function saveSectionPayload(string $sectionKey, array $payload, int $totalCount, int $durationMs): void
+    public function saveSectionPayload(string $sectionKey, array $payload, int $totalCount, int $durationMs, bool $allowDecrease = false): void
     {
         $this->validateSectionKey($sectionKey);
         $this->ensureSectionRows();
 
+        $row = OrderDashboardSection::query()->where('section_key', $sectionKey)->first();
+        $previous = $row instanceof OrderDashboardSection ? (int) $row->total_count : 0;
+        $totalCount = max(0, $totalCount);
+
+        if (! $allowDecrease && $previous > 0 && $totalCount < $previous) {
+            Log::info('order_dashboard.skip_lower_total', [
+                'section_key' => $sectionKey,
+                'previous_total' => $previous,
+                'new_total' => $totalCount,
+            ]);
+
+            return;
+        }
+
         OrderDashboardSection::query()->where('section_key', $sectionKey)->update([
             'payload' => $payload,
-            'total_count' => max(0, $totalCount),
+            'total_count' => $totalCount,
             'status' => OrderDashboardSection::STATUS_IDLE,
             'refreshed_at' => now(),
             'refresh_started_at' => null,
             'error_message' => null,
             'duration_ms' => max(0, $durationMs),
         ]);
+
+        $this->rememberLastGoodForSection($sectionKey, $totalCount);
     }
 
-    public function refreshSection(string $sectionKey, bool $forceLiveShipped = false): void
+    private function rememberLastGoodForSection(string $sectionKey, int $totalCount): void
+    {
+        switch ($sectionKey) {
+            case OrderDashboardSection::KEY_READY_TO_SHIP:
+                $this->rememberLastGoodTotal('ready_to_ship', $totalCount);
+                break;
+            case OrderDashboardSection::KEY_SHIPPED:
+                $this->rememberLastGoodTotal('shipped', $totalCount);
+                break;
+            case OrderDashboardSection::KEY_HOLD_BACKORDER:
+                $this->rememberLastGoodTotal('hold_backorder', $totalCount);
+                break;
+        }
+    }
+
+    private function rememberLastGoodTotal(string $metric, int $totalCount): void
+    {
+        if ($totalCount <= 0) {
+            return;
+        }
+
+        $key = $this->lastGoodTotalKey($metric);
+        $previous = (int) Cache::get($key, 0);
+        if ($totalCount >= $previous) {
+            Cache::put($key, $totalCount, now()->addDays(7));
+        }
+    }
+
+    private function lastGoodTotal(string $metric): int
+    {
+        return max(0, (int) Cache::get($this->lastGoodTotalKey($metric), 0));
+    }
+
+    private function lastGoodTotalKey(string $metric): string
+    {
+        $today = Carbon::now(PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE)->toDateString();
+
+        return sprintf('orders:dashboard:last_good:%s:%s', $metric, $today);
+    }
+
+    public function refreshSection(string $sectionKey, bool $forceLive = false): void
     {
         $this->validateSectionKey($sectionKey);
+
+        if ($sectionKey !== OrderDashboardSection::KEY_ASN_PENDING && ! $forceLive) {
+            $this->refreshSectionFromIndex($sectionKey);
+
+            return;
+        }
+
         $startedAt = microtime(true);
 
         $this->markSectionRunning($sectionKey);
 
         try {
-            $result = $this->buildSectionPayload($sectionKey, true, $forceLiveShipped);
+            $result = $this->buildSectionPayload($sectionKey, true, $forceLive);
 
             $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
             $this->saveSectionPayload(
@@ -1168,18 +1241,24 @@ class OrderDashboardSnapshotService
     private function overlaySectionsFromIndexWhenHealthy(array $sections): array
     {
         foreach (OrderDashboardSection::HOLD_KEYS as $key) {
-            if (! $this->orderIndex->indexIsHealthyForSection($key)) {
+            if (! $this->orderIndex->indexHasRowsForSection($key)) {
                 continue;
             }
 
             try {
                 $result = $this->orderIndex->aggregateDashboardSection($key, false);
                 $payload = is_array($result['payload'] ?? null) ? $result['payload'] : [];
-                $sections[$key]['total_count'] = (int) ($result['total_count'] ?? 0);
-                $sections[$key]['accounts'] = isset($payload['accounts']) && is_array($payload['accounts'])
-                    ? $payload['accounts']
-                    : [];
-                $sections[$key]['truncated'] = (bool) ($payload['truncated'] ?? false);
+                $total = (int) ($result['total_count'] ?? 0);
+                $sections[$key]['total_count'] = max(
+                    (int) ($sections[$key]['total_count'] ?? 0),
+                    $total
+                );
+                if ($total > 0) {
+                    $sections[$key]['accounts'] = isset($payload['accounts']) && is_array($payload['accounts'])
+                        ? $payload['accounts']
+                        : [];
+                    $sections[$key]['truncated'] = (bool) ($payload['truncated'] ?? false);
+                }
             } catch (Throwable $e) {
                 Log::warning('order_dashboard.index_overlay_failed', [
                     'section_key' => $key,

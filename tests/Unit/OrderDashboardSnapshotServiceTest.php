@@ -230,7 +230,7 @@ class OrderDashboardSnapshotServiceTest extends TestCase
             $metrics
         );
 
-        $service->refreshSection(OrderDashboardSection::KEY_SHIPPED);
+        $service->refreshSection(OrderDashboardSection::KEY_SHIPPED, true);
 
         $this->assertSame(
             212,
@@ -477,7 +477,7 @@ class OrderDashboardSnapshotServiceTest extends TestCase
             $metrics
         );
 
-        $service->refreshSection(OrderDashboardSection::KEY_SHIPPED);
+        $service->refreshSection(OrderDashboardSection::KEY_SHIPPED, true);
 
         $this->assertSame(
             279,

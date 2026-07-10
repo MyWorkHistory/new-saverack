@@ -223,6 +223,8 @@ class ShipHeroDashboardMetricsService
             || (int) ($result['total_count'] ?? 0) > 0;
 
         if ($shouldCache) {
+            $payload['from_live'] = true;
+            $result['payload'] = $payload;
             Cache::put($cacheKey, $result, now()->addMinutes(self::CACHE_TTL_MINUTES));
         }
 
@@ -232,17 +234,34 @@ class ShipHeroDashboardMetricsService
     /**
      * Read cached on-hold total for dashboard display (never calls ShipHero).
      */
-    public function cachedOnHoldTotal(): int
+    public function cachedOnHoldTotal(): ?int
+    {
+        return $this->cachedLiveMetricTotal('on_hold_today');
+    }
+
+    public function cachedReadyToShipTotal(): ?int
+    {
+        return $this->cachedLiveMetricTotal('ready_to_ship');
+    }
+
+    public function cachedShippedTodayTotal(): ?int
+    {
+        return $this->cachedLiveMetricTotal('shipped_today');
+    }
+
+    /**
+     * Store a live ShipHero refresh result for dashboard display (preferred over DB snapshots).
+     */
+    public function putLiveMetricCache(string $metricKey, int $totalCount, array $payloadExtras = []): void
     {
         $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
         $today = Carbon::now($timezone)->toDateString();
-        $cacheKey = sprintf('orders:dashboard_metrics:v1:%s:%s', 'on_hold_today', $today);
-        $cached = Cache::get($cacheKey);
-        if (is_array($cached)) {
-            return (int) ($cached['total_count'] ?? 0);
-        }
+        $cacheKey = sprintf('orders:dashboard_metrics:v1:%s:%s', $metricKey, $today);
 
-        return 0;
+        Cache::put($cacheKey, [
+            'payload' => array_merge(['accounts' => [], 'from_live' => true], $payloadExtras),
+            'total_count' => max(0, $totalCount),
+        ], now()->addMinutes(self::CACHE_TTL_MINUTES));
     }
 
     /**
@@ -258,6 +277,24 @@ class ShipHeroDashboardMetricsService
             'payload' => array_merge(['accounts' => [], 'from_index' => true], $payloadExtras),
             'total_count' => max(0, $totalCount),
         ], now()->addMinutes(self::CACHE_TTL_MINUTES));
+    }
+
+    private function cachedLiveMetricTotal(string $metricKey): ?int
+    {
+        $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
+        $today = Carbon::now($timezone)->toDateString();
+        $cacheKey = sprintf('orders:dashboard_metrics:v1:%s:%s', $metricKey, $today);
+        $cached = Cache::get($cacheKey);
+        if (! is_array($cached)) {
+            return null;
+        }
+
+        $payload = is_array($cached['payload'] ?? null) ? $cached['payload'] : [];
+        if (! empty($payload['from_index']) || empty($payload['from_live'])) {
+            return null;
+        }
+
+        return max(0, (int) ($cached['total_count'] ?? 0));
     }
 
     public function clearCacheForToday(): void

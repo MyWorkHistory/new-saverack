@@ -100,6 +100,8 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         $orderIndex->shouldReceive('indexHasRowsForQueueTab')->andReturn(false);
 
         $metrics = Mockery::mock(ShipHeroDashboardMetricsService::class);
+        $metrics->shouldReceive('cachedReadyToShipTotal')->andReturn(null);
+        $metrics->shouldReceive('cachedShippedTodayTotal')->andReturn(null);
         $metrics->shouldReceive('cachedOnHoldTotal')->andReturn(7);
 
         $service = $this->makeService(
@@ -170,7 +172,9 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         $orderIndex->shouldNotReceive('aggregateDashboardSection');
 
         $metrics = Mockery::mock(ShipHeroDashboardMetricsService::class);
-        $metrics->shouldReceive('cachedOnHoldTotal')->andReturn(0);
+        $metrics->shouldReceive('cachedReadyToShipTotal')->andReturn(null);
+        $metrics->shouldReceive('cachedShippedTodayTotal')->andReturn(null);
+        $metrics->shouldReceive('cachedOnHoldTotal')->andReturn(null);
 
         $service = $this->makeService(
             Mockery::mock(PortalQueueCountsService::class),
@@ -209,6 +213,9 @@ class OrderDashboardSnapshotServiceTest extends TestCase
             ->once()
             ->with(false)
             ->andReturn($this->metricsResult(212));
+        $metrics->shouldReceive('putLiveMetricCache')
+            ->once()
+            ->with('shipped_today', 212);
         $metrics->shouldReceive('clearCacheForToday')->once();
 
         $service = $this->makeService(
@@ -234,7 +241,7 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         );
     }
 
-    public function test_patch_account_updates_section_row_and_total(): void
+    public function test_patch_account_does_not_mutate_dashboard_snapshot(): void
     {
         $now = now();
         OrderDashboardSection::query()->insert([
@@ -263,36 +270,10 @@ class OrderDashboardSnapshotServiceTest extends TestCase
             'updated_at' => $now,
         ]);
 
-        Schema::dropIfExists('client_accounts');
-        Schema::create('client_accounts', function (Blueprint $table) {
-            $table->id();
-            $table->string('status')->default('active');
-            $table->string('company_name')->nullable();
-            $table->string('shiphero_customer_account_id')->nullable();
-            $table->timestamps();
-        });
-        \App\Models\ClientAccount::query()->create([
-            'id' => 1,
-            'status' => 'active',
-            'company_name' => 'Alpha Co',
-            'shiphero_customer_account_id' => 'sh-alpha',
-        ]);
-
-        $queueCounts = Mockery::mock(PortalQueueCountsService::class);
-        $queueCounts->shouldReceive('contextForDashboardSection')
-            ->once()
-            ->andReturn(['customer_id' => 'sh-alpha']);
-
-        $orderIndex = Mockery::mock(ShipHeroOrderQueueIndexService::class);
-        $orderIndex->shouldReceive('countForDashboardSection')
-            ->once()
-            ->with(1, OrderDashboardSection::KEY_READY_TO_SHIP, ['customer_id' => 'sh-alpha'])
-            ->andReturn(12);
-
         $service = $this->makeService(
-            $queueCounts,
+            Mockery::mock(PortalQueueCountsService::class),
             Mockery::mock(ShipHeroOrderService::class),
-            $orderIndex
+            Mockery::mock(ShipHeroOrderQueueIndexService::class)
         );
 
         $service->patchAccountFromQueueTab(1, 'awaiting');
@@ -302,15 +283,10 @@ class OrderDashboardSnapshotServiceTest extends TestCase
             ->first();
 
         $this->assertNotNull($row);
-        $this->assertSame(15, (int) $row->total_count);
-        $accounts = is_array($row->payload) ? ($row->payload['accounts'] ?? []) : [];
-        $this->assertCount(2, $accounts);
-        $this->assertSame(12, (int) $accounts[0]['orders_count']);
-        $this->assertSame('Alpha Co', $accounts[0]['account_name']);
-        $this->assertSame(3, (int) $accounts[1]['orders_count']);
+        $this->assertSame(8, (int) $row->total_count);
     }
 
-    public function test_patch_account_removes_row_when_count_is_zero(): void
+    public function test_patch_account_leaves_zero_count_snapshot_unchanged(): void
     {
         $now = now();
         OrderDashboardSection::query()->insert([
@@ -333,36 +309,10 @@ class OrderDashboardSnapshotServiceTest extends TestCase
             'updated_at' => $now,
         ]);
 
-        Schema::dropIfExists('client_accounts');
-        Schema::create('client_accounts', function (Blueprint $table) {
-            $table->id();
-            $table->string('status')->default('active');
-            $table->string('company_name')->nullable();
-            $table->string('shiphero_customer_account_id')->nullable();
-            $table->timestamps();
-        });
-        \App\Models\ClientAccount::query()->create([
-            'id' => 9,
-            'status' => 'active',
-            'company_name' => 'Solo Co',
-            'shiphero_customer_account_id' => 'sh-solo',
-        ]);
-
-        $queueCounts = Mockery::mock(PortalQueueCountsService::class);
-        $queueCounts->shouldReceive('contextForDashboardSection')
-            ->once()
-            ->andReturn(['customer_id' => 'sh-solo']);
-
-        $orderIndex = Mockery::mock(ShipHeroOrderQueueIndexService::class);
-        $orderIndex->shouldReceive('countForDashboardSection')
-            ->once()
-            ->with(9, OrderDashboardSection::KEY_SHIPPED, ['customer_id' => 'sh-solo'])
-            ->andReturn(0);
-
         $service = $this->makeService(
-            $queueCounts,
+            Mockery::mock(PortalQueueCountsService::class),
             Mockery::mock(ShipHeroOrderService::class),
-            $orderIndex
+            Mockery::mock(ShipHeroOrderQueueIndexService::class)
         );
 
         $service->patchAccountFromQueueTab(9, 'shipped');
@@ -372,12 +322,10 @@ class OrderDashboardSnapshotServiceTest extends TestCase
             ->first();
 
         $this->assertNotNull($row);
-        $this->assertSame(0, (int) $row->total_count);
-        $accounts = is_array($row->payload) ? ($row->payload['accounts'] ?? []) : [];
-        $this->assertSame([], $accounts);
+        $this->assertSame(4, (int) $row->total_count);
     }
 
-    public function test_patch_account_skips_section_when_running(): void
+    public function test_patch_account_leaves_running_section_unchanged(): void
     {
         $now = now();
         OrderDashboardSection::query()->insert([
@@ -400,29 +348,10 @@ class OrderDashboardSnapshotServiceTest extends TestCase
             'updated_at' => $now,
         ]);
 
-        Schema::dropIfExists('client_accounts');
-        Schema::create('client_accounts', function (Blueprint $table) {
-            $table->id();
-            $table->string('status')->default('active');
-            $table->string('company_name')->nullable();
-            $table->string('shiphero_customer_account_id')->nullable();
-            $table->timestamps();
-        });
-        \App\Models\ClientAccount::query()->create([
-            'id' => 3,
-            'status' => 'active',
-            'company_name' => 'Gamma Co',
-            'shiphero_customer_account_id' => 'sh-gamma',
-        ]);
-
-        $queueCounts = Mockery::mock(PortalQueueCountsService::class);
-        $orderIndex = Mockery::mock(ShipHeroOrderQueueIndexService::class);
-        $orderIndex->shouldNotReceive('countForDashboardSection');
-
         $service = $this->makeService(
-            $queueCounts,
+            Mockery::mock(PortalQueueCountsService::class),
             Mockery::mock(ShipHeroOrderService::class),
-            $orderIndex
+            Mockery::mock(ShipHeroOrderQueueIndexService::class)
         );
 
         $service->patchAccountFromQueueTab(3, 'awaiting');
@@ -456,6 +385,9 @@ class OrderDashboardSnapshotServiceTest extends TestCase
             ->once()
             ->with(false)
             ->andReturn($this->metricsResult(279));
+        $metrics->shouldReceive('putLiveMetricCache')
+            ->once()
+            ->with('shipped_today', 279);
         $metrics->shouldReceive('clearCacheForToday')->once();
 
         $service = $this->makeService(
@@ -494,6 +426,8 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         $orderIndex->shouldReceive('indexIsHealthyForSection')->andReturn(false);
 
         $metrics = Mockery::mock(ShipHeroDashboardMetricsService::class);
+        $metrics->shouldReceive('cachedReadyToShipTotal')->andReturn(null);
+        $metrics->shouldReceive('cachedShippedTodayTotal')->andReturn(null);
         $metrics->shouldReceive('cachedOnHoldTotal')->andReturn(78);
 
         $service = $this->makeService(

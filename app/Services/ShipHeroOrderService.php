@@ -642,11 +642,13 @@ GQL;
                     continue;
                 }
                 $shipmentId = trim((string) ($row['id'] ?? ''));
-                if ($shipmentId === '' || isset($seenShipmentIds[$shipmentId])) {
+                if ($shipmentId !== '' && isset($seenShipmentIds[$shipmentId])) {
                     continue;
                 }
-                $seenShipmentIds[$shipmentId] = true;
-                $total++;
+                if ($shipmentId !== '') {
+                    $seenShipmentIds[$shipmentId] = true;
+                }
+                $total += $this->countableShippingLabelsOnShipment($row['shipping_labels'] ?? null);
             }
 
             if (! ($parsed['pageInfo']['hasNextPage'] ?? false)) {
@@ -1039,6 +1041,25 @@ GQL;
         }
 
         return $this->isoTimestampInRange($row['created_date'] ?? null, $from, $to);
+    }
+
+    /**
+     * @param  mixed  $labels
+     */
+    private function countableShippingLabelsOnShipment($labels): int
+    {
+        if (! is_array($labels) || $labels === []) {
+            return 1;
+        }
+
+        $count = 0;
+        foreach ($labels as $label) {
+            if (is_array($label) && ! OrderShipmentTracking::isVoidShippingLabel($label)) {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     /**

@@ -33,6 +33,20 @@ class ShipHeroOrderService
 
     public const ORDER_USER_HOLD_HISTORY_MESSAGE = 'Hold was placed by User';
 
+    /**
+     * Open-queue imports exclude these fulfillment statuses (ShipHero orders.fulfillment_status_not_in).
+     * Prefer this over fulfillment_status="unfulfilled" so pending/open orders are included.
+     *
+     * @var list<string>
+     */
+    public const OPEN_QUEUE_EXCLUDED_FULFILLMENT_STATUSES = [
+        'fulfilled',
+        'shipped',
+        'complete',
+        'canceled',
+        'cancelled',
+    ];
+
     public const ORDER_USER_HOLD_CLEAR_HISTORY_MESSAGE = 'Hold removed by User';
 
     /** ShipHero shows “via {source}” on API history notes; omitting source defaults to “public-api”. */
@@ -123,6 +137,7 @@ class ShipHeroOrderService
             'has_backorder' => null,
             'ready_to_ship' => null,
             'fulfillment_status' => null,
+            'fulfillment_status_not_in' => null,
             'order_number' => null,
             'partner_order_id' => null,
             'fraud_hold' => null,
@@ -133,22 +148,7 @@ class ShipHeroOrderService
 
         $tab = strtolower(trim((string) ($filters['tab'] ?? 'manage')));
         if ($tab === 'on_hold') {
-            // On-hold import: unfulfilled in order_date window; active hold verified in post-filter (holds[]).
-            $vars['fulfillment_status'] = 'unfulfilled';
-            $timezone = trim((string) ($filters['timezone'] ?? ''));
-            if ($timezone === '' || ! in_array($timezone, timezone_identifiers_list(), true)) {
-                $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
-            }
-            $hasOrderWindow = is_string($vars['order_date_from']) && trim((string) $vars['order_date_from']) !== ''
-                && is_string($vars['order_date_to']) && trim((string) $vars['order_date_to']) !== '';
-            if ($hasOrderWindow) {
-                $this->applyOrderDateWindowToGraphVars($vars, $timezone);
-            } else {
-                $today = Carbon::now($timezone)->toDateString();
-                $vars['order_date_from'] = PortalQueueCountsService::ON_HOLD_DASHBOARD_ORDER_FROM;
-                $vars['order_date_to'] = $today;
-                $this->applyOrderDateWindowToGraphVars($vars, $timezone);
-            }
+            $this->applyOpenQueueTabGraphScope($vars, $tab, $filters);
         } elseif ($tab === 'awaiting') {
             $vars['ready_to_ship'] = true;
             $vars['fulfillment_status'] = 'unfulfilled';
@@ -175,23 +175,7 @@ class ShipHeroOrderService
                 }
             }
         } elseif ($tab === 'backorder') {
-            // Backorder import: unfulfilled + on backorder, same order_date window as on-hold (Feb 1 → today).
-            $vars['fulfillment_status'] = 'unfulfilled';
-            $vars['has_backorder'] = true;
-            $timezone = trim((string) ($filters['timezone'] ?? ''));
-            if ($timezone === '' || ! in_array($timezone, timezone_identifiers_list(), true)) {
-                $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
-            }
-            $hasOrderWindow = is_string($vars['order_date_from']) && trim((string) $vars['order_date_from']) !== ''
-                && is_string($vars['order_date_to']) && trim((string) $vars['order_date_to']) !== '';
-            if ($hasOrderWindow) {
-                $this->applyOrderDateWindowToGraphVars($vars, $timezone);
-            } else {
-                $today = Carbon::now($timezone)->toDateString();
-                $vars['order_date_from'] = PortalQueueCountsService::ON_HOLD_DASHBOARD_ORDER_FROM;
-                $vars['order_date_to'] = $today;
-                $this->applyOrderDateWindowToGraphVars($vars, $timezone);
-            }
+            $this->applyOpenQueueTabGraphScope($vars, $tab, $filters);
         } elseif ($tab === 'shipped') {
             // ShipHero typically uses "fulfilled" for shipped/completed orders; "shipped" often returns nothing.
             $vars['fulfillment_status'] = 'fulfilled';
@@ -222,7 +206,8 @@ class ShipHeroOrderService
                 $vars['updated_to'] = Carbon::now($timezone)->endOfDay()->toIso8601String();
             }
         }
-        if (isset($filters['fulfillment_status']) && is_string($filters['fulfillment_status'])) {
+        if (! in_array($tab, ['on_hold', 'backorder'], true)
+            && isset($filters['fulfillment_status']) && is_string($filters['fulfillment_status'])) {
             $status = trim($filters['fulfillment_status']);
             if ($status !== '') {
                 $vars['fulfillment_status'] = $status;
@@ -329,6 +314,7 @@ query ShipHeroOrders(
   $has_backorder: Boolean,
   $ready_to_ship: Boolean,
   $fulfillment_status: String,
+  $fulfillment_status_not_in: [String!],
   $order_number: String,
   $partner_order_id: String,
   $fraud_hold: Boolean,
@@ -348,6 +334,7 @@ query ShipHeroOrders(
     has_backorder: $has_backorder,
     ready_to_ship: $ready_to_ship,
     fulfillment_status: $fulfillment_status,
+    fulfillment_status_not_in: $fulfillment_status_not_in,
     order_number: $order_number,
     partner_order_id: $partner_order_id,
     fraud_hold: $fraud_hold,
@@ -366,6 +353,21 @@ query ShipHeroOrders(
           ready_to_ship
           order_date
           updated_at
+          holds {
+            fraud_hold
+            address_hold
+            operator_hold
+            payment_hold
+            client_hold
+            shipping_method_hold
+          }
+          line_items(first: 5) {
+            edges {
+              node {
+                backorder_quantity
+              }
+            }
+          }
           shipments {
             created_date
             shipped_off_shiphero
@@ -397,6 +399,7 @@ query ShipHeroOrders(
   $has_backorder: Boolean,
   $ready_to_ship: Boolean,
   $fulfillment_status: String,
+  $fulfillment_status_not_in: [String!],
   $order_number: String,
   $partner_order_id: String,
   $fraud_hold: Boolean,
@@ -416,6 +419,7 @@ query ShipHeroOrders(
     has_backorder: $has_backorder,
     ready_to_ship: $ready_to_ship,
     fulfillment_status: $fulfillment_status,
+    fulfillment_status_not_in: $fulfillment_status_not_in,
     order_number: $order_number,
     partner_order_id: $partner_order_id,
     fraud_hold: $fraud_hold,
@@ -2835,14 +2839,21 @@ GQL;
     private function normalizeOrderRowForCount(array $node, $cursor): array
     {
         $shipmentDates = $this->extractShipmentShipDates($node);
+        $holdsApi = $this->normalizeOrderHoldsForApi($node['holds'] ?? null);
+        $tags = $this->normalizeOrderTags($node['tags'] ?? null);
+
         return [
             'id' => (string) ($node['id'] ?? ''),
             'cursor' => is_string($cursor) ? $cursor : null,
             'status' => $this->normalizeFulfillmentStatus($node),
             'raw_fulfillment_status' => (string) ($node['fulfillment_status'] ?? ''),
             'raw_status' => '',
-            'raw_profile' => '',
-            'hold_reason' => null,
+            'raw_profile' => (string) ($node['profile'] ?? ''),
+            'hold_reason' => $this->extractHoldReason($node),
+            'holds' => $holdsApi,
+            'has_active_hold' => $this->orderHoldsArrayHasActive($holdsApi),
+            'has_backorder' => $this->nodeHasBackorderQuantity($node),
+            'tags' => $tags,
             'order_date' => $this->nullableIso($node['order_date'] ?? null),
             'ship_date' => OrderShipmentTracking::resolveShipDateIso($node),
             'shipment_dates' => $shipmentDates,
@@ -3619,12 +3630,17 @@ GQL;
                 if ($holdReason !== '' && ! $this->rowMatchesHoldReasonFilter($row, $holdReason)) {
                     continue;
                 }
-                if (! $this->orderQualifiesForOnHoldQueue($row)) {
+                if ($this->orderRowIsFulfilledOrShipped($row)) {
                     continue;
                 }
             }
-            if ($tab === 'backorder' && ! $this->orderQualifiesForBackorderQueue($row)) {
-                continue;
+            if ($tab === 'backorder') {
+                if ($this->orderRowIsFulfilledOrShipped($row)) {
+                    continue;
+                }
+                if (empty($row['has_backorder'])) {
+                    continue;
+                }
             }
             if ($tab === 'shipped' && ! $skipTabScopeForOrderLookup && isset($row['shipment_dates']) && is_array($row['shipment_dates'])) {
                 $shipmentCountInRange = $this->rowShipmentCountInRange($row, $from, $to);
@@ -3827,11 +3843,7 @@ GQL;
      */
     public function orderQualifiesForOnHoldQueue(array $row): bool
     {
-        if ($this->orderRowIsFulfilledOrShipped($row)) {
-            return false;
-        }
-
-        if (! $this->orderRowIsUnfulfilled($row)) {
+        if (! $this->orderRowIsOpenForQueue($row)) {
             return false;
         }
 
@@ -3845,17 +3857,13 @@ GQL;
     }
 
     /**
-     * Backorder queue/import: unfulfilled + on backorder.
+     * Backorder queue/import: open (not fulfilled/shipped/canceled) + on backorder.
      *
      * @param  array<string, mixed>  $row
      */
     public function orderQualifiesForBackorderQueue(array $row): bool
     {
-        if ($this->orderRowIsFulfilledOrShipped($row)) {
-            return false;
-        }
-
-        if (! $this->orderRowIsUnfulfilled($row)) {
+        if (! $this->orderRowIsOpenForQueue($row)) {
             return false;
         }
 
@@ -3865,19 +3873,19 @@ GQL;
     /**
      * @param  array<string, mixed>  $row
      */
-    private function orderRowIsUnfulfilled(array $row): bool
+    public function orderRowIsOpenForQueue(array $row): bool
     {
-        foreach (['raw_fulfillment_status', 'status'] as $key) {
+        if ($this->orderRowIsFulfilledOrShipped($row)) {
+            return false;
+        }
+
+        foreach (['status', 'raw_fulfillment_status', 'raw_status'] as $key) {
             $normalized = strtolower(trim((string) ($row[$key] ?? '')));
-            if ($normalized === 'unfulfilled' || $normalized === 'pending') {
-                return true;
-            }
-            if ($normalized !== '') {
+            if ($normalized !== '' && str_contains($normalized, 'cancel')) {
                 return false;
             }
         }
 
-        // Upstream API already scoped to fulfillment_status=unfulfilled when field is omitted.
         return true;
     }
 
@@ -4064,6 +4072,40 @@ GQL;
         }
 
         return $startOfDay ? $date->startOfDay() : $date->endOfDay();
+    }
+
+    /**
+     * @param  array<string, mixed>  $vars
+     * @param  array<string, mixed>  $filters
+     */
+    private function applyOpenQueueTabGraphScope(array &$vars, string $tab, array $filters): void
+    {
+        $timezone = trim((string) ($filters['timezone'] ?? ''));
+        if ($timezone === '' || ! in_array($timezone, timezone_identifiers_list(), true)) {
+            $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
+        }
+
+        $vars['fulfillment_status'] = null;
+        $vars['fulfillment_status_not_in'] = self::OPEN_QUEUE_EXCLUDED_FULFILLMENT_STATUSES;
+
+        if ($tab === 'on_hold') {
+            $vars['has_hold'] = true;
+            $vars['has_backorder'] = null;
+        } elseif ($tab === 'backorder') {
+            $vars['has_backorder'] = true;
+            $vars['has_hold'] = null;
+        }
+
+        $hasOrderWindow = is_string($vars['order_date_from']) && trim((string) $vars['order_date_from']) !== ''
+            && is_string($vars['order_date_to']) && trim((string) $vars['order_date_to']) !== '';
+        if ($hasOrderWindow) {
+            $this->applyOrderDateWindowToGraphVars($vars, $timezone);
+        } else {
+            $today = Carbon::now($timezone)->toDateString();
+            $vars['order_date_from'] = PortalQueueCountsService::ON_HOLD_DASHBOARD_ORDER_FROM;
+            $vars['order_date_to'] = $today;
+            $this->applyOrderDateWindowToGraphVars($vars, $timezone);
+        }
     }
 
     /**

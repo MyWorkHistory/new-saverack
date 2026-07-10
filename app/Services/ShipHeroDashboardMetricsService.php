@@ -129,6 +129,7 @@ class ShipHeroDashboardMetricsService
         $rows = [];
         $total = 0;
         $truncated = false;
+        $failures = 0;
 
         foreach ($accounts as $account) {
             $context = $sectionKey !== null
@@ -138,6 +139,7 @@ class ShipHeroDashboardMetricsService
             try {
                 $result = $countForAccount($account, $context);
             } catch (Throwable $e) {
+                $failures++;
                 Log::warning('shiphero_dashboard_metrics.account_count_failed', [
                     'client_account_id' => (int) $account->id,
                     'section_key' => $sectionKey,
@@ -168,7 +170,12 @@ class ShipHeroDashboardMetricsService
         });
 
         return [
-            'payload' => ['accounts' => $rows, 'truncated' => $truncated],
+            'payload' => [
+                'accounts' => $rows,
+                'truncated' => $truncated,
+                'accounts_failed' => $failures,
+                'accounts_total' => $accounts->count(),
+            ],
             'total_count' => $total,
         ];
     }
@@ -197,9 +204,34 @@ class ShipHeroDashboardMetricsService
 
         $result = $compute();
 
-        Cache::put($cacheKey, $result, now()->addMinutes(self::CACHE_TTL_MINUTES));
+        $payload = is_array($result['payload'] ?? null) ? $result['payload'] : [];
+        $failures = (int) ($payload['accounts_failed'] ?? 0);
+        $accountsTotal = (int) ($payload['accounts_total'] ?? 0);
+        $shouldCache = $accountsTotal === 0
+            || $failures < $accountsTotal
+            || (int) ($result['total_count'] ?? 0) > 0;
+
+        if ($shouldCache) {
+            Cache::put($cacheKey, $result, now()->addMinutes(self::CACHE_TTL_MINUTES));
+        }
 
         return $result;
+    }
+
+    /**
+     * Read cached on-hold total for dashboard display (never calls ShipHero).
+     */
+    public function cachedOnHoldTotal(): int
+    {
+        $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
+        $today = Carbon::now($timezone)->toDateString();
+        $cacheKey = sprintf('orders:dashboard_metrics:v1:%s:%s', 'on_hold_today', $today);
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            return (int) ($cached['total_count'] ?? 0);
+        }
+
+        return 0;
     }
 
     public function clearCacheForToday(): void

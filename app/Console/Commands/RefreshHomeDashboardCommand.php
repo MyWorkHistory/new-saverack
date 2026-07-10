@@ -41,6 +41,20 @@ class RefreshHomeDashboardCommand extends Command
         $forceLive = (bool) $this->option('live');
 
         if ($this->option('sync')) {
+            if (! $fromIndex && $section === 'all') {
+                $this->info('Refreshing primary totals (RTS, on-hold today, shipped) from ShipHero…');
+                $snapshots->refreshPrimaryTotals();
+                $this->info('Refreshing hold sections from index…');
+                foreach (OrderDashboardSection::HOLD_KEYS as $key) {
+                    $snapshots->refreshSectionFromIndex($key);
+                }
+                $this->info('Refreshing ASN pending…');
+                $snapshots->refreshSection(OrderDashboardSection::KEY_ASN_PENDING);
+                $this->info('Home dashboard refresh complete.');
+
+                return self::SUCCESS;
+            }
+
             foreach ($keys as $key) {
                 $this->info('Refreshing '.$key.'…');
                 if ($fromIndex) {
@@ -50,6 +64,25 @@ class RefreshHomeDashboardCommand extends Command
                 }
             }
             $this->info('Home dashboard refresh complete.');
+
+            return self::SUCCESS;
+        }
+
+        if ($section === 'all') {
+            if ($fromIndex) {
+                foreach (OrderDashboardSection::ALL_KEYS as $key) {
+                    RefreshOrderDashboardSectionJob::dispatch($key, true);
+                    $this->info('Queued refresh for '.$key.' (from index)');
+                }
+            } else {
+                $snapshots->dispatchPrimaryTotalsRefresh();
+                RefreshOrderDashboardSectionJob::dispatch(OrderDashboardSection::KEY_ASN_PENDING);
+                $this->info('Queued primary totals refresh (RTS, on-hold today, shipped) and ASN pending.');
+            }
+
+            if ($fromIndex) {
+                Cache::put('shiphero:schedule:last_run:orders_refresh_home_dashboard_index', now()->toIso8601String(), now()->addDays(7));
+            }
 
             return self::SUCCESS;
         }

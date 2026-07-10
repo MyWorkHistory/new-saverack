@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Jobs\RefreshOrderDashboardSectionJob;
+use App\Jobs\RefreshPrimaryTotalsJob;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
 use App\Models\OrderDashboardSection;
@@ -66,17 +67,54 @@ class OrderDashboardSnapshotService
             ->get()
             ->keyBy('section_key');
 
+        $needsPrimaryRefresh = false;
+
         foreach (OrderDashboardSection::SHIPHERO_KEYS as $key) {
             $row = $rows->get($key);
             if (! $row instanceof OrderDashboardSection) {
                 continue;
             }
             $row = $this->recoverZombieSection($row);
-            if ($row->refreshed_at !== null || $row->status === OrderDashboardSection::STATUS_RUNNING) {
+            if ($row->status === OrderDashboardSection::STATUS_RUNNING) {
                 continue;
             }
-            $this->dispatchSectionRefresh($key);
+            if ($row->refreshed_at === null || $row->status === OrderDashboardSection::STATUS_FAILED) {
+                $needsPrimaryRefresh = true;
+
+                continue;
+            }
+            if (in_array($key, [
+                OrderDashboardSection::KEY_READY_TO_SHIP,
+                OrderDashboardSection::KEY_SHIPPED,
+            ], true)
+                && (int) $row->total_count === 0
+                && $row->refreshed_at->lessThan(now()->subMinutes(30))) {
+                $needsPrimaryRefresh = true;
+            }
         }
+
+        if ($needsPrimaryRefresh) {
+            $this->dispatchPrimaryTotalsRefresh();
+        }
+    }
+
+    public function dispatchPrimaryTotalsRefresh(): void
+    {
+        $lockKey = 'orders:primary_totals_refresh_queued';
+        if (Cache::has($lockKey)) {
+            return;
+        }
+
+        Cache::put($lockKey, now()->toIso8601String(), now()->addMinutes(20));
+
+        foreach ([
+            OrderDashboardSection::KEY_READY_TO_SHIP,
+            OrderDashboardSection::KEY_SHIPPED,
+        ] as $key) {
+            $this->markSectionRunning($key);
+        }
+
+        RefreshPrimaryTotalsJob::dispatch();
     }
 
     public function dispatchSectionRefresh(string $sectionKey): void
@@ -126,50 +164,184 @@ class OrderDashboardSnapshotService
 
         $sections = $this->overlaySectionsFromIndexWhenHealthy($sections);
 
-        $rtsMetrics = $this->dashboardMetrics->aggregateReadyToShip(true);
-        $shippedMetrics = $this->dashboardMetrics->aggregateShippedToday(true);
-        $onHoldMetrics = $this->dashboardMetrics->aggregateOnHoldToday(true);
+        $rtsTotal = $this->resolveMetricTotal(
+            OrderDashboardSection::KEY_READY_TO_SHIP,
+            (int) ($sections[OrderDashboardSection::KEY_READY_TO_SHIP]['total_count'] ?? 0),
+            $this->metricPayloadFromSection($rows->get(OrderDashboardSection::KEY_READY_TO_SHIP))
+        );
+        $shippedTotal = $this->resolveMetricTotal(
+            OrderDashboardSection::KEY_SHIPPED,
+            (int) ($sections[OrderDashboardSection::KEY_SHIPPED]['total_count'] ?? 0),
+            $this->metricPayloadFromSection($rows->get(OrderDashboardSection::KEY_SHIPPED))
+        );
+        $onHoldTotal = $this->resolveOnHoldTotal();
 
-        $sections[OrderDashboardSection::KEY_READY_TO_SHIP] = $this->applyMetricsToSection(
-            $sections[OrderDashboardSection::KEY_READY_TO_SHIP] ?? [],
-            $rtsMetrics
-        );
-        $sections[OrderDashboardSection::KEY_SHIPPED] = $this->applyMetricsToSection(
-            $sections[OrderDashboardSection::KEY_SHIPPED] ?? [],
-            $shippedMetrics
-        );
+        $sections[OrderDashboardSection::KEY_READY_TO_SHIP]['total_count'] = $rtsTotal;
+        $sections[OrderDashboardSection::KEY_SHIPPED]['total_count'] = $shippedTotal;
 
         return [
             'totals' => [
-                'ready_to_ship' => (int) ($rtsMetrics['total_count'] ?? 0),
-                'on_hold' => (int) ($onHoldMetrics['total_count'] ?? 0),
-                'shipped' => (int) ($shippedMetrics['total_count'] ?? 0),
+                'ready_to_ship' => $rtsTotal,
+                'on_hold' => $onHoldTotal,
+                'shipped' => $shippedTotal,
                 'asn_pending' => (int) ($sections[OrderDashboardSection::KEY_ASN_PENDING]['total_count'] ?? 0),
             ],
             'sections' => $sections,
             'revision' => $this->getDashboardRevision(),
-            'metrics_truncated' => (bool) (($rtsMetrics['payload']['truncated'] ?? false)
-                || ($shippedMetrics['payload']['truncated'] ?? false)
-                || ($onHoldMetrics['payload']['truncated'] ?? false)),
+            'metrics_truncated' => (bool) (
+                ($sections[OrderDashboardSection::KEY_READY_TO_SHIP]['truncated'] ?? false)
+                || ($sections[OrderDashboardSection::KEY_SHIPPED]['truncated'] ?? false)
+            ),
         ];
     }
 
     /**
-     * @param  array<string, mixed>  $section
-     * @param  array{payload: array<string, mixed>, total_count: int}  $metrics
+     * Refresh RTS, on-hold (today), and shipped totals from live ShipHero API into snapshots.
+     * Run via cron/CLI only — never from a web request.
+     */
+    public function refreshPrimaryTotals(): void
+    {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+
+        $this->dashboardMetrics->clearCacheForToday();
+
+        $startedAt = microtime(true);
+
+        $rts = $this->dashboardMetrics->aggregateReadyToShip(false);
+        $this->saveMetricSectionPayload(
+            OrderDashboardSection::KEY_READY_TO_SHIP,
+            $rts,
+            (int) round((microtime(true) - $startedAt) * 1000)
+        );
+
+        $shippedStarted = microtime(true);
+        $shipped = $this->dashboardMetrics->aggregateShippedToday(false);
+        $this->saveMetricSectionPayload(
+            OrderDashboardSection::KEY_SHIPPED,
+            $shipped,
+            (int) round((microtime(true) - $shippedStarted) * 1000)
+        );
+
+        $this->dashboardMetrics->aggregateOnHoldToday(false);
+
+        $this->bumpDashboardRevision();
+        Cache::forget('orders:primary_totals_refresh_queued');
+
+        Log::info('order_dashboard.primary_totals_refreshed', [
+            'ready_to_ship' => (int) ($rts['total_count'] ?? 0),
+            'shipped' => (int) ($shipped['total_count'] ?? 0),
+            'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $metricPayload
+     */
+    private function resolveMetricTotal(string $sectionKey, int $snapshotTotal, array $metricPayload = []): int
+    {
+        $indexTotal = $this->indexAggregateTotal($sectionKey);
+
+        if ($snapshotTotal <= 0) {
+            return $indexTotal ?? 0;
+        }
+
+        if ($this->snapshotLooksPartial($metricPayload) && $indexTotal !== null && $indexTotal > $snapshotTotal) {
+            return $indexTotal;
+        }
+
+        return $snapshotTotal;
+    }
+
+    private function indexAggregateTotal(string $sectionKey): ?int
+    {
+        if (! $this->orderIndex->indexHasRowsForSection($sectionKey)) {
+            return null;
+        }
+
+        try {
+            $fromIndex = $this->orderIndex->aggregateDashboardSection($sectionKey, false);
+
+            return (int) ($fromIndex['total_count'] ?? 0);
+        } catch (Throwable $e) {
+            Log::warning('order_dashboard.index_fallback_failed', [
+                'section_key' => $sectionKey,
+                'message' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $metricPayload
+     */
+    private function snapshotLooksPartial(array $metricPayload): bool
+    {
+        if ((bool) ($metricPayload['truncated'] ?? false)) {
+            return true;
+        }
+
+        $failures = (int) ($metricPayload['accounts_failed'] ?? 0);
+        $accountsTotal = (int) ($metricPayload['accounts_total'] ?? 0);
+
+        return $accountsTotal > 0 && $failures > 0;
+    }
+
+    /**
      * @return array<string, mixed>
      */
-    private function applyMetricsToSection(array $section, array $metrics): array
+    private function metricPayloadFromSection(?OrderDashboardSection $row): array
     {
-        $payload = is_array($metrics['payload'] ?? null) ? $metrics['payload'] : [];
+        if (! $row instanceof OrderDashboardSection) {
+            return [];
+        }
 
-        $section['total_count'] = (int) ($metrics['total_count'] ?? 0);
-        $section['accounts'] = isset($payload['accounts']) && is_array($payload['accounts'])
-            ? $payload['accounts']
-            : [];
-        $section['truncated'] = (bool) ($payload['truncated'] ?? false);
+        $payload = is_array($row->payload) ? $row->payload : [];
 
-        return $section;
+        return is_array($payload) ? $payload : [];
+    }
+
+    /**
+     * @param  array{payload: array<string, mixed>, total_count: int}  $result
+     */
+    private function saveMetricSectionPayload(string $sectionKey, array $result, int $durationMs): void
+    {
+        $payload = is_array($result['payload'] ?? null) ? $result['payload'] : [];
+        $total = (int) ($result['total_count'] ?? 0);
+        $failures = (int) ($payload['accounts_failed'] ?? 0);
+        $accountsTotal = (int) ($payload['accounts_total'] ?? 0);
+
+        $row = OrderDashboardSection::query()->where('section_key', $sectionKey)->first();
+        $previous = $row instanceof OrderDashboardSection ? (int) $row->total_count : 0;
+
+        if ($total === 0 && $previous > 0 && $accountsTotal > 0 && $failures >= $accountsTotal) {
+            Log::warning('order_dashboard.skip_zero_overwrite', [
+                'section_key' => $sectionKey,
+                'previous_total' => $previous,
+                'accounts_failed' => $failures,
+                'accounts_total' => $accountsTotal,
+            ]);
+
+            return;
+        }
+
+        $this->saveSectionPayload($sectionKey, $payload, $total, $durationMs);
+    }
+
+    private function resolveOnHoldTotal(): int
+    {
+        $cached = $this->dashboardMetrics->cachedOnHoldTotal();
+        if ($cached > 0) {
+            return $cached;
+        }
+
+        if ($this->orderIndex->indexHasRowsForQueueTab(ShipHeroOrderQueueIndex::KIND_ON_HOLD)) {
+            return $this->orderIndex->aggregateOnHoldTodayFromIndex();
+        }
+
+        return 0;
     }
 
     public function getDashboardRevision(): int

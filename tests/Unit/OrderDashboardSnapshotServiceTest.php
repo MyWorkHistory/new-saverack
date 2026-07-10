@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Jobs\RefreshOrderDashboardSectionJob;
+use App\Jobs\RefreshPrimaryTotalsJob;
 use App\Models\OrderDashboardSection;
 use App\Services\OrderDashboardSnapshotService;
 use App\Services\PortalQueueCountsService;
@@ -95,11 +96,11 @@ class OrderDashboardSnapshotServiceTest extends TestCase
 
         $orderIndex = Mockery::mock(ShipHeroOrderQueueIndexService::class);
         $orderIndex->shouldReceive('indexIsHealthyForSection')->andReturn(false);
+        $orderIndex->shouldReceive('indexHasRowsForSection')->andReturn(false);
+        $orderIndex->shouldReceive('indexHasRowsForQueueTab')->andReturn(false);
 
         $metrics = Mockery::mock(ShipHeroDashboardMetricsService::class);
-        $metrics->shouldReceive('aggregateReadyToShip')->with(true)->andReturn($this->metricsResult(10));
-        $metrics->shouldReceive('aggregateShippedToday')->with(true)->andReturn($this->metricsResult(5));
-        $metrics->shouldReceive('aggregateOnHoldToday')->with(true)->andReturn($this->metricsResult(7));
+        $metrics->shouldReceive('cachedOnHoldTotal')->andReturn(7);
 
         $service = $this->makeService(
             Mockery::mock(PortalQueueCountsService::class),
@@ -116,7 +117,7 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         $this->assertSame(7, $payload['totals']['on_hold']);
     }
 
-    public function test_bootstrap_dispatches_shiphero_sections_and_marks_running(): void
+    public function test_bootstrap_dispatches_primary_totals_job_and_marks_running(): void
     {
         Queue::fake();
         $now = now();
@@ -140,14 +141,75 @@ class OrderDashboardSnapshotServiceTest extends TestCase
 
         $service->bootstrapIfNeeded();
 
-        Queue::assertPushed(RefreshOrderDashboardSectionJob::class, count(OrderDashboardSection::SHIPHERO_KEYS));
+        Queue::assertPushed(RefreshPrimaryTotalsJob::class, 1);
 
         $running = OrderDashboardSection::query()
-            ->whereIn('section_key', OrderDashboardSection::SHIPHERO_KEYS)
+            ->whereIn('section_key', [
+                OrderDashboardSection::KEY_READY_TO_SHIP,
+                OrderDashboardSection::KEY_SHIPPED,
+            ])
             ->where('status', OrderDashboardSection::STATUS_RUNNING)
             ->count();
 
-        $this->assertSame(count(OrderDashboardSection::SHIPHERO_KEYS), $running);
+        $this->assertSame(2, $running);
+    }
+
+    public function test_get_dashboard_payload_falls_back_to_index_when_snapshot_zero(): void
+    {
+        $now = now();
+        foreach (
+            [
+                OrderDashboardSection::KEY_READY_TO_SHIP => 0,
+                OrderDashboardSection::KEY_SHIPPED => 38,
+                OrderDashboardSection::KEY_ASN_PENDING => 0,
+            ] as $key => $total
+        ) {
+            OrderDashboardSection::query()->insert([
+                'section_key' => $key,
+                'payload' => json_encode([
+                    'accounts' => [],
+                    'truncated' => false,
+                    'accounts_failed' => 60,
+                    'accounts_total' => 64,
+                ]),
+                'total_count' => $total,
+                'status' => OrderDashboardSection::STATUS_IDLE,
+                'refreshed_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
+        $orderIndex = Mockery::mock(ShipHeroOrderQueueIndexService::class);
+        $orderIndex->shouldReceive('indexIsHealthyForSection')->andReturn(false);
+        $orderIndex->shouldReceive('indexHasRowsForSection')
+            ->with(OrderDashboardSection::KEY_READY_TO_SHIP)
+            ->andReturn(true);
+        $orderIndex->shouldReceive('indexHasRowsForSection')
+            ->with(OrderDashboardSection::KEY_SHIPPED)
+            ->andReturn(true);
+        $orderIndex->shouldReceive('aggregateDashboardSection')
+            ->with(OrderDashboardSection::KEY_READY_TO_SHIP, false)
+            ->andReturn(['total_count' => 128, 'payload' => ['accounts' => []]]);
+        $orderIndex->shouldReceive('aggregateDashboardSection')
+            ->with(OrderDashboardSection::KEY_SHIPPED, false)
+            ->andReturn(['total_count' => 279, 'payload' => ['accounts' => []]]);
+        $orderIndex->shouldReceive('indexHasRowsForQueueTab')->andReturn(false);
+
+        $metrics = Mockery::mock(ShipHeroDashboardMetricsService::class);
+        $metrics->shouldReceive('cachedOnHoldTotal')->andReturn(0);
+
+        $service = $this->makeService(
+            Mockery::mock(PortalQueueCountsService::class),
+            Mockery::mock(ShipHeroOrderService::class),
+            $orderIndex,
+            $metrics
+        );
+
+        $payload = $service->getDashboardPayload();
+
+        $this->assertSame(128, $payload['totals']['ready_to_ship']);
+        $this->assertSame(279, $payload['totals']['shipped']);
     }
 
     public function test_refresh_section_uses_live_shipped_metrics(): void
@@ -459,11 +521,7 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         $orderIndex->shouldReceive('indexIsHealthyForSection')->andReturn(false);
 
         $metrics = Mockery::mock(ShipHeroDashboardMetricsService::class);
-        $metrics->shouldReceive('aggregateReadyToShip')->with(true)->andReturn($this->metricsResult(0));
-        $metrics->shouldReceive('aggregateShippedToday')->with(true)->andReturn($this->metricsResult(0));
-        $metrics->shouldReceive('aggregateOnHoldToday')
-            ->with(true)
-            ->andReturn($this->metricsResult(78));
+        $metrics->shouldReceive('cachedOnHoldTotal')->andReturn(78);
 
         $service = $this->makeService(
             Mockery::mock(PortalQueueCountsService::class),

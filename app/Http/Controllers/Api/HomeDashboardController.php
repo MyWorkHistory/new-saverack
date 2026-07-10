@@ -88,9 +88,11 @@ class HomeDashboardController extends Controller
     private function refreshAllSections(bool $sync): void
     {
         if ($sync) {
-            foreach (OrderDashboardSection::ALL_KEYS as $key) {
-                $this->snapshots->refreshSection($key);
+            $this->snapshots->refreshPrimaryTotals();
+            foreach (OrderDashboardSection::HOLD_KEYS as $key) {
+                $this->snapshots->refreshSectionFromIndex($key);
             }
+            $this->snapshots->refreshSection(OrderDashboardSection::KEY_ASN_PENDING);
 
             return;
         }
@@ -101,9 +103,7 @@ class HomeDashboardController extends Controller
             // ASN refresh is fast; ShipHero sections still queue below.
         }
 
-        foreach (OrderDashboardSection::SHIPHERO_KEYS as $key) {
-            $this->snapshots->dispatchSectionRefresh($key);
-        }
+        $this->snapshots->dispatchPrimaryTotalsRefresh();
     }
 
     private function authorizeHomeDashboard(Request $request): void

@@ -10,7 +10,7 @@ export const ON_HOLD_TOTAL_CARD = {
   iconStyle: { background: "#fef3c7", color: "#b45309" },
 };
 
-/** Hold-type breakdown cards — orders with multiple holds appear in more than one card. */
+/** Hold-type breakdown cards (backorder last) — orders with multiple holds may appear in more than one card. */
 export const HOLD_TYPE_SECTIONS = [
   {
     key: "hold_operator",
@@ -62,21 +62,20 @@ export const HOLD_TYPE_SECTIONS = [
     titleColor: "#7c3aed",
     iconStyle: { background: "#f3e8ff", color: "#7c3aed" },
   },
+  {
+    key: "hold_backorder",
+    label: "Backorder",
+    titleUpper: "BACKORDER",
+    sub: "Orders on hold due to inventory shortage",
+    icon: "localShipping",
+    holdReason: null,
+    titleColor: "#dc2626",
+    iconStyle: { background: "#fee2e2", color: "#dc2626" },
+  },
 ];
 
-export const HOLD_BACKORDER_CARD = {
-  key: "hold_backorder",
-  label: "Backorder",
-  titleUpper: "BACKORDER",
-  sub: "Open orders with inventory shortage (separate queue)",
-  icon: "localShipping",
-  holdReason: null,
-  titleColor: "#dc2626",
-  iconStyle: { background: "#fee2e2", color: "#dc2626" },
-};
+/** @deprecated Use HOLD_TYPE_SECTIONS (includes backorder as last card). */
+export const HOLD_BACKORDER_CARD = HOLD_TYPE_SECTIONS[HOLD_TYPE_SECTIONS.length - 1];
 
-/** @deprecated Prefer ON_HOLD_TOTAL_CARD + HOLD_TYPE_SECTIONS + HOLD_BACKORDER_CARD. */
-export const HOLD_SECTIONS = [
-  ...HOLD_TYPE_SECTIONS,
-  HOLD_BACKORDER_CARD,
-];
+/** @deprecated Prefer ON_HOLD_TOTAL_CARD + HOLD_TYPE_SECTIONS. */
+export const HOLD_SECTIONS = [...HOLD_TYPE_SECTIONS];

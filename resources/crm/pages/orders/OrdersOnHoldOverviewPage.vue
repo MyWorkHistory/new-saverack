@@ -5,11 +5,7 @@ import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarBu
 import CrmSyncToolbar from "../../components/common/CrmSyncToolbar.vue";
 import OnHoldSectionPanel from "../../components/orders/OnHoldSectionPanel.vue";
 import OnHoldSummaryCards from "../../components/orders/OnHoldSummaryCards.vue";
-import {
-  HOLD_BACKORDER_CARD,
-  HOLD_TYPE_SECTIONS,
-  ON_HOLD_TOTAL_CARD,
-} from "../../constants/holdSummaryCards.js";
+import { HOLD_TYPE_SECTIONS, ON_HOLD_TOTAL_CARD } from "../../constants/holdSummaryCards.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useAdminHomeDashboard } from "../../composables/useAdminHomeDashboard.js";
 import { useToast } from "../../composables/useToast.js";
@@ -49,11 +45,7 @@ function lastUpdatedLabel(key) {
   return formatDateTimeUs(at);
 }
 
-const onHoldOverviewSections = computed(() => [
-  ON_HOLD_TOTAL_CARD,
-  HOLD_BACKORDER_CARD,
-  ...HOLD_TYPE_SECTIONS,
-]);
+const onHoldOverviewSections = computed(() => [ON_HOLD_TOTAL_CARD, ...HOLD_TYPE_SECTIONS]);
 
 const onHoldLastSyncedLabel = computed(() => {
   let latestMs = null;
@@ -165,20 +157,6 @@ onMounted(async () => {
       <OnHoldSummaryCards :get-total-count="getTotalCount" @select="scrollToSection" />
 
       <div class="row g-3">
-        <div class="col-12">
-          <OnHoldSectionPanel
-            :section-key="HOLD_BACKORDER_CARD.key"
-            :label="HOLD_BACKORDER_CARD.label"
-            :icon="HOLD_BACKORDER_CARD.icon"
-            :icon-style="HOLD_BACKORDER_CARD.iconStyle"
-            :hold-reason="HOLD_BACKORDER_CARD.holdReason"
-            :accounts="sectionData(HOLD_BACKORDER_CARD.key).accounts"
-            :last-updated="lastUpdatedLabel(HOLD_BACKORDER_CARD.key)"
-            :refreshing="isSectionRefreshing(HOLD_BACKORDER_CARD.key)"
-            :orders-hold-route="ordersHoldRoute"
-            @refresh="onRefreshSection"
-          />
-        </div>
         <div
           v-for="hold in HOLD_TYPE_SECTIONS"
           :key="hold.key"

@@ -212,21 +212,22 @@ class ShipHeroOrderQueueIndexService
             ->where('queue_kind', $tab);
 
         $holdReason = strtolower(trim((string) ($filters['hold_reason'] ?? '')));
+        $orderNumber = ltrim(trim((string) ($filters['order_number'] ?? '')), '#');
+
         if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
-            $query->where('has_backorder', false);
             if ($holdReason !== '') {
                 $this->applyHoldReasonFilterToQuery($query, $holdReason);
             }
+            $this->applyActiveOnHoldScopeToQuery($query);
         }
 
-        $orderNumber = ltrim(trim((string) ($filters['order_number'] ?? '')), '#');
         if ($orderNumber !== '') {
             $needle = strtolower($orderNumber);
             $query->where(function ($q) use ($needle) {
                 $q->where('order_number_search', 'like', '%'.$needle.'%')
                     ->orWhere('order_number_search', $needle);
             });
-        } else {
+        } elseif ($tab !== ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
             $this->applyDateWindowToQuery($query, $tab, $context, $filters);
         }
 
@@ -408,7 +409,8 @@ class ShipHeroOrderQueueIndexService
                 }
             } while ($hasNext && $after !== null && $pages < $maxPages);
 
-            if ($purgeStale) {
+            // Drop rows that left this queue since the last full (non-truncated) sync pass.
+            if (! $truncated) {
                 ShipHeroOrderQueueIndex::query()
                     ->where('client_account_id', $clientAccountId)
                     ->where('queue_kind', $tab)
@@ -429,7 +431,7 @@ class ShipHeroOrderQueueIndexService
                 'pages' => $pages,
                 'rows_upserted' => $rowsUpserted,
                 'truncated' => $truncated,
-                'purge_stale' => $purgeStale,
+                'purged_stale' => ! $truncated,
             ]);
 
             return [
@@ -729,12 +731,49 @@ class ShipHeroOrderQueueIndexService
 
         $query = ShipHeroOrderQueueIndex::query()
             ->where('client_account_id', $clientAccountId)
-            ->where('queue_kind', ShipHeroOrderQueueIndex::KIND_ON_HOLD)
-            ->where('has_backorder', false);
+            ->where('queue_kind', ShipHeroOrderQueueIndex::KIND_ON_HOLD);
+        $this->applyActiveOnHoldScopeToQuery($query);
 
         $this->applyDateWindowToQuery($query, ShipHeroOrderQueueIndex::KIND_ON_HOLD, $context, []);
 
         return (int) $query->distinct()->count('shiphero_order_id');
+    }
+
+    public function indexHasRowsForQueueTab(string $tab): bool
+    {
+        $tab = strtolower(trim($tab));
+        if (! $this->isQueueTab($tab)) {
+            return false;
+        }
+
+        $query = ShipHeroOrderQueueIndex::query()->where('queue_kind', $tab);
+        if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
+            $this->applyActiveOnHoldScopeToQuery($query);
+        }
+
+        return $query->exists();
+    }
+
+    /**
+     * On-hold rows that are fulfilled/shipped are stale index state — exclude from counts.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     */
+    private function applyActiveOnHoldScopeToQuery($query): void
+    {
+        $query->where('has_backorder', false);
+        $query->where(function ($q) {
+            $q->where(function ($inner) {
+                $inner->whereNull('display_status')
+                    ->orWhere('display_status', '=', '')
+                    ->orWhereRaw("LOWER(display_status) NOT LIKE '%fulfilled%'")
+                    ->orWhereRaw("LOWER(display_status) NOT LIKE '%shipped%'");
+            })->where(function ($inner) {
+                $inner->whereRaw(
+                    "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(list_payload, '$.raw_fulfillment_status')), '')) NOT IN ('fulfilled', 'shipped')"
+                );
+            });
+        });
     }
 
     public function indexHasRowsForSection(string $sectionKey): bool
@@ -752,7 +791,7 @@ class ShipHeroOrderQueueIndexService
         }
 
         if ($mapping['queue_kind'] === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
-            $query->where('has_backorder', false);
+            $this->applyActiveOnHoldScopeToQuery($query);
         }
 
         return $query->exists();
@@ -819,10 +858,10 @@ class ShipHeroOrderQueueIndexService
             ->where('queue_kind', $tab);
 
         if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
-            $query->where('has_backorder', false);
             if ($holdReason !== null && trim($holdReason) !== '') {
                 $this->applyHoldReasonFilterToQuery($query, $holdReason);
             }
+            $this->applyActiveOnHoldScopeToQuery($query);
 
             $this->applyDateWindowToQuery($query, $tab, $context, $filters);
 
@@ -985,6 +1024,10 @@ class ShipHeroOrderQueueIndexService
             return;
         }
 
+        if ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
+            return;
+        }
+
         $from = $this->parseTimestamp($context['open_from'] ?? null);
         $to = $this->parseTimestamp($context['open_to'] ?? null);
         if (! empty($filters['order_date_from'])) {
@@ -1019,6 +1062,9 @@ class ShipHeroOrderQueueIndexService
         } elseif ($tab === ShipHeroOrderQueueIndex::KIND_SHIPPED) {
             $filters['order_date_from'] = $this->isoDateOnly($context['shipped_from'] ?? null);
             $filters['order_date_to'] = $this->isoDateOnly($context['shipped_to'] ?? null);
+        } elseif ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
+            // listOrders bounds by updated_at when no order_date window (all current holds).
+            unset($filters['order_date_from'], $filters['order_date_to']);
         } else {
             $filters['order_date_from'] = $this->isoDateOnly($context['open_from'] ?? null);
             $filters['order_date_to'] = $this->isoDateOnly($context['open_to'] ?? null);

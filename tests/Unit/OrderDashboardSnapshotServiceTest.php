@@ -68,6 +68,7 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         }
 
         $orderIndex = Mockery::mock(ShipHeroOrderQueueIndexService::class);
+        $orderIndex->shouldReceive('indexHasAnyRows')->andReturn(false);
         $orderIndex->shouldReceive('indexHasRowsForSection')
             ->with(OrderDashboardSection::KEY_HOLD_OPERATOR)
             ->andReturn(false);
@@ -470,9 +471,12 @@ class OrderDashboardSnapshotServiceTest extends TestCase
         }
 
         $orderIndex = Mockery::mock(ShipHeroOrderQueueIndexService::class);
-        $orderIndex->shouldReceive('indexHasRowsForSection')
-            ->with(OrderDashboardSection::KEY_HOLD_OPERATOR)
+        $orderIndex->shouldReceive('indexHasAnyRows')->andReturn(true);
+        $orderIndex->shouldReceive('indexHasRowsForQueueTab')
+            ->with('on_hold')
             ->andReturn(true);
+        $orderIndex->shouldReceive('indexHasRowsForSection')
+            ->andReturn(false);
         $orderIndex->shouldReceive('aggregateDistinctOnHoldTotal')
             ->once()
             ->andReturn(13);

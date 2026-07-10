@@ -38,7 +38,7 @@ const props = defineProps({
 
 const emit = defineEmits(["queue-refreshed"]);
 
-const toast = useToast();
+import { RTS_ORDER_DATE_FROM } from "../../constants/fulfillmentSections.js";
 const route = useRoute();
 const router = useRouter();
 const crmUser = inject("crmUser", ref(null));
@@ -63,7 +63,13 @@ function applyOrdersRouteQuery() {
     }
   }
   const presetFromRoute = String(route.query.date_preset || "").trim();
-  if (presetFromRoute === "today" || presetFromRoute === "all" || presetFromRoute === "last_7" || presetFromRoute === "last_30") {
+  if (
+    presetFromRoute === "today"
+    || presetFromRoute === "all"
+    || presetFromRoute === "last_7"
+    || presetFromRoute === "last_30"
+    || presetFromRoute === "since_may_1"
+  ) {
     query.datePreset = presetFromRoute;
   }
   if (tabKey.value === "on_hold") {
@@ -519,6 +525,7 @@ function dateRangeFromPreset() {
   const now = new Date();
   const today = toDateInput(now);
   if (query.datePreset === "all") return { from: null, to: null };
+  if (query.datePreset === "since_may_1") return { from: RTS_ORDER_DATE_FROM, to: today };
   if (query.datePreset === "today") return { from: today, to: today };
   if (query.datePreset === "last_7") {
     const d = new Date(now);
@@ -830,10 +837,10 @@ watch([allPageSelected, somePageSelected, displayedRows], () => {
 
 function defaultDatePresetForCurrentTab() {
   if (tabKey.value === "awaiting") {
-    return "all";
+    return "since_may_1";
   }
   if (tabKey.value === "on_hold" || tabKey.value === "backorder") {
-    return "last_30";
+    return "all";
   }
   return "today";
 }
@@ -1516,6 +1523,7 @@ onUnmounted(() => {
                       class="form-select staff-datatable-filters__select mb-3"
                       :disabled="loading"
                     >
+                      <option v-if="tabKey === 'awaiting'" value="since_may_1">Since May 1 (Dashboard)</option>
                       <option value="all">Any Order Date</option>
                       <option value="today">Today</option>
                       <option value="last_7">Last 7 Days</option>

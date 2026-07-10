@@ -119,8 +119,10 @@ class OrderDashboardSnapshotService
             $sections[$key] = $this->serializeSection($row instanceof OrderDashboardSection ? $row : null, $key);
         }
 
+        $sections = $this->overlaySectionsFromIndex($sections);
+
         $holdTotal = 0;
-        if ($this->orderIndex->indexHasRowsForSection(OrderDashboardSection::KEY_HOLD_OPERATOR)) {
+        if ($this->orderIndex->indexHasRowsForQueueTab(ShipHeroOrderQueueIndex::KIND_ON_HOLD)) {
             $holdTotal = $this->orderIndex->aggregateDistinctOnHoldTotal();
         } else {
             foreach (OrderDashboardSection::HOLD_KEYS as $holdKey) {
@@ -739,6 +741,42 @@ class OrderDashboardSnapshotService
                 'updated_at' => $now,
             ]);
         }
+    }
+
+    /**
+     * Replace snapshot totals with live index aggregates so the UI never shows stale section rows.
+     *
+     * @param  array<string, array<string, mixed>>  $sections
+     * @return array<string, array<string, mixed>>
+     */
+    private function overlaySectionsFromIndex(array $sections): array
+    {
+        if (! $this->orderIndex->indexHasAnyRows()) {
+            return $sections;
+        }
+
+        foreach (OrderDashboardSection::SHIPHERO_KEYS as $key) {
+            if (! $this->orderIndex->indexHasRowsForSection($key)) {
+                continue;
+            }
+
+            try {
+                $result = $this->orderIndex->aggregateDashboardSection($key, false);
+                $payload = is_array($result['payload'] ?? null) ? $result['payload'] : [];
+                $sections[$key]['total_count'] = (int) ($result['total_count'] ?? 0);
+                $sections[$key]['accounts'] = isset($payload['accounts']) && is_array($payload['accounts'])
+                    ? $payload['accounts']
+                    : [];
+                $sections[$key]['truncated'] = (bool) ($payload['truncated'] ?? false);
+            } catch (Throwable $e) {
+                Log::warning('order_dashboard.index_overlay_failed', [
+                    'section_key' => $key,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $sections;
     }
 
     /**

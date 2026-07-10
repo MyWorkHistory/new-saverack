@@ -60,6 +60,8 @@ function accountRoute(section, accountId) {
   const query = { client_account_id: String(accountId) };
   if (section.key === "shipped") {
     query.date_preset = "today";
+  } else if (section.key === "ready_to_ship") {
+    query.date_preset = "since_may_1";
   }
   return {
     name: section.routeName,

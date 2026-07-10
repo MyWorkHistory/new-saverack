@@ -1,3 +1,5 @@
+export const RTS_ORDER_DATE_FROM = "2026-05-01";
+
 export const FULFILLMENT_SECTIONS = [
   {
     key: "ready_to_ship",

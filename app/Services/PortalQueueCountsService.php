@@ -316,10 +316,8 @@ class PortalQueueCountsService
             $query = clone $baseQuery;
 
             if ($tab === 'on_hold') {
-                $query->where('has_backorder', false);
-            }
-
-            if ($tab === 'awaiting') {
+                $this->applyActiveOnHoldScopeToIndexQuery($query);
+            } elseif ($tab === 'awaiting') {
                 $from = $this->parseTimestamp($context['awaiting_from'] ?? null);
                 $to = $this->parseTimestamp($context['awaiting_to'] ?? null);
                 if ($from !== null) {
@@ -340,6 +338,11 @@ class PortalQueueCountsService
 
                 return [
                     'count' => $this->sumShippedLabelCountFromRows($query->get(['list_payload'])),
+                    'truncated' => false,
+                ];
+            } elseif ($tab === 'on_hold') {
+                return [
+                    'count' => (int) $query->distinct()->count('shiphero_order_id'),
                     'truncated' => false,
                 ];
             } else {
@@ -641,6 +644,26 @@ class PortalQueueCountsService
         } catch (Throwable $e) {
             return null;
         }
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     */
+    private function applyActiveOnHoldScopeToIndexQuery($query): void
+    {
+        $query->where('has_backorder', false);
+        $query->where(function ($q) {
+            $q->where(function ($inner) {
+                $inner->whereNull('display_status')
+                    ->orWhere('display_status', '=', '')
+                    ->orWhereRaw("LOWER(display_status) NOT LIKE '%fulfilled%'")
+                    ->orWhereRaw("LOWER(display_status) NOT LIKE '%shipped%'");
+            })->where(function ($inner) {
+                $inner->whereRaw(
+                    "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(list_payload, '$.raw_fulfillment_status')), '')) NOT IN ('fulfilled', 'shipped')"
+                );
+            });
+        });
     }
 
     /**

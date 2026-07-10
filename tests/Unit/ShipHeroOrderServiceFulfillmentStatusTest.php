@@ -175,4 +175,14 @@ final class ShipHeroOrderServiceFulfillmentStatusTest extends TestCase
             'status' => 'shipped',
         ]));
     }
+
+    public function test_order_qualifies_for_awaiting_queue_when_display_ready(): void
+    {
+        $this->assertTrue($this->svc->orderQualifiesForAwaitingQueue([
+            'raw_fulfillment_status' => 'unfulfilled',
+            'display_status' => 'Ready To Ship',
+            'has_backorder' => false,
+            'has_active_hold' => false,
+        ]));
+    }
 }

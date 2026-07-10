@@ -318,8 +318,9 @@ class PortalQueueCountsService
         return $this->orders->countOrders([
             'customer_account_id' => $context['customer_id'],
             'tab' => $tab,
-            'order_date_from' => $this->isoDateOnlyFromContext($from),
-            'order_date_to' => $this->isoDateOnlyFromContext($to),
+            'order_date_from' => $tab === 'awaiting' ? ($context['awaiting_from'] ?? null) : ($context['open_from'] ?? null),
+            'order_date_to' => $tab === 'awaiting' ? ($context['awaiting_to'] ?? null) : ($context['open_to'] ?? null),
+            'timezone' => $context['timezone'] ?? self::DEFAULT_ACCOUNT_TIMEZONE,
             'max_pages' => $maxPages,
             'count_deadline' => microtime(true) + $deadlineSeconds,
         ]);

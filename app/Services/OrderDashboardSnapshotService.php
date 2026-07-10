@@ -304,8 +304,8 @@ class OrderDashboardSnapshotService
                     return $this->orders->countOrders([
                         'customer_account_id' => $customerId,
                         'tab' => 'awaiting',
-                        'order_date_from' => $this->isoDateOnly($rtsContext['awaiting_from'] ?? null),
-                        'order_date_to' => $this->isoDateOnly($rtsContext['awaiting_to'] ?? null),
+                        'order_date_from' => $rtsContext['awaiting_from'] ?? null,
+                        'order_date_to' => $rtsContext['awaiting_to'] ?? null,
                         'timezone' => $rtsContext['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
                         'max_pages' => 50,
                     ]);
@@ -356,8 +356,8 @@ class OrderDashboardSnapshotService
                     return $this->orders->countOrders([
                         'customer_account_id' => $customerId,
                         'tab' => 'on_hold',
-                        'order_date_from' => $this->isoDateOnly($holdContext['open_from'] ?? null),
-                        'order_date_to' => $this->isoDateOnly($holdContext['open_to'] ?? null),
+                        'order_date_from' => $holdContext['open_from'] ?? null,
+                        'order_date_to' => $holdContext['open_to'] ?? null,
                         'timezone' => $holdContext['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
                         'max_pages' => 50,
                     ]);
@@ -837,6 +837,9 @@ class OrderDashboardSnapshotService
         }
 
         $this->orderIndex->syncAccountQueue($clientAccountId, $tab);
+        if ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
+            $this->orderIndex->supplementAwaitingFromRecentUpdates($clientAccountId);
+        }
         $this->patchAccountFromQueueTab($clientAccountId, $tab);
         $this->queueCounts->refreshQueueCacheFromIndex($clientAccountId, [$tab]);
         $this->queueCounts->bumpCountsRevision($clientAccountId);
@@ -1193,8 +1196,8 @@ class OrderDashboardSnapshotService
                         'customer_account_id' => (string) $row['customer_account_id'],
                     ],
                 ],
-                $this->isoDateOnly($row['awaiting_from'] ?? null),
-                $this->isoDateOnly($row['awaiting_to'] ?? null)
+                $row['awaiting_from'] ?? null,
+                $row['awaiting_to'] ?? null
             );
             $count = (int) ($summary['ready_to_ship_total'] ?? 0);
             if ($count <= 0) {
@@ -1232,8 +1235,8 @@ class OrderDashboardSnapshotService
             return $this->orders->countOrders([
                 'customer_account_id' => $context['customer_id'],
                 'tab' => 'awaiting',
-                'order_date_from' => $this->isoDateOnly($context['awaiting_from'] ?? null),
-                'order_date_to' => $this->isoDateOnly($context['awaiting_to'] ?? null),
+                'order_date_from' => $context['awaiting_from'] ?? null,
+                'order_date_to' => $context['awaiting_to'] ?? null,
                 'timezone' => $context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
                 'max_pages' => 50,
             ]);
@@ -1243,8 +1246,8 @@ class OrderDashboardSnapshotService
             return $this->orders->countOrders([
                 'customer_account_id' => $context['customer_id'],
                 'tab' => 'on_hold',
-                'order_date_from' => $this->isoDateOnly($context['open_from'] ?? null),
-                'order_date_to' => $this->isoDateOnly($context['open_to'] ?? null),
+                'order_date_from' => $context['open_from'] ?? null,
+                'order_date_to' => $context['open_to'] ?? null,
                 'timezone' => $context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
                 'max_pages' => 50,
             ]);

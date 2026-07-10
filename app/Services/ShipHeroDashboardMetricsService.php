@@ -43,14 +43,11 @@ class ShipHeroDashboardMetricsService
     {
         return $this->cachedAggregate('ready_to_ship', $useCache, function () {
             return $this->aggregateAcrossAccounts(function (ClientAccount $account, array $context) {
-                $from = $this->isoDateOnly($context['awaiting_from'] ?? null);
-                $to = $this->isoDateOnly($context['awaiting_to'] ?? null);
-
                 return $this->orders->countOrders([
                     'customer_account_id' => (string) $context['customer_id'],
                     'tab' => 'awaiting',
-                    'order_date_from' => $from,
-                    'order_date_to' => $to,
+                    'order_date_from' => $context['awaiting_from'] ?? null,
+                    'order_date_to' => $context['awaiting_to'] ?? null,
                     'timezone' => $context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
                     'max_pages' => self::COUNT_MAX_PAGES,
                 ]);
@@ -67,14 +64,11 @@ class ShipHeroDashboardMetricsService
     {
         return $this->cachedAggregate('on_hold_today', $useCache, function () {
             return $this->aggregateAcrossAccounts(function (ClientAccount $account, array $context) {
-                $from = $this->isoDateOnly($context['open_from'] ?? null);
-                $to = $this->isoDateOnly($context['open_to'] ?? null);
-
                 return $this->orders->countOrders([
                     'customer_account_id' => (string) $context['customer_id'],
                     'tab' => 'on_hold',
-                    'order_date_from' => $from,
-                    'order_date_to' => $to,
+                    'order_date_from' => $context['open_from'] ?? null,
+                    'order_date_to' => $context['open_to'] ?? null,
                     'timezone' => $context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
                     'max_pages' => self::COUNT_MAX_PAGES,
                 ]);

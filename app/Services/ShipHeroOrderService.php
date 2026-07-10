@@ -141,6 +141,9 @@ class ShipHeroOrderService
             }
             $hasOrderWindow = is_string($vars['order_date_from']) && trim((string) $vars['order_date_from']) !== ''
                 && is_string($vars['order_date_to']) && trim((string) $vars['order_date_to']) !== '';
+            if ($hasOrderWindow) {
+                $this->applyOrderDateWindowToGraphVars($vars, $timezone);
+            }
             if (! $hasOrderWindow) {
                 $vars['updated_from'] = Carbon::now($timezone)->subDays(180)->startOfDay()->toIso8601String();
                 $vars['updated_to'] = Carbon::now($timezone)->endOfDay()->toIso8601String();
@@ -152,11 +155,23 @@ class ShipHeroOrderService
             if ($timezone === '' || ! in_array($timezone, timezone_identifiers_list(), true)) {
                 $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
             }
-            $hasOrderWindow = is_string($vars['order_date_from']) && trim((string) $vars['order_date_from']) !== ''
-                && is_string($vars['order_date_to']) && trim((string) $vars['order_date_to']) !== '';
-            if (! $hasOrderWindow) {
-                $vars['updated_from'] = Carbon::now($timezone)->subDays(180)->startOfDay()->toIso8601String();
-                $vars['updated_to'] = Carbon::now($timezone)->endOfDay()->toIso8601String();
+            $explicitUpdatedFrom = $this->nullableIso($filters['updated_from'] ?? null);
+            if ($explicitUpdatedFrom !== null) {
+                $vars['order_date_from'] = null;
+                $vars['order_date_to'] = null;
+                $vars['updated_from'] = $explicitUpdatedFrom;
+                $vars['updated_to'] = $this->nullableIso($filters['updated_to'] ?? null)
+                    ?? Carbon::now($timezone)->endOfDay()->toIso8601String();
+            } else {
+                $hasOrderWindow = is_string($vars['order_date_from']) && trim((string) $vars['order_date_from']) !== ''
+                    && is_string($vars['order_date_to']) && trim((string) $vars['order_date_to']) !== '';
+                if ($hasOrderWindow) {
+                    $this->applyOrderDateWindowToGraphVars($vars, $timezone);
+                }
+                if (! $hasOrderWindow) {
+                    $vars['updated_from'] = Carbon::now($timezone)->subDays(180)->startOfDay()->toIso8601String();
+                    $vars['updated_to'] = Carbon::now($timezone)->endOfDay()->toIso8601String();
+                }
             }
         } elseif ($tab === 'backorder') {
             // ShipHero uses `has_backorder`, not fulfillment_status = "backorder" (see public API schema).
@@ -332,6 +347,7 @@ query ShipHeroOrders(
         node {
           id
           fulfillment_status
+          ready_to_ship
           order_date
           updated_at
           shipments {
@@ -403,6 +419,7 @@ query ShipHeroOrders(
           partner_order_id
           shop_name
           fulfillment_status
+          ready_to_ship
           order_date
           updated_at
           required_ship_date
@@ -902,6 +919,7 @@ query ShipHeroOrdersByIds($ids: [String], $customer_account_id: String!, $first:
           partner_order_id
           shop_name
           fulfillment_status
+          ready_to_ship
           order_date
           updated_at
           required_ship_date
@@ -1282,6 +1300,10 @@ GQL;
             return 'shipped';
         }
 
+        if (! empty($row['ready_to_ship'])) {
+            return 'awaiting';
+        }
+
         if (! empty($row['has_backorder'])) {
             return 'backorder';
         }
@@ -1306,7 +1328,41 @@ GQL;
             return 'awaiting';
         }
 
+        if ($this->orderQualifiesForAwaitingQueue($row)) {
+            return 'awaiting';
+        }
+
         return null;
+    }
+
+    /**
+     * Lenient RTS classification for webhooks/reconcile (shipping method may lag behind ShipHero UI).
+     *
+     * @param  array<string, mixed>  $row
+     */
+    public function orderQualifiesForAwaitingQueue(array $row): bool
+    {
+        if (! empty($row['has_backorder']) || ! empty($row['has_active_hold'])) {
+            return false;
+        }
+
+        if ($this->orderRowIsFulfilledOrShipped($row)) {
+            return false;
+        }
+
+        foreach (['raw_fulfillment_status', 'status'] as $key) {
+            $normalized = strtolower(trim((string) ($row[$key] ?? '')));
+            if ($normalized === 'unfulfilled') {
+                break;
+            }
+            if ($normalized !== '' && $normalized !== 'pending') {
+                return false;
+            }
+        }
+
+        $display = strtolower(trim((string) ($row['display_status'] ?? '')));
+
+        return $display === 'ready to ship' || str_contains($display, 'ready to ship');
     }
 
     /**
@@ -2458,6 +2514,7 @@ query ShipHeroOrderHeader($id: String!) {
           partner_order_id
           shop_name
           fulfillment_status
+          ready_to_ship
           order_date
           required_ship_date
           profile
@@ -2791,6 +2848,7 @@ GQL;
             'raw_fulfillment_status' => (string) ($node['fulfillment_status'] ?? ''),
             'raw_status' => (string) ($node['status'] ?? ''),
             'raw_profile' => (string) ($node['profile'] ?? ''),
+            'ready_to_ship' => (bool) ($node['ready_to_ship'] ?? false),
             'hold_reason' => $this->extractHoldReason($node),
             'holds' => $holdsApi,
             'has_active_hold' => $this->orderHoldsArrayHasActive($holdsApi),
@@ -3478,6 +3536,7 @@ query ShipHeroOrderHeaderDebugCore($ids: [String], $customer_account_id: String!
           partner_order_id
           shop_name
           fulfillment_status
+          ready_to_ship
           order_date
           required_ship_date
           profile
@@ -3500,8 +3559,16 @@ GQL;
     private function applyListFilters(array $rows, array $filters): array
     {
         $tab = strtolower(trim((string) ($filters['tab'] ?? 'manage')));
-        $from = $this->normalizeDateBoundary($filters['order_date_from'] ?? null, true);
-        $to = $this->normalizeDateBoundary($filters['order_date_to'] ?? null, false);
+        $from = $this->normalizeDateBoundary(
+            $filters['order_date_from'] ?? null,
+            true,
+            (string) ($filters['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE)
+        );
+        $to = $this->normalizeDateBoundary(
+            $filters['order_date_to'] ?? null,
+            false,
+            (string) ($filters['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE)
+        );
         $skipStatusTabFilter = $this->tabUsesShipHeroNativeListScope($tab);
         $lookupNeedle = trim((string) ($filters['order_number'] ?? ''));
         $lookupNeedle = ltrim($lookupNeedle, '#');
@@ -3542,7 +3609,9 @@ GQL;
                 continue;
             }
             $dateField = $tab === 'shipped' ? 'ship_date' : 'order_date';
-            if (! $skipTabScopeForOrderLookup && ! $this->rowInDateRange($row, $from, $to, $dateField)) {
+            if ($tab !== 'awaiting'
+                && ! $skipTabScopeForOrderLookup
+                && ! $this->rowInDateRange($row, $from, $to, $dateField)) {
                 continue;
             }
             $out[] = $row;
@@ -3912,14 +3981,18 @@ GQL;
         return true;
     }
 
-    private function normalizeDateBoundary($value, bool $startOfDay): ?Carbon
+    private function normalizeDateBoundary($value, bool $startOfDay, ?string $timezone = null): ?Carbon
     {
         if (! is_string($value) || trim($value) === '') {
             return null;
         }
         $trimmed = trim($value);
         try {
-            $date = Carbon::parse($trimmed);
+            if ($timezone !== null && $timezone !== '' && in_array($timezone, timezone_identifiers_list(), true)) {
+                $date = Carbon::parse($trimmed, $timezone);
+            } else {
+                $date = Carbon::parse($trimmed);
+            }
         } catch (\Throwable $e) {
             return null;
         }
@@ -3929,6 +4002,21 @@ GQL;
         }
 
         return $startOfDay ? $date->startOfDay() : $date->endOfDay();
+    }
+
+    /**
+     * @param  array<string, mixed>  $vars
+     */
+    private function applyOrderDateWindowToGraphVars(array &$vars, string $timezone): void
+    {
+        $fromRaw = $vars['order_date_from'] ?? null;
+        $toRaw = $vars['order_date_to'] ?? null;
+        if (! is_string($fromRaw) || ! is_string($toRaw) || trim($fromRaw) === '' || trim($toRaw) === '') {
+            return;
+        }
+
+        $vars['order_date_from'] = $this->parseShipWindowBoundary(trim($fromRaw), true, $timezone)->toIso8601String();
+        $vars['order_date_to'] = $this->parseShipWindowBoundary(trim($toRaw), false, $timezone)->toIso8601String();
     }
 
     /**

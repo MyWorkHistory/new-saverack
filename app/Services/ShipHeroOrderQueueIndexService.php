@@ -307,7 +307,9 @@ class ShipHeroOrderQueueIndexService
             ? $this->shippedIndexSyncContext($account)
             : ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD
                 ? $this->onHoldIndexSyncContext($account)
-                : $this->queueCounts->contextForAccount($account));
+                : ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING
+                    ? $this->queueCounts->contextForDashboardSection($account, OrderDashboardSection::KEY_READY_TO_SHIP)
+                    : $this->queueCounts->contextForAccount($account)));
 
         $this->executeQueueSync(
             $clientAccountId,
@@ -638,6 +640,121 @@ class ShipHeroOrderQueueIndexService
         }
 
         return array_values(array_unique($affected));
+    }
+
+    /**
+     * Catch RTS orders missed by order_date pagination (recently updated / timezone edge cases).
+     */
+    public function supplementAwaitingFromRecentUpdates(int $clientAccountId, int $hours = 72): int
+    {
+        if ($clientAccountId <= 0) {
+            return 0;
+        }
+
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            return 0;
+        }
+
+        $customerId = trim((string) $account->shiphero_customer_account_id);
+        if ($customerId === '') {
+            return 0;
+        }
+
+        $timezone = (string) ($this->queueCounts->contextForAccount($account)['timezone']
+            ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE);
+        $updatedFrom = Carbon::now('UTC')->subHours(max(1, $hours))->toIso8601String();
+        $upserted = 0;
+
+        $upserted += $this->supplementAwaitingFromRecentlyUpdatedList($clientAccountId, $customerId, $updatedFrom);
+        $upserted += $this->supplementAwaitingFromRecentReadyToShipList(
+            $clientAccountId,
+            $customerId,
+            $timezone,
+            $updatedFrom
+        );
+
+        if ($upserted > 0) {
+            Log::info('order_queue_index.awaiting_recent_supplement', [
+                'client_account_id' => $clientAccountId,
+                'rows_upserted' => $upserted,
+                'hours' => $hours,
+            ]);
+        }
+
+        return $upserted;
+    }
+
+    private function supplementAwaitingFromRecentlyUpdatedList(
+        int $clientAccountId,
+        string $customerId,
+        string $updatedFrom
+    ): int {
+        $after = null;
+        $pages = 0;
+        $upserted = 0;
+
+        do {
+            $page = $this->orders->listRecentlyUpdatedOrders([
+                'customer_account_id' => $customerId,
+                'updated_from' => $updatedFrom,
+                'first' => 50,
+                'after' => $after,
+            ]);
+            $rows = is_array($page['rows'] ?? null) ? $page['rows'] : [];
+            $awaitingRows = [];
+            foreach ($rows as $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $tab = $this->orders->classifyOrderQueueTab($row);
+                if ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
+                    $awaitingRows[] = $row;
+                }
+            }
+            if ($awaitingRows !== []) {
+                $this->upsertRows($clientAccountId, ShipHeroOrderQueueIndex::KIND_AWAITING, $awaitingRows);
+                $upserted += count($awaitingRows);
+            }
+            $after = $page['pagination']['end_cursor'] ?? null;
+            $hasNext = (bool) ($page['pagination']['has_next_page'] ?? false);
+            $pages++;
+        } while ($hasNext && $after !== null && $pages < 20);
+
+        return $upserted;
+    }
+
+    private function supplementAwaitingFromRecentReadyToShipList(
+        int $clientAccountId,
+        string $customerId,
+        string $timezone,
+        string $updatedFrom
+    ): int {
+        $after = null;
+        $pages = 0;
+        $upserted = 0;
+
+        do {
+            $page = $this->orders->listOrders([
+                'customer_account_id' => $customerId,
+                'tab' => ShipHeroOrderQueueIndex::KIND_AWAITING,
+                'timezone' => $timezone,
+                'updated_from' => $updatedFrom,
+                'updated_to' => Carbon::now($timezone)->endOfDay()->toIso8601String(),
+                'first' => 50,
+                'after' => $after,
+            ]);
+            $rows = is_array($page['rows'] ?? null) ? $page['rows'] : [];
+            if ($rows !== []) {
+                $this->upsertRows($clientAccountId, ShipHeroOrderQueueIndex::KIND_AWAITING, $rows);
+                $upserted += count($rows);
+            }
+            $after = $page['pagination']['end_cursor'] ?? null;
+            $hasNext = (bool) ($page['pagination']['has_next_page'] ?? false);
+            $pages++;
+        } while ($hasNext && $after !== null && $pages < 10);
+
+        return $upserted;
     }
 
     /**
@@ -1085,8 +1202,15 @@ class ShipHeroOrderQueueIndexService
     private function applyDateWindowToQuery($query, string $tab, array $context, array $filters): void
     {
         if ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
-            $from = $this->parseTimestamp($context['awaiting_from'] ?? null);
-            $to = $this->parseTimestamp($context['awaiting_to'] ?? null);
+            $timezone = (string) ($context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE);
+            $from = $this->parseContextBoundary($context['awaiting_from'] ?? null, $timezone, true);
+            $to = $this->parseContextBoundary($context['awaiting_to'] ?? null, $timezone, false);
+            if (! empty($filters['order_date_from'])) {
+                $from = $this->parseContextBoundary((string) $filters['order_date_from'], $timezone, true);
+            }
+            if (! empty($filters['order_date_to'])) {
+                $to = $this->parseContextBoundary((string) $filters['order_date_to'], $timezone, false);
+            }
             if ($from !== null) {
                 $query->where('order_date', '>=', $from);
             }
@@ -1158,17 +1282,17 @@ class ShipHeroOrderQueueIndexService
         ];
 
         if ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
-            $filters['order_date_from'] = $this->isoDateOnly($context['awaiting_from'] ?? null);
-            $filters['order_date_to'] = $this->isoDateOnly($context['awaiting_to'] ?? null);
+            $filters['order_date_from'] = $context['awaiting_from'] ?? null;
+            $filters['order_date_to'] = $context['awaiting_to'] ?? null;
         } elseif ($tab === ShipHeroOrderQueueIndex::KIND_SHIPPED) {
-            $filters['order_date_from'] = $this->isoDateOnly($context['shipped_from'] ?? null);
-            $filters['order_date_to'] = $this->isoDateOnly($context['shipped_to'] ?? null);
+            $filters['order_date_from'] = $context['shipped_from'] ?? null;
+            $filters['order_date_to'] = $context['shipped_to'] ?? null;
         } elseif ($tab === ShipHeroOrderQueueIndex::KIND_ON_HOLD) {
-            $filters['order_date_from'] = $this->isoDateOnly($context['open_from'] ?? null);
-            $filters['order_date_to'] = $this->isoDateOnly($context['open_to'] ?? null);
+            $filters['order_date_from'] = $context['open_from'] ?? null;
+            $filters['order_date_to'] = $context['open_to'] ?? null;
         } else {
-            $filters['order_date_from'] = $this->isoDateOnly($context['open_from'] ?? null);
-            $filters['order_date_to'] = $this->isoDateOnly($context['open_to'] ?? null);
+            $filters['order_date_from'] = $context['open_from'] ?? null;
+            $filters['order_date_to'] = $context['open_to'] ?? null;
         }
 
         return $filters;
@@ -1224,6 +1348,25 @@ class ShipHeroOrderQueueIndexService
         }
         try {
             return Carbon::parse($value);
+        } catch (Throwable $e) {
+            return null;
+        }
+    }
+
+    private function parseContextBoundary(?string $value, string $timezone, bool $startOfDay): ?Carbon
+    {
+        if ($value === null || trim($value) === '') {
+            return null;
+        }
+        $trimmed = trim($value);
+        try {
+            if (preg_match('/T\d{2}:/', $trimmed)) {
+                return Carbon::parse($trimmed)->setTimezone($timezone);
+            }
+
+            $parsed = Carbon::parse($trimmed, $timezone);
+
+            return $startOfDay ? $parsed->copy()->startOfDay() : $parsed->copy()->endOfDay();
         } catch (Throwable $e) {
             return null;
         }

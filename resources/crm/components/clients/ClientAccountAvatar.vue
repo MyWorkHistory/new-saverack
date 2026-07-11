@@ -53,13 +53,23 @@ const colorClass = computed(() => {
   return avatarClassFromSeed(seed);
 });
 
-const rootClass = computed(() => [
-  "client-account-avatar",
-  `client-account-avatar--${props.size}`,
-  `client-account-avatar--${props.variant}`,
-  showImage.value && isBrandLogo.value ? "client-account-avatar--brand" : null,
-  showImage.value && !isBrandLogo.value ? "client-account-avatar--photo" : null,
-]);
+const rootClass = computed(() => {
+  const classes = [
+    "client-account-avatar",
+    `client-account-avatar--${props.size}`,
+  ];
+
+  if (showImage.value && isBrandLogo.value) {
+    classes.push("client-account-avatar--brand", "client-account-avatar--rounded");
+  } else {
+    classes.push(`client-account-avatar--${props.variant}`);
+    if (showImage.value) {
+      classes.push("client-account-avatar--photo");
+    }
+  }
+
+  return classes;
+});
 
 function onImageError() {
   imageFailed.value = true;

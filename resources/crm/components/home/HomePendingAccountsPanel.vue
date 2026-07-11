@@ -46,13 +46,7 @@ function formatEstDate(val) {
         :key="`pending-${row.id}`"
         class="home-list-panel__row"
       >
-        <ClientAccountAvatar
-          :account="row"
-          size="sm"
-          variant="rounded"
-          brand-only
-          class="home-list-panel__row-icon"
-        />
+        <ClientAccountAvatar :account="row" size="sm" brand-only />
         <div class="home-list-panel__row-main min-w-0">
           <RouterLink
             v-if="clientAccountDetailTo(row.id)"

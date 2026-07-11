@@ -10,33 +10,20 @@ import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 
 const props = defineProps({
   account: { type: Object, required: true },
-  /** sm = home rows (~36px), md = list (~44px) */
+  /** sm = home rows (2.25rem), md = list (2.75rem, same as staff list) */
   size: { type: String, default: "md" },
-  /** circle = list, rounded = home panel */
-  variant: { type: String, default: "circle" },
   /** When true, only brand logo (no primary user avatar fallback). */
   brandOnly: { type: Boolean, default: false },
 });
 
 const imageFailed = ref(false);
 
-const brandLogoUrl = computed(() => {
-  const url = String(props.account?.brand_logo_url || "").trim();
-  return url || null;
-});
-
 const avatarUrl = computed(() => {
   if (props.brandOnly) {
-    return brandLogoUrl.value;
+    const brand = String(props.account?.brand_logo_url || "").trim();
+    return brand || null;
   }
   return accountRowAvatarUrl(props.account);
-});
-
-const isBrandLogo = computed(() => {
-  const url = avatarUrl.value;
-  if (!url) return false;
-  const brand = brandLogoUrl.value;
-  return Boolean(brand && url === brand);
 });
 
 const showImage = computed(() => Boolean(avatarUrl.value) && !imageFailed.value);
@@ -53,23 +40,11 @@ const colorClass = computed(() => {
   return avatarClassFromSeed(seed);
 });
 
-const rootClass = computed(() => {
-  const classes = [
-    "client-account-avatar",
-    `client-account-avatar--${props.size}`,
-  ];
-
-  if (showImage.value && isBrandLogo.value) {
-    classes.push("client-account-avatar--brand", "client-account-avatar--rounded");
-  } else {
-    classes.push(`client-account-avatar--${props.variant}`);
-    if (showImage.value) {
-      classes.push("client-account-avatar--photo");
-    }
-  }
-
-  return classes;
-});
+const sizeStyle = computed(() =>
+  props.size === "sm"
+    ? { width: "2.25rem", height: "2.25rem" }
+    : { width: "2.75rem", height: "2.75rem" },
+);
 
 function onImageError() {
   imageFailed.value = true;
@@ -77,15 +52,23 @@ function onImageError() {
 </script>
 
 <template>
-  <span :class="rootClass" aria-hidden="true">
+  <span
+    class="flex-shrink-0 rounded-circle overflow-hidden bg-body-secondary d-inline-flex"
+    :style="sizeStyle"
+    aria-hidden="true"
+  >
     <img
       v-if="showImage"
       :src="resolvePublicUrl(avatarUrl)"
       alt=""
-      class="client-account-avatar__img"
+      class="w-100 h-100 object-fit-cover"
       @error="onImageError"
     />
-    <span v-else class="client-account-avatar__initials" :class="colorClass">
+    <span
+      v-else
+      class="d-flex w-100 h-100 align-items-center justify-content-center fw-semibold staff-user-cell__meta text-uppercase"
+      :class="colorClass"
+    >
       {{ initials }}
     </span>
   </span>

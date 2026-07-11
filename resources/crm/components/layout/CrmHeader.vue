@@ -1,9 +1,10 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
+import { buildOrderDetailReturnTo } from "../../utils/orderDetailReturn.js";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
 import UserEditModal from "../users/UserEditModal.vue";
 import UserTasksNavButton from "../tasks/UserTasksNavButton.vue";
@@ -19,6 +20,7 @@ const props = defineProps({
 const emit = defineEmits(["logout", "refresh-user"]);
 
 const router = useRouter();
+const route = useRoute();
 const toast = useToast();
 const { isMobileOpen, toggleSidebar } = useCrmSidebar();
 const markSrc = computed(() => BRAND_MARK_SRC());
@@ -138,6 +140,10 @@ async function submitStaffSearch() {
         accountId != null && accountId !== ""
           ? { client_account_id: String(accountId) }
           : {};
+      const returnTo = buildOrderDetailReturnTo(route);
+      if (returnTo) {
+        query.return_to = returnTo;
+      }
       await router.push({
         name: "order-detail",
         params: { shipheroOrderId: String(data.shiphero_order_id) },
@@ -183,12 +189,17 @@ async function submitPortalSearch() {
   try {
     const { data } = await api.get("/portal/lookup", { params: { query: q } });
     if (data?.type === "order") {
+      const query = {
+        client_account_id: String(data.client_account_id ?? props.user?.client_account_id ?? ""),
+      };
+      const returnTo = buildOrderDetailReturnTo(route);
+      if (returnTo) {
+        query.return_to = returnTo;
+      }
       await router.push({
         name: "user-order-detail",
         params: { shipheroOrderId: String(data.shiphero_order_id) },
-        query: {
-          client_account_id: String(data.client_account_id ?? props.user?.client_account_id ?? ""),
-        },
+        query,
       });
       portalSearch.value = "";
     } else if (data?.type === "sku") {

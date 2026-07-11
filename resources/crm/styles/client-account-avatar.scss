@@ -1,0 +1,61 @@
+.client-account-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--bs-secondary-bg);
+}
+
+.client-account-avatar--sm {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.client-account-avatar--md {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.client-account-avatar--circle {
+  border-radius: 50%;
+}
+
+.client-account-avatar--rounded {
+  border-radius: 0.375rem;
+}
+
+.client-account-avatar--brand {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+}
+
+.client-account-avatar__img {
+  width: 100%;
+  height: 100%;
+}
+
+.client-account-avatar--brand .client-account-avatar__img {
+  object-fit: contain;
+  padding: 0.2rem;
+}
+
+.client-account-avatar--photo .client-account-avatar__img {
+  object-fit: cover;
+}
+
+.client-account-avatar__initials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.client-account-avatar--md .client-account-avatar__initials {
+  font-size: 0.75rem;
+}

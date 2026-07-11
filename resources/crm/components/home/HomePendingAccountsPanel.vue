@@ -1,6 +1,7 @@
 <script setup>
 import { RouterLink } from "vue-router";
 import CrmMaterialIcon from "../common/CrmMaterialIcon.vue";
+import ClientAccountAvatar from "../clients/ClientAccountAvatar.vue";
 
 defineProps({
   accounts: { type: Array, default: () => [] },
@@ -45,13 +46,13 @@ function formatEstDate(val) {
         :key="`pending-${row.id}`"
         class="home-list-panel__row"
       >
-        <div
+        <ClientAccountAvatar
+          :account="row"
+          size="sm"
+          variant="rounded"
+          brand-only
           class="home-list-panel__row-icon"
-          style="background: #f3e8ff; color: #7c3aed"
-          aria-hidden="true"
-        >
-          <CrmMaterialIcon name="account" :size="18" />
-        </div>
+        />
         <div class="home-list-panel__row-main min-w-0">
           <RouterLink
             v-if="clientAccountDetailTo(row.id)"

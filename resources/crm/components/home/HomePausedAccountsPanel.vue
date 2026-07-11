@@ -1,6 +1,7 @@
 <script setup>
 import { RouterLink } from "vue-router";
 import CrmMaterialIcon from "../common/CrmMaterialIcon.vue";
+import ClientAccountAvatar from "../clients/ClientAccountAvatar.vue";
 import { formatDateUs } from "../../utils/formatUserDates.js";
 
 defineProps({
@@ -35,13 +36,13 @@ function clientAccountDetailTo(accountId) {
         :key="`paused-${row.id}`"
         class="home-list-panel__row"
       >
-        <div
+        <ClientAccountAvatar
+          :account="row"
+          size="sm"
+          variant="rounded"
+          brand-only
           class="home-list-panel__row-icon"
-          style="background: #fee2e2; color: #dc2626"
-          aria-hidden="true"
-        >
-          <CrmMaterialIcon name="localShipping" :size="18" />
-        </div>
+        />
         <div class="home-list-panel__row-main min-w-0">
           <RouterLink
             v-if="clientAccountDetailTo(row.id)"

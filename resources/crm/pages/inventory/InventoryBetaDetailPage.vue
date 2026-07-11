@@ -10,6 +10,7 @@ import { useToast } from "../../composables/useToast.js";
 import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates.js";
 import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
 import { errorMessage as apiErrorMessage } from "../../utils/apiError.js";
+import { buildOrderDetailReturnTo } from "../../utils/orderDetailReturn.js";
 
 const route = useRoute();
 const toast = useToast();
@@ -389,6 +390,10 @@ function orderDetailTo(orderId) {
   const query = {};
   const clientId = Number(route.query.client_account_id || 0);
   if (clientId > 0) query.client_account_id = String(clientId);
+  const returnTo = buildOrderDetailReturnTo(route);
+  if (returnTo) {
+    query.return_to = returnTo;
+  }
   return {
     name: isPortalView.value ? "user-order-detail" : "order-detail",
     params: { shipheroOrderId: String(orderId) },

@@ -15,9 +15,13 @@ class HomeDashboardWidgetsService
     /** @var InventoryRestockBetaService */
     private $restockBeta;
 
-    public function __construct(InventoryRestockBetaService $restockBeta)
+    /** @var ClientBrandLogoService */
+    private $brandLogos;
+
+    public function __construct(InventoryRestockBetaService $restockBeta, ClientBrandLogoService $brandLogos)
     {
         $this->restockBeta = $restockBeta;
+        $this->brandLogos = $brandLogos;
     }
 
     /**
@@ -102,7 +106,7 @@ class HomeDashboardWidgetsService
      */
     private function pausedAccounts(): array
     {
-        $columns = ['id', 'company_name', 'paused_at'];
+        $columns = ['id', 'company_name', 'paused_at', 'email', 'brand_logo_path'];
         if (Schema::hasColumn('client_accounts', 'pause_reason')) {
             $columns[] = 'pause_reason';
         }
@@ -112,9 +116,11 @@ class HomeDashboardWidgetsService
             ->orderByDesc('paused_at')
             ->orderBy('company_name')
             ->get($columns)
-            ->map(static fn (ClientAccount $account) => [
+            ->map(fn (ClientAccount $account) => [
                 'id' => (int) $account->id,
                 'company_name' => (string) $account->company_name,
+                'email' => (string) ($account->email ?? ''),
+                'brand_logo_url' => $this->brandLogos->publicUrl($account->brand_logo_path),
                 'paused_at' => optional($account->paused_at)->toIso8601String(),
                 'pause_reason' => ClientAccount::pauseReasonLabel($account->pause_reason ?? null),
             ])
@@ -132,10 +138,12 @@ class HomeDashboardWidgetsService
             ->orderByDesc('created_at')
             ->orderBy('company_name')
             ->limit(4)
-            ->get(['id', 'company_name', 'created_at'])
-            ->map(static fn (ClientAccount $account) => [
+            ->get(['id', 'company_name', 'created_at', 'email', 'brand_logo_path'])
+            ->map(fn (ClientAccount $account) => [
                 'id' => (int) $account->id,
                 'company_name' => (string) $account->company_name,
+                'email' => (string) ($account->email ?? ''),
+                'brand_logo_url' => $this->brandLogos->publicUrl($account->brand_logo_path),
                 'created_at' => optional($account->created_at)->toIso8601String(),
             ])
             ->values()

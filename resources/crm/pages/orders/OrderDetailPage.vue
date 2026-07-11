@@ -21,6 +21,10 @@ import {
   formatCarrierTrackingLine,
   formatCurrentShippingMethod,
 } from "../../utils/orderShippingDisplay.js";
+import {
+  preserveOrderDetailReturnQuery,
+  resolveOrderDetailBack,
+} from "../../utils/orderDetailReturn.js";
 
 const props = defineProps({
   portalReturnPreview: { type: Boolean, default: false },
@@ -1065,10 +1069,12 @@ async function submitReadyToShip() {
     }
     toast.success("Order sent to ShipHero.");
     const detailName = isPortalUser.value || isUserPortalRoute.value ? "user-order-detail" : "order-detail";
+    const query =
+      clientAccountId > 0 ? { client_account_id: String(clientAccountId) } : {};
     await router.replace({
       name: detailName,
       params: { shipheroOrderId },
-      query: clientAccountId > 0 ? { client_account_id: String(clientAccountId) } : {},
+      query: preserveOrderDetailReturnQuery(route, query),
     });
   } catch (e) {
     toast.errorFrom(e, "Could not send order to ShipHero.");
@@ -1830,16 +1836,11 @@ onMounted(async () => {
 });
 
 function goToOrdersList() {
-  if (isReturnPreviewMode.value) {
-    router.push({ name: "user-return-create-search" });
-    return;
-  }
-  const q = selectedAccountId.value ? { client_account_id: selectedAccountId.value } : {};
-  if (isPortalUser.value) {
-    router.push({ name: "user-orders", query: q });
-    return;
-  }
-  router.push({ name: "orders-search", query: q });
+  resolveOrderDetailBack(router, route, {
+    isPortalUser: isPortalUser.value,
+    isReturnPreviewMode: isReturnPreviewMode.value,
+    selectedAccountId: selectedAccountId.value,
+  });
 }
 </script>
 

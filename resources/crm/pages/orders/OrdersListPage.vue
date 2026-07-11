@@ -21,6 +21,7 @@ import {
   formatShipmentCarrier,
 } from "../../utils/orderShippingDisplay.js";
 import { formatDateTimeUs } from "../../utils/formatUserDates.js";
+import { buildOrderDetailReturnTo } from "../../utils/orderDetailReturn.js";
 import { useShipHeroRevisionPoll } from "../../composables/useShipHeroRevisionPoll.js";
 
 const ORDER_QUEUE_TABS = new Set(["awaiting", "on_hold", "backorder", "shipped"]);
@@ -338,6 +339,10 @@ function orderDetailQuery(row) {
   const query = { client_account_id: String(accountId) };
   if (row?.id && orderDetailShouldRefreshFromListForRow(row) && isPortalOrderList.value) {
     query.refresh = "1";
+  }
+  const returnTo = buildOrderDetailReturnTo(route);
+  if (returnTo) {
+    query.return_to = returnTo;
   }
   return query;
 }

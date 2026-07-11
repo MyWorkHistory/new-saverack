@@ -1,10 +1,10 @@
 <script setup>
 import { computed } from "vue";
 import telegramIconUrl from "@public/images/telegram-icon.png";
-import { inHouseSlackHref, slackChannelHref } from "../../utils/slackChannel.js";
+import { slackChannelHref } from "../../utils/slackChannel.js";
 
 /**
- * Channel indicators: email, Telegram, WhatsApp, normal/client Slack.
+ * Channel indicators: email, Telegram, WhatsApp, client Slack URL (not in-house Slack).
  */
 const props = defineProps({
   telegramTitle: { type: String, default: "Telegram" },
@@ -15,17 +15,12 @@ const props = defineProps({
   telegramHandle: { type: String, default: "" },
   whatsappE164: { type: String, default: "" },
   slackChannel: { type: String, default: "" },
-  inHouseSlack: { type: String, default: "" },
   sizeClass: { type: String, default: "h-5 w-5" },
 });
 
-const slackIconHref = computed(() => {
-  return slackChannelHref(props.slackChannel) || inHouseSlackHref(props.inHouseSlack);
-});
+const slackIconHref = computed(() => slackChannelHref(props.slackChannel));
 
-const showSlackIcon = computed(() => {
-  return !!(String(props.slackChannel || "").trim() || String(props.inHouseSlack || "").trim());
-});
+const showSlackIcon = computed(() => !!String(props.slackChannel || "").trim());
 </script>
 
 <template>

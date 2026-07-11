@@ -234,6 +234,8 @@ class HomeDashboardApiTest extends TestCase
             ->assertJsonPath('paused_accounts.0.pause_reason', 'Account Past Due')
             ->assertJsonPath('pending_new_accounts.0.id', $pending->id)
             ->assertJsonPath('pending_new_accounts.0.company_name', 'Pending Widget Co')
+            ->assertJsonPath('pending_new_accounts.0.email', $pending->email)
+            ->assertJsonPath('pending_new_accounts.0.brand_logo_url', null)
             ->assertJsonPath('pending_asn_preview.0.account_id', $accountA->id)
             ->assertJsonPath('pending_asn_preview.0.account_name', 'Put Away A')
             ->assertJsonPath('pending_asn_preview.0.unit_label', '2 Pallets')

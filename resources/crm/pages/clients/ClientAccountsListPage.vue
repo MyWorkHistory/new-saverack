@@ -27,12 +27,7 @@ import { formatDateUs } from "../../utils/formatUserDates";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { getPublicSignupUrl } from "../../utils/publicSignupUrl.js";
 import { downloadListCsv } from "../../utils/downloadListCsv.js";
-import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
-import {
-  accountRowAvatarUrl,
-  accountRowInitials,
-  avatarClassFromSeed,
-} from "../../utils/avatarDisplay.js";
+import ClientAccountAvatar from "../../components/clients/ClientAccountAvatar.vue";
 import { warnIfShipheroSyncFailed } from "../../utils/clientAccountShipheroSync.js";
 import {
   ONBOARDING_ACTIVATION_BLOCKED_MESSAGE,
@@ -263,24 +258,6 @@ const statusBadgeClass = (status) => {
   return "bg-body-secondary text-body-secondary";
 };
 
-function avatarClassForRow(row) {
-  const seed = row?.email || row?.company_name || "";
-  return avatarClassFromSeed(seed);
-}
-
-/** Row ids whose avatar image failed to load — show initials instead. */
-const avatarLoadFailedIds = ref(new Set());
-
-function markAvatarLoadFailed(rowId) {
-  const next = new Set(avatarLoadFailedIds.value);
-  next.add(rowId);
-  avatarLoadFailedIds.value = next;
-}
-
-function showAccountAvatarImage(row) {
-  return Boolean(accountRowAvatarUrl(row)) && !avatarLoadFailedIds.value.has(row.id);
-}
-
 const TABLE_SORT_COLUMNS = [
   "status",
   "company_name",
@@ -400,7 +377,6 @@ async function fetchMeta() {
 async function fetchRows() {
   loading.value = true;
   manageOpenId.value = null;
-  avatarLoadFailedIds.value = new Set();
   try {
     const { data } = await api.get("/client-accounts", { params: buildParams() });
     rows.value = data.data;
@@ -1142,25 +1118,7 @@ onUnmounted(() => {
               </td>
               <td>
                 <div class="d-flex align-items-center gap-3 min-w-0">
-                  <span
-                    class="flex-shrink-0 rounded-circle overflow-hidden bg-body-secondary d-inline-flex"
-                    style="width: 2.75rem; height: 2.75rem"
-                  >
-                    <img
-                      v-if="showAccountAvatarImage(row)"
-                      :src="resolvePublicUrl(accountRowAvatarUrl(row))"
-                      alt=""
-                      class="w-100 h-100 object-fit-cover"
-                      @error="markAvatarLoadFailed(row.id)"
-                    />
-                    <span
-                      v-else
-                      class="d-flex w-100 h-100 align-items-center justify-content-center small fw-semibold text-uppercase"
-                      :class="avatarClassForRow(row)"
-                    >
-                      {{ accountRowInitials(row) }}
-                    </span>
-                  </span>
+                  <ClientAccountAvatar :account="row" size="md" variant="circle" />
                   <div class="min-w-0">
                     <RouterLink
                       :to="accountDetailRoute(row)"
@@ -1223,7 +1181,6 @@ onUnmounted(() => {
                     :telegram-handle="row.telegram_handle || ''"
                     :whatsapp-e164="row.whatsapp_e164 || ''"
                     :slack-channel="row.slack_channel || ''"
-                    :in-house-slack="row.in_house_slack || ''"
                   />
                 </div>
               </td>

@@ -48,8 +48,14 @@ final class LegacyPortalUserImportMapper
         return true;
     }
 
-    public static function findClientAccountForPortalUser(object $row, ?object $legacyCustomerRow = null): ?ClientAccount
-    {
+    /**
+     * @param  list<object>  $linkedLegacyCustomerRows  From legacy accounts/user_customers/customer_users links.
+     */
+    public static function findClientAccountForPortalUser(
+        object $row,
+        ?object $legacyCustomerRow = null,
+        array $linkedLegacyCustomerRows = []
+    ): ?ClientAccount {
         $email = LegacyStaffUserImportMapper::normEmail($row->email ?? null);
         if (LegacyStaffUserImportMapper::isValidEmail($email)) {
             $byAccountEmail = ClientAccount::query()
@@ -69,12 +75,39 @@ final class LegacyPortalUserImportMapper
             }
         }
 
+        /** @var list<object> $legacyCustomerCandidates */
+        $legacyCustomerCandidates = [];
         if ($legacyCustomerRow !== null) {
-            return LegacyCustomerAccountImportMapper::findClientAccountForLegacyRow($legacyCustomerRow);
+            $legacyCustomerCandidates[] = $legacyCustomerRow;
+        }
+        foreach ($linkedLegacyCustomerRows as $linkedRow) {
+            $legacyCustomerCandidates[] = $linkedRow;
+        }
+
+        $seenCustomerIds = [];
+        foreach ($legacyCustomerCandidates as $customerRow) {
+            $legacyCustomerId = isset($customerRow->id) && is_numeric($customerRow->id)
+                ? (int) $customerRow->id
+                : 0;
+            if ($legacyCustomerId > 0) {
+                if (isset($seenCustomerIds[$legacyCustomerId])) {
+                    continue;
+                }
+                $seenCustomerIds[$legacyCustomerId] = true;
+            }
+
+            $account = LegacyCustomerAccountImportMapper::findClientAccountForLegacyRow($customerRow);
+            if ($account !== null) {
+                return $account;
+            }
         }
 
         $customerIds = self::parseLegacyCustomerIds($row->customers ?? null);
         foreach ($customerIds as $customerId) {
+            if (isset($seenCustomerIds[$customerId])) {
+                continue;
+            }
+
             $byLegacyId = ClientAccount::query()
                 ->where('legacy_customer_id', $customerId)
                 ->orderBy('id')

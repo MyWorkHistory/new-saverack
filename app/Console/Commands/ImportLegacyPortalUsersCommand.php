@@ -2,9 +2,11 @@
 
 namespace App\Console\Commands;
 
+use App\Models\ClientAccount;
 use App\Models\User;
 use App\Models\UserProfile;
 use App\Support\Legacy\LegacyPortalUserImportMapper;
+use App\Support\Legacy\LegacyPortalUserLinkResolver;
 use App\Support\Legacy\LegacyStaffUserImportMapper;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -13,14 +15,15 @@ use Illuminate\Support\Facades\Hash;
 /**
  * Imports client portal users from legacy `users` into CRM portal users.
  *
- * Prerequisites: legacy `users` (+ optional `customers`) in LEGACY_DB; client accounts imported first.
+ * Prerequisites: legacy `users`, `customers`, and link table (`accounts` / `user_customers` / `customer_users`) in LEGACY_DB; client accounts imported first.
  */
 class ImportLegacyPortalUsersCommand extends Command
 {
     protected $signature = 'crm:import-legacy-portal-users
                             {--connection=legacy_crm : Laravel DB connection name for legacy MySQL}
                             {--users-table=users : Legacy users table name}
-                            {--customers-table=customers : Legacy customers table for email fallback matching}
+                            {--customers-table=customers : Legacy customers (accounts) table for company-name matching}
+                            {--links-table=auto : Legacy user↔customer link table: auto, accounts, user_customers, customer_users, or none}
                             {--password= : Bcrypt password when legacy hash is missing (default: config legacy_portal_import.default_password)}
                             {--include-pending : Import legacy status 1 (pending) rows}
                             {--include-inactive : Import legacy status 3 (inactive) rows}
@@ -35,6 +38,7 @@ class ImportLegacyPortalUsersCommand extends Command
         $connName = (string) $this->option('connection');
         $usersTable = trim((string) $this->option('users-table'));
         $customersTable = trim((string) $this->option('customers-table'));
+        $linksTableOpt = trim((string) $this->option('links-table'));
         $force = (bool) $this->option('force');
         $dryRun = (bool) $this->option('dry-run');
         $includePending = (bool) $this->option('include-pending');
@@ -79,6 +83,36 @@ class ImportLegacyPortalUsersCommand extends Command
 
         $hasCustomersTable = $customersTable !== '' && $schema->hasTable($customersTable);
 
+        $linkTables = [];
+        if (strcasecmp($linksTableOpt, 'none') !== 0) {
+            $linkTables = LegacyPortalUserLinkResolver::discoverLinkTables($schema, $linksTableOpt);
+        }
+
+        if ($linkTables !== []) {
+            foreach ($linkTables as $link) {
+                $this->line(
+                    'Using legacy user↔customer links: `'.$link['table'].'`'
+                    .' ('.$link['user_column'].' → '.$link['customer_column'].')'
+                );
+            }
+        } elseif (strcasecmp($linksTableOpt, 'none') !== 0) {
+            $this->warn(
+                'No legacy user↔customer link table found (expected accounts, user_customers, or customer_users).'
+                .' Matching will rely on email + customers.c_email/b_email only.'
+            );
+        }
+
+        $userCustomerMap = $linkTables !== []
+            ? LegacyPortalUserLinkResolver::buildUserCustomerMap($legacy, $linkTables)
+            : [];
+
+        if ($userCustomerMap !== []) {
+            $this->line('Loaded '.count($userCustomerMap).' legacy users with customer links.');
+        }
+
+        /** @var array<int, object|null> $legacyCustomerCache */
+        $legacyCustomerCache = [];
+
         $imported = 0;
         $updated = 0;
         $skippedNotPortal = 0;
@@ -87,12 +121,16 @@ class ImportLegacyPortalUsersCommand extends Command
         $skippedInvalidEmail = 0;
         $skippedExisting = 0;
         $demotedPrimary = 0;
+        $matchedByEmail = 0;
+        $matchedByLegacyLink = 0;
         $failed = 0;
 
         $legacy->table($usersTable)->orderBy('id')->chunkById(200, function ($rows) use (
             $legacy,
             $customersTable,
             $hasCustomersTable,
+            $userCustomerMap,
+            &$legacyCustomerCache,
             $fallbackPasswordHash,
             $force,
             $dryRun,
@@ -107,6 +145,8 @@ class ImportLegacyPortalUsersCommand extends Command
             &$skippedInvalidEmail,
             &$skippedExisting,
             &$demotedPrimary,
+            &$matchedByEmail,
+            &$matchedByLegacyLink,
             &$failed
         ) {
             foreach ($rows as $row) {
@@ -128,6 +168,8 @@ class ImportLegacyPortalUsersCommand extends Command
                     continue;
                 }
 
+                $legacyId = (int) $row->id;
+
                 $legacyCustomerRow = null;
                 if ($hasCustomersTable) {
                     $legacyCustomerRow = $legacy->table($customersTable)
@@ -139,14 +181,43 @@ class ImportLegacyPortalUsersCommand extends Command
                         ->first();
                 }
 
-                $account = LegacyPortalUserImportMapper::findClientAccountForPortalUser($row, $legacyCustomerRow);
+                $linkedCustomerIds = LegacyPortalUserLinkResolver::linkedCustomerIdsForUser(
+                    $legacyId,
+                    $userCustomerMap,
+                    $row
+                );
+                $linkedLegacyCustomerRows = $hasCustomersTable
+                    ? LegacyPortalUserLinkResolver::fetchLegacyCustomerRows(
+                        $legacy,
+                        $customersTable,
+                        $linkedCustomerIds,
+                        $legacyCustomerCache
+                    )
+                    : [];
+
+                $account = LegacyPortalUserImportMapper::findClientAccountForPortalUser(
+                    $row,
+                    $legacyCustomerRow,
+                    $linkedLegacyCustomerRows
+                );
                 if ($account === null) {
                     $skippedNoAccount++;
 
                     continue;
                 }
 
-                $legacyId = (int) $row->id;
+                $matchSource = self::resolveMatchSource(
+                    $row,
+                    $account,
+                    $legacyCustomerRow,
+                    $linkedLegacyCustomerRows
+                );
+                if ($matchSource === 'email') {
+                    $matchedByEmail++;
+                } elseif ($matchSource === 'legacy_link') {
+                    $matchedByLegacyLink++;
+                }
+
                 $existing = User::query()->where('legacy_user_id', $legacyId)->first();
                 if ($existing === null) {
                     $existing = User::query()->whereRaw('LOWER(email) = ?', [$email])->first();
@@ -243,6 +314,8 @@ class ImportLegacyPortalUsersCommand extends Command
                 ['Skipped (email already used by staff user)', (string) $skippedStaffCollision],
                 ['Skipped (portal user exists; use --force)', (string) $skippedExisting],
                 ['Skipped (invalid email)', (string) $skippedInvalidEmail],
+                ['Matched via portal email', (string) $matchedByEmail],
+                ['Matched via legacy customer link / company name', (string) $matchedByLegacyLink],
                 ['Primary demoted (account already has primary)', (string) $demotedPrimary],
                 ['Failed', (string) $failed],
             ]
@@ -253,5 +326,29 @@ class ImportLegacyPortalUsersCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  list<object>  $linkedLegacyCustomerRows
+     */
+    private static function resolveMatchSource(
+        object $row,
+        ClientAccount $account,
+        ?object $legacyCustomerRow,
+        array $linkedLegacyCustomerRows
+    ): string {
+        $email = LegacyStaffUserImportMapper::normEmail($row->email ?? null);
+        $accountEmail = LegacyStaffUserImportMapper::normEmail($account->email ?? null);
+        $notificationEmail = LegacyStaffUserImportMapper::normEmail($account->notification_email ?? null);
+
+        if ($email !== '' && ($email === $accountEmail || $email === $notificationEmail)) {
+            return 'email';
+        }
+
+        if ($legacyCustomerRow !== null || $linkedLegacyCustomerRows !== []) {
+            return 'legacy_link';
+        }
+
+        return 'other';
     }
 }

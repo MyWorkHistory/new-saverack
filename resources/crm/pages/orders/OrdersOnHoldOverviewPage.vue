@@ -5,7 +5,7 @@ import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarBu
 import CrmSyncToolbar from "../../components/common/CrmSyncToolbar.vue";
 import OnHoldSectionPanel from "../../components/orders/OnHoldSectionPanel.vue";
 import OnHoldSummaryCards from "../../components/orders/OnHoldSummaryCards.vue";
-import { HOLD_TYPE_SECTIONS, ON_HOLD_TOTAL_CARD } from "../../constants/holdSummaryCards.js";
+import { HOLD_TYPE_SECTIONS } from "../../constants/holdSummaryCards.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useAdminHomeDashboard } from "../../composables/useAdminHomeDashboard.js";
 import { useToast } from "../../composables/useToast.js";
@@ -45,12 +45,11 @@ function lastUpdatedLabel(key) {
   return formatDateTimeUs(at);
 }
 
-const onHoldOverviewSections = computed(() => [ON_HOLD_TOTAL_CARD, ...HOLD_TYPE_SECTIONS]);
-
 const onHoldLastSyncedLabel = computed(() => {
+  const keys = ["on_hold", ...HOLD_TYPE_SECTIONS.map((hold) => hold.key)];
   let latestMs = null;
-  for (const hold of onHoldOverviewSections.value) {
-    const at = sectionData(hold.key).refreshed_at;
+  for (const key of keys) {
+    const at = sectionData(key).refreshed_at;
     if (!at) continue;
     const ms = new Date(at).getTime();
     if (!Number.isFinite(ms)) continue;

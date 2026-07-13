@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Syncs account profile/billing enrichment fields from legacy `customers` into `client_accounts`
- * matched by {@see ClientAccount::$legacy_customer_id}.
+ * matched by {@see ClientAccount::$legacy_customer_id}, normalized company_name, or contact email.
  *
  * Supersedes {@see SyncLegacyStripeWhatsappCommand} for production recovery (includes Stripe,
  * WhatsApp, CC fee, plus manager, contract date, Slack, payment prefs, notes, etc.).
@@ -83,6 +83,9 @@ class SyncLegacyAccountFieldsCommand extends Command
         $skippedAlreadyFilled = 0;
         $unmappedManagers = 0;
         $failedUpdates = 0;
+        $matchedByLegacyId = 0;
+        $matchedByCompanyName = 0;
+        $matchedByEmail = 0;
 
         LegacyCustomerAccountImportMapper::clearManagerCache();
 
@@ -94,16 +97,21 @@ class SyncLegacyAccountFieldsCommand extends Command
             &$skippedNoLegacyData,
             &$skippedAlreadyFilled,
             &$unmappedManagers,
-            &$failedUpdates
+            &$failedUpdates,
+            &$matchedByLegacyId,
+            &$matchedByCompanyName,
+            &$matchedByEmail
         ) {
             foreach ($rows as $row) {
                 $legacyId = (int) $row->id;
-                $account = ClientAccount::query()->where('legacy_customer_id', $legacyId)->first();
+                $account = LegacyCustomerAccountImportMapper::findClientAccountForLegacyRow($row);
                 if ($account === null) {
                     $skippedNoAccount++;
 
                     continue;
                 }
+
+                self::countLegacyAccountMatch($account, $row, $matchedByLegacyId, $matchedByCompanyName, $matchedByEmail);
 
                 $contactEmail = LegacyCustomerAccountImportMapper::normalizeScalar($row->c_email ?? $row->email ?? null);
                 $mapped = LegacyCustomerAccountImportMapper::mapEnrichmentFields($row, $contactEmail);
@@ -124,6 +132,10 @@ class SyncLegacyAccountFieldsCommand extends Command
                 }
 
                 $attrs = LegacyCustomerAccountImportMapper::mergeForSync($mapped, $account, $force);
+                $attrs = array_merge(
+                    $attrs,
+                    LegacyCustomerAccountImportMapper::legacyCustomerIdBackfill($legacyId, $account, $force)
+                );
 
                 if ($attrs === []) {
                     $skippedAlreadyFilled++;
@@ -155,18 +167,50 @@ class SyncLegacyAccountFieldsCommand extends Command
             ['Metric', 'Count'],
             [
                 [$dryRun ? 'Rows that would update' : 'Rows updated', (string) $wouldUpdate],
-                ['Skipped (no client_account for legacy id)', (string) $skippedNoAccount],
+                ['Matched by legacy_customer_id', (string) $matchedByLegacyId],
+                ['Matched by company_name', (string) $matchedByCompanyName],
+                ['Matched by email', (string) $matchedByEmail],
+                ['Skipped (no client_account for legacy row)', (string) $skippedNoAccount],
                 ['Skipped (no mappable legacy data)', (string) $skippedNoLegacyData],
                 ['Skipped (target fields already set; use --force)', (string) $skippedAlreadyFilled],
-                ['Legacy manager id present but unmapped to users', (string) $unmappedManagers],
+                ['Legacy manager id present but unmapped to staff user', (string) $unmappedManagers],
                 ['Failed updates (see warnings above)', (string) $failedUpdates],
             ]
         );
 
         if ($unmappedManagers > 0) {
-            $this->warn('Some accounts have legacy manager ids with no matching users.legacy_user_id or users.name — run crm:import-legacy-staff-users first.');
+            $this->warn('Some accounts have legacy manager ids with no matching staff user name or users.legacy_user_id — run crm:import-legacy-staff-users first.');
         }
 
         return self::SUCCESS;
+    }
+
+    private static function countLegacyAccountMatch(
+        ClientAccount $account,
+        object $row,
+        int &$matchedByLegacyId,
+        int &$matchedByCompanyName,
+        int &$matchedByEmail
+    ): void {
+        $legacyId = (int) ($row->id ?? 0);
+        if ($legacyId > 0 && (int) ($account->legacy_customer_id ?? 0) === $legacyId) {
+            $matchedByLegacyId++;
+
+            return;
+        }
+
+        $legacyName = LegacyCustomerAccountImportMapper::legacyCompanyNameFromRow($row);
+        if ($legacyName !== null
+            && LegacyCustomerAccountImportMapper::normalizeCompanyName($legacyName)
+            === LegacyCustomerAccountImportMapper::normalizeCompanyName((string) $account->company_name)) {
+            $matchedByCompanyName++;
+
+            return;
+        }
+
+        $email = strtolower(trim((string) (LegacyCustomerAccountImportMapper::normalizeScalar($row->c_email ?? $row->email ?? null) ?? '')));
+        if ($email !== '' && strtolower(trim((string) $account->email)) === $email) {
+            $matchedByEmail++;
+        }
     }
 }

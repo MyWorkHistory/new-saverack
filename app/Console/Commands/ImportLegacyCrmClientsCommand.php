@@ -160,10 +160,19 @@ class ImportLegacyCrmClientsCommand extends Command
             $customerQuery->orderBy('id')->chunkById(200, function ($rows) use (&$importedAccounts) {
                 foreach ($rows as $row) {
                     $attrs = $this->mapCustomerRow($row);
-                    ClientAccount::query()->updateOrCreate(
-                        ['legacy_customer_id' => (int) $row->id],
-                        $attrs
-                    );
+                    $legacyId = (int) $row->id;
+                    $attrs['legacy_customer_id'] = $legacyId;
+
+                    $existing = LegacyCustomerAccountImportMapper::findClientAccountForLegacyRow($row);
+                    if ($existing !== null) {
+                        $existing->fill($attrs);
+                        $existing->save();
+                    } else {
+                        ClientAccount::query()->updateOrCreate(
+                            ['legacy_customer_id' => $legacyId],
+                            $attrs
+                        );
+                    }
                     $importedAccounts++;
                 }
             }, 'id');
@@ -335,6 +344,9 @@ class ImportLegacyCrmClientsCommand extends Command
         if ($managerId === 0) {
             $managerId = null;
         }
+
+        $managerName = LegacyCustomerAccountImportMapper::normalizeScalar($row->manager_name ?? null);
+        $managerId = LegacyCustomerAccountImportMapper::resolveAccountManagerId($managerId, $managerName);
 
         return array_filter([
             'status' => $status,

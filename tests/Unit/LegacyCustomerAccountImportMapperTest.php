@@ -155,4 +155,28 @@ final class LegacyCustomerAccountImportMapperTest extends TestCase
 
         $this->assertSame(['in_house_slack' => 'tmdk'], $attrs);
     }
+
+    public function test_normalize_company_name_collapses_whitespace_and_case(): void
+    {
+        $this->assertSame(
+            'tmdk ventures llc',
+            LegacyCustomerAccountImportMapper::normalizeCompanyName('  TMDK   Ventures LLC ')
+        );
+    }
+
+    public function test_legacy_customer_id_backfill_only_when_empty_or_forced(): void
+    {
+        $empty = new ClientAccount(['legacy_customer_id' => null]);
+        $this->assertSame(
+            ['legacy_customer_id' => 28],
+            LegacyCustomerAccountImportMapper::legacyCustomerIdBackfill(28, $empty, false)
+        );
+
+        $set = new ClientAccount(['legacy_customer_id' => 99]);
+        $this->assertSame([], LegacyCustomerAccountImportMapper::legacyCustomerIdBackfill(28, $set, false));
+        $this->assertSame(
+            ['legacy_customer_id' => 28],
+            LegacyCustomerAccountImportMapper::legacyCustomerIdBackfill(28, $set, true)
+        );
+    }
 }

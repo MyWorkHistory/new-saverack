@@ -118,7 +118,7 @@ final class LegacyCustomerAccountImportMapper
 
     public static function resolveAccountManagerId(?int $legacyManagerId, ?string $managerName): ?int
     {
-        $cacheKey = ($legacyManagerId ?? 0) * 100000 + crc32(strtolower(trim((string) $managerName)));
+        $cacheKey = ($legacyManagerId ?? 0) * 100000 + crc32(self::normalizePersonName((string) $managerName));
 
         if (array_key_exists($cacheKey, self::$managerCache)) {
             return self::$managerCache[$cacheKey];
@@ -126,8 +126,14 @@ final class LegacyCustomerAccountImportMapper
 
         $resolved = null;
 
-        if ($legacyManagerId !== null && $legacyManagerId > 0) {
+        $normalizedManagerName = self::normalizePersonName((string) $managerName);
+        if ($normalizedManagerName !== '') {
+            $resolved = self::findStaffUserIdByName($normalizedManagerName);
+        }
+
+        if ($resolved === null && $legacyManagerId !== null && $legacyManagerId > 0) {
             $byLegacy = User::query()
+                ->whereNull('client_account_id')
                 ->where('legacy_user_id', $legacyManagerId)
                 ->value('id');
             if ($byLegacy !== null) {
@@ -135,19 +141,113 @@ final class LegacyCustomerAccountImportMapper
             }
         }
 
-        if ($resolved === null && $managerName !== null && trim($managerName) !== '') {
-            $normalizedName = strtolower(trim($managerName));
-            $byName = User::query()
-                ->whereRaw('LOWER(name) = ?', [$normalizedName])
+        if ($resolved === null && $legacyManagerId !== null && $legacyManagerId > 0) {
+            $byCrmId = User::query()
+                ->whereNull('client_account_id')
+                ->where('id', $legacyManagerId)
                 ->value('id');
-            if ($byName !== null) {
-                $resolved = (int) $byName;
+            if ($byCrmId !== null) {
+                $resolved = (int) $byCrmId;
             }
         }
 
         self::$managerCache[$cacheKey] = $resolved;
 
         return $resolved;
+    }
+
+    /**
+     * Locate an existing CRM account for a legacy `customers` row.
+     *
+     * Match order: legacy_customer_id, then normalized company_name, then contact email.
+     */
+    public static function findClientAccountForLegacyRow(object $row): ?ClientAccount
+    {
+        $legacyId = isset($row->id) ? (int) $row->id : 0;
+        if ($legacyId > 0) {
+            $byLegacy = ClientAccount::query()->where('legacy_customer_id', $legacyId)->first();
+            if ($byLegacy !== null) {
+                return $byLegacy;
+            }
+        }
+
+        $companyName = self::legacyCompanyNameFromRow($row);
+        if ($companyName !== null) {
+            $normalized = self::normalizeCompanyName($companyName);
+            if ($normalized !== '') {
+                $byName = ClientAccount::query()
+                    ->whereRaw('LOWER(TRIM(company_name)) = ?', [$normalized])
+                    ->orderBy('id')
+                    ->first();
+                if ($byName !== null) {
+                    return $byName;
+                }
+            }
+        }
+
+        $email = self::normEmail(self::nonEmptyString($row->c_email ?? $row->email ?? null) ?? '');
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return ClientAccount::query()
+                ->whereRaw('LOWER(TRIM(email)) = ?', [$email])
+                ->orderBy('id')
+                ->first();
+        }
+
+        return null;
+    }
+
+    public static function legacyCompanyNameFromRow(object $row): ?string
+    {
+        return self::nonEmptyString($row->company_name ?? null);
+    }
+
+    public static function normalizeCompanyName(?string $name): string
+    {
+        $s = trim(preg_replace('/\s+/u', ' ', (string) $name) ?? '');
+
+        return strtolower($s);
+    }
+
+    public static function normalizePersonName(?string $name): string
+    {
+        $s = trim(preg_replace('/\s+/u', ' ', (string) $name) ?? '');
+
+        return strtolower($s);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function legacyCustomerIdBackfill(int $legacyId, ClientAccount $existing, bool $force): array
+    {
+        if ($legacyId <= 0) {
+            return [];
+        }
+
+        $current = (int) ($existing->legacy_customer_id ?? 0);
+        if ($current === $legacyId) {
+            return [];
+        }
+
+        if ($force || $current <= 0) {
+            return ['legacy_customer_id' => $legacyId];
+        }
+
+        return [];
+    }
+
+    private static function findStaffUserIdByName(string $normalizedName): ?int
+    {
+        if ($normalizedName === '') {
+            return null;
+        }
+
+        $byName = User::query()
+            ->whereNull('client_account_id')
+            ->whereRaw('LOWER(TRIM(name)) = ?', [$normalizedName])
+            ->value('id');
+
+        return $byName !== null ? (int) $byName : null;
     }
 
     public static function clearManagerCache(): void

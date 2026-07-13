@@ -41,6 +41,14 @@ function userHasPerm(key) {
   return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
 }
 
+function eventDateColor(event) {
+  if (event?.is_personal) {
+    return "#6b7280";
+  }
+
+  return event?.category_color || "#6b7280";
+}
+
 async function refreshEvents() {
   loading.value = true;
   try {
@@ -148,15 +156,20 @@ onMounted(async () => {
         v-for="event in events"
         :key="event.id"
         type="button"
-        class="home-list-panel__row home-list-panel__row--clickable"
+        class="home-list-panel__row home-list-panel__row--clickable home-list-panel__row--calendar"
         @click="openDetail(event)"
       >
-        <span class="home-calendar-date">{{ formatCalendarEventDateRange(event, { short: true }) }}</span>
         <div class="home-list-panel__row-main min-w-0">
           <span class="home-list-panel__row-title text-truncate d-block">{{ event.title }}</span>
           <p class="home-list-panel__row-sub mb-0">
             {{ event.category_label }}{{ event.is_personal ? " · Personal" : "" }}
           </p>
+          <span
+            class="home-calendar-event-date d-block"
+            :style="{ color: eventDateColor(event) }"
+          >
+            {{ formatCalendarEventDateRange(event, { short: true }) }}
+          </span>
         </div>
       </button>
     </div>

@@ -134,7 +134,7 @@ onMounted(async () => {
       <div>
         <h1 class="h4 mb-1 fw-semibold text-body staff-page__heading">On-Hold</h1>
         <p class="staff-page__intro mb-0">
-          {{ formatCount("on_hold") }} orders on hold across all accounts — same total as Home.
+          {{ formatCount("on_hold") }} orders on hold across all accounts.
         </p>
       </div>
       <CrmSyncToolbar :last-synced-label="onHoldLastSyncedLabel">

@@ -21,11 +21,6 @@ function onSelect(key) {
 
 <template>
   <div class="on-hold-summary-cards mb-4">
-    <p class="text-muted small mb-2">
-      Hold-type counts are a breakdown; orders with multiple holds may appear in more than one
-      category.
-    </p>
-
     <div class="row g-3">
       <div
         v-for="section in HOLD_TYPE_SECTIONS"

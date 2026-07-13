@@ -2,7 +2,6 @@ export const HOME_SUMMARY_CARDS = [
   {
     key: "ready_to_ship",
     label: "READY TO SHIP",
-    sub: "Orders awaiting shipment",
     icon: "inventoryBox",
     titleColor: "#1e3a8a",
     iconStyle: { background: "#dbeafe", color: "#1e3a8a" },
@@ -13,7 +12,6 @@ export const HOME_SUMMARY_CARDS = [
   {
     key: "on_hold",
     label: "ON-HOLD",
-    sub: "Orders on hold across all accounts",
     icon: "hourglass",
     titleColor: "#b45309",
     iconStyle: { background: "#fef3c7", color: "#b45309" },
@@ -24,7 +22,6 @@ export const HOME_SUMMARY_CARDS = [
   {
     key: "hold_backorder",
     label: "BACKORDERS",
-    sub: "Orders on hold due to inventory shortage",
     icon: "gppBad",
     titleColor: "#dc2626",
     iconStyle: { background: "#fee2e2", color: "#dc2626" },
@@ -35,7 +32,6 @@ export const HOME_SUMMARY_CARDS = [
   {
     key: "shipped",
     label: "SHIPPED TODAY",
-    sub: "Orders shipped today",
     icon: "truck",
     titleColor: "#166534",
     iconStyle: { background: "#dcfce7", color: "#166534" },

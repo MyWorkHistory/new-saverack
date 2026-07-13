@@ -119,11 +119,15 @@ Near-real-time updates use webhooks when available, lightweight scheduled jobs a
 
 | Window | Cadence | Commands |
 |--------|---------|----------|
-| 7am–5pm | Every 15 min | `orders:sync-recent-updates`, `orders:refresh-home-dashboard --from-index`, `inventory:sync-catalog-incremental` |
-| Off-hours | Every 30 min | Same three commands |
+| 7am–5pm | Every 15 min | `orders:sync-recent-updates`, `inventory:sync-catalog-incremental` |
+| 7am–5pm | Every 30 min | `orders:import-dashboard-queues` (awaiting + shipped; full index rebuild + admin + portal cache) |
+| Off-hours | Every 30 min | `orders:sync-recent-updates`, `inventory:sync-catalog-incremental` |
+| Off-hours | Hourly | `orders:import-dashboard-queues` |
 | 2:00am nightly | Once | `orders:sync-queue-index --sync` (full index safety net) |
+| 2:30am nightly | Once | `orders:import-dashboard-queues --tabs=all` (dashboard + portal parity after index sync) |
+| 7:05am daily | Once | `orders:refresh-home-dashboard --sync` (live admin Home totals) |
 
-Lightweight scheduled sync reads/writes the local index — it does **not** run full `orders:sync-queue-index` every 15 minutes.
+Scheduled `orders:import-dashboard-queues` matches the manual gold path (`orders:import-dashboard-account`). Portal order counts stay in sync via the same index + cache refresh as admin (webhooks + cron). Portal inventory uses the same incremental catalog sync and inventory webhooks — requires a `database-long` queue worker.
 
 **Webhook types**
 
@@ -224,7 +228,7 @@ If that line is missing, pull latest code (`git pull`) and reload PHP-FPM / clea
 
 | Step | Expected |
 |------|----------|
-| `php artisan schedule:list` | 15-min jobs 7–17 ET; 30-min off-hours; nightly full index at 2am |
+| `php artisan schedule:list` | 15-min sync-recent-updates 7–17 ET; 30-min import-dashboard-queues; nightly index + full import at 2am/2:30am |
 | `HEAD /api/shiphero/webhook` | 200 |
 | Ship order in ShipHero | `shiphero.webhook.processed` in log; Home/Fulfillment counts update within ~30s |
 | Change inventory qty in ShipHero | `shiphero.inventory_webhook.processed` in log; Products list updates within ~30s |
@@ -238,7 +242,7 @@ If that line is missing, pull latest code (`git pull`) and reload PHP-FPM / clea
 2. `php artisan migrate --force` (creates `shiphero_webhook_events`)
 3. Ensure queue worker processes `ProcessShipHeroOrderWebhookJob` and `ProcessShipHeroInventoryWebhookJob` (same worker as other jobs)
 4. Register webhooks: `php artisan shiphero:register-webhooks`
-5. Scheduled fallback: see **Live ShipHero sync** above (`orders:sync-recent-updates`, dashboard refresh from index, inventory incremental sync)
+5. Scheduled fallback: see **Live ShipHero sync** above (`orders:sync-recent-updates`, `orders:import-dashboard-queues`, inventory incremental sync)
 
 **Smoke test after deploy**
 

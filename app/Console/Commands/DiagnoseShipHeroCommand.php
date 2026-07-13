@@ -106,7 +106,8 @@ class DiagnoseShipHeroCommand extends Command
     {
         return [
             'orders:sync-recent-updates' => 'shiphero:schedule:last_run:orders_sync_recent_updates',
-            'orders:refresh-home-dashboard --from-index' => 'shiphero:schedule:last_run:orders_refresh_home_dashboard_index',
+            'orders:import-dashboard-queues' => ImportDashboardQueuesCommand::LAST_RUN_CACHE_KEY,
+            'orders:sync-queue-index --sync' => 'shiphero:schedule:last_run:orders_sync_queue_index',
             'inventory:sync-catalog-incremental' => 'shiphero:schedule:last_run:inventory_sync_catalog_incremental',
         ];
     }
@@ -131,8 +132,28 @@ class DiagnoseShipHeroCommand extends Command
             }
         }
 
+        $recentUpdatesAt = Cache::get('shiphero:schedule:last_run:orders_sync_recent_updates');
+        $importAt = Cache::get(ImportDashboardQueuesCommand::LAST_RUN_CACHE_KEY);
+        if ($recentUpdatesAt !== null && $importAt === null) {
+            $this->warn('  orders:import-dashboard-queues has never run — admin/portal counts may drift until full import runs.');
+        } elseif ($recentUpdatesAt !== null && $importAt !== null) {
+            try {
+                $recent = Carbon::parse($recentUpdatesAt);
+                $import = Carbon::parse($importAt);
+                if ($import->diffInHours(now()) > 2 && $recent->diffInMinutes(now()) < 60) {
+                    $this->warn('  Recent-updates cron is active but import-dashboard-queues is stale (>2h). Counts may not match ShipHero.');
+                }
+            } catch (Throwable $e) {
+                // ignore parse errors
+            }
+        }
+
         $this->line('');
-        $this->line('Lightweight schedule does NOT full-rebuild empty order/inventory indexes.');
+        $this->line('Full dashboard parity (admin + portal) requires orders:import-dashboard-queues or:');
+        $this->line('  php artisan orders:import-dashboard-account all --tab=awaiting');
+        $this->line('  php artisan orders:import-dashboard-account all --tab=shipped');
+        $this->line('');
+        $this->line('orders:refresh-home-dashboard --from-index alone cannot fix a stale order index.');
         $this->line('If index row counts are 0, run once: php artisan crm:warm-shiphero-data');
     }
 

@@ -27,7 +27,6 @@ class Kernel extends ConsoleKernel
             ->timezone('America/New_York');
         $lightweightSync = [
             'orders:sync-recent-updates',
-            'orders:refresh-home-dashboard --from-index',
             'inventory:sync-catalog-incremental',
         ];
         foreach ($lightweightSync as $command) {
@@ -38,9 +37,21 @@ class Kernel extends ConsoleKernel
                 ->cron('*/30 0-6,18-23 * * *')
                 ->timezone('America/New_York');
         }
+        $schedule->command('orders:import-dashboard-queues')
+            ->cron('*/30 7-17 * * *')
+            ->timezone('America/New_York')
+            ->withoutOverlapping(90);
+        $schedule->command('orders:import-dashboard-queues')
+            ->cron('0 0-6,18-23 * * *')
+            ->timezone('America/New_York')
+            ->withoutOverlapping(90);
         $schedule->command('orders:sync-queue-index --sync')
             ->dailyAt('02:00')
             ->timezone('America/New_York');
+        $schedule->command('orders:import-dashboard-queues --tabs=all')
+            ->dailyAt('02:30')
+            ->timezone('America/New_York')
+            ->withoutOverlapping(90);
         $schedule->command('orders:refresh-home-dashboard --sync')
             ->dailyAt('07:05')
             ->timezone('America/New_York');

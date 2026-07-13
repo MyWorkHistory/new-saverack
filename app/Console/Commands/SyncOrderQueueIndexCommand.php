@@ -7,6 +7,7 @@ use App\Models\ClientAccount;
 use App\Models\ShipHeroOrderQueueIndex;
 use App\Services\ShipHeroOrderQueueIndexService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 
 class SyncOrderQueueIndexCommand extends Command
 {
@@ -45,6 +46,7 @@ class SyncOrderQueueIndexCommand extends Command
 
         if ($this->option('sync')) {
             $index->syncAllLinkedAccounts($tab === 'all' ? null : $tab);
+            Cache::put('shiphero:schedule:last_run:orders_sync_queue_index', now()->toIso8601String(), now()->addDays(7));
             $this->info('Order queue index sync complete.');
 
             return self::SUCCESS;

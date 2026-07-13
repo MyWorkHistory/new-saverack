@@ -154,6 +154,21 @@ class PortalQueueCountsService
     }
 
     /**
+     * Date-window context for counting a queue tab from the local index.
+     *
+     * @return array<string, mixed>
+     */
+    public function indexCountContextForTab(ClientAccount $account, string $tab, array $baseContext): array
+    {
+        $tab = strtolower(trim($tab));
+        if (in_array($tab, ['on_hold', 'backorder'], true)) {
+            return $this->contextForOnHoldDashboardTotal($account);
+        }
+
+        return $baseContext;
+    }
+
+    /**
      * Instant dashboard snapshot from per-queue cache / last good — never calls ShipHero.
      *
      * @param  array<string, mixed>  $context
@@ -293,7 +308,7 @@ class PortalQueueCountsService
         if ($tab === 'awaiting') {
             $from = $context['awaiting_from'];
             $to = $context['awaiting_to'];
-        } elseif ($tab === 'on_hold') {
+        } elseif ($tab === 'on_hold' || $tab === 'backorder') {
             $accountId = (int) ($context['client_account_id'] ?? 0);
             $account = $accountId > 0 ? ClientAccount::query()->find($accountId) : null;
             if ($account instanceof ClientAccount) {
@@ -365,13 +380,30 @@ class PortalQueueCountsService
             }
 
             $query = clone $baseQuery;
+            $account = ClientAccount::query()->find($accountId);
 
             if ($tab === 'on_hold') {
-                $account = ClientAccount::query()->find($accountId);
                 if ($account instanceof ClientAccount) {
-                    $context = $this->contextForOnHoldDashboardTotal($account);
+                    $context = $this->indexCountContextForTab($account, $tab, $context);
                 }
                 $this->applyActiveOnHoldScopeToIndexQuery($query);
+
+                return [
+                    'count' => (int) $query->distinct()->count('shiphero_order_id'),
+                    'truncated' => false,
+                ];
+            } elseif ($tab === 'backorder') {
+                if ($account instanceof ClientAccount) {
+                    $context = $this->indexCountContextForTab($account, $tab, $context);
+                }
+                $from = $this->parseTimestamp($context['open_from'] ?? null);
+                $to = $this->parseTimestamp($context['open_to'] ?? null);
+                if ($from !== null) {
+                    $query->where('order_date', '>=', $from);
+                }
+                if ($to !== null) {
+                    $query->where('order_date', '<=', $to);
+                }
 
                 return [
                     'count' => (int) $query->distinct()->count('shiphero_order_id'),
@@ -577,14 +609,15 @@ class PortalQueueCountsService
                 continue;
             }
 
-            $fromIndex = $this->countTabFromIndex($context, $tab);
+            $tabContext = $this->indexCountContextForTab($account, $tab, $context);
+            $fromIndex = $this->countTabFromIndex($tabContext, $tab);
             $stored = [
                 'count' => (int) ($fromIndex['count'] ?? 0),
                 'truncated' => (bool) ($fromIndex['truncated'] ?? false),
                 'cached_at' => now()->toIso8601String(),
             ];
-            Cache::put($this->queueCacheKey($context, $tab), $stored, now()->addMinutes(self::CACHE_TTL_MINUTES));
-            $this->touchAggregateLastGood($context, $tab, $stored);
+            Cache::put($this->queueCacheKey($tabContext, $tab), $stored, now()->addMinutes(self::CACHE_TTL_MINUTES));
+            $this->touchAggregateLastGood($tabContext, $tab, $stored);
         }
     }
 

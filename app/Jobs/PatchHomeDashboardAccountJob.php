@@ -2,7 +2,9 @@
 
 namespace App\Jobs;
 
+use App\Models\ShipHeroOrderQueueIndex;
 use App\Services\OrderDashboardSnapshotService;
+use App\Services\PortalQueueCountsService;
 use App\Services\ShipHeroOrderQueueIndexService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -44,7 +46,8 @@ class PatchHomeDashboardAccountJob implements ShouldQueue
 
     public function handle(
         ShipHeroOrderQueueIndexService $index,
-        OrderDashboardSnapshotService $snapshots
+        OrderDashboardSnapshotService $snapshots,
+        PortalQueueCountsService $queueCounts
     ): void {
         if ($this->clientAccountId <= 0 || $this->queueTab === '') {
             return;
@@ -52,9 +55,15 @@ class PatchHomeDashboardAccountJob implements ShouldQueue
 
         if ($index->isQueueTab($this->queueTab)) {
             $index->syncAccountQueue($this->clientAccountId, $this->queueTab);
+            if ($this->queueTab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
+                $index->supplementAwaitingFromRecentUpdates($this->clientAccountId);
+                $index->pruneNonAwaitingRows($this->clientAccountId);
+            }
         }
 
         $snapshots->patchAccountFromQueueTab($this->clientAccountId, $this->queueTab);
+        $queueCounts->refreshQueueCacheFromIndex($this->clientAccountId, [$this->queueTab]);
+        $queueCounts->bumpCountsRevision($this->clientAccountId);
     }
 
     public function failed(Throwable $e): void

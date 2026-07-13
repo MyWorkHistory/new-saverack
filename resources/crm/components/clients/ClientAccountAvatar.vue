@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import {
   accountRowAvatarUrl,
+  accountRowAvatarIsBrand,
   accountRowInitials,
   avatarClassFromSeed,
   initialsFromName,
@@ -27,6 +28,13 @@ const avatarUrl = computed(() => {
 });
 
 const showImage = computed(() => Boolean(avatarUrl.value) && !imageFailed.value);
+
+const imageFitClass = computed(() => {
+  if (props.brandOnly || accountRowAvatarIsBrand(props.account)) {
+    return "w-100 h-100 object-fit-contain p-1";
+  }
+  return "w-100 h-100 object-fit-cover";
+});
 
 const initials = computed(() => {
   if (props.brandOnly) {
@@ -61,7 +69,7 @@ function onImageError() {
       v-if="showImage"
       :src="resolvePublicUrl(avatarUrl)"
       alt=""
-      class="w-100 h-100 object-fit-cover"
+      :class="imageFitClass"
       @error="onImageError"
     />
     <span

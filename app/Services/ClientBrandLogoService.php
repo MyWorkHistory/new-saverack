@@ -10,7 +10,8 @@ use RuntimeException;
 
 class ClientBrandLogoService
 {
-    private const MAX_HEIGHT = 200;
+    /** Square canvas size for normalized brand logos (list + detail). */
+    private const CANVAS_SIZE = 256;
 
     public function replaceForAccount(ClientAccount $account, UploadedFile $file): string
     {
@@ -83,52 +84,63 @@ class ClientBrandLogoService
                 return $contents;
             }
 
-            $targetWidth = $width;
-            $targetHeight = $height;
-            if ($height > self::MAX_HEIGHT) {
-                $ratio = self::MAX_HEIGHT / $height;
-                $targetHeight = self::MAX_HEIGHT;
-                $targetWidth = max(1, (int) round($width * $ratio));
-            }
+            $canvas = $this->normalizeToSquareCanvas($source, $width, $height, $ext);
 
-            $image = $source;
-            if ($targetWidth !== $width || $targetHeight !== $height) {
-                $resized = imagecreatetruecolor($targetWidth, $targetHeight);
-                if ($resized === false) {
-                    return $contents;
-                }
-
-                if ($ext === 'png' || $ext === 'webp') {
-                    imagealphablending($resized, false);
-                    imagesavealpha($resized, true);
-                    $transparent = imagecolorallocatealpha($resized, 0, 0, 0, 127);
-                    imagefilledrectangle($resized, 0, 0, $targetWidth, $targetHeight, $transparent);
-                }
-
-                imagecopyresampled(
-                    $resized,
-                    $source,
-                    0,
-                    0,
-                    0,
-                    0,
-                    $targetWidth,
-                    $targetHeight,
-                    $width,
-                    $height
-                );
-                imagedestroy($source);
-                $image = $resized;
-            }
-
-            return $this->encodeImage($image, $ext);
+            return $this->encodeImage($canvas, $ext);
         } finally {
-            if (isset($image) && $this->isGdImage($image)) {
-                imagedestroy($image);
-            } elseif (isset($source) && $this->isGdImage($source)) {
+            if (isset($canvas) && $this->isGdImage($canvas)) {
+                imagedestroy($canvas);
+            }
+            if (isset($source) && $this->isGdImage($source) && (! isset($canvas) || $canvas !== $source)) {
                 imagedestroy($source);
             }
         }
+    }
+
+    /**
+     * Fit any aspect ratio inside a square canvas (contain), upscaling small logos and downscaling large ones.
+     *
+     * @param  resource|\GdImage  $source
+     * @return resource|\GdImage
+     */
+    private function normalizeToSquareCanvas($source, int $width, int $height, string $ext)
+    {
+        $canvasSize = self::CANVAS_SIZE;
+        $scale = min($canvasSize / $width, $canvasSize / $height);
+        $fitWidth = max(1, (int) round($width * $scale));
+        $fitHeight = max(1, (int) round($height * $scale));
+        $offsetX = (int) floor(($canvasSize - $fitWidth) / 2);
+        $offsetY = (int) floor(($canvasSize - $fitHeight) / 2);
+
+        $canvas = imagecreatetruecolor($canvasSize, $canvasSize);
+        if ($canvas === false) {
+            return $source;
+        }
+
+        if ($ext === 'png' || $ext === 'webp') {
+            imagealphablending($canvas, false);
+            imagesavealpha($canvas, true);
+            $transparent = imagecolorallocatealpha($canvas, 0, 0, 0, 127);
+            imagefilledrectangle($canvas, 0, 0, $canvasSize, $canvasSize, $transparent);
+        } else {
+            $white = imagecolorallocate($canvas, 255, 255, 255);
+            imagefilledrectangle($canvas, 0, 0, $canvasSize, $canvasSize, $white);
+        }
+
+        imagecopyresampled(
+            $canvas,
+            $source,
+            $offsetX,
+            $offsetY,
+            0,
+            0,
+            $fitWidth,
+            $fitHeight,
+            $width,
+            $height
+        );
+
+        return $canvas;
     }
 
     /**

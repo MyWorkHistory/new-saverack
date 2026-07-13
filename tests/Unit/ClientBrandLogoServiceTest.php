@@ -27,7 +27,7 @@ class ClientBrandLogoServiceTest extends TestCase
         return $account;
     }
 
-    public function test_resizees_tall_logo_to_max_height(): void
+    public function test_resizees_tall_logo_to_square_canvas(): void
     {
         if (! function_exists('imagecreatefromstring')) {
             $this->markTestSkipped('GD extension is not available.');
@@ -50,12 +50,12 @@ class ClientBrandLogoServiceTest extends TestCase
 
         $result = imagecreatefromstring($stored);
         $this->assertNotFalse($result);
-        $this->assertLessThanOrEqual(200, imagesy($result));
-        $this->assertGreaterThan(0, imagesx($result));
+        $this->assertSame(256, imagesx($result));
+        $this->assertSame(256, imagesy($result));
         imagedestroy($result);
     }
 
-    public function test_does_not_upscale_small_logo(): void
+    public function test_normalizes_small_logo_to_square_canvas(): void
     {
         if (! function_exists('imagecreatefromstring')) {
             $this->markTestSkipped('GD extension is not available.');
@@ -76,8 +76,34 @@ class ClientBrandLogoServiceTest extends TestCase
         $stored = Storage::disk('public')->get($path);
         $result = imagecreatefromstring($stored);
         $this->assertNotFalse($result);
-        $this->assertSame(120, imagesy($result));
-        $this->assertSame(80, imagesx($result));
+        $this->assertSame(256, imagesx($result));
+        $this->assertSame(256, imagesy($result));
+        imagedestroy($result);
+    }
+
+    public function test_normalizes_wide_logo_to_square_canvas(): void
+    {
+        if (! function_exists('imagecreatefromstring')) {
+            $this->markTestSkipped('GD extension is not available.');
+        }
+
+        Storage::fake('public');
+
+        $source = imagecreatetruecolor(400, 80);
+        ob_start();
+        imagepng($source);
+        $png = ob_get_clean();
+        imagedestroy($source);
+
+        $file = UploadedFile::fake()->createWithContent('logo.png', $png);
+        $service = new ClientBrandLogoService();
+        $path = $service->replaceForAccount($this->mockAccount(), $file);
+
+        $stored = Storage::disk('public')->get($path);
+        $result = imagecreatefromstring($stored);
+        $this->assertNotFalse($result);
+        $this->assertSame(256, imagesx($result));
+        $this->assertSame(256, imagesy($result));
         imagedestroy($result);
     }
 }

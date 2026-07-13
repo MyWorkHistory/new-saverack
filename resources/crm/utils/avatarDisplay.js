@@ -31,6 +31,12 @@ export function accountRowAvatarUrl(row) {
   return null;
 }
 
+/** True when the row avatar should use brand-logo contain styling (not user photo cover). */
+export function accountRowAvatarIsBrand(row) {
+  if (!row || typeof row !== "object") return false;
+  return Boolean(String(row.brand_logo_url || "").trim());
+}
+
 export function accountRowInitials(row) {
   if (!row || typeof row !== "object") return "?";
   const name = String(row.company_name || row.contact_full_name || row.brand_name || "").trim();

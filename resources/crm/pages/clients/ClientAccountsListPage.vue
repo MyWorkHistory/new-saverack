@@ -30,6 +30,7 @@ import { downloadListCsv } from "../../utils/downloadListCsv.js";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 import {
   accountRowAvatarUrl,
+  accountRowAvatarIsBrand,
   accountRowInitials,
   avatarClassFromSeed,
 } from "../../utils/avatarDisplay.js";
@@ -1150,7 +1151,10 @@ onUnmounted(() => {
                       v-if="showAccountAvatarImage(row)"
                       :src="resolvePublicUrl(accountRowAvatarUrl(row))"
                       alt=""
-                      class="w-100 h-100 object-fit-cover"
+                      :class="[
+                        'w-100 h-100',
+                        accountRowAvatarIsBrand(row) ? 'object-fit-contain p-1' : 'object-fit-cover',
+                      ]"
                       @error="markAvatarLoadFailed(row.id)"
                     />
                     <span

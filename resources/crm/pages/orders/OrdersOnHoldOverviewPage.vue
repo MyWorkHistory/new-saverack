@@ -13,7 +13,7 @@ import { formatDateTimeUs } from "../../utils/formatUserDates.js";
 
 const toast = useToast();
 
-const { loading, refreshing, sections, load, refreshSection } = useAdminHomeDashboard({
+const { loading, refreshing, sections, pausedOnHoldOrderCount, load, refreshSection } = useAdminHomeDashboard({
   onError: (e) => toast.errorFrom(e, "Could not load on-hold overview."),
 });
 
@@ -64,17 +64,11 @@ function isSectionRefreshing(key) {
 }
 
 function ordersHoldRoute(accountId, holdReason) {
-  if (holdReason === null) {
-    return {
-      name: "orders-out-of-stock",
-      query: { client_account_id: String(accountId) },
-    };
-  }
   return {
     name: "orders-on-hold-old",
     query: {
       client_account_id: String(accountId),
-      hold_reason: holdReason,
+      ...(holdReason ? { hold_reason: holdReason } : {}),
     },
   };
 }
@@ -153,7 +147,11 @@ onMounted(async () => {
     </div>
 
     <template v-else>
-      <OnHoldSummaryCards :get-total-count="getTotalCount" @select="scrollToSection" />
+      <OnHoldSummaryCards
+        :get-total-count="getTotalCount"
+        :paused-on-hold-order-count="pausedOnHoldOrderCount"
+        @select="scrollToSection"
+      />
 
       <div class="row g-3">
         <div

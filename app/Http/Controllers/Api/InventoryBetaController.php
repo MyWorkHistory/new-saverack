@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
 use App\Models\User;
 use App\Services\CrossAccountInventoryListService;
+use App\Services\InventoryOutOfStockByAccountService;
 use App\Services\InventoryProductDetailCacheService;
 use App\Services\ShipHeroInventoryService;
 use Illuminate\Http\JsonResponse;
@@ -28,14 +29,19 @@ class InventoryBetaController extends Controller
     /** @var CrossAccountInventoryListService */
     protected $crossAccountInventory;
 
+    /** @var InventoryOutOfStockByAccountService */
+    protected $outOfStockByAccount;
+
     public function __construct(
         ShipHeroInventoryService $inventory,
         InventoryProductDetailCacheService $detailCache,
-        CrossAccountInventoryListService $crossAccountInventory
+        CrossAccountInventoryListService $crossAccountInventory,
+        InventoryOutOfStockByAccountService $outOfStockByAccount
     ) {
         $this->inventory = $inventory;
         $this->detailCache = $detailCache;
         $this->crossAccountInventory = $crossAccountInventory;
+        $this->outOfStockByAccount = $outOfStockByAccount;
     }
 
     public function catalogSync(Request $request): JsonResponse
@@ -323,6 +329,23 @@ class InventoryBetaController extends Controller
                     : 'Could not sync product from ShipHero.',
             ], 502);
         }
+    }
+
+    public function outOfStockByAccount(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'limit' => ['nullable', 'integer', 'min:1', 'max:500'],
+        ]);
+
+        $user = $request->user();
+        if (! $user instanceof User) {
+            abort(401);
+        }
+
+        $limit = isset($validated['limit']) ? (int) $validated['limit'] : null;
+        $payload = $this->outOfStockByAccount->summarize($limit);
+
+        return response()->json($payload);
     }
 
     private function resolveShipHeroCustomerAccountId(int $clientAccountId, Request $request): ?string

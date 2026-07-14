@@ -8,6 +8,7 @@ const props = defineProps({
   totals: { type: Object, default: () => ({}) },
   sections: { type: Object, default: () => ({}) },
   restockActiveCount: { type: Number, default: 0 },
+  pausedOnHoldOrderCount: { type: Number, default: 0 },
 });
 
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
@@ -38,6 +39,9 @@ function cardValue(card) {
   if (card.valueSource === "restock_active_count") {
     return Number(props.restockActiveCount || 0);
   }
+  if (card.valueSource === "paused_on_hold_order_count") {
+    return Number(props.pausedOnHoldOrderCount || 0);
+  }
   if (card.valueSource === "sections") {
     const section = props.sections?.[card.valueKey];
     return Number(section?.total_count || 0);
@@ -55,7 +59,7 @@ function formatValue(card) {
     <div
       v-for="card in HOME_SUMMARY_CARDS"
       :key="card.key"
-      class="col-6 col-md-4 col-xl-2"
+      class="col-6 col-md-4 col-xl"
     >
       <RouterLink
         :to="card.to"

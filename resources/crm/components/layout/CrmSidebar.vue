@@ -134,7 +134,9 @@ function navActive(mode) {
   if (mode === "orders-manage") return p.startsWith("/admin/orders/search");
   if (mode === "orders-awaiting") return p.startsWith("/admin/orders/awaiting");
   if (mode === "orders-on-hold") return p === "/admin/orders/on-hold";
-  if (mode === "orders-out-of-stock") return p.startsWith("/admin/orders/backorder");
+  if (mode === "orders-backorder" || mode === "orders-out-of-stock") {
+    return p === "/admin/orders/backorder" || p.startsWith("/admin/orders/backorder/");
+  }
   if (mode === "orders-shipped") return p.startsWith("/admin/orders/shipped");
   if (mode === "orders-wholesale") return p.startsWith("/admin/orders/wholesale");
   if (mode === "receiving") return p.startsWith("/admin/receiving");
@@ -338,7 +340,7 @@ function collapseNav() {
                   <RouterLink
                     to="/admin/orders/backorder"
                     class="vx-nav-link vx-nav-sublink"
-                    :class="{ 'vx-nav-link--active': navActive('orders-out-of-stock') }"
+                    :class="{ 'vx-nav-link--active': navActive('orders-backorder') }"
                     @click="closeMobile"
                   >
                     Backorder

@@ -177,12 +177,39 @@ class OrderDashboardSnapshotService
                 'asn_pending' => (int) ($sections[OrderDashboardSection::KEY_ASN_PENDING]['total_count'] ?? 0),
             ],
             'sections' => $sections,
+            'paused_on_hold_order_count' => self::sumPausedOnHoldOrdersFromSections($sections),
             'revision' => $this->getDashboardRevision(),
             'metrics_truncated' => (bool) (
                 ($sections[OrderDashboardSection::KEY_READY_TO_SHIP]['truncated'] ?? false)
                 || ($sections[OrderDashboardSection::KEY_SHIPPED]['truncated'] ?? false)
             ),
         ];
+    }
+
+    /**
+     * Sum on-hold order counts for accounts currently marked paused in section payloads.
+     *
+     * @param  array<string, mixed>  $sections
+     */
+    public static function sumPausedOnHoldOrdersFromSections(array $sections): int
+    {
+        $accounts = $sections[OrderDashboardSection::KEY_ON_HOLD]['accounts'] ?? null;
+        if (! is_array($accounts)) {
+            return 0;
+        }
+
+        $sum = 0;
+        foreach ($accounts as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+            if (strcasecmp((string) ($entry['account_status'] ?? ''), ClientAccount::STATUS_PAUSED) !== 0) {
+                continue;
+            }
+            $sum += max(0, (int) ($entry['orders_count'] ?? 0));
+        }
+
+        return $sum;
     }
 
     /**

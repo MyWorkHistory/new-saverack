@@ -159,17 +159,19 @@ onMounted(async () => {
         class="home-list-panel__row home-list-panel__row--clickable home-list-panel__row--calendar"
         @click="openDetail(event)"
       >
-        <div class="home-list-panel__row-main min-w-0">
-          <span class="home-list-panel__row-title text-truncate d-block">{{ event.title }}</span>
-          <p class="home-list-panel__row-sub mb-0">
-            {{ event.category_label }}{{ event.is_personal ? " · Personal" : "" }}
-          </p>
+        <div class="home-list-panel__row-main home-calendar-event-row min-w-0">
           <span
-            class="home-calendar-event-date d-block"
+            class="home-calendar-event-date flex-shrink-0"
             :style="{ color: eventDateColor(event) }"
           >
             {{ formatCalendarEventDateRange(event, { short: true }) }}
           </span>
+          <div class="home-calendar-event-text min-w-0">
+            <span class="home-list-panel__row-title text-truncate d-block">{{ event.title }}</span>
+            <p class="home-list-panel__row-sub mb-0">
+              {{ event.category_label }}{{ event.is_personal ? " · Personal" : "" }}
+            </p>
+          </div>
         </div>
       </button>
     </div>

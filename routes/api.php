@@ -205,6 +205,8 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.view');
         Route::get('/list', [InventoryBetaController::class, 'list'])
             ->middleware('can:inventory.view');
+        Route::get('/out-of-stock-by-account', [InventoryBetaController::class, 'outOfStockByAccount'])
+            ->middleware('can:inventory.view');
         Route::post('/products/{sku}/sync', [InventoryBetaController::class, 'syncCatalogProduct'])
             ->middleware('can:inventory.view');
     });

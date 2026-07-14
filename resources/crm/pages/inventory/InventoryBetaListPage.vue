@@ -904,6 +904,14 @@ onMounted(() => {
     return;
   }
   if (isStaffPickerMode.value) {
+    const qAccount = Number(route.query.client_account_id || 0);
+    if (qAccount > 0) {
+      selectedAccountId.value = String(qAccount);
+      const loadId = ++accountLoadSeq;
+      hasSearched.value = true;
+      loadAccounts().then(() => loadRows(true).then(() => ensureAccountCatalogSynced(loadId)));
+      return;
+    }
     loadAccounts();
   } else {
     const loadId = ++accountLoadSeq;

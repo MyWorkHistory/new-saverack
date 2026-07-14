@@ -703,7 +703,16 @@ const routes = [
   },
   {
     path: "/admin/orders/backorder",
-    name: "orders-out-of-stock",
+    name: "orders-backorder",
+    component: () => import("../pages/orders/OrdersBackorderOverviewPage.vue"),
+    meta: {
+      title: "Save Rack | Orders | Backorder",
+      description: "Backorder orders and out-of-stock inventory by account.",
+    },
+  },
+  {
+    path: "/admin/orders/backorder/list",
+    name: "orders-backorder-list",
     component: OrdersListPage,
     meta: {
       title: "Save Rack | Orders | Backorder",

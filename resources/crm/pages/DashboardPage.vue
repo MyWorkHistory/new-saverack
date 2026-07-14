@@ -38,6 +38,7 @@ const {
   pendingAsnPreview,
   restockPreview,
   restockActiveCount,
+  pausedOnHoldOrderCount,
   anySectionPending,
   load,
   refreshSection,
@@ -125,6 +126,7 @@ onMounted(async () => {
         :totals="totals"
         :sections="sections"
         :restock-active-count="restockActiveCount"
+        :paused-on-hold-order-count="pausedOnHoldOrderCount"
       />
 
       <div class="row g-3 mb-4">

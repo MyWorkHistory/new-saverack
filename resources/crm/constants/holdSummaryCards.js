@@ -10,7 +10,7 @@ export const ON_HOLD_TOTAL_CARD = {
   iconStyle: { background: "#fef3c7", color: "#b45309" },
 };
 
-/** Hold-type breakdown cards (backorder last) — orders with multiple holds may appear in more than one card. */
+/** Hold-type breakdown cards (Paused last) — orders with multiple holds may appear in more than one card. */
 export const HOLD_TYPE_SECTIONS = [
   {
     key: "hold_operator",
@@ -62,20 +62,32 @@ export const HOLD_TYPE_SECTIONS = [
     titleColor: "#7c3aed",
     iconStyle: { background: "#f3e8ff", color: "#7c3aed" },
   },
-  {
-    key: "hold_backorder",
-    label: "Backorder",
-    titleUpper: "BACKORDER",
-    sub: "Orders on hold due to inventory shortage",
-    icon: "localShipping",
-    holdReason: null,
-    titleColor: "#dc2626",
-    iconStyle: { background: "#fee2e2", color: "#dc2626" },
-  },
 ];
 
-/** @deprecated Use HOLD_TYPE_SECTIONS (includes backorder as last card). */
-export const HOLD_BACKORDER_CARD = HOLD_TYPE_SECTIONS[HOLD_TYPE_SECTIONS.length - 1];
+/** Paused summary card on On-Hold (replaces Backorder; links to paused accounts). */
+export const ON_HOLD_PAUSED_CARD = {
+  key: "paused",
+  label: "Paused",
+  titleUpper: "PAUSED",
+  sub: "On-hold orders for paused accounts",
+  icon: "pauseCircle",
+  titleColor: "#6b7280",
+  iconStyle: { background: "#f3f4f6", color: "#4b5563" },
+  to: { name: "client-accounts", query: { status: "paused" } },
+  valueSource: "paused_on_hold_order_count",
+};
+
+/** @deprecated Backorder moved to /admin/orders/backorder overview. */
+export const HOLD_BACKORDER_CARD = {
+  key: "hold_backorder",
+  label: "Backorder",
+  titleUpper: "BACKORDER",
+  sub: "Orders on hold due to inventory shortage",
+  icon: "localShipping",
+  holdReason: null,
+  titleColor: "#dc2626",
+  iconStyle: { background: "#fee2e2", color: "#dc2626" },
+};
 
 /** @deprecated Prefer ON_HOLD_TOTAL_CARD + HOLD_TYPE_SECTIONS. */
 export const HOLD_SECTIONS = [...HOLD_TYPE_SECTIONS];

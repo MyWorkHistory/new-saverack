@@ -23,6 +23,8 @@ const props = defineProps({
   previewLimit: { type: Number, default: null },
   showViewAllFooter: { type: Boolean, default: false },
   emptyMessage: { type: String, default: "" },
+  countColumnLabel: { type: String, default: "Orders" },
+  countField: { type: String, default: "orders_count" },
   anchorPrefix: { type: String, default: "section" },
 });
 
@@ -98,7 +100,7 @@ function onRefresh() {
 
     <div class="on-hold-section-panel__table-head d-flex justify-content-between">
       <span class="on-hold-section-panel__col-head">Account</span>
-      <span class="on-hold-section-panel__col-head">Orders</span>
+      <span class="on-hold-section-panel__col-head">{{ countColumnLabel }}</span>
     </div>
 
     <div class="on-hold-section-panel__body flex-grow-1">
@@ -118,7 +120,7 @@ function onRefresh() {
             </RouterLink>
           </div>
           <span class="on-hold-count-pill flex-shrink-0" :class="pillClass">
-            {{ Number(row.orders_count || 0).toLocaleString() }}
+            {{ Number(row[countField] || 0).toLocaleString() }}
           </span>
         </div>
       </template>

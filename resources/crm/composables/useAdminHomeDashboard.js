@@ -40,6 +40,7 @@ export function useAdminHomeDashboard({ onError } = {}) {
   const putAwayByAccount = ref([]);
   const restockPreview = ref([]);
   const restockActiveCount = ref(0);
+  const pausedOnHoldOrderCount = ref(0);
 
   let pollTimer = null;
   let revisionPollTimer = null;
@@ -75,6 +76,7 @@ export function useAdminHomeDashboard({ onError } = {}) {
       : [];
     restockPreview.value = Array.isArray(data?.restock_preview) ? [...data.restock_preview] : [];
     restockActiveCount.value = Number(data?.restock_active_count || 0);
+    pausedOnHoldOrderCount.value = Number(data?.paused_on_hold_order_count || 0);
     knownRevision = Number(data?.revision ?? knownRevision);
   }
 
@@ -178,6 +180,7 @@ export function useAdminHomeDashboard({ onError } = {}) {
     putAwayByAccount,
     restockPreview,
     restockActiveCount,
+    pausedOnHoldOrderCount,
     anySectionRunning,
     anySectionPending,
     load,

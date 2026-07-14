@@ -149,15 +149,27 @@
   }
 
   .home-list-panel__row--calendar {
+    align-items: center;
+  }
+
+  .home-calendar-event-row {
+    display: flex;
     align-items: flex-start;
+    gap: 0.75rem;
   }
 
   .home-calendar-event-date {
-    margin-top: 0.25rem;
+    min-width: 3.25rem;
+    padding-top: 0.1rem;
     font-size: 0.75rem;
     font-weight: 600;
     line-height: 1.35;
     white-space: nowrap;
+  }
+
+  .home-calendar-event-text {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .home-list-panel__row:last-child {

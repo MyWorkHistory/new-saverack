@@ -163,12 +163,17 @@ class ClientAccountUpdateRequest extends FormRequest
             if ($newStatus !== ClientAccount::STATUS_ACTIVE) {
                 return;
             }
-            $onboarding = app(PortalOnboardingService::class);
-            if (! $onboarding->isOnboardingReadyForActivation($account)) {
-                $v->errors()->add(
-                    'status',
-                    PortalOnboardingService::ACTIVATION_BLOCKED_MESSAGE
-                );
+            $actor = $this->user();
+            $canBypassOnboarding = $actor !== null
+                && ($actor->isAdministrator() || $actor->isCrmOwner());
+            if (! $canBypassOnboarding) {
+                $onboarding = app(PortalOnboardingService::class);
+                if (! $onboarding->isOnboardingReadyForActivation($account)) {
+                    $v->errors()->add(
+                        'status',
+                        PortalOnboardingService::ACTIVATION_BLOCKED_MESSAGE
+                    );
+                }
             }
             $sid = $this->input('shiphero_customer_account_id');
             if ($sid === null || $sid === '') {

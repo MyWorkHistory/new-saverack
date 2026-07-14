@@ -557,10 +557,14 @@ async function saveAccountStatusFromModal() {
     return;
   }
   if (next === "active") {
-    const ready = await checkOnboardingReadyForActivation(api, props.id);
-    if (!ready) {
-      toast.error(ONBOARDING_ACTIVATION_BLOCKED_MESSAGE);
-      return;
+    const u = crmUser.value;
+    const canBypassOnboarding = crmIsAdmin(u) || !!u?.is_crm_owner;
+    if (!canBypassOnboarding) {
+      const ready = await checkOnboardingReadyForActivation(api, props.id);
+      if (!ready) {
+        toast.error(ONBOARDING_ACTIVATION_BLOCKED_MESSAGE);
+        return;
+      }
     }
   }
   accountStatusSaving.value = true;

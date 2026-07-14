@@ -35,6 +35,13 @@ class ClientAccountBulkUpdateRequest extends FormRequest
                 return;
             }
 
+            $actor = $this->user();
+            $canBypassOnboarding = $actor !== null
+                && ($actor->isAdministrator() || $actor->isCrmOwner());
+            if ($canBypassOnboarding) {
+                return;
+            }
+
             $onboarding = app(PortalOnboardingService::class);
             $accounts = ClientAccount::query()->whereIn('id', $ids)->get();
             foreach ($accounts as $account) {

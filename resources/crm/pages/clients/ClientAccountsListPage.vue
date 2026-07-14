@@ -504,10 +504,12 @@ async function saveStatusFromModal() {
     return;
   }
   if (status === "active") {
-    const ready = await checkOnboardingReadyForActivation(api, row.id);
-    if (!ready) {
-      toast.error(ONBOARDING_ACTIVATION_BLOCKED_MESSAGE);
-      return;
+    if (!isAdmin.value) {
+      const ready = await checkOnboardingReadyForActivation(api, row.id);
+      if (!ready) {
+        toast.error(ONBOARDING_ACTIVATION_BLOCKED_MESSAGE);
+        return;
+      }
     }
   }
   statusPickerBusy.value = true;

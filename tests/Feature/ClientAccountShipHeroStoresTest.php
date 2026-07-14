@@ -147,7 +147,10 @@ class ClientAccountShipHeroStoresTest extends TestCase
                 'https://app.shiphero.com/dashboard/stores/settings?type=shopify&shop=32363'
             )
             ->assertJsonPath('stores.1.shop_name', 'Second Shop')
-            ->assertJsonPath('stores.1.settings_url', null)
+            ->assertJsonPath(
+                'stores.1.settings_url',
+                'https://app.shiphero.com/dashboard/stores/settings?shop=45678'
+            )
             ->assertJsonPath('shiphero_customer_account_id', 'sh-stores-99');
     }
 

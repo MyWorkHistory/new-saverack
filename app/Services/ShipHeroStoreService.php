@@ -1238,17 +1238,23 @@ GQL;
         $type = $type !== null ? strtolower(trim($type)) : '';
         $shopId = $shopId !== null ? trim($shopId) : '';
 
-        if ($type === '' || $type === ClientAccountShipHeroStoreMeta::TYPE_API || $shopId === '') {
+        if ($shopId === '') {
             return null;
         }
 
-        if (! ClientAccountShipHeroStoreMeta::isValidType($type)) {
+        // Public API stores have no ShipHero settings deep-link.
+        if ($type === ClientAccountShipHeroStoreMeta::TYPE_API) {
             return null;
         }
 
-        return self::SETTINGS_URL_BASE
-            .'?type='.rawurlencode($type)
-            .'&shop='.rawurlencode($shopId);
+        if ($type !== '' && ClientAccountShipHeroStoreMeta::isValidType($type)) {
+            return self::SETTINGS_URL_BASE
+                .'?type='.rawurlencode($type)
+                .'&shop='.rawurlencode($shopId);
+        }
+
+        // Shop ID alone still opens settings (type can be set later via Edit Type).
+        return self::SETTINGS_URL_BASE.'?shop='.rawurlencode($shopId);
     }
 
     private function cacheKey(int $clientAccountId): string

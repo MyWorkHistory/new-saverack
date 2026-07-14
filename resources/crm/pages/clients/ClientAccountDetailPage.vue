@@ -31,6 +31,8 @@ import { CLIENT_ACCOUNT_PAUSE_REASONS } from "../../constants/clientAccountPause
 import {
   SHIPHERO_STORE_TYPE_OPTIONS,
   shipHeroStoreTypeLabel,
+  shipHeroStoreSettingsUrl,
+  isShipHeroStoreApiType,
 } from "../../constants/shipHeroStoreTypes.js";
 
 const props = defineProps({
@@ -860,12 +862,24 @@ async function saveStoreEditType() {
 
 function openStoreInShipHero(row) {
   closeStoreActionMenu();
-  const url = row?.settings_url ? String(row.settings_url).trim() : "";
+  const url = shipHeroStoreSettingsUrl(row);
   if (!url) {
-    toast.error("Set a non-API store type (and shop ID) first.");
+    if (isShipHeroStoreApiType(row?.store_type)) {
+      toast.error("Public API stores have no ShipHero settings link.");
+      return;
+    }
+    toast.error("This store has no shop ID yet. Use Edit Type to set Shop ID.");
     return;
   }
   window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function storeCanOpenShipHero(row) {
+  return Boolean(shipHeroStoreSettingsUrl(row));
+}
+
+function storeTypeDisplay(row) {
+  return shipHeroStoreTypeLabel(row?.store_type) || "—";
 }
 
 function openStoreDelete(row) {
@@ -901,10 +915,6 @@ async function confirmStoreDelete() {
   } finally {
     storeDeleteBusy.value = false;
   }
-}
-
-function storeTypeDisplay(row) {
-  return shipHeroStoreTypeLabel(row?.store_type) || "—";
 }
 
 watch(
@@ -1751,8 +1761,8 @@ onUnmounted(() => {
                               {{ initials(row.shop_name) }}
                             </span>
                             <a
-                              v-if="row.settings_url"
-                              :href="row.settings_url"
+                              v-if="storeCanOpenShipHero(row)"
+                              :href="shipHeroStoreSettingsUrl(row)"
                               class="d-block fw-semibold text-truncate text-decoration-none text-primary"
                               target="_blank"
                               rel="noopener noreferrer"
@@ -1953,7 +1963,7 @@ onUnmounted(() => {
           type="button"
           class="staff-row-menu__item"
           role="menuitem"
-          :disabled="!storeActionMenuRow.settings_url"
+          :disabled="!storeCanOpenShipHero(storeActionMenuRow)"
           @click="openStoreInShipHero(storeActionMenuRow)"
         >
           Edit Store

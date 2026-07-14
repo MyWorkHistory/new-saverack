@@ -20,11 +20,14 @@ final class ShipHeroStoreServiceUrlTest extends TestCase
         return new ShipHeroStoreService(Mockery::mock(ShipHeroClient::class));
     }
 
-    public function test_build_settings_url_requires_type_and_shop(): void
+    public function test_build_settings_url_requires_shop_id(): void
     {
         $svc = $this->service();
 
-        $this->assertNull($svc->buildSettingsUrl(null, '31888'));
+        $this->assertSame(
+            'https://app.shiphero.com/dashboard/stores/settings?shop=31888',
+            $svc->buildSettingsUrl(null, '31888')
+        );
         $this->assertNull($svc->buildSettingsUrl('shopify', null));
         $this->assertNull($svc->buildSettingsUrl('shopify', ''));
         $this->assertNull($svc->buildSettingsUrl('api', '31888'));

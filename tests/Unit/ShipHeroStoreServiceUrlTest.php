@@ -62,4 +62,17 @@ final class ShipHeroStoreServiceUrlTest extends TestCase
             ])
         );
     }
+
+    public function test_shop_id_decoded_from_graphql_store_id(): void
+    {
+        $svc = $this->service();
+
+        // base64("Store:31888")
+        $this->assertSame('31888', $svc->shopIdFromGraphqlId(base64_encode('Store:31888')));
+        // ShipHero docs example style base64("Record:1234")
+        $this->assertSame('1234', $svc->shopIdFromGraphqlId(base64_encode('Record:1234')));
+        $this->assertSame('31888', $svc->resolveShopId('', base64_encode('Store:31888')));
+        $this->assertSame('999', $svc->resolveShopId('999', base64_encode('Store:31888')));
+        $this->assertNull($svc->shopIdFromGraphqlId('not-base64'));
+    }
 }

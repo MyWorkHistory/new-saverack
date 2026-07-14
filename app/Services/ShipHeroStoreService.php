@@ -1013,11 +1013,25 @@ GQL;
     {
         $shipheroId = trim((string) ($row['id'] ?? $row['shiphero_id'] ?? ''));
         $legacyRaw = $row['legacy_id'] ?? null;
-        $legacyId = $legacyRaw !== null && $legacyRaw !== '' ? (string) $legacyRaw : '';
+        $legacyId = '';
+        if ($legacyRaw !== null && $legacyRaw !== '') {
+            // GraphQL BigInt may arrive as int|string|float.
+            if (is_int($legacyRaw) || (is_float($legacyRaw) && floor($legacyRaw) === $legacyRaw)) {
+                $legacyId = (string) (int) $legacyRaw;
+            } else {
+                $legacyId = trim((string) $legacyRaw);
+            }
+        }
         $shopName = trim((string) ($row['shop_name'] ?? ''));
 
         if ($shipheroId === '' && $legacyId === '' && $shopName === '') {
             return null;
+        }
+
+        $shopId = $this->resolveShopId($legacyId, $shipheroId);
+        // Prefer a stable numeric shop id as legacy_id when ShipHero omits legacy_id.
+        if ($legacyId === '' && $shopId !== null) {
+            $legacyId = $shopId;
         }
 
         $out = [
@@ -1025,7 +1039,7 @@ GQL;
             'legacy_id' => $legacyId,
             'shop_name' => $shopName,
             'store_key' => '',
-            'shop_id' => $legacyId !== '' ? $legacyId : null,
+            'shop_id' => $shopId,
             'store_type' => null,
             'settings_url' => null,
         ];
@@ -1035,6 +1049,38 @@ GQL;
         $out['store_key'] = $this->storeDedupeKey($out);
 
         return $out;
+    }
+
+    /**
+     * Shop ID for ShipHero settings URLs: legacy_id, else digits decoded from GraphQL id (Store:31888).
+     */
+    public function resolveShopId(?string $legacyId, ?string $shipheroGraphqlId): ?string
+    {
+        $legacy = trim((string) $legacyId);
+        if ($legacy !== '') {
+            return $legacy;
+        }
+
+        return $this->shopIdFromGraphqlId($shipheroGraphqlId);
+    }
+
+    public function shopIdFromGraphqlId(?string $graphqlId): ?string
+    {
+        $raw = trim((string) $graphqlId);
+        if ($raw === '') {
+            return null;
+        }
+
+        $decoded = base64_decode($raw, true);
+        if ($decoded === false || $decoded === '') {
+            return null;
+        }
+
+        if (preg_match('/:(\d+)\s*$/', $decoded, $matches) === 1) {
+            return $matches[1];
+        }
+
+        return null;
     }
 
     /**
@@ -1150,9 +1196,17 @@ GQL;
             $meta = $metaByKey->get($key);
             $type = $meta !== null ? (string) ($meta->store_type ?? '') : '';
             $type = $type !== '' ? strtolower($type) : null;
-            $shopId = $meta !== null && trim((string) ($meta->shop_id ?? '')) !== ''
-                ? trim((string) $meta->shop_id)
-                : (trim((string) ($row['legacy_id'] ?? '')) !== '' ? trim((string) $row['legacy_id']) : null);
+            $shopId = null;
+            if ($meta !== null && trim((string) ($meta->shop_id ?? '')) !== '') {
+                $shopId = trim((string) $meta->shop_id);
+            } elseif (! empty($row['shop_id'])) {
+                $shopId = trim((string) $row['shop_id']);
+            } else {
+                $shopId = $this->resolveShopId(
+                    (string) ($row['legacy_id'] ?? ''),
+                    (string) ($row['shiphero_id'] ?? '')
+                );
+            }
 
             $row['store_type'] = $type;
             $row['shop_id'] = $shopId;

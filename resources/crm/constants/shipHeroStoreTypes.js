@@ -37,7 +37,7 @@ export function isShipHeroStoreApiType(type) {
 }
 
 /**
- * Resolve shop ID from a store row (CRM override or ShipHero legacy_id).
+ * Resolve shop ID from a store row (CRM override, legacy_id, or decoded GraphQL id).
  * @param {Record<string, unknown>|null|undefined} row
  * @returns {string}
  */
@@ -45,7 +45,29 @@ export function shipHeroStoreShopId(row) {
   if (!row || typeof row !== "object") return "";
   const shop = String(row.shop_id ?? "").trim();
   if (shop) return shop;
-  return String(row.legacy_id ?? "").trim();
+  const legacy = String(row.legacy_id ?? "").trim();
+  if (legacy) return legacy;
+  return shopIdFromGraphqlId(String(row.shiphero_id ?? ""));
+}
+
+/**
+ * Decode ShipHero GraphQL ids like base64("Store:31888") → "31888".
+ * @param {string} graphqlId
+ * @returns {string}
+ */
+export function shopIdFromGraphqlId(graphqlId) {
+  const raw = String(graphqlId || "").trim();
+  if (!raw) return "";
+  try {
+    const decoded =
+      typeof atob === "function"
+        ? atob(raw)
+        : Buffer.from(raw, "base64").toString("utf8");
+    const match = String(decoded).match(/:(\d+)\s*$/);
+    return match ? match[1] : "";
+  } catch {
+    return "";
+  }
 }
 
 /**

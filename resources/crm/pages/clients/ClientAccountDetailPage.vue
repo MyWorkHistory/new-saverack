@@ -32,6 +32,7 @@ import {
   SHIPHERO_STORE_TYPE_OPTIONS,
   shipHeroStoreTypeLabel,
   shipHeroStoreSettingsUrl,
+  shipHeroStoreShopId,
   isShipHeroStoreApiType,
 } from "../../constants/shipHeroStoreTypes.js";
 
@@ -821,9 +822,7 @@ function openStoreEditType(row) {
   storeEditTypeRow.value = row;
   storeEditTypeForm.value = {
     store_type: row?.store_type ? String(row.store_type) : "",
-    shop_id: row?.shop_id != null && String(row.shop_id).trim() !== ""
-      ? String(row.shop_id)
-      : String(row?.legacy_id || ""),
+    shop_id: shipHeroStoreShopId(row),
   };
   storeEditTypeOpen.value = true;
 }
@@ -1109,9 +1108,10 @@ onUnmounted(() => {
             :disabled="storeEditTypeBusy"
             autocomplete="off"
           />
-          <p class="small text-secondary mb-0 mt-1">
-            Used in ShipHero settings URL as <code>?shop=</code>. Public API has no link.
-          </p>
+                          <p class="small text-secondary mb-0 mt-1">
+                            Used in ShipHero settings URL as <code>?shop=</code>. Auto-filled from
+                            ShipHero store id when available. Public API has no link.
+                          </p>
         </div>
       </div>
     </ConfirmModal>

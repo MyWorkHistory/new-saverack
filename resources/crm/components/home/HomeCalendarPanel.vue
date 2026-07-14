@@ -6,7 +6,10 @@ import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import CalendarEventDetailModal from "../resources/CalendarEventDetailModal.vue";
 import CalendarEventDrawer from "../resources/CalendarEventDrawer.vue";
 import { useResourceCalendarEvents } from "../../composables/useResourceCalendarEvents.js";
-import { formatCalendarEventDateRange } from "../../utils/calendarEventDisplay.js";
+import {
+  calendarColorWash,
+  calendarEventDateParts,
+} from "../../utils/calendarEventDisplay.js";
 import { canManageCalendarEvent } from "../../utils/calendarEventPermissions.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
 
@@ -41,12 +44,35 @@ function userHasPerm(key) {
   return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
 }
 
-function eventDateColor(event) {
+function eventAccentColor(event) {
   if (event?.is_personal) {
     return "#6b7280";
   }
-
   return event?.category_color || "#6b7280";
+}
+
+function eventDateParts(event) {
+  return calendarEventDateParts(event);
+}
+
+function eventDateWidgetStyle(event) {
+  const color = eventAccentColor(event);
+  return {
+    color,
+    background: calendarColorWash(color, 0.14),
+  };
+}
+
+function eventRuleStyle(event) {
+  return { background: eventAccentColor(event) };
+}
+
+function eventCategoryLabel(event) {
+  const label = String(event?.category_label || "").trim();
+  if (event?.is_personal) {
+    return label ? `${label} · Personal` : "Personal";
+  }
+  return label || "—";
 }
 
 async function refreshEvents() {
@@ -147,33 +173,34 @@ onMounted(async () => {
       </RouterLink>
     </div>
 
-    <div class="home-list-panel__body">
+    <div class="home-list-panel__body home-list-panel__body--calendar">
       <div v-if="loading" class="d-flex justify-content-center py-4">
         <CrmLoadingSpinner />
       </div>
       <p v-else-if="!events.length" class="text-muted small mb-0 px-1">No upcoming events.</p>
-      <button
-        v-for="event in events"
-        :key="event.id"
-        type="button"
-        class="home-list-panel__row home-list-panel__row--clickable home-list-panel__row--calendar"
-        @click="openDetail(event)"
-      >
-        <div class="home-list-panel__row-main home-calendar-event-row min-w-0">
-          <span
-            class="home-calendar-event-date"
-            :style="{ color: eventDateColor(event) }"
-          >
-            {{ formatCalendarEventDateRange(event, { short: true }) }}
-          </span>
-          <div class="home-calendar-event-text min-w-0">
-            <span class="home-list-panel__row-title text-truncate d-block">{{ event.title }}</span>
-            <p class="home-list-panel__row-sub mb-0 text-truncate">
-              {{ event.category_label }}{{ event.is_personal ? " · Personal" : "" }}
-            </p>
+      <div v-else class="home-calendar-list">
+        <button
+          v-for="event in events"
+          :key="event.id"
+          type="button"
+          class="home-calendar-event"
+          @click="openDetail(event)"
+        >
+          <div class="home-calendar-event__date" :style="eventDateWidgetStyle(event)">
+            <span class="home-calendar-event__month">{{ eventDateParts(event).month }}</span>
+            <span class="home-calendar-event__day">{{ eventDateParts(event).day }}</span>
           </div>
-        </div>
-      </button>
+          <span
+            class="home-calendar-event__rule"
+            :style="eventRuleStyle(event)"
+            aria-hidden="true"
+          />
+          <div class="home-calendar-event__text min-w-0">
+            <span class="home-calendar-event__title">{{ event.title }}</span>
+            <span class="home-calendar-event__category">{{ eventCategoryLabel(event) }}</span>
+          </div>
+        </button>
+      </div>
     </div>
 
     <div class="home-list-panel__footer">

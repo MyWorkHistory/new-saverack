@@ -213,10 +213,7 @@ onMounted(async () => {
             @refresh="onRefreshSection"
           />
         </div>
-      </div>
-
-      <div class="row g-3 mt-1">
-        <div class="col-12">
+        <div class="col-12 col-md-6 col-xl-4">
           <OrdersAccountSectionPanel
             :section-key="ON_HOLD_PAUSED_CARD.key"
             :label="ON_HOLD_PAUSED_CARD.label"
@@ -228,7 +225,7 @@ onMounted(async () => {
             :account-route="pausedAccountRoute"
             pill-variant="alert"
             empty-message="No paused accounts with on-hold orders."
-            :preview-limit="10"
+            :preview-limit="5"
             :show-view-all-footer="true"
             anchor-prefix="hold"
             @refresh="onRefreshSection"

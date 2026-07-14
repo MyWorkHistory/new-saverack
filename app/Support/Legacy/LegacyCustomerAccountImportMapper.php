@@ -159,7 +159,9 @@ final class LegacyCustomerAccountImportMapper
     /**
      * Locate an existing CRM account for a legacy `customers` row.
      *
-     * Match order: legacy_customer_id, then normalized company_name, then contact email.
+     * Match order: legacy_customer_id, exact company_name, similar company_name
+     * (ignores LLC/Inc punctuation), then contact email.
+     * Similar-name matches apply only when exactly one CRM account shares the key.
      */
     public static function findClientAccountForLegacyRow(object $row): ?ClientAccount
     {
@@ -183,6 +185,11 @@ final class LegacyCustomerAccountImportMapper
                     return $byName;
                 }
             }
+
+            $bySimilar = self::findClientAccountBySimilarCompanyName($companyName);
+            if ($bySimilar !== null) {
+                return $bySimilar;
+            }
         }
 
         $email = self::normEmail(self::nonEmptyString($row->c_email ?? $row->email ?? null) ?? '');
@@ -194,6 +201,91 @@ final class LegacyCustomerAccountImportMapper
         }
 
         return null;
+    }
+
+    /**
+     * Unique CRM account whose similar company key matches the legacy name.
+     */
+    public static function findClientAccountBySimilarCompanyName(string $companyName): ?ClientAccount
+    {
+        $needle = self::companyNameMatchKey($companyName);
+        if ($needle === '' || mb_strlen($needle) < 3) {
+            return null;
+        }
+
+        $tokens = preg_split('/\s+/u', $needle, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $firstToken = (string) ($tokens[0] ?? '');
+        if ($firstToken === '' || mb_strlen($firstToken) < 2) {
+            return null;
+        }
+
+        $candidates = ClientAccount::query()
+            ->whereRaw('LOWER(company_name) LIKE ?', ['%'.$firstToken.'%'])
+            ->orderBy('id')
+            ->limit(100)
+            ->get(['id', 'company_name', 'legacy_customer_id', 'email']);
+
+        $matches = [];
+        foreach ($candidates as $account) {
+            if (self::companyNameMatchKey((string) $account->company_name) === $needle) {
+                $matches[] = $account;
+            }
+        }
+
+        if (count($matches) !== 1) {
+            return null;
+        }
+
+        return $matches[0];
+    }
+
+    /**
+     * Loose company identity for similar-name matching (case/punct/legal-suffix insensitive).
+     */
+    public static function companyNameMatchKey(?string $name): string
+    {
+        $s = self::normalizeCompanyName($name);
+        if ($s === '') {
+            return '';
+        }
+
+        $s = preg_replace('/&/u', ' and ', $s) ?? $s;
+        $s = preg_replace('/[^a-z0-9\s]/u', ' ', $s) ?? $s;
+        $s = trim(preg_replace('/\s+/u', ' ', $s) ?? '');
+
+        $suffixes = [
+            'llc',
+            'l l c',
+            'inc',
+            'incorporated',
+            'ltd',
+            'limited',
+            'co',
+            'corp',
+            'corporation',
+            'company',
+            'companies',
+            'plc',
+            'lp',
+            'llp',
+            'pc',
+            'pllc',
+        ];
+
+        $parts = $s === '' ? [] : explode(' ', $s);
+        while ($parts !== []) {
+            $last = (string) end($parts);
+            if (in_array($last, $suffixes, true)) {
+                array_pop($parts);
+                continue;
+            }
+            break;
+        }
+        if ($parts !== [] && $parts[0] === 'the') {
+            array_shift($parts);
+        }
+
+        return implode(' ', $parts);
     }
 
     public static function legacyCompanyNameFromRow(object $row): ?string

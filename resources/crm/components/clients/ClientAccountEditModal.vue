@@ -111,11 +111,11 @@ const modalSubtitle = computed(() => {
     case "address":
       return "Street, city, and country.";
     case "billing":
-      return "Default payment type, payment terms, postage, and packaging.";
+      return "Default payment type, Stripe customer ID, payment terms, postage, and packaging.";
     case "payment":
-      return "Default payment type, payment terms, postage, and packaging.";
+      return "Default payment type, Stripe customer ID, payment terms, postage, and packaging.";
     case "settings":
-      return "External API identifiers for integrations.";
+      return "WhatsApp API ID and ShipHero customer account ID.";
     default:
       return "Update company profile, contacts, and notification channels.";
   }
@@ -270,12 +270,12 @@ function buildPatch() {
       packaging_option: form.packaging_option || DEFAULT_PACKAGING_OPTION,
       payment_terms_days: Math.max(1, Number(form.payment_terms_days) || 1),
       cc_fee_percent: trimOrNull(form.cc_fee_percent),
+      stripe_customer_id: trimOrNull(form.stripe_customer_id),
     };
   }
   if (props.section === "settings") {
     return {
       whatsapp_api_id: trimOrNull(form.whatsapp_api_id),
-      stripe_customer_id: trimOrNull(form.stripe_customer_id),
       shiphero_customer_account_id: trimOrNull(form.shiphero_customer_account_id),
     };
   }
@@ -617,6 +617,19 @@ async function onSubmit() {
                           class="form-control"
                         />
                       </div>
+                      <div class="col-12">
+                        <label class="form-label small mb-1 text-secondary" for="cae-stripe-customer-id"
+                          >Stripe customer ID</label
+                        >
+                        <input
+                          id="cae-stripe-customer-id"
+                          v-model="form.stripe_customer_id"
+                          type="text"
+                          class="form-control"
+                          placeholder="cus_..."
+                          autocomplete="off"
+                        />
+                      </div>
                       <div class="col-sm-6">
                         <label class="form-label small mb-1 text-secondary" for="cae-payment-terms-days"
                           >Payment Terms (days)</label
@@ -682,19 +695,6 @@ async function onSubmit() {
                           type="text"
                           class="form-control"
                           placeholder="WhatsApp provider/API identifier"
-                          autocomplete="off"
-                        />
-                      </div>
-                      <div class="col-sm-6">
-                        <label class="form-label small mb-1 text-secondary" for="cae-stripe-customer-id"
-                          >Stripe customer ID</label
-                        >
-                        <input
-                          id="cae-stripe-customer-id"
-                          v-model="form.stripe_customer_id"
-                          type="text"
-                          class="form-control"
-                          placeholder="cus_..."
                           autocomplete="off"
                         />
                       </div>

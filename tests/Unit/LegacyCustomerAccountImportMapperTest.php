@@ -164,6 +164,22 @@ final class LegacyCustomerAccountImportMapperTest extends TestCase
         );
     }
 
+    public function test_company_name_match_key_strips_legal_suffixes_and_punctuation(): void
+    {
+        $this->assertSame(
+            'gadget viking',
+            LegacyCustomerAccountImportMapper::companyNameMatchKey('Gadget Viking LLC')
+        );
+        $this->assertSame(
+            'gadget viking',
+            LegacyCustomerAccountImportMapper::companyNameMatchKey('Gadget Viking, Inc.')
+        );
+        $this->assertSame(
+            'ian and ila test',
+            LegacyCustomerAccountImportMapper::companyNameMatchKey('Ian & Ila Test Company')
+        );
+    }
+
     public function test_legacy_customer_id_backfill_only_when_empty_or_forced(): void
     {
         $empty = new ClientAccount(['legacy_customer_id' => null]);

@@ -3,16 +3,18 @@
 namespace App\Console\Commands;
 
 use App\Models\ClientAccount;
+use App\Support\Legacy\LegacyCustomerAccountImportMapper;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 /**
  * One-off sync: copies Stripe customer id, WhatsApp Cloud API chat id, and CC fee percent from
  * the old CRM `customers` table (`stripe_customer_id`, `wp_chat_id`, `cc_charge`) into `client_accounts`
- * matched by {@see ClientAccount::$legacy_customer_id}.
+ * matched by legacy_customer_id, similar company name, or email
+ * ({@see LegacyCustomerAccountImportMapper::findClientAccountForLegacyRow}).
  *
- * Prefer {@see SyncLegacyAccountFieldsCommand} (`crm:sync-legacy-account-fields`) which includes
- * these fields plus account manager, contract date, Slack, payment prefs, and notes.
+ * Prefer {@see SyncLegacyStripeCustomerIdsCommand} for Stripe-only recovery, or
+ * {@see SyncLegacyAccountFieldsCommand} for full enrichment sync.
  *
  * Prerequisites: import `database/customers (1).sql` (or your dump) into MySQL and set
  * LEGACY_DB_* in `.env` (same as `crm:import-legacy-clients`).
@@ -26,7 +28,7 @@ class SyncLegacyStripeWhatsappCommand extends Command
                             {--force : Overwrite non-empty stripe_customer_id / whatsapp_api_id on client_accounts}
                             {--dry-run : List changes without saving}';
 
-    protected $description = 'Sync Stripe + WhatsApp API ids + CC fee percent from legacy customers into client_accounts (by legacy_customer_id)';
+    protected $description = 'Sync Stripe + WhatsApp API ids + CC fee percent from legacy customers into client_accounts';
 
     public function handle(): int
     {
@@ -85,6 +87,15 @@ class SyncLegacyStripeWhatsappCommand extends Command
         if ($hasCcCharge) {
             $select[] = 'cc_charge';
         }
+        if ($schema->hasColumn($table, 'company_name')) {
+            $select[] = 'company_name';
+        }
+        if ($schema->hasColumn($table, 'c_email')) {
+            $select[] = 'c_email';
+        }
+        if ($schema->hasColumn($table, 'email')) {
+            $select[] = 'email';
+        }
 
         $query = $legacy->table($table)->select($select);
         if (! $includeDeleted && $schema->hasColumn($table, 'is_deleted')) {
@@ -111,7 +122,7 @@ class SyncLegacyStripeWhatsappCommand extends Command
         ) {
             foreach ($rows as $row) {
                 $legacyId = (int) $row->id;
-                $account = ClientAccount::query()->where('legacy_customer_id', $legacyId)->first();
+                $account = LegacyCustomerAccountImportMapper::findClientAccountForLegacyRow($row);
                 if ($account === null) {
                     $skippedNoAccount++;
 
@@ -148,6 +159,11 @@ class SyncLegacyStripeWhatsappCommand extends Command
                     }
                 }
 
+                $attrs = array_merge(
+                    $attrs,
+                    LegacyCustomerAccountImportMapper::legacyCustomerIdBackfill($legacyId, $account, $force)
+                );
+
                 if ($attrs === []) {
                     $skippedAlreadyFilled++;
 
@@ -168,7 +184,7 @@ class SyncLegacyStripeWhatsappCommand extends Command
             ['Metric', 'Count'],
             [
                 [$dryRun ? 'Rows that would update' : 'Rows updated', (string) $wouldUpdate],
-                ['Skipped (no client_account for legacy id)', (string) $skippedNoAccount],
+                ['Skipped (no matching client_account)', (string) $skippedNoAccount],
                 ['Skipped (no stripe / wp_chat_id / cc_charge in legacy)', (string) $skippedNoLegacyData],
                 ['Skipped (target fields already set; use --force)', (string) $skippedAlreadyFilled],
             ]

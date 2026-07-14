@@ -8,25 +8,23 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Syncs account profile/billing enrichment fields from legacy `customers` into `client_accounts`
- * matched by {@see ClientAccount::$legacy_customer_id}, normalized company_name, or contact email.
+ * Syncs Stripe customer IDs from legacy `customers.stripe_customer_id` into `client_accounts`
+ * matched by legacy_customer_id, exact or similar company name (LLC/Inc-insensitive), or email.
  *
- * Supersedes {@see SyncLegacyStripeWhatsappCommand} for production recovery (includes Stripe,
- * WhatsApp, CC fee, plus manager, contract date, Slack, payment prefs, notes, etc.).
+ * Use after accounts exist when many Stripe IDs were skipped because legacy_customer_id was unset.
  *
- * Prerequisites: import legacy SQL into MySQL and set LEGACY_DB_* (same as crm:import-legacy-clients).
- * Import staff first: php artisan crm:import-legacy-staff-users (sets users.legacy_user_id for account managers).
+ * Prerequisites: legacy MySQL + LEGACY_DB_* (same as crm:import-legacy-clients).
  */
-class SyncLegacyAccountFieldsCommand extends Command
+class SyncLegacyStripeCustomerIdsCommand extends Command
 {
-    protected $signature = 'crm:sync-legacy-account-fields
+    protected $signature = 'crm:sync-legacy-stripe-customer-ids
                             {--connection=legacy_crm : Laravel DB connection name for legacy MySQL}
                             {--customers-table=customers : Legacy customers table name}
                             {--include-deleted : Include legacy rows with is_deleted = 2 (default: skip deleted)}
-                            {--force : Overwrite non-empty target fields on client_accounts}
+                            {--force : Overwrite non-empty stripe_customer_id on client_accounts}
                             {--dry-run : List changes without saving}';
 
-    protected $description = 'Sync legacy customer account fields (manager, contract date, Slack, Stripe, payment prefs, etc.) into client_accounts';
+    protected $description = 'Sync Stripe customer IDs from legacy customers into client_accounts (by legacy id, similar company name, or email)';
 
     public function handle(): int
     {
@@ -66,11 +64,24 @@ class SyncLegacyAccountFieldsCommand extends Command
             return self::FAILURE;
         }
 
-        if (! $schema->hasColumn($table, 'c_email') && ! $schema->hasColumn($table, 'email')) {
-            $this->warn("Legacy table [{$table}] does not look like old CRM customers (no c_email/email). Mapping may be limited.");
+        if (! $schema->hasColumn($table, 'stripe_customer_id')) {
+            $this->error("Legacy table [{$table}] has no stripe_customer_id column.");
+
+            return self::FAILURE;
         }
 
-        $query = $legacy->table($table);
+        $select = ['id', 'stripe_customer_id'];
+        if ($schema->hasColumn($table, 'company_name')) {
+            $select[] = 'company_name';
+        }
+        if ($schema->hasColumn($table, 'c_email')) {
+            $select[] = 'c_email';
+        }
+        if ($schema->hasColumn($table, 'email')) {
+            $select[] = 'email';
+        }
+
+        $query = $legacy->table($table)->select($select);
         if (! $includeDeleted && $schema->hasColumn($table, 'is_deleted')) {
             $query->where(function ($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', '!=', 2);
@@ -78,82 +89,85 @@ class SyncLegacyAccountFieldsCommand extends Command
         }
 
         $wouldUpdate = 0;
+        $skippedNoStripe = 0;
         $skippedNoAccount = 0;
-        $skippedNoLegacyData = 0;
         $skippedAlreadyFilled = 0;
-        $unmappedManagers = 0;
-        $failedUpdates = 0;
         $matchedByLegacyId = 0;
         $matchedByCompanyName = 0;
         $matchedByEmail = 0;
-
-        LegacyCustomerAccountImportMapper::clearManagerCache();
+        $failedUpdates = 0;
+        $unmatchedWithStripe = [];
 
         $query->orderBy('id')->chunkById(200, function ($rows) use (
             $force,
             $dryRun,
             &$wouldUpdate,
+            &$skippedNoStripe,
             &$skippedNoAccount,
-            &$skippedNoLegacyData,
             &$skippedAlreadyFilled,
-            &$unmappedManagers,
-            &$failedUpdates,
             &$matchedByLegacyId,
             &$matchedByCompanyName,
-            &$matchedByEmail
+            &$matchedByEmail,
+            &$failedUpdates,
+            &$unmatchedWithStripe
         ) {
             foreach ($rows as $row) {
                 $legacyId = (int) $row->id;
+                $stripe = LegacyCustomerAccountImportMapper::normalizeScalar($row->stripe_customer_id ?? null);
+                if ($stripe === null || $stripe === '') {
+                    $skippedNoStripe++;
+
+                    continue;
+                }
+                $stripe = substr($stripe, 0, 191);
+
                 $account = LegacyCustomerAccountImportMapper::findClientAccountForLegacyRow($row);
                 if ($account === null) {
                     $skippedNoAccount++;
+                    if (count($unmatchedWithStripe) < 40) {
+                        $unmatchedWithStripe[] = [
+                            'legacy_id' => $legacyId,
+                            'company' => (string) ($row->company_name ?? ''),
+                            'stripe' => $stripe,
+                        ];
+                    }
 
                     continue;
                 }
 
-                self::countLegacyAccountMatch($account, $row, $matchedByLegacyId, $matchedByCompanyName, $matchedByEmail);
+                $this->countMatch($account, $row, $matchedByLegacyId, $matchedByCompanyName, $matchedByEmail);
 
-                $contactEmail = LegacyCustomerAccountImportMapper::normalizeScalar($row->c_email ?? $row->email ?? null);
-                $mapped = LegacyCustomerAccountImportMapper::mapEnrichmentFields($row, $contactEmail);
-
-                if ($mapped === []) {
-                    $skippedNoLegacyData++;
-
-                    continue;
-                }
-
-                if (
-                    isset($row->manager)
-                    && is_numeric($row->manager)
-                    && (int) $row->manager > 0
-                    && ! isset($mapped['account_manager_id'])
-                ) {
-                    $unmappedManagers++;
-                }
-
-                $attrs = LegacyCustomerAccountImportMapper::mergeForSync($mapped, $account, $force);
-                $attrs = array_merge(
-                    $attrs,
-                    LegacyCustomerAccountImportMapper::legacyCustomerIdBackfill($legacyId, $account, $force)
-                );
-
-                if ($attrs === []) {
+                $current = trim((string) ($account->stripe_customer_id ?? ''));
+                if (! $force && $current !== '') {
                     $skippedAlreadyFilled++;
 
                     continue;
                 }
 
+                if ($current === $stripe) {
+                    $skippedAlreadyFilled++;
+
+                    continue;
+                }
+
+                $attrs = ['stripe_customer_id' => $stripe];
+                $attrs = array_merge(
+                    $attrs,
+                    LegacyCustomerAccountImportMapper::legacyCustomerIdBackfill($legacyId, $account, $force)
+                );
+
                 if ($dryRun) {
                     $this->line(
-                        "legacy_customer_id={$legacyId} client_account_id={$account->id} company="
-                        .json_encode((string) $account->company_name).' → '.json_encode($attrs)
+                        "legacy_id={$legacyId} → account #{$account->id} "
+                        .json_encode((string) $account->company_name)
+                        ." stripe={$stripe}"
                     );
                 } else {
                     try {
                         ClientAccount::query()->whereKey($account->id)->update($attrs);
                     } catch (\Throwable $e) {
                         $failedUpdates++;
-                        $this->warn("Failed legacy_customer_id={$legacyId} client_account_id={$account->id}: ".$e->getMessage());
+                        $this->warn("Failed legacy_id={$legacyId} account={$account->id}: ".$e->getMessage());
 
                         continue;
                     }
@@ -166,26 +180,32 @@ class SyncLegacyAccountFieldsCommand extends Command
         $this->table(
             ['Metric', 'Count'],
             [
-                [$dryRun ? 'Rows that would update' : 'Rows updated', (string) $wouldUpdate],
+                [$dryRun ? 'Would set stripe_customer_id' : 'Updated stripe_customer_id', (string) $wouldUpdate],
                 ['Matched by legacy_customer_id', (string) $matchedByLegacyId],
-                ['Matched by company_name', (string) $matchedByCompanyName],
+                ['Matched by company name (exact or similar)', (string) $matchedByCompanyName],
                 ['Matched by email', (string) $matchedByEmail],
-                ['Skipped (no client_account for legacy row)', (string) $skippedNoAccount],
-                ['Skipped (no mappable legacy data)', (string) $skippedNoLegacyData],
-                ['Skipped (target fields already set; use --force)', (string) $skippedAlreadyFilled],
-                ['Legacy manager id present but unmapped to staff user', (string) $unmappedManagers],
-                ['Failed updates (see warnings above)', (string) $failedUpdates],
+                ['Skipped (legacy stripe empty / inactive)', (string) $skippedNoStripe],
+                ['Skipped (no matching client_account)', (string) $skippedNoAccount],
+                ['Skipped (already has stripe; use --force)', (string) $skippedAlreadyFilled],
+                ['Failed updates', (string) $failedUpdates],
             ]
         );
 
-        if ($unmappedManagers > 0) {
-            $this->warn('Some accounts have legacy manager ids with no matching staff user name or users.legacy_user_id — run crm:import-legacy-staff-users first.');
+        if ($unmatchedWithStripe !== []) {
+            $this->warn('Sample legacy rows with Stripe ID but no matching CRM account:');
+            foreach ($unmatchedWithStripe as $sample) {
+                $this->line(
+                    "  legacy_id={$sample['legacy_id']} company="
+                    .json_encode($sample['company'])
+                    ." stripe={$sample['stripe']}"
+                );
+            }
         }
 
         return self::SUCCESS;
     }
 
-    private static function countLegacyAccountMatch(
+    private function countMatch(
         ClientAccount $account,
         object $row,
         int &$matchedByLegacyId,

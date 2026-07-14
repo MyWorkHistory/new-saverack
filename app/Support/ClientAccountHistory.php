@@ -76,7 +76,6 @@ final class ClientAccountHistory
             'slack_channel',
             'in_house_slack',
             'whatsapp_api_id',
-            'stripe_customer_id',
             'shiphero_customer_account_id',
         ],
         'billing' => [
@@ -86,6 +85,7 @@ final class ClientAccountHistory
             'postage_option',
             'packaging_option',
             'contract_date',
+            'stripe_customer_id',
         ],
         'fees' => ['fees'],
         'status' => ['status'],

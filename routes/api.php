@@ -566,6 +566,12 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.shiphero-stores.index');
     Route::post('client-accounts/{client_account}/shiphero-stores/import', [ClientAccountShipHeroStoreController::class, 'import'])
         ->name('client-accounts.shiphero-stores.import');
+    Route::patch('client-accounts/{client_account}/shiphero-stores/{store_key}', [ClientAccountShipHeroStoreController::class, 'update'])
+        ->where('store_key', '[^/]+')
+        ->name('client-accounts.shiphero-stores.update');
+    Route::delete('client-accounts/{client_account}/shiphero-stores/{store_key}', [ClientAccountShipHeroStoreController::class, 'destroy'])
+        ->where('store_key', '[^/]+')
+        ->name('client-accounts.shiphero-stores.destroy');
     Route::apiResource('client-accounts', ClientAccountController::class);
     Route::match(['put', 'patch'], 'users/{user}/permissions', [UserController::class, 'updatePermissions'])
         ->name('users.permissions.update');

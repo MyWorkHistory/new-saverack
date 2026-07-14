@@ -139,10 +139,15 @@ class ClientAccountShipHeroStoresTest extends TestCase
             ->assertJsonCount(2, 'stores')
             ->assertJsonPath('stores.0.shop_name', 'example.myshopify.com')
             ->assertJsonPath('stores.0.legacy_id', '32363')
+            ->assertJsonPath('stores.0.store_type', 'shopify')
+            ->assertJsonPath('stores.0.shop_id', '32363')
+            ->assertJsonPath('stores.0.store_key', 'legacy:32363')
             ->assertJsonPath(
                 'stores.0.settings_url',
-                'https://app.shiphero.com/dashboard/stores/settings?shop=32363'
+                'https://app.shiphero.com/dashboard/stores/settings?type=shopify&shop=32363'
             )
+            ->assertJsonPath('stores.1.shop_name', 'Second Shop')
+            ->assertJsonPath('stores.1.settings_url', null)
             ->assertJsonPath('shiphero_customer_account_id', 'sh-stores-99');
     }
 
@@ -158,6 +163,66 @@ class ClientAccountShipHeroStoresTest extends TestCase
             ->assertJsonCount(2, 'stores')
             ->assertJsonPath('can_import', true);
         $this->assertNotNull($index->json('imported_at'));
+    }
+
+    public function test_patch_store_type_builds_url_and_api_type_has_no_url(): void
+    {
+        ['account' => $account] = $this->staffWithStoresPerms();
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->permission('clients.view', 'View clients')->id,
+            $this->permission('stores.view', 'View stores')->id,
+            $this->permission('stores.create', 'Create stores')->id,
+            $this->permission('stores.update', 'Update stores')->id,
+        ]);
+        Sanctum::actingAs($user);
+        $this->mockShipHeroClient();
+
+        $this->postJson('/api/client-accounts/'.$account->id.'/shiphero-stores/import')->assertOk();
+
+        $patch = $this->patchJson(
+            '/api/client-accounts/'.$account->id.'/shiphero-stores/'.rawurlencode('legacy:45678'),
+            ['store_type' => 'amazon', 'shop_id' => '45678']
+        );
+        $patch->assertOk()
+            ->assertJsonPath('stores.1.store_type', 'amazon')
+            ->assertJsonPath(
+                'stores.1.settings_url',
+                'https://app.shiphero.com/dashboard/stores/settings?type=amazon&shop=45678'
+            );
+
+        $api = $this->patchJson(
+            '/api/client-accounts/'.$account->id.'/shiphero-stores/'.rawurlencode('legacy:45678'),
+            ['store_type' => 'api', 'shop_id' => '45678']
+        );
+        $api->assertOk()
+            ->assertJsonPath('stores.1.store_type', 'api')
+            ->assertJsonPath('stores.1.settings_url', null);
+    }
+
+    public function test_delete_removes_from_cache_only(): void
+    {
+        ['account' => $account] = $this->staffWithStoresPerms();
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->permission('clients.view', 'View clients')->id,
+            $this->permission('stores.view', 'View stores')->id,
+            $this->permission('stores.create', 'Create stores')->id,
+            $this->permission('stores.delete', 'Delete stores')->id,
+        ]);
+        Sanctum::actingAs($user);
+        $this->mockShipHeroClient();
+
+        $this->postJson('/api/client-accounts/'.$account->id.'/shiphero-stores/import')->assertOk();
+
+        $this->deleteJson(
+            '/api/client-accounts/'.$account->id.'/shiphero-stores/'.rawurlencode('legacy:45678')
+        )->assertOk()->assertJsonCount(1, 'stores');
+
+        $this->getJson('/api/client-accounts/'.$account->id.'/shiphero-stores')
+            ->assertOk()
+            ->assertJsonCount(1, 'stores')
+            ->assertJsonPath('stores.0.legacy_id', '32363');
     }
 
     public function test_import_requires_shiphero_customer_account_id(): void

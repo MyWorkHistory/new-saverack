@@ -28,6 +28,10 @@ import {
 import { inHouseSlackDisplayLabel, inHouseSlackHref } from "../../utils/slackChannel.js";
 import { warnIfShipheroSyncFailed } from "../../utils/clientAccountShipheroSync.js";
 import { CLIENT_ACCOUNT_PAUSE_REASONS } from "../../constants/clientAccountPauseReasons.js";
+import {
+  SHIPHERO_STORE_TYPE_OPTIONS,
+  shipHeroStoreTypeLabel,
+} from "../../constants/shipHeroStoreTypes.js";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -49,6 +53,8 @@ function userHasPerm(key) {
 const canUpdateAccount = computed(() => userHasPerm("clients.update"));
 const canViewStores = computed(() => userHasPerm("stores.view"));
 const canImportStores = computed(() => userHasPerm("stores.create"));
+const canUpdateStores = computed(() => userHasPerm("stores.update"));
+const canDeleteStores = computed(() => userHasPerm("stores.delete"));
 
 const loading = ref(true);
 const errorMsg = ref("");
@@ -57,6 +63,16 @@ const storesLoading = ref(false);
 const storesImporting = ref(false);
 const stores = ref([]);
 const storesImportedAt = ref(null);
+
+const storeActionMenuRow = ref(null);
+const storeActionMenuRect = ref({ top: 0, left: 0 });
+const storeEditTypeOpen = ref(false);
+const storeEditTypeBusy = ref(false);
+const storeEditTypeRow = ref(null);
+const storeEditTypeForm = ref({ store_type: "", shop_id: "" });
+const storeDeleteOpen = ref(false);
+const storeDeleteBusy = ref(false);
+const storeDeleteRow = ref(null);
 
 const editAccountOpen = ref(false);
 const editAccountSection = ref("");
@@ -441,6 +457,12 @@ async function confirmDeleteNote() {
 function onDocumentClickCloseNoteMenu(e) {
   const t = e.target;
 
+  if (storeActionMenuRow.value !== null) {
+    if (!(t instanceof Element && t.closest("[data-store-row-actions]"))) {
+      closeStoreActionMenu();
+    }
+  }
+
   if (noteMenuOpenId.value === null) return;
   if (t instanceof Element && t.closest("[data-note-menu-root]")) return;
   closeNoteMenu();
@@ -448,6 +470,7 @@ function onDocumentClickCloseNoteMenu(e) {
 
 function onWindowScrollOrResize() {
   closeNoteMenu();
+  closeStoreActionMenu();
 }
 
 function openAccountEdit(section = "") {
@@ -767,6 +790,123 @@ async function importStores() {
   }
 }
 
+function closeStoreActionMenu() {
+  storeActionMenuRow.value = null;
+}
+
+function toggleStoreActionMenu(row, event) {
+  event?.stopPropagation?.();
+  if (storeActionMenuRow.value === row) {
+    closeStoreActionMenu();
+    return;
+  }
+  const btn = event?.currentTarget;
+  if (!btn?.getBoundingClientRect) return;
+  const rect = btn.getBoundingClientRect();
+  storeActionMenuRect.value = {
+    top: Math.round(rect.bottom + 4),
+    left: Math.round(Math.min(rect.right - 180, window.innerWidth - 196)),
+  };
+  storeActionMenuRow.value = row;
+}
+
+function openStoreEditType(row) {
+  closeStoreActionMenu();
+  if (!canUpdateStores.value) {
+    toast.error("You don't have permission to update stores.");
+    return;
+  }
+  storeEditTypeRow.value = row;
+  storeEditTypeForm.value = {
+    store_type: row?.store_type ? String(row.store_type) : "",
+    shop_id: row?.shop_id != null && String(row.shop_id).trim() !== ""
+      ? String(row.shop_id)
+      : String(row?.legacy_id || ""),
+  };
+  storeEditTypeOpen.value = true;
+}
+
+function closeStoreEditType() {
+  if (storeEditTypeBusy.value) return;
+  storeEditTypeOpen.value = false;
+  storeEditTypeRow.value = null;
+}
+
+async function saveStoreEditType() {
+  const row = storeEditTypeRow.value;
+  if (!row?.store_key || !props.id) return;
+  if (!storeEditTypeForm.value.store_type) {
+    toast.error("Select a store type.");
+    return;
+  }
+  storeEditTypeBusy.value = true;
+  try {
+    const key = encodeURIComponent(String(row.store_key));
+    const { data } = await api.patch(`/client-accounts/${props.id}/shiphero-stores/${key}`, {
+      store_type: storeEditTypeForm.value.store_type || null,
+      shop_id: String(storeEditTypeForm.value.shop_id || "").trim() || null,
+    });
+    stores.value = Array.isArray(data?.stores) ? data.stores : stores.value;
+    storesImportedAt.value = data?.imported_at ?? storesImportedAt.value;
+    toast.success("Store type updated.");
+    storeEditTypeOpen.value = false;
+    storeEditTypeRow.value = null;
+  } catch (e) {
+    toast.errorFrom(e, "Could not update store type.");
+  } finally {
+    storeEditTypeBusy.value = false;
+  }
+}
+
+function openStoreInShipHero(row) {
+  closeStoreActionMenu();
+  const url = row?.settings_url ? String(row.settings_url).trim() : "";
+  if (!url) {
+    toast.error("Set a non-API store type (and shop ID) first.");
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function openStoreDelete(row) {
+  closeStoreActionMenu();
+  if (!canDeleteStores.value) {
+    toast.error("You don't have permission to delete stores.");
+    return;
+  }
+  storeDeleteRow.value = row;
+  storeDeleteOpen.value = true;
+}
+
+function closeStoreDelete() {
+  if (storeDeleteBusy.value) return;
+  storeDeleteOpen.value = false;
+  storeDeleteRow.value = null;
+}
+
+async function confirmStoreDelete() {
+  const row = storeDeleteRow.value;
+  if (!row?.store_key || !props.id) return;
+  storeDeleteBusy.value = true;
+  try {
+    const key = encodeURIComponent(String(row.store_key));
+    const { data } = await api.delete(`/client-accounts/${props.id}/shiphero-stores/${key}`);
+    stores.value = Array.isArray(data?.stores) ? data.stores : [];
+    storesImportedAt.value = data?.imported_at ?? storesImportedAt.value;
+    toast.success("Store removed from CRM. Import again to restore from ShipHero.");
+    storeDeleteOpen.value = false;
+    storeDeleteRow.value = null;
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete store.");
+  } finally {
+    storeDeleteBusy.value = false;
+  }
+}
+
+function storeTypeDisplay(row) {
+  return shipHeroStoreTypeLabel(row?.store_type) || "—";
+}
+
 watch(
   () => account.value?.company_name,
   (name) => {
@@ -915,6 +1055,66 @@ onUnmounted(() => {
       danger
       @close="closeNoteDelete"
       @confirm="confirmDeleteNote"
+    />
+    <ConfirmModal
+      :open="storeEditTypeOpen"
+      title="Edit Type"
+      subtitle="Choose the ShipHero store type and shop ID for deep links."
+      confirm-label="Save"
+      cancel-label="Cancel"
+      :busy="storeEditTypeBusy"
+      :danger="false"
+      form
+      @close="closeStoreEditType"
+      @confirm="saveStoreEditType"
+    >
+      <div class="text-start">
+        <div class="mb-3">
+          <label class="form-label small mb-1 text-secondary" for="store-edit-type">Type</label>
+          <select
+            id="store-edit-type"
+            v-model="storeEditTypeForm.store_type"
+            class="form-select"
+            :disabled="storeEditTypeBusy"
+            required
+          >
+            <option value="">Select type</option>
+            <option
+              v-for="opt in SHIPHERO_STORE_TYPE_OPTIONS"
+              :key="opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label small mb-1 text-secondary" for="store-edit-shop-id">Shop ID</label>
+          <input
+            id="store-edit-shop-id"
+            v-model="storeEditTypeForm.shop_id"
+            type="text"
+            class="form-control"
+            placeholder="31888"
+            :disabled="storeEditTypeBusy"
+            autocomplete="off"
+          />
+          <p class="small text-secondary mb-0 mt-1">
+            Used in ShipHero settings URL as <code>?shop=</code>. Public API has no link.
+          </p>
+        </div>
+      </div>
+    </ConfirmModal>
+    <ConfirmModal
+      :open="storeDeleteOpen"
+      title="Delete Store"
+      message="Remove this store from CRM only? Importing again will bring it back from ShipHero."
+      confirm-label="Delete"
+      cancel-label="Cancel"
+      :busy="storeDeleteBusy"
+      danger
+      @close="closeStoreDelete"
+      @confirm="confirmStoreDelete"
     />
 
     <template v-if="!loading && !errorMsg && account">
@@ -1520,6 +1720,7 @@ onUnmounted(() => {
                     <thead class="table-light staff-table-head">
                       <tr>
                         <th class="staff-table-head__th" scope="col">Name</th>
+                        <th class="staff-table-head__th" scope="col">Type</th>
                         <th
                           class="staff-table-head__th staff-actions-col text-center client-account-stores-actions-col"
                           scope="col"
@@ -1530,14 +1731,14 @@ onUnmounted(() => {
                     </thead>
                     <tbody>
                       <tr v-if="!stores.length">
-                        <td colspan="2" class="px-4 py-5 text-center text-secondary">
+                        <td colspan="3" class="px-4 py-5 text-center text-secondary">
                           {{ storesEmptyMessage }}
                         </td>
                       </tr>
                       <tr
                         v-for="row in stores"
                         v-else
-                        :key="row.shiphero_id || row.legacy_id || row.shop_name"
+                        :key="row.store_key || row.shiphero_id || row.legacy_id || row.shop_name"
                         class="align-middle"
                       >
                         <td>
@@ -1549,22 +1750,35 @@ onUnmounted(() => {
                             >
                               {{ initials(row.shop_name) }}
                             </span>
-                            <span class="d-block fw-semibold text-body text-truncate">{{
+                            <a
+                              v-if="row.settings_url"
+                              :href="row.settings_url"
+                              class="d-block fw-semibold text-truncate text-decoration-none text-primary"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              {{ row.shop_name || "—" }}
+                            </a>
+                            <span v-else class="d-block fw-semibold text-body text-truncate">{{
                               row.shop_name || "—"
                             }}</span>
                           </div>
                         </td>
-                        <td class="staff-actions-cell text-center client-account-stores-actions-cell">
-                          <a
-                            v-if="row.settings_url"
-                            class="btn btn-sm btn-outline-secondary fw-semibold"
-                            :href="row.settings_url"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            Edit
-                          </a>
-                          <span v-else class="text-secondary">—</span>
+                        <td class="text-body staff-table-cell__meta">
+                          {{ storeTypeDisplay(row) }}
+                        </td>
+                        <td class="staff-actions-cell text-center client-account-stores-actions-cell" @click.stop>
+                          <div data-store-row-actions class="staff-actions-inner staff-actions-inner--single">
+                            <button
+                              type="button"
+                              class="staff-action-btn staff-action-btn--more"
+                              :aria-expanded="storeActionMenuRow === row"
+                              aria-label="Row Actions"
+                              @click="toggleStoreActionMenu(row, $event)"
+                            >
+                              <CrmIconRowActions variant="horizontal" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     </tbody>
@@ -1716,6 +1930,45 @@ onUnmounted(() => {
       </div>
 
     </template>
+
+    <Teleport to="body">
+      <div
+        v-if="storeActionMenuRow"
+        data-store-row-actions
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
+        :style="{ top: `${storeActionMenuRect.top}px`, left: `${storeActionMenuRect.left}px` }"
+        @click.stop
+      >
+        <button
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          :disabled="!canUpdateStores"
+          @click="openStoreEditType(storeActionMenuRow)"
+        >
+          Edit Type
+        </button>
+        <button
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          :disabled="!storeActionMenuRow.settings_url"
+          @click="openStoreInShipHero(storeActionMenuRow)"
+        >
+          Edit Store
+        </button>
+        <button
+          type="button"
+          class="staff-row-menu__item staff-row-menu__item--danger"
+          role="menuitem"
+          :disabled="!canDeleteStores"
+          @click="openStoreDelete(storeActionMenuRow)"
+        >
+          Delete
+        </button>
+      </div>
+    </Teleport>
   </div>
 </template>
 

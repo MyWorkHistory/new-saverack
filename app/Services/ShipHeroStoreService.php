@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\ClientAccount;
+use App\Models\ClientAccountShipHeroStoreMeta;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -40,7 +41,7 @@ class ShipHeroStoreService
         }
 
         return [
-            'stores' => array_values($stores),
+            'stores' => $this->enrichStoresWithMeta($account, array_values($stores)),
             'imported_at' => isset($cached['imported_at']) && is_string($cached['imported_at'])
                 ? $cached['imported_at']
                 : null,
@@ -55,15 +56,130 @@ class ShipHeroStoreService
         $fetched = $this->fetchFromShipHero($account);
         $importedAt = now()->toIso8601String();
 
+        $normalized = [];
+        foreach ($fetched['stores'] as $store) {
+            if (! is_array($store)) {
+                continue;
+            }
+            $row = $this->normalizeStoreRow($store);
+            if ($row !== null) {
+                $normalized[] = $row;
+            }
+        }
+        $normalized = $this->sortStores($this->dedupeStores($normalized));
+
+        $this->seedMetaGuessesFromStores($account, $normalized);
+
         $payload = [
-            'stores' => $fetched['stores'],
+            'stores' => $normalized,
             'imported_at' => $importedAt,
         ];
 
         Cache::put($this->cacheKey((int) $account->id), $payload, self::CACHE_TTL_SECONDS);
 
         return [
-            'stores' => $fetched['stores'],
+            'stores' => $this->enrichStoresWithMeta($account, $normalized),
+            'imported_at' => $importedAt,
+        ];
+    }
+
+    /**
+     * Persist CRM store type / shop id override for a cached ShipHero store.
+     *
+     * @return array{stores: list<array<string, mixed>>, imported_at: string|null}
+     */
+    public function updateStoreMeta(ClientAccount $account, string $storeKey, ?string $storeType, ?string $shopId): array
+    {
+        $storeKey = trim($storeKey);
+        if ($storeKey === '') {
+            throw new RuntimeException('Store key is required.');
+        }
+
+        $cached = $this->getRawCachedPayload($account);
+        $stores = $cached['stores'];
+        $match = null;
+        foreach ($stores as $store) {
+            if (! is_array($store)) {
+                continue;
+            }
+            if ($this->storeDedupeKey($store) === $storeKey) {
+                $match = $store;
+                break;
+            }
+        }
+        if ($match === null) {
+            throw new RuntimeException('Store not found in CRM cache. Import stores first.');
+        }
+
+        $type = $storeType !== null ? strtolower(trim($storeType)) : null;
+        if ($type === '') {
+            $type = null;
+        }
+        if ($type !== null && ! ClientAccountShipHeroStoreMeta::isValidType($type)) {
+            throw new RuntimeException('Invalid store type.');
+        }
+
+        $shop = $shopId !== null ? trim($shopId) : null;
+        if ($shop === '') {
+            $shop = null;
+        }
+        if ($shop === null) {
+            $legacy = trim((string) ($match['legacy_id'] ?? ''));
+            $shop = $legacy !== '' ? $legacy : null;
+        }
+
+        ClientAccountShipHeroStoreMeta::query()->updateOrCreate(
+            [
+                'client_account_id' => (int) $account->id,
+                'store_key' => $storeKey,
+            ],
+            [
+                'store_type' => $type,
+                'shop_id' => $shop,
+            ]
+        );
+
+        return $this->getCachedForAccount($account);
+    }
+
+    /**
+     * Remove a store from the CRM cache only (re-import will restore it from ShipHero).
+     *
+     * @return array{stores: list<array<string, mixed>>, imported_at: string|null}
+     */
+    public function deleteStoreFromCache(ClientAccount $account, string $storeKey): array
+    {
+        $storeKey = trim($storeKey);
+        if ($storeKey === '') {
+            throw new RuntimeException('Store key is required.');
+        }
+
+        $cached = $this->getRawCachedPayload($account);
+        $before = count($cached['stores']);
+        $stores = array_values(array_filter($cached['stores'], function ($store) use ($storeKey) {
+            if (! is_array($store)) {
+                return false;
+            }
+
+            return $this->storeDedupeKey($store) !== $storeKey;
+        }));
+
+        if (count($stores) === $before) {
+            throw new RuntimeException('Store not found in CRM cache.');
+        }
+
+        $importedAt = $cached['imported_at'];
+        Cache::put(
+            $this->cacheKey((int) $account->id),
+            [
+                'stores' => $stores,
+                'imported_at' => $importedAt,
+            ],
+            self::CACHE_TTL_SECONDS
+        );
+
+        return [
+            'stores' => $this->enrichStoresWithMeta($account, $stores),
             'imported_at' => $importedAt,
         ];
     }
@@ -698,13 +814,15 @@ GQL;
 
         $stores = [];
         foreach (array_values($shopNames) as $shopName) {
-            $stores[] = [
-                'shiphero_id' => '',
+            $row = $this->normalizeStoreRow([
+                'id' => '',
                 'legacy_id' => '',
                 'shop_name' => $shopName,
-                'settings_url' => 'https://app.shiphero.com/dashboard/stores',
                 'source' => 'orders',
-            ];
+            ]);
+            if ($row !== null) {
+                $stores[] = $row;
+            }
         }
 
         return [
@@ -893,7 +1011,7 @@ GQL;
      */
     private function normalizeStoreRow(array $row): ?array
     {
-        $shipheroId = trim((string) ($row['id'] ?? ''));
+        $shipheroId = trim((string) ($row['id'] ?? $row['shiphero_id'] ?? ''));
         $legacyRaw = $row['legacy_id'] ?? null;
         $legacyId = $legacyRaw !== null && $legacyRaw !== '' ? (string) $legacyRaw : '';
         $shopName = trim((string) ($row['shop_name'] ?? ''));
@@ -902,18 +1020,27 @@ GQL;
             return null;
         }
 
-        return [
+        $out = [
             'shiphero_id' => $shipheroId,
             'legacy_id' => $legacyId,
             'shop_name' => $shopName,
-            'settings_url' => $this->buildSettingsUrl($legacyId),
+            'store_key' => '',
+            'shop_id' => $legacyId !== '' ? $legacyId : null,
+            'store_type' => null,
+            'settings_url' => null,
         ];
+        if (isset($row['source']) && is_string($row['source']) && $row['source'] !== '') {
+            $out['source'] = $row['source'];
+        }
+        $out['store_key'] = $this->storeDedupeKey($out);
+
+        return $out;
     }
 
     /**
      * @param  array<string, mixed>  $store
      */
-    private function storeDedupeKey(array $store): string
+    public function storeDedupeKey(array $store): string
     {
         $legacyId = trim((string) ($store['legacy_id'] ?? ''));
         if ($legacyId !== '') {
@@ -931,6 +1058,26 @@ GQL;
      * @param  list<array<string, mixed>>  $stores
      * @return list<array<string, mixed>>
      */
+    private function dedupeStores(array $stores): array
+    {
+        $seen = [];
+        $out = [];
+        foreach ($stores as $store) {
+            $key = $this->storeDedupeKey($store);
+            if ($key === 'name:' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = $store;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $stores
+     * @return list<array<string, mixed>>
+     */
     private function sortStores(array $stores): array
     {
         usort($stores, function (array $a, array $b) {
@@ -940,14 +1087,168 @@ GQL;
         return array_values($stores);
     }
 
-    private function buildSettingsUrl(string $legacyId): string
+    /**
+     * @return array{stores: list<array<string, mixed>>, imported_at: string|null}
+     */
+    private function getRawCachedPayload(ClientAccount $account): array
     {
-        $legacyId = trim($legacyId);
-        if ($legacyId === '') {
-            return 'https://app.shiphero.com/dashboard/stores';
+        $cached = Cache::get($this->cacheKey((int) $account->id));
+        if (! is_array($cached)) {
+            return [
+                'stores' => [],
+                'imported_at' => null,
+            ];
         }
 
-        return self::SETTINGS_URL_BASE.'?shop='.rawurlencode($legacyId);
+        $stores = $cached['stores'] ?? [];
+        if (! is_array($stores)) {
+            $stores = [];
+        }
+
+        $normalized = [];
+        foreach ($stores as $store) {
+            if (! is_array($store)) {
+                continue;
+            }
+            $row = $this->normalizeStoreRow($store);
+            if ($row !== null) {
+                $normalized[] = $row;
+            }
+        }
+
+        return [
+            'stores' => $normalized,
+            'imported_at' => isset($cached['imported_at']) && is_string($cached['imported_at'])
+                ? $cached['imported_at']
+                : null,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $stores
+     * @return list<array<string, mixed>>
+     */
+    private function enrichStoresWithMeta(ClientAccount $account, array $stores): array
+    {
+        $metaByKey = ClientAccountShipHeroStoreMeta::query()
+            ->where('client_account_id', (int) $account->id)
+            ->get()
+            ->keyBy('store_key');
+
+        $out = [];
+        foreach ($stores as $store) {
+            if (! is_array($store)) {
+                continue;
+            }
+            $row = $this->normalizeStoreRow($store);
+            if ($row === null) {
+                continue;
+            }
+
+            $key = $row['store_key'];
+            /** @var ClientAccountShipHeroStoreMeta|null $meta */
+            $meta = $metaByKey->get($key);
+            $type = $meta !== null ? (string) ($meta->store_type ?? '') : '';
+            $type = $type !== '' ? strtolower($type) : null;
+            $shopId = $meta !== null && trim((string) ($meta->shop_id ?? '')) !== ''
+                ? trim((string) $meta->shop_id)
+                : (trim((string) ($row['legacy_id'] ?? '')) !== '' ? trim((string) $row['legacy_id']) : null);
+
+            $row['store_type'] = $type;
+            $row['shop_id'] = $shopId;
+            $row['settings_url'] = $this->buildSettingsUrl($type, $shopId);
+            $out[] = $row;
+        }
+
+        return $this->sortStores($out);
+    }
+
+    /**
+     * Seed guessed store types into meta for rows that have no user-set type yet.
+     *
+     * @param  list<array<string, mixed>>  $stores
+     */
+    private function seedMetaGuessesFromStores(ClientAccount $account, array $stores): void
+    {
+        $existing = ClientAccountShipHeroStoreMeta::query()
+            ->where('client_account_id', (int) $account->id)
+            ->get()
+            ->keyBy('store_key');
+
+        foreach ($stores as $store) {
+            $key = $this->storeDedupeKey($store);
+            /** @var ClientAccountShipHeroStoreMeta|null $meta */
+            $meta = $existing->get($key);
+            if ($meta !== null && ClientAccountShipHeroStoreMeta::isValidType((string) ($meta->store_type ?? ''))) {
+                continue;
+            }
+
+            $guess = $this->guessStoreType((string) ($store['shop_name'] ?? ''));
+            if ($guess === null) {
+                continue;
+            }
+
+            $shopId = trim((string) ($store['legacy_id'] ?? ''));
+            ClientAccountShipHeroStoreMeta::query()->updateOrCreate(
+                [
+                    'client_account_id' => (int) $account->id,
+                    'store_key' => $key,
+                ],
+                [
+                    'store_type' => $guess,
+                    'shop_id' => $shopId !== '' ? $shopId : ($meta !== null ? $meta->shop_id : null),
+                ]
+            );
+        }
+    }
+
+    private function guessStoreType(string $shopName): ?string
+    {
+        $name = strtolower(trim($shopName));
+        if ($name === '') {
+            return null;
+        }
+        if (str_contains($name, 'myshopify.com') || str_contains($name, 'shopify')) {
+            return ClientAccountShipHeroStoreMeta::TYPE_SHOPIFY;
+        }
+        if (str_contains($name, 'amazon')) {
+            return ClientAccountShipHeroStoreMeta::TYPE_AMAZON;
+        }
+        if (str_contains($name, 'woocommerce') || str_contains($name, 'woo ')) {
+            return ClientAccountShipHeroStoreMeta::TYPE_WOOCOMMERCE;
+        }
+        if (str_contains($name, 'walmart')) {
+            return ClientAccountShipHeroStoreMeta::TYPE_WALMART;
+        }
+        if (str_contains($name, 'etsy')) {
+            return ClientAccountShipHeroStoreMeta::TYPE_ETSY;
+        }
+        if (str_contains($name, 'tiktok')) {
+            return ClientAccountShipHeroStoreMeta::TYPE_TIKTOK;
+        }
+        if (str_contains($name, 'bigcommerce')) {
+            return ClientAccountShipHeroStoreMeta::TYPE_BIGCOMMERCE;
+        }
+
+        return null;
+    }
+
+    public function buildSettingsUrl(?string $type, ?string $shopId): ?string
+    {
+        $type = $type !== null ? strtolower(trim($type)) : '';
+        $shopId = $shopId !== null ? trim($shopId) : '';
+
+        if ($type === '' || $type === ClientAccountShipHeroStoreMeta::TYPE_API || $shopId === '') {
+            return null;
+        }
+
+        if (! ClientAccountShipHeroStoreMeta::isValidType($type)) {
+            return null;
+        }
+
+        return self::SETTINGS_URL_BASE
+            .'?type='.rawurlencode($type)
+            .'&shop='.rawurlencode($shopId);
     }
 
     private function cacheKey(int $clientAccountId): string

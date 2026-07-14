@@ -1,9 +1,9 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
-import CrmMaterialIcon from "../../components/common/CrmMaterialIcon.vue";
 import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarButton.vue";
 import CrmSyncToolbar from "../../components/common/CrmSyncToolbar.vue";
+import BackorderSummaryCards from "../../components/orders/BackorderSummaryCards.vue";
 import OrdersAccountSectionPanel from "../../components/orders/OrdersAccountSectionPanel.vue";
 import { BACKORDER_OVERVIEW_SECTIONS } from "../../constants/backorderOverviewSections.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -31,6 +31,17 @@ const oosRefreshedAt = ref(null);
 
 const backorderSection = BACKORDER_OVERVIEW_SECTIONS.backorder;
 const oosSection = BACKORDER_OVERVIEW_SECTIONS.out_of_stock;
+
+const summaryCards = computed(() => [
+  {
+    ...backorderSection,
+    total: Number(sectionData(backorderSection.key).total_count || 0),
+  },
+  {
+    ...oosSection,
+    total: Number(oosTotalCount.value || 0),
+  },
+]);
 
 function sectionData(key) {
   return (
@@ -85,6 +96,11 @@ function oosAccountRoute(accountId) {
     name: "inventory",
     query: { client_account_id: String(accountId) },
   };
+}
+
+function scrollToSection(key) {
+  const el = document.getElementById(`backorder-${key}`);
+  el?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function refreshToastMessage(data, fallbackQueued) {
@@ -178,40 +194,7 @@ onMounted(async () => {
     </div>
 
     <template v-else>
-      <div class="row g-3 mb-4">
-        <div class="col-12 col-md-6">
-          <div class="staff-datatable-card staff-datatable-card--white home-stat-card h-100">
-            <div
-              class="home-stat-card__icon"
-              :style="backorderSection.iconStyle"
-              aria-hidden="true"
-            >
-              <CrmMaterialIcon :name="backorderSection.icon" :size="24" />
-            </div>
-            <p class="home-stat-card__value" :style="{ color: backorderSection.titleColor }">
-              {{ Number(sectionData(backorderSection.key).total_count || 0).toLocaleString() }}
-            </p>
-            <p class="home-stat-card__label" :style="{ color: backorderSection.titleColor }">
-              {{ backorderSection.titleUpper }}
-            </p>
-            <p class="home-stat-card__sub">{{ backorderSection.sub }}</p>
-          </div>
-        </div>
-        <div class="col-12 col-md-6">
-          <div class="staff-datatable-card staff-datatable-card--white home-stat-card h-100">
-            <div class="home-stat-card__icon" :style="oosSection.iconStyle" aria-hidden="true">
-              <CrmMaterialIcon :name="oosSection.icon" :size="24" />
-            </div>
-            <p class="home-stat-card__value" :style="{ color: oosSection.titleColor }">
-              {{ Number(oosTotalCount || 0).toLocaleString() }}
-            </p>
-            <p class="home-stat-card__label" :style="{ color: oosSection.titleColor }">
-              {{ oosSection.titleUpper }}
-            </p>
-            <p class="home-stat-card__sub">{{ oosSection.sub }}</p>
-          </div>
-        </div>
-      </div>
+      <BackorderSummaryCards :cards="summaryCards" @select="scrollToSection" />
 
       <div class="row g-3">
         <div class="col-12 col-lg-6">

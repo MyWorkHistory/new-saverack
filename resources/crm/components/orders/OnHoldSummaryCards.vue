@@ -1,5 +1,4 @@
 <script setup>
-import { RouterLink } from "vue-router";
 import CrmMaterialIcon from "../common/CrmMaterialIcon.vue";
 import { HOLD_TYPE_SECTIONS, ON_HOLD_PAUSED_CARD } from "../../constants/holdSummaryCards.js";
 
@@ -57,9 +56,10 @@ function onSelect(key) {
         </button>
       </div>
       <div class="col-12 col-md-6 col-xl-2">
-        <RouterLink
-          :to="ON_HOLD_PAUSED_CARD.to"
-          class="staff-datatable-card staff-datatable-card--white on-hold-summary-card h-100 w-100 text-decoration-none text-body"
+        <button
+          type="button"
+          class="staff-datatable-card staff-datatable-card--white on-hold-summary-card h-100 w-100"
+          @click="onSelect(ON_HOLD_PAUSED_CARD.key)"
         >
           <div
             class="on-hold-summary-card__icon"
@@ -77,7 +77,7 @@ function onSelect(key) {
           <p class="on-hold-summary-card__value" :style="{ color: ON_HOLD_PAUSED_CARD.titleColor }">
             {{ formatPausedCount() }}
           </p>
-        </RouterLink>
+        </button>
       </div>
     </div>
   </div>

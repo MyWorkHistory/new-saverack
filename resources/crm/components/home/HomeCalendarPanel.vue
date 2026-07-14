@@ -161,14 +161,14 @@ onMounted(async () => {
       >
         <div class="home-list-panel__row-main home-calendar-event-row min-w-0">
           <span
-            class="home-calendar-event-date flex-shrink-0"
+            class="home-calendar-event-date"
             :style="{ color: eventDateColor(event) }"
           >
             {{ formatCalendarEventDateRange(event, { short: true }) }}
           </span>
           <div class="home-calendar-event-text min-w-0">
             <span class="home-list-panel__row-title text-truncate d-block">{{ event.title }}</span>
-            <p class="home-list-panel__row-sub mb-0">
+            <p class="home-list-panel__row-sub mb-0 text-truncate">
               {{ event.category_label }}{{ event.is_personal ? " · Personal" : "" }}
             </p>
           </div>

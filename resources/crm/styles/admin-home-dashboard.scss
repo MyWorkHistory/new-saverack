@@ -149,27 +149,42 @@
   }
 
   .home-list-panel__row--calendar {
-    align-items: center;
+    align-items: stretch;
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
   }
 
+  /* Table-style: fixed date column so short + range ranges share one gutter. */
   .home-calendar-event-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
+    display: table;
+    table-layout: fixed;
+    width: 100%;
+    border-collapse: collapse;
   }
 
   .home-calendar-event-date {
-    min-width: 3.25rem;
-    padding-top: 0.1rem;
+    display: table-cell;
+    width: 11.5rem;
+    max-width: 11.5rem;
+    padding: 0.15rem 0.875rem 0.15rem 0;
+    vertical-align: top;
     font-size: 0.75rem;
     font-weight: 600;
-    line-height: 1.35;
+    line-height: 1.4;
+    text-align: right;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+    border-right: 1px solid #e5e7eb;
   }
 
   .home-calendar-event-text {
-    flex: 1 1 auto;
+    display: table-cell;
+    width: auto;
     min-width: 0;
+    padding: 0.05rem 0 0.05rem 0.875rem;
+    vertical-align: top;
   }
 
   .home-list-panel__row:last-child {
@@ -341,5 +356,11 @@
     white-space: nowrap;
     flex-shrink: 0;
     align-self: center;
+  }
+}
+
+[data-bs-theme="dark"] .admin-home-dashboard {
+  .home-calendar-event-date {
+    border-right-color: var(--vx-nav-border);
   }
 }

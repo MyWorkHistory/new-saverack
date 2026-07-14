@@ -5,7 +5,8 @@ import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarBu
 import CrmSyncToolbar from "../../components/common/CrmSyncToolbar.vue";
 import OnHoldSectionPanel from "../../components/orders/OnHoldSectionPanel.vue";
 import OnHoldSummaryCards from "../../components/orders/OnHoldSummaryCards.vue";
-import { HOLD_TYPE_SECTIONS } from "../../constants/holdSummaryCards.js";
+import OrdersAccountSectionPanel from "../../components/orders/OrdersAccountSectionPanel.vue";
+import { HOLD_TYPE_SECTIONS, ON_HOLD_PAUSED_CARD } from "../../constants/holdSummaryCards.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useAdminHomeDashboard } from "../../composables/useAdminHomeDashboard.js";
 import { useToast } from "../../composables/useToast.js";
@@ -45,6 +46,39 @@ function lastUpdatedLabel(key) {
   return formatDateTimeUs(at);
 }
 
+/** Paused accounts that currently have on-hold orders (from on_hold snapshot, with hold-type fallback). */
+const pausedHoldAccounts = computed(() => {
+  const byId = new Map();
+
+  function ingest(rows, preferExisting) {
+    if (!Array.isArray(rows)) return;
+    for (const row of rows) {
+      if (String(row?.account_status || "").toLowerCase() !== "paused") continue;
+      const accountId = Number(row.account_id || 0);
+      const ordersCount = Number(row.orders_count || 0);
+      if (accountId <= 0 || ordersCount <= 0) continue;
+      const prev = byId.get(accountId);
+      if (prev && preferExisting) continue;
+      if (prev && !preferExisting && prev.orders_count >= ordersCount) continue;
+      byId.set(accountId, {
+        account_id: accountId,
+        account_name: String(row.account_name || ""),
+        account_status: String(row.account_status || "paused"),
+        orders_count: ordersCount,
+      });
+    }
+  }
+
+  ingest(sectionData("on_hold").accounts, false);
+  if (byId.size === 0) {
+    for (const hold of HOLD_TYPE_SECTIONS) {
+      ingest(sectionData(hold.key).accounts, true);
+    }
+  }
+
+  return [...byId.values()].sort((a, b) => b.orders_count - a.orders_count);
+});
+
 const onHoldLastSyncedLabel = computed(() => {
   const keys = ["on_hold", ...HOLD_TYPE_SECTIONS.map((hold) => hold.key)];
   let latestMs = null;
@@ -70,6 +104,13 @@ function ordersHoldRoute(accountId, holdReason) {
       client_account_id: String(accountId),
       ...(holdReason ? { hold_reason: holdReason } : {}),
     },
+  };
+}
+
+function pausedAccountRoute(accountId) {
+  return {
+    name: "orders-on-hold-old",
+    query: { client_account_id: String(accountId) },
   };
 }
 
@@ -102,7 +143,7 @@ async function onRefreshAll() {
 
 async function onRefreshSection(key) {
   try {
-    const data = await refreshSection(key, { sync: true });
+    const data = await refreshSection(key === "paused" ? "on_hold" : key, { sync: true });
     toast.success(refreshToastMessage(data, false));
   } catch {
     /* toast handled */
@@ -169,6 +210,27 @@ onMounted(async () => {
             :last-updated="lastUpdatedLabel(hold.key)"
             :refreshing="isSectionRefreshing(hold.key)"
             :orders-hold-route="ordersHoldRoute"
+            @refresh="onRefreshSection"
+          />
+        </div>
+      </div>
+
+      <div class="row g-3 mt-1">
+        <div class="col-12">
+          <OrdersAccountSectionPanel
+            :section-key="ON_HOLD_PAUSED_CARD.key"
+            :label="ON_HOLD_PAUSED_CARD.label"
+            :icon="ON_HOLD_PAUSED_CARD.icon"
+            :icon-style="ON_HOLD_PAUSED_CARD.iconStyle"
+            :accounts="pausedHoldAccounts"
+            :last-updated="lastUpdatedLabel('on_hold')"
+            :refreshing="isSectionRefreshing('on_hold')"
+            :account-route="pausedAccountRoute"
+            pill-variant="alert"
+            empty-message="No paused accounts with on-hold orders."
+            :preview-limit="10"
+            :show-view-all-footer="true"
+            anchor-prefix="hold"
             @refresh="onRefreshSection"
           />
         </div>

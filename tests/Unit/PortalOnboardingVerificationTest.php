@@ -278,4 +278,25 @@ class PortalOnboardingVerificationTest extends TestCase
             $account->onboarding_preferences['communication_preferences']['contact_email'] ?? null
         );
     }
+
+    public function test_admin_payload_works_without_portal_user(): void
+    {
+        $account = ClientAccount::create([
+            'company_name' => 'No User Co',
+            'status' => ClientAccount::STATUS_PENDING,
+            'email' => 'nouser@test.com',
+        ]);
+        $service = new PortalOnboardingService(Mockery::mock(ClientBrandLogoService::class));
+
+        $payload = $service->buildAdminOnboardingPayload($account);
+
+        $this->assertNull($payload['primary_user_id']);
+        $this->assertSame($account->id, $payload['client_account_id']);
+        $this->assertNotEmpty($payload['tasks']);
+        $this->assertSame(
+            count(PortalOnboardingService::ONBOARDING_TASK_IDS),
+            count($payload['tasks'])
+        );
+        $this->assertNotNull(collect($payload['tasks'])->firstWhere('id', 'account_information'));
+    }
 }

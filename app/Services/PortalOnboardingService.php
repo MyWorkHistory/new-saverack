@@ -34,12 +34,21 @@ class PortalOnboardingService
         $this->brandLogos = $brandLogos;
     }
 
-    public function isAccountInformationComplete(User $user, ClientAccount $account): bool
+    public function isAccountInformationComplete(?User $user, ClientAccount $account): bool
     {
+        $contactName = trim(implode(' ', array_filter([
+            trim((string) $account->contact_first_name),
+            trim((string) $account->contact_last_name),
+        ])));
+        $name = $user instanceof User ? trim((string) $user->name) : $contactName;
+        $email = $user instanceof User
+            ? trim((string) $user->email)
+            : trim((string) ($account->email ?? ''));
+
         $fields = [
             trim((string) $account->company_name),
-            trim((string) $user->name),
-            trim((string) $user->email),
+            $name,
+            $email,
             trim((string) $account->phone),
             trim((string) $account->street),
             trim((string) $account->city),
@@ -73,7 +82,7 @@ class PortalOnboardingService
     /**
      * @return array<string, mixed>
      */
-    public function buildOnboardingPayload(User $user, ClientAccount $account): array
+    public function buildOnboardingPayload(?User $user, ClientAccount $account): array
     {
         $profile = $this->serializeProfile($user, $account);
         $tasks = $this->buildTasks($user, $account);
@@ -106,10 +115,10 @@ class PortalOnboardingService
      */
     public function buildAdminOnboardingPayload(ClientAccount $account): array
     {
-        $user = $this->resolvePrimaryPortalUser($account);
+        $user = $this->findPrimaryPortalUser($account);
         $payload = $this->buildOnboardingPayload($user, $account);
         $payload['tasks'] = $this->attachVerificationToTasks($payload['tasks'], $account);
-        $payload['primary_user_id'] = $user->id;
+        $payload['primary_user_id'] = $user instanceof User ? $user->id : null;
 
         return $payload;
     }
@@ -356,7 +365,7 @@ class PortalOnboardingService
     /**
      * @return list<array<string, mixed>>
      */
-    private function buildTasks(User $user, ClientAccount $account): array
+    private function buildTasks(?User $user, ClientAccount $account): array
     {
         $accountComplete = $this->isAccountInformationComplete($user, $account);
         $billingUiStatus = $this->billingTaskUiStatus($account);
@@ -511,20 +520,23 @@ class PortalOnboardingService
     /**
      * @return array<string, mixed>
      */
-    public function serializeProfile(User $user, ClientAccount $account): array
+    public function serializeProfile(?User $user, ClientAccount $account): array
     {
         $contactName = trim(implode(' ', array_filter([
             trim((string) $account->contact_first_name),
             trim((string) $account->contact_last_name),
         ])));
+        $userName = $user instanceof User ? (string) $user->name : '';
+        $userEmail = $user instanceof User ? (string) $user->email : '';
+        $fallbackEmail = trim((string) ($account->email ?? ''));
 
         return [
-            'user_id' => $user->id,
+            'user_id' => $user instanceof User ? $user->id : null,
             'client_account_id' => $account->id,
-            'name' => $user->name,
-            'email' => $user->email,
+            'name' => $userName !== '' ? $userName : $contactName,
+            'email' => $userEmail !== '' ? $userEmail : $fallbackEmail,
             'company_name' => $account->company_name,
-            'contact_full_name' => $contactName !== '' ? $contactName : $user->name,
+            'contact_full_name' => $contactName !== '' ? $contactName : $userName,
             'phone' => $account->phone,
             'street' => $account->street,
             'city' => $account->city,
@@ -666,7 +678,7 @@ class PortalOnboardingService
         return $out;
     }
 
-    public function resolvePrimaryPortalUser(ClientAccount $account): User
+    public function findPrimaryPortalUser(ClientAccount $account): ?User
     {
         $account->loadMissing(['primaryAccountUser', 'accountUsers']);
         $user = $account->primaryAccountUser;
@@ -674,6 +686,16 @@ class PortalOnboardingService
             return $user;
         }
         $user = $account->accountUsers->first();
+        if ($user instanceof User) {
+            return $user;
+        }
+
+        return null;
+    }
+
+    public function resolvePrimaryPortalUser(ClientAccount $account): User
+    {
+        $user = $this->findPrimaryPortalUser($account);
         if ($user instanceof User) {
             return $user;
         }
@@ -686,18 +708,14 @@ class PortalOnboardingService
      */
     public function adminOnboardingTasks(ClientAccount $account): array
     {
-        $user = $this->resolvePrimaryPortalUser($account);
+        $user = $this->findPrimaryPortalUser($account);
 
         return $this->attachVerificationToTasks($this->buildTasks($user, $account), $account);
     }
 
     public function isOnboardingReadyForActivation(ClientAccount $account): bool
     {
-        try {
-            $tasks = $this->adminOnboardingTasks($account);
-        } catch (\Throwable $e) {
-            return false;
-        }
+        $tasks = $this->adminOnboardingTasks($account);
 
         if ($tasks === []) {
             return false;

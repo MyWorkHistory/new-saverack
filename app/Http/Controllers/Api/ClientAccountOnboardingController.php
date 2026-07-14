@@ -47,13 +47,20 @@ class ClientAccountOnboardingController extends Controller
     {
         Gate::authorize('update', $client_account);
 
+        $user = $this->onboarding->findPrimaryPortalUser($client_account);
+        if (! $user) {
+            throw ValidationException::withMessages([
+                'name' => ['This account has no portal user. Add a user before editing account information.'],
+            ]);
+        }
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => [
                 'required',
                 'email',
                 'max:255',
-                Rule::unique('users', 'email')->ignore($this->onboarding->resolvePrimaryPortalUser($client_account)->id),
+                Rule::unique('users', 'email')->ignore($user->id),
             ],
             'company_name' => ['required', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:64'],
@@ -63,8 +70,6 @@ class ClientAccountOnboardingController extends Controller
             'zip' => ['nullable', 'string', 'max:32'],
             'country' => ['nullable', 'string', 'max:128'],
         ]);
-
-        $user = $this->onboarding->resolvePrimaryPortalUser($client_account);
 
         DB::transaction(function () use ($user, $client_account, $validated) {
             $this->onboarding->updateAccountProfile($user, $client_account, $validated);

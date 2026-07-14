@@ -21,7 +21,7 @@ export const BACKORDER_OVERVIEW_SECTIONS = {
     icon: "gppBad",
     titleColor: "#b45309",
     iconStyle: { background: "#ffedd5", color: "#b45309" },
-    routeName: "inventory",
+    routeName: "inventory-out-of-stock",
     pillVariant: "alert",
     countColumnLabel: "Units",
     countField: "orders_count",

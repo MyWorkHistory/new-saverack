@@ -154,6 +154,10 @@ const meta = {
     title: "Save Rack | Inventory | Restocks",
     description: "Inventory needing replenishment.",
   },
+  inventoryOutOfStock: {
+    title: "Save Rack | Inventory | Out of Stock",
+    description: "Products with oversold quantity by client account.",
+  },
   inventoryBeta: {
     title: "Save Rack | Inventory (Beta)",
     description: "CRM-stored product catalog with incremental account sync.",
@@ -602,6 +606,12 @@ const routes = [
     name: "inventory",
     component: InventoryBetaListPage,
     meta: meta.inventory,
+  },
+  {
+    path: "/admin/inventory/out-of-stock",
+    name: "inventory-out-of-stock",
+    component: () => import("../pages/user-inventory/UserInventoryOutOfStockPage.vue"),
+    meta: meta.inventoryOutOfStock,
   },
   {
     path: "/admin/inventory/restock",

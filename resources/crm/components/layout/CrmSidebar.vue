@@ -134,7 +134,7 @@ function navActive(mode) {
   if (mode === "orders-manage") return p.startsWith("/admin/orders/search");
   if (mode === "orders-awaiting") return p.startsWith("/admin/orders/awaiting");
   if (mode === "orders-on-hold") return p === "/admin/orders/on-hold";
-  if (mode === "orders-backorder" || mode === "orders-out-of-stock") {
+  if (mode === "orders-backorder") {
     return p === "/admin/orders/backorder" || p.startsWith("/admin/orders/backorder/");
   }
   if (mode === "orders-shipped") return p.startsWith("/admin/orders/shipped");
@@ -150,7 +150,13 @@ function navActive(mode) {
   if (mode === "inventory") {
     return p.startsWith("/admin/inventory");
   }
-  if (mode === "inventory-search" || mode === "inventory-products") return p === "/admin/inventory";
+  if (mode === "inventory-search" || mode === "inventory-products") {
+    if (p === "/admin/inventory/out-of-stock") return false;
+    return p === "/admin/inventory";
+  }
+  if (mode === "inventory-out-of-stock") {
+    return p === "/admin/inventory/out-of-stock" || p.startsWith("/admin/inventory/out-of-stock/");
+  }
   if (mode === "inventory-restock") {
     return p === "/admin/inventory/restock" || p.startsWith("/admin/inventory/restock/");
   }
@@ -639,6 +645,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Products
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/inventory/out-of-stock"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('inventory-out-of-stock') }"
+                    @click="closeMobile"
+                  >
+                    Out of Stock
                   </RouterLink>
                 </li>
                 <li v-if="!isPortal">

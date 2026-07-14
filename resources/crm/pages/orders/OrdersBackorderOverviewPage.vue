@@ -93,7 +93,7 @@ function backorderAccountRoute(accountId) {
 
 function oosAccountRoute(accountId) {
   return {
-    name: "inventory",
+    name: "inventory-out-of-stock",
     query: { client_account_id: String(accountId) },
   };
 }

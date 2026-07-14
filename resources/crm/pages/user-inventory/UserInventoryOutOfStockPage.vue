@@ -1,16 +1,25 @@
 <script setup>
 import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
+import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { usePortalLastRefreshed } from "../../composables/usePortalLastRefreshed.js";
 import { useToast } from "../../composables/useToast.js";
 import { exportPortalInventoryCsv } from "../../utils/portalInventoryExport.js";
 
 const toast = useToast();
+const route = useRoute();
 const router = useRouter();
 const crmUser = inject("crmUser", ref(null));
 const { markRefreshed, lastRefreshedLabel } = usePortalLastRefreshed();
+
+const isPortalList = computed(() => route.meta?.userPortal === true);
+const isStaffPickerMode = computed(() => !isPortalList.value);
+
+const selectedAccountId = ref("");
+const accountsLoading = ref(false);
+const accounts = ref([]);
 
 const loading = ref(false);
 const loadingMore = ref(false);
@@ -44,7 +53,22 @@ const sortDir = ref("desc");
 const selectedKeys = ref([]);
 const selectAllCheckboxRef = ref(null);
 
-const accountId = computed(() => Number(crmUser.value?.client_account_id || 0));
+const accountId = computed(() => {
+  if (isStaffPickerMode.value) {
+    return Number(selectedAccountId.value || 0);
+  }
+  return Number(crmUser.value?.client_account_id || 0);
+});
+
+const accountOptions = computed(() =>
+  (accounts.value || [])
+    .filter((a) => a?.has_shiphero_customer)
+    .map((a) => ({
+      id: a.id,
+      name: a.company_name || `Account #${a.id}`,
+      email: a.email ? String(a.email) : "",
+    })),
+);
 
 const canInventoryUpdate = computed(() => {
   const u = crmUser.value;
@@ -383,13 +407,25 @@ async function bulkSetActive(active) {
 function inventoryDetailTo(row) {
   const sku = String(row?.sku || "").trim();
   if (!sku) {
-    return { name: "user-inventory" };
+    return { name: isPortalList.value ? "user-inventory" : "inventory-out-of-stock" };
   }
   return {
-    name: "user-inventory-detail",
+    name: isPortalList.value ? "user-inventory-detail" : "inventory-detail",
     params: { sku },
     query: { client_account_id: String(accountId.value) },
   };
+}
+
+async function loadAccounts() {
+  accountsLoading.value = true;
+  try {
+    const { data } = await api.get("/inventory/client-account-options");
+    accounts.value = Array.isArray(data?.accounts) ? data.accounts : [];
+  } catch (e) {
+    toast.errorFrom(e, "Could not load account list.");
+  } finally {
+    accountsLoading.value = false;
+  }
 }
 
 function editFirstSelected() {
@@ -448,16 +484,46 @@ function onDocClick(e) {
 watch(
   () => accountId.value,
   (id) => {
+    if (isStaffPickerMode.value) return;
     if (id) loadRows(true);
+  },
+);
+
+watch(
+  () => selectedAccountId.value,
+  async (accountIdVal, prev) => {
+    if (!isStaffPickerMode.value) return;
+    if (prev && accountIdVal !== prev) {
+      searchDraft.value = "";
+      searchCommitted.value = "";
+    }
+    selectedKeys.value = [];
+    searchSkipNext.value = 0;
+    if (!accountIdVal) {
+      rows.value = [];
+      pageInfo.value = { has_next_page: false, end_cursor: null };
+      return;
+    }
+    await loadRows(true);
   },
 );
 
 onMounted(() => {
   setCrmPageMeta({
-    title: "Save Rack | Out of Stock",
-    description: "Inventory rows with oversold quantity.",
+    title: "Save Rack | Inventory | Out of Stock",
+    description: isPortalList.value
+      ? "Products with oversold quantity for your account."
+      : "Products with oversold quantity by client account.",
   });
   document.addEventListener("click", onDocClick);
+  if (isStaffPickerMode.value) {
+    const qAccount = Number(route.query.client_account_id || 0);
+    if (qAccount > 0) {
+      selectedAccountId.value = String(qAccount);
+    }
+    loadAccounts();
+    return;
+  }
   loadRows(true);
 });
 
@@ -484,7 +550,7 @@ onUnmounted(() => {
         <button
         type="button"
         class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
-        :disabled="loading || loadingMore || refreshing"
+        :disabled="loading || loadingMore || refreshing || !accountId"
         title="Refresh"
         aria-label="Refresh out-of-stock inventory from ShipHero"
         @click="refreshRows"
@@ -512,6 +578,25 @@ onUnmounted(() => {
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row flex-wrap align-items-end gap-2 gap-md-3">
+          <div
+            v-if="isStaffPickerMode"
+            class="inventory-toolbar-account flex-shrink-0"
+          >
+            <label class="form-label small text-secondary mb-1" for="admin-oos-account-trigger">Account</label>
+            <CrmSearchableSelect
+              v-model="selectedAccountId"
+              class="staff-toolbar-search staff-toolbar-search--inline"
+              appearance="staff"
+              aria-label="Client account"
+              :options="accountOptions"
+              :disabled="accountsLoading || loading"
+              placeholder="Select account"
+              search-placeholder="Search accounts…"
+              :allow-empty="true"
+              empty-label="Select account"
+              button-id="admin-oos-account-trigger"
+            />
+          </div>
           <div class="user-inv-search-wrap flex-shrink-0">
             <label class="form-label small text-secondary mb-1" for="user-oos-search">Search</label>
             <div class="input-group orders-toolbar-search-group">
@@ -523,13 +608,13 @@ onUnmounted(() => {
                 placeholder="Search by SKU or Product Name"
                 autocomplete="off"
                 enterkeyhint="search"
-                :disabled="loading"
+                :disabled="loading || (isStaffPickerMode && !accountId)"
                 @keydown.enter.prevent="commitSearch"
               />
               <button
                 type="button"
                 class="btn btn-primary staff-page-primary orders-toolbar-search-btn"
-                :disabled="loading"
+                :disabled="loading || (isStaffPickerMode && !accountId)"
                 @click="commitSearch"
               >
                 Search
@@ -550,7 +635,7 @@ onUnmounted(() => {
               type="button"
               class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
               :aria-expanded="filterMenuOpen"
-              :disabled="loading"
+              :disabled="loading || (isStaffPickerMode && !accountId)"
               @click.stop="filterMenuOpen = !filterMenuOpen"
             >
               <svg
@@ -769,7 +854,12 @@ onUnmounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-if="loading">
+            <tr v-if="isStaffPickerMode && !accountId">
+              <td colspan="7" class="text-center text-secondary py-5">
+                Select an account to view out-of-stock products.
+              </td>
+            </tr>
+            <tr v-else-if="loading">
               <td colspan="7" class="text-center text-secondary py-5">Loading…</td>
             </tr>
             <tr v-else-if="!displayRows.length">

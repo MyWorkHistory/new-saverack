@@ -69,7 +69,7 @@ class InventoryController extends Controller
     {
         try {
             $accounts = ClientAccount::query()
-                ->where('status', ClientAccount::STATUS_ACTIVE)
+                ->where('status', '!=', ClientAccount::STATUS_INACTIVE)
                 ->orderBy('company_name')
                 ->limit(500)
                 ->get(['id', 'company_name', 'shiphero_customer_account_id']);

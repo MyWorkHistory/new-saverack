@@ -413,12 +413,23 @@ class ClientAccountController extends Controller
         $validated = $request->validated();
         $ids = $validated['client_account_ids'];
         $status = $validated['status'];
+        $pauseReason = isset($validated['pause_reason']) && is_string($validated['pause_reason'])
+            ? trim($validated['pause_reason'])
+            : null;
+        if ($pauseReason === '') {
+            $pauseReason = null;
+        }
 
         foreach ($ids as $id) {
             $this->authorize('update', ClientAccount::query()->findOrFail($id));
         }
 
-        $result = $this->clientAccounts->bulkUpdateStatus($ids, $status, $request->user());
+        $result = $this->clientAccounts->bulkUpdateStatus(
+            $ids,
+            $status,
+            $request->user(),
+            $pauseReason
+        );
 
         $payload = [
             'message' => 'Client accounts updated.',

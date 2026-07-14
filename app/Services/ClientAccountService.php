@@ -192,8 +192,12 @@ class ClientAccountService
      * @param  list<int>  $ids
      * @return array{updated: int, shiphero_sync: array{ok: bool, message: string|null}|null}
      */
-    public function bulkUpdateStatus(array $ids, string $status, ?User $actor = null): array
-    {
+    public function bulkUpdateStatus(
+        array $ids,
+        string $status,
+        ?User $actor = null,
+        ?string $pauseReason = null
+    ): array {
         $accountsBefore = ClientAccount::query()
             ->whereIn('id', $ids)
             ->get()
@@ -210,6 +214,13 @@ class ClientAccountService
 
             $oldStatus = (string) $account->status;
             $payload = ['status' => $status];
+            if (
+                strtolower(trim($status)) === ClientAccount::STATUS_PAUSED
+                && is_string($pauseReason)
+                && trim($pauseReason) !== ''
+            ) {
+                $payload['pause_reason'] = trim($pauseReason);
+            }
             if (strtolower(trim($oldStatus)) !== strtolower(trim($status))) {
                 $this->applyPausedAtForStatusChange($payload, $oldStatus);
             }

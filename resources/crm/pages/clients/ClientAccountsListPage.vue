@@ -65,8 +65,9 @@ const publicCreateAccountUrl = computed(() => getPublicSignupUrl());
 const canUpdate = computed(() => userHasPerm("clients.update"));
 const canDelete = computed(() => userHasPerm("clients.delete"));
 const canBulkDelete = computed(() => isAdmin.value);
+const canBulkUpdate = computed(() => canUpdate.value);
 const showRowActions = computed(() => canUpdate.value || canDelete.value);
-const showCheckboxCol = computed(() => canBulkDelete.value);
+const showCheckboxCol = computed(() => canBulkUpdate.value || canBulkDelete.value);
 
 const tableColspan = computed(() => {
   let n = 8;
@@ -115,6 +116,7 @@ const selectedIds = ref([]);
 const editModalOpen = ref(false);
 const editAccountId = ref("");
 const statusModalOpen = ref(false);
+const statusModalMode = ref("single");
 const statusModalRow = ref(null);
 const statusForm = ref("active");
 const pauseReasonForm = ref("");
@@ -162,6 +164,12 @@ async function copyPublicCreateLink() {
 }
 
 const statusModalSubtitle = computed(() => {
+  if (statusModalMode.value === "bulk") {
+    const n = selectedIds.value.length;
+    return n
+      ? `Update status for ${n} selected account${n === 1 ? "" : "s"}.`
+      : "Choose a new status for the selected accounts.";
+  }
   const name = String(statusModalRow.value?.company_name || "").trim();
   return name ? `Update status for “${name}”.` : "Choose a new status.";
 });
@@ -474,9 +482,23 @@ function setDirectoryStatFilter(status) {
 
 function openStatusModal(row) {
   if (!canUpdate.value) return;
+  statusModalMode.value = "single";
   statusModalRow.value = row;
   statusForm.value = String(row.status || "pending");
   pauseReasonForm.value = String(row.pause_reason || "");
+  statusModalOpen.value = true;
+}
+
+function openBulkStatusModal() {
+  if (!canBulkUpdate.value) return;
+  if (!selectedIds.value.length) {
+    toast.error("Select one or more rows.");
+    return;
+  }
+  statusModalMode.value = "bulk";
+  statusModalRow.value = null;
+  statusForm.value = "active";
+  pauseReasonForm.value = "";
   statusModalOpen.value = true;
 }
 
@@ -484,9 +506,49 @@ function closeStatusModal() {
   if (statusPickerBusy.value) return;
   statusModalOpen.value = false;
   statusModalRow.value = null;
+  statusModalMode.value = "single";
+}
+
+async function saveBulkStatusFromModal() {
+  const status = String(statusForm.value || "").trim();
+  const pauseReason = String(pauseReasonForm.value || "").trim();
+  if (!selectedIds.value.length || statusPickerBusy.value) return;
+  if (status === "paused" && !pauseReason) {
+    toast.error("Select a pause reason.");
+    return;
+  }
+  statusPickerBusy.value = true;
+  try {
+    const payload = {
+      client_account_ids: selectedIds.value,
+      status,
+    };
+    if (status === "paused") {
+      payload.pause_reason = pauseReason;
+    }
+    const { data } = await api.patch("/client-accounts/bulk", payload);
+    const updated = Number(data?.updated ?? selectedIds.value.length);
+    toast.success(
+      updated === 1 ? "1 account status updated." : `${updated} account statuses updated.`,
+    );
+    warnIfShipheroSyncFailed(data, toast);
+    statusModalOpen.value = false;
+    statusModalRow.value = null;
+    statusModalMode.value = "single";
+    selectedIds.value = [];
+    await refreshList();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update account statuses.");
+  } finally {
+    statusPickerBusy.value = false;
+  }
 }
 
 async function saveStatusFromModal() {
+  if (statusModalMode.value === "bulk") {
+    await saveBulkStatusFromModal();
+    return;
+  }
   const row = statusModalRow.value;
   const status = String(statusForm.value || "").trim();
   const pauseReason = String(pauseReasonForm.value || "").trim();
@@ -748,7 +810,7 @@ onUnmounted(() => {
       v-model:open="statusModalOpen"
       v-model:status="statusForm"
       v-model:reason="pauseReasonForm"
-      title="Account Status"
+      :title="statusModalMode === 'bulk' ? 'Bulk Update Status' : 'Account Status'"
       :subtitle="statusModalSubtitle"
       :statuses="accountStatusOptions"
       :reason-options="CLIENT_ACCOUNT_PAUSE_REASONS"
@@ -985,10 +1047,20 @@ onUnmounted(() => {
               </svg>
             </button>
             <div
-              v-if="canBulkDelete"
+              v-if="canBulkUpdate || canBulkDelete"
               class="d-none d-md-flex align-items-center gap-2 flex-shrink-0"
             >
               <button
+                v-if="canBulkUpdate"
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn"
+                :disabled="!selectedIds.length || loading"
+                @click="openBulkStatusModal"
+              >
+                Bulk Update
+              </button>
+              <button
+                v-if="canBulkDelete"
                 type="button"
                 class="btn btn-outline-danger staff-toolbar-btn"
                 :disabled="!selectedIds.length || loading"
@@ -997,8 +1069,80 @@ onUnmounted(() => {
                 Bulk Delete
               </button>
             </div>
+            <div
+              v-if="canBulkUpdate && canBulkDelete"
+              class="d-md-none position-relative flex-shrink-0"
+              data-toolbar-bulk
+            >
+              <button
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-1"
+                :aria-expanded="bulkMenuOpen"
+                aria-haspopup="true"
+                :disabled="loading"
+                @click.stop="
+                  exportOpen = false;
+                  filterMenuOpen = false;
+                  bulkMenuOpen = !bulkMenuOpen;
+                "
+              >
+                Bulk Actions
+                <svg
+                  width="14"
+                  height="14"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  class="text-secondary"
+                  aria-hidden="true"
+                >
+                  <path d="M7 10l5 5 5-5H7z" />
+                </svg>
+              </button>
+              <div
+                v-if="bulkMenuOpen"
+                class="dropdown-menu show shadow border px-0 py-1 mt-1 staff-toolbar-bulk-dropdown"
+                style="right: 0; left: auto"
+                role="menu"
+                aria-label="Bulk actions"
+                @click.stop
+              >
+                <button
+                  type="button"
+                  class="dropdown-item small"
+                  role="menuitem"
+                  :disabled="!selectedIds.length || loading"
+                  @click="
+                    bulkMenuOpen = false;
+                    openBulkStatusModal();
+                  "
+                >
+                  Bulk Update
+                </button>
+                <button
+                  type="button"
+                  class="dropdown-item small text-danger"
+                  role="menuitem"
+                  :disabled="!selectedIds.length || loading"
+                  @click="
+                    bulkMenuOpen = false;
+                    openBulkDelete();
+                  "
+                >
+                  Bulk Delete
+                </button>
+              </div>
+            </div>
             <button
-              v-if="canBulkDelete"
+              v-else-if="canBulkUpdate"
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn d-md-none flex-shrink-0"
+              :disabled="!selectedIds.length || loading"
+              @click="openBulkStatusModal"
+            >
+              Bulk Update
+            </button>
+            <button
+              v-else-if="canBulkDelete"
               type="button"
               class="btn btn-outline-danger staff-toolbar-btn d-md-none flex-shrink-0"
               :disabled="!selectedIds.length || loading"

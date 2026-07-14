@@ -70,6 +70,43 @@ const accountOptions = computed(() =>
     })),
 );
 
+const showAccountColumn = computed(() => isStaffPickerMode.value);
+
+const tableColspan = computed(() => (showAccountColumn.value ? 8 : 7));
+
+const accountNameById = computed(() => {
+  const map = new Map();
+  for (const a of accounts.value || []) {
+    const id = Number(a?.id || 0);
+    if (id > 0) {
+      map.set(id, a.company_name || `Account #${id}`);
+    }
+  }
+  return map;
+});
+
+function effectiveRowAccountId(row = null) {
+  const fromRow = Number(row?.client_account_id || 0);
+  if (fromRow > 0) return fromRow;
+  return accountId.value;
+}
+
+function rowAccountLabel(row) {
+  const fromRow = String(row?.client_account_company_name || "").trim();
+  if (fromRow) return fromRow;
+  const id = effectiveRowAccountId(row);
+  if (id > 0) {
+    return accountNameById.value.get(id) || `Account #${id}`;
+  }
+  return "—";
+}
+
+function clientAccountHref(row) {
+  const id = effectiveRowAccountId(row);
+  if (id <= 0) return "";
+  return router.resolve({ name: "client-account-detail", params: { id: String(id) } }).href;
+}
+
 const canInventoryUpdate = computed(() => {
   const u = crmUser.value;
   if (!u || !Array.isArray(u.permission_keys)) return false;
@@ -821,6 +858,9 @@ onUnmounted(() => {
                   <span v-if="sortIndicator('name')" class="staff-sort-ind">{{ sortIndicator("name") }}</span>
                 </button>
               </th>
+              <th v-if="showAccountColumn" class="staff-table-head__th user-inv-table__text-col" scope="col">
+                Account
+              </th>
               <th
                 class="staff-table-head__th staff-table-head__th--sort text-center user-inv-table__num-col"
                 scope="col"
@@ -855,15 +895,15 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr v-if="isStaffPickerMode && !accountId">
-              <td colspan="7" class="text-center text-secondary py-5">
+              <td :colspan="tableColspan" class="text-center text-secondary py-5">
                 Select an account to view out-of-stock products.
               </td>
             </tr>
             <tr v-else-if="loading">
-              <td colspan="7" class="text-center text-secondary py-5">Loading…</td>
+              <td :colspan="tableColspan" class="text-center text-secondary py-5">Loading…</td>
             </tr>
             <tr v-else-if="!displayRows.length">
-              <td colspan="7" class="text-center text-secondary py-5">
+              <td :colspan="tableColspan" class="text-center text-secondary py-5">
                 No oversold rows match your filters or search.
               </td>
             </tr>
@@ -902,6 +942,18 @@ onUnmounted(() => {
                 <RouterLink :to="inventoryDetailTo(row)" class="user-inv-table__sku-link user-inv-table__name-link">
                   <span class="user-inv-table__name-text">{{ row.name || "—" }}</span>
                 </RouterLink>
+              </td>
+              <td v-if="showAccountColumn" class="user-inv-table__text-col">
+                <a
+                  v-if="clientAccountHref(row)"
+                  :href="clientAccountHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="user-inv-table__sku-link"
+                >
+                  {{ rowAccountLabel(row) }}
+                </a>
+                <span v-else class="text-secondary">{{ rowAccountLabel(row) }}</span>
               </td>
               <td class="text-center user-inv-table__num-col">{{ Number(row.backorder || 0) }}</td>
               <td class="text-center user-inv-table__num-col">{{ Number(row.on_hand || 0) }}</td>

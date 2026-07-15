@@ -52,6 +52,7 @@ const feeRows = computed(() => {
 });
 
 function formatFeeAmount(amount) {
+  if (amount === null || amount === undefined || amount === "") return "—";
   const n = Number(amount);
   if (!Number.isFinite(n)) return "—";
   return `$${n.toFixed(2)}`;

@@ -495,6 +495,11 @@ class ReturnController extends Controller
     {
         $this->authorizeReturn($request, $clientAccountReturn);
 
+        if (! $clientAccountReturn->feesAreLocked()) {
+            app(ReturnFeeService::class)->seedReturnFees($clientAccountReturn);
+            $clientAccountReturn->refresh();
+        }
+
         return response()->json($this->serializeReturn($clientAccountReturn));
     }
 

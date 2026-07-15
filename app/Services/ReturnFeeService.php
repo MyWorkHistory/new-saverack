@@ -9,56 +9,63 @@ use Illuminate\Validation\ValidationException;
 
 class ReturnFeeService
 {
+    /** @var array<string, list<string>> */
+    private const LINE_LABEL_ALIASES = [
+        ClientAccountFee::LINE_RETURNS_PROCESSING => [
+            'returns processing',
+            'returns (first item)',
+            'return processing',
+            'first item',
+        ],
+        ClientAccountFee::LINE_RETURNS_ADDITIONAL_ITEMS => [
+            'returns additional items',
+            'returns (additional items)',
+            'additional items',
+            'additional item',
+        ],
+        ClientAccountFee::LINE_RETURNS_NON_COMPLIANT => [
+            'non-compliant return',
+            'non compliant return',
+            'noncompliant return',
+            'non-compliant',
+            'non compliant',
+        ],
+    ];
+
     /**
      * @return array{first_item: float|null, additional_item: float|null, non_compliant: float|null}
      */
     public function accountDefaults(ClientAccount $account): array
     {
-        $account->loadMissing('feeItems');
-        $first = null;
-        $additional = null;
-        $nonCompliant = null;
-        foreach ($account->feeItems as $fee) {
-            if (! $fee instanceof ClientAccountFee) {
-                continue;
-            }
-            if ($fee->fee_group !== ClientAccountFee::GROUP_RETURNS) {
-                continue;
-            }
-            if ($fee->line_code === ClientAccountFee::LINE_RETURNS_PROCESSING) {
-                $first = $fee->amount !== null ? (float) $fee->amount : null;
-            } elseif ($fee->line_code === ClientAccountFee::LINE_RETURNS_ADDITIONAL_ITEMS) {
-                $additional = $fee->amount !== null ? (float) $fee->amount : null;
-            } elseif ($fee->line_code === ClientAccountFee::LINE_RETURNS_NON_COMPLIANT) {
-                $nonCompliant = $fee->amount !== null ? (float) $fee->amount : null;
-            }
-        }
+        $account->loadMissing(['feeItems.pricingTemplate']);
 
         return [
-            'first_item' => $first,
-            'additional_item' => $additional,
-            'non_compliant' => $nonCompliant,
+            'first_item' => $this->amountForLine($account, ClientAccountFee::LINE_RETURNS_PROCESSING),
+            'additional_item' => $this->amountForLine($account, ClientAccountFee::LINE_RETURNS_ADDITIONAL_ITEMS),
+            'non_compliant' => $this->amountForLine($account, ClientAccountFee::LINE_RETURNS_NON_COMPLIANT),
         ];
     }
 
     public function seedReturnFees(ClientAccountReturn $return): void
     {
-        $return->loadMissing('clientAccount');
+        $return->loadMissing('clientAccount.feeItems.pricingTemplate');
         if ($return->clientAccount === null) {
             return;
         }
 
         $defaults = $this->accountDefaults($return->clientAccount);
         $changed = false;
-        if ($return->return_fee_first_item === null) {
+        if ($return->return_fee_first_item === null && $defaults['first_item'] !== null) {
             $return->return_fee_first_item = $defaults['first_item'];
             $changed = true;
         }
-        if ($return->return_fee_additional_item === null) {
+        if ($return->return_fee_additional_item === null && $defaults['additional_item'] !== null) {
             $return->return_fee_additional_item = $defaults['additional_item'];
             $changed = true;
         }
-        if ($return->isNonCompliant() && $return->return_fee_non_compliant === null) {
+        if ($return->isNonCompliant()
+            && $return->return_fee_non_compliant === null
+            && $defaults['non_compliant'] !== null) {
             $return->return_fee_non_compliant = $defaults['non_compliant'];
             $changed = true;
         }
@@ -136,5 +143,55 @@ class ReturnFeeService
     public function nonCompliantFeeAmount(ClientAccountReturn $return): float
     {
         return (float) ($return->return_fee_non_compliant ?? 0);
+    }
+
+    private function amountForLine(ClientAccount $account, string $lineCode): ?float
+    {
+        foreach ($account->feeItems as $fee) {
+            if (! $fee instanceof ClientAccountFee) {
+                continue;
+            }
+            if ($fee->fee_group !== ClientAccountFee::GROUP_RETURNS) {
+                continue;
+            }
+            if (! $this->feeMatchesLineCode($fee, $lineCode)) {
+                continue;
+            }
+
+            return $fee->amount !== null ? (float) $fee->amount : null;
+        }
+
+        return null;
+    }
+
+    private function feeMatchesLineCode(ClientAccountFee $fee, string $lineCode): bool
+    {
+        if ($fee->line_code === $lineCode) {
+            return true;
+        }
+
+        $aliases = self::LINE_LABEL_ALIASES[$lineCode] ?? [];
+        $normalizedAliases = array_map(fn (string $alias) => $this->normalizeFeeKey($alias), $aliases);
+        $label = $this->normalizeFeeKey((string) ($fee->label ?? ''));
+        if ($label !== '' && in_array($label, $normalizedAliases, true)) {
+            return true;
+        }
+
+        if ($fee->relationLoaded('pricingTemplate') && $fee->pricingTemplate !== null) {
+            $templateName = $this->normalizeFeeKey((string) ($fee->pricingTemplate->name ?? ''));
+            if ($templateName !== '' && in_array($templateName, $normalizedAliases, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function normalizeFeeKey(string $value): string
+    {
+        $normalized = strtolower(trim($value));
+        $normalized = preg_replace('/[^a-z0-9]+/', ' ', $normalized) ?? $normalized;
+
+        return trim(preg_replace('/\s+/', ' ', $normalized) ?? $normalized);
     }
 }

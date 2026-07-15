@@ -530,7 +530,12 @@ onMounted(load);
                         loading="lazy"
                       />
                       <div class="min-w-0 order-detail-page__item-copy">
-                        <div class="order-detail-page__item-name fw-semibold text-truncate">{{ line.name || "—" }}</div>
+                        <div
+                          class="order-detail-page__item-name fw-semibold"
+                          :title="line.name || undefined"
+                        >
+                          {{ line.name || "—" }}
+                        </div>
                         <div class="order-detail-page__item-sku small text-secondary">{{ line.sku }}</div>
                       </div>
                     </div>
@@ -731,5 +736,57 @@ onMounted(load);
 }
 .admin-return-nc-qty-input {
   max-width: 5rem;
+}
+
+.admin-returns-detail-page .staff-table-wrap {
+  overflow-x: hidden;
+}
+
+.admin-returns-detail-page .staff-table-wrap .table.staff-data-table {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  table-layout: fixed;
+}
+
+.admin-returns-detail-page .order-detail-page__items-col {
+  width: 36%;
+  min-width: 0;
+  vertical-align: middle;
+}
+
+.admin-returns-detail-page .order-detail-page__item-cell {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-returns-detail-page .order-detail-page__item-copy {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-returns-detail-page .order-detail-page__item-name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.3;
+  font-size: 0.875rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-returns-detail-page .order-detail-page__item-sku {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.8125rem;
+  line-height: 1.3;
 }
 </style>

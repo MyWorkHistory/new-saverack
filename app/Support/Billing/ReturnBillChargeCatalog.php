@@ -106,7 +106,8 @@ class ReturnBillChargeCatalog
   {
     self::assertValidLineType($lineType);
     $feeLineCode = self::DEFINITIONS[$lineType]['fee_line_code'];
-    $account->loadMissing('feeItems');
+    $displayName = self::DEFINITIONS[$lineType]['display_name'];
+    $account->loadMissing(['feeItems.pricingTemplate']);
     foreach ($account->feeItems as $fee) {
       if (! $fee instanceof ClientAccountFee) {
         continue;
@@ -114,12 +115,42 @@ class ReturnBillChargeCatalog
       if ($fee->fee_group !== ClientAccountFee::GROUP_RETURNS) {
         continue;
       }
-      if ($fee->line_code === $feeLineCode) {
+      if (self::feeMatchesLineCode($fee, $feeLineCode, $displayName)) {
         return (int) round(((float) ($fee->amount ?? 0)) * 100);
       }
     }
 
     return 0;
+  }
+
+  private static function feeMatchesLineCode(ClientAccountFee $fee, string $lineCode, string $displayName): bool
+  {
+    if ($fee->line_code === $lineCode) {
+      return true;
+    }
+
+    $wanted = self::normalizeFeeKey($displayName);
+    $label = self::normalizeFeeKey((string) ($fee->label ?? ''));
+    if ($label !== '' && $label === $wanted) {
+      return true;
+    }
+
+    if ($fee->relationLoaded('pricingTemplate') && $fee->pricingTemplate !== null) {
+      $templateName = self::normalizeFeeKey((string) ($fee->pricingTemplate->name ?? ''));
+      if ($templateName !== '' && $templateName === $wanted) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private static function normalizeFeeKey(string $value): string
+  {
+    $normalized = strtolower(trim($value));
+    $normalized = preg_replace('/[^a-z0-9]+/', ' ', $normalized) ?? $normalized;
+
+    return trim(preg_replace('/\s+/', ' ', $normalized) ?? $normalized);
   }
 
   /**

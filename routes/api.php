@@ -539,6 +539,14 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.account-users.show');
     Route::get('client-accounts/{client_account}/account-users/{user}/history', [ClientAccountUserController::class, 'history'])
         ->name('client-accounts.account-users.history');
+    Route::post('client-accounts/{client_account}/account-users/{user}/avatar', [ClientAccountUserController::class, 'uploadAvatar'])
+        ->name('client-accounts.account-users.avatar');
+    Route::get('client-accounts/{client_account}/account-users/{user}/notes', [ClientAccountUserController::class, 'indexNotes'])
+        ->name('client-accounts.account-users.notes.index');
+    Route::post('client-accounts/{client_account}/account-users/{user}/notes', [ClientAccountUserController::class, 'storeNote'])
+        ->name('client-accounts.account-users.notes.store');
+    Route::delete('client-accounts/{client_account}/account-users/{user}/notes/{note}', [ClientAccountUserController::class, 'destroyNote'])
+        ->name('client-accounts.account-users.notes.destroy');
     Route::post('client-accounts/{client_account}/account-users', [ClientAccountUserController::class, 'store'])
         ->name('client-accounts.account-users.store');
     Route::patch('client-accounts/{client_account}/account-users/{user}', [ClientAccountUserController::class, 'update'])

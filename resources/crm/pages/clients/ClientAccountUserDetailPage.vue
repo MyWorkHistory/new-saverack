@@ -20,13 +20,18 @@ const loading = ref(true);
 const errorMsg = ref("");
 const row = ref(null);
 const historyItems = ref([]);
+const notes = ref([]);
+const noteBody = ref("");
+const noteSubmitting = ref(false);
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
 const statusModalOpen = ref(false);
-const statusForm = ref("pending");
+const statusForm = ref("active");
 const statusSaving = ref(false);
-const userStatuses = ["pending", "active", "inactive"];
+const userStatuses = ["active", "inactive"];
 const editModalOpen = ref(false);
+const heroAvatarInput = ref(null);
+const heroAvatarLoadFailed = ref(false);
 
 function userHasPerm(key) {
   const u = crmUser.value;
@@ -65,9 +70,6 @@ function statusBadgeClass(status) {
   if (s === "active") {
     return "badge bg-success-subtle text-success-emphasis";
   }
-  if (s === "pending") {
-    return "badge bg-warning-subtle text-warning-emphasis";
-  }
   if (s === "inactive") {
     return "badge bg-secondary-subtle text-secondary";
   }
@@ -79,9 +81,47 @@ function display(val) {
   return String(val);
 }
 
+function avatarUrl() {
+  const raw = row.value?.avatar_url;
+  if (!raw) return "";
+  return resolvePublicUrl(raw) || raw;
+}
+
+function showHeroAvatarImage() {
+  return Boolean(avatarUrl()) && !heroAvatarLoadFailed.value;
+}
+
+function markHeroAvatarLoadFailed() {
+  heroAvatarLoadFailed.value = true;
+}
+
+function openHeroAvatarPicker() {
+  if (!canUpdate.value) return;
+  heroAvatarInput.value?.click();
+}
+
+async function onHeroAvatarChange(e) {
+  const input = e.target;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file || !canUpdate.value) return;
+  const fd = new FormData();
+  fd.append("avatar", file);
+  try {
+    await api.post(
+      `/client-accounts/${props.accountId}/account-users/${props.userId}/avatar`,
+      fd,
+    );
+    await load();
+    toast.success("Photo updated.");
+  } catch (err) {
+    toast.errorFrom(err, "Could not upload photo.");
+  }
+}
+
 function openStatusModal() {
   if (!row.value || !canUpdate.value) return;
-  statusForm.value = row.value.status || "pending";
+  statusForm.value = row.value.status || "active";
   statusModalOpen.value = true;
 }
 
@@ -144,17 +184,66 @@ async function loadHistory() {
   }
 }
 
+async function loadNotes() {
+  try {
+    const { data } = await api.get(
+      `/client-accounts/${props.accountId}/account-users/${props.userId}/notes`,
+    );
+    notes.value = Array.isArray(data?.notes) ? data.notes : [];
+  } catch {
+    notes.value = [];
+  }
+}
+
+async function submitNote() {
+  if (!canUpdate.value) return;
+  const body = noteBody.value.trim();
+  if (!body) {
+    toast.warning("Enter a note before adding.");
+    return;
+  }
+  noteSubmitting.value = true;
+  try {
+    const { data } = await api.post(
+      `/client-accounts/${props.accountId}/account-users/${props.userId}/notes`,
+      { body },
+    );
+    notes.value = [data, ...notes.value];
+    noteBody.value = "";
+    toast.success("Note added.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not add note.");
+  } finally {
+    noteSubmitting.value = false;
+  }
+}
+
+async function deleteNote(note) {
+  if (!canUpdate.value || !note?.id) return;
+  try {
+    await api.delete(
+      `/client-accounts/${props.accountId}/account-users/${props.userId}/notes/${note.id}`,
+    );
+    notes.value = notes.value.filter((n) => n.id !== note.id);
+    toast.success("Note deleted.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete note.");
+  }
+}
+
 async function load() {
   loading.value = true;
   errorMsg.value = "";
   row.value = null;
   historyItems.value = [];
+  notes.value = [];
+  heroAvatarLoadFailed.value = false;
   try {
     const { data } = await api.get(
       `/client-accounts/${props.accountId}/account-users/${props.userId}`,
     );
     row.value = data;
-    await loadHistory();
+    await Promise.all([loadHistory(), loadNotes()]);
   } catch (e) {
     const st = e.response?.status;
     if (st === 403) {
@@ -191,7 +280,6 @@ watch(
     }
   },
 );
-
 </script>
 
 <template>
@@ -210,15 +298,7 @@ watch(
     <div
       class="staff-user-view__title-row d-flex flex-wrap align-items-center justify-content-between gap-2"
     >
-      <h1 class="staff-user-view__title">Portal user</h1>
-      <button
-        v-if="canUpdate && row"
-        type="button"
-        class="btn btn-primary staff-page-primary"
-        @click="editModalOpen = true"
-      >
-        Edit User
-      </button>
+      <h1 class="staff-user-view__title">Portal User</h1>
     </div>
 
     <div v-if="loading" class="d-flex justify-content-center py-5">
@@ -238,13 +318,52 @@ watch(
       <div class="row g-3">
         <div class="col-12 col-xl-4">
           <aside class="staff-user-profile">
+            <input
+              ref="heroAvatarInput"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              class="d-none"
+              @change="onHeroAvatarChange"
+            />
             <div class="staff-user-profile__avatar-wrap">
-              <span
-                class="staff-user-profile__avatar staff-user-profile__avatar--initials d-inline-flex"
-                :class="avatarClassForEmail(row.email)"
+              <button
+                v-if="canUpdate"
+                type="button"
+                class="staff-user-profile__avatar-btn rounded focus-ring"
+                title="Change photo"
+                @click="openHeroAvatarPicker"
               >
-                {{ initials(row.name) }}
-              </span>
+                <img
+                  v-if="showHeroAvatarImage()"
+                  :src="avatarUrl()"
+                  alt=""
+                  class="staff-user-profile__avatar"
+                  @error="markHeroAvatarLoadFailed"
+                />
+                <span
+                  v-else
+                  class="staff-user-profile__avatar staff-user-profile__avatar--initials"
+                  :class="avatarClassForEmail(row.email)"
+                >
+                  {{ initials(row.name) }}
+                </span>
+              </button>
+              <div v-else>
+                <img
+                  v-if="showHeroAvatarImage()"
+                  :src="avatarUrl()"
+                  alt=""
+                  class="staff-user-profile__avatar"
+                  @error="markHeroAvatarLoadFailed"
+                />
+                <span
+                  v-else
+                  class="staff-user-profile__avatar staff-user-profile__avatar--initials"
+                  :class="avatarClassForEmail(row.email)"
+                >
+                  {{ initials(row.name) }}
+                </span>
+              </div>
             </div>
             <h2 class="staff-user-profile__name">
               {{ row.name }}
@@ -256,7 +375,25 @@ watch(
               <span
                 v-if="row.is_account_primary"
                 class="badge rounded-pill bg-primary-subtle text-primary-emphasis ms-1"
-                >Primary admin</span
+                >Primary</span
+              >
+            </div>
+            <div class="staff-user-profile__role-pill w-100 mt-2">
+              <button
+                v-if="canUpdate"
+                type="button"
+                class="staff-status-badge text-capitalize"
+                :class="statusBadgeClass(row.status)"
+                title="Change status"
+                @click="openStatusModal"
+              >
+                {{ row.status }}
+              </button>
+              <span
+                v-else
+                class="staff-status-badge text-capitalize"
+                :class="statusBadgeClass(row.status)"
+                >{{ row.status }}</span
               >
             </div>
             <div class="staff-user-profile__stats">
@@ -288,48 +425,7 @@ watch(
               </div>
             </div>
 
-            <h3 class="staff-user-profile__details-title">Details</h3>
-            <dl class="staff-user-profile__dl">
-              <div>
-                <dt class="staff-user-profile__dt">Email</dt>
-                <dd class="staff-user-profile__dd text-break">{{ display(row.email) }}</dd>
-              </div>
-              <div>
-                <dt class="staff-user-profile__dt">Status</dt>
-                <dd class="staff-user-profile__dd text-capitalize">
-                  <button
-                    v-if="canUpdate"
-                    type="button"
-                    class="staff-status-badge text-capitalize"
-                    :class="statusBadgeClass(row.status)"
-                    title="Change status"
-                    @click="openStatusModal"
-                  >
-                    {{ row.status }}
-                  </button>
-                  <span
-                    v-else
-                    class="staff-status-badge text-capitalize"
-                    :class="statusBadgeClass(row.status)"
-                    >{{ row.status }}</span
-                  >
-                </dd>
-              </div>
-              <div>
-                <dt class="staff-user-profile__dt">Account email</dt>
-                <dd class="staff-user-profile__dd text-break">{{ display(row.account_email) }}</dd>
-              </div>
-              <div>
-                <dt class="staff-user-profile__dt">Created</dt>
-                <dd class="staff-user-profile__dd">{{ formatDateUs(row.created_at) }}</dd>
-              </div>
-              <div>
-                <dt class="staff-user-profile__dt">Updated</dt>
-                <dd class="staff-user-profile__dd">{{ formatDateUs(row.updated_at) }}</dd>
-              </div>
-            </dl>
-
-            <div class="staff-user-profile__actions d-flex flex-wrap gap-2">
+            <div class="staff-user-profile__actions d-flex flex-wrap gap-2 mb-3">
               <RouterLink
                 :to="{ name: 'client-users' }"
                 class="btn btn-sm btn-outline-secondary"
@@ -343,73 +439,202 @@ watch(
                 View client account
               </RouterLink>
             </div>
+
+            <section
+              class="staff-user-timeline-card staff-user-timeline-card--aside"
+              aria-labelledby="portal-user-activity-heading"
+            >
+              <h2
+                id="portal-user-activity-heading"
+                class="staff-user-timeline-card__title mb-3"
+              >
+                User Activity Timeline
+              </h2>
+              <div v-if="timelinePreview.length" class="staff-user-timeline">
+                <div
+                  v-for="item in timelinePreview"
+                  :key="item.id"
+                  class="staff-user-timeline__item"
+                >
+                  <img
+                    v-if="timelineActorAvatarUrl(item)"
+                    :src="timelineActorAvatarUrl(item)"
+                    alt=""
+                    class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 object-fit-cover"
+                    width="36"
+                    height="36"
+                  />
+                  <span
+                    v-else
+                    class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 d-inline-flex align-items-center justify-content-center small fw-semibold"
+                    style="width: 36px; height: 36px; font-size: 0.6875rem"
+                    :class="avatarClassForTimelineActor(item.actor_name)"
+                    :title="item.actor_name || 'User'"
+                    aria-hidden="true"
+                    >{{ item.actor_initials || "?" }}</span
+                  >
+                  <div class="staff-user-timeline__content min-w-0 flex-grow-1">
+                    <div class="staff-user-timeline__row">
+                      <h3 class="staff-user-timeline__heading">
+                        {{ item.actor_name || "System" }}
+                      </h3>
+                      <time
+                        class="staff-user-timeline__time"
+                        :datetime="item.created_at"
+                        >{{ formatDateTimeUs(item.created_at) }}</time
+                      >
+                    </div>
+                    <p class="staff-user-timeline__body">
+                      {{ item.body || item.line }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <p v-else class="staff-user-timeline__empty mb-0">
+                No activity logged yet.
+              </p>
+            </section>
           </aside>
         </div>
 
         <div class="col-12 col-xl-8">
-          <div class="staff-user-tabs border rounded-3 bg-body p-4">
-            <h2 class="h6 fw-semibold mb-3">About this login</h2>
-            <p class="text-secondary small mb-0">
-              This user signs in to the client portal with the role shown above.
-              Primary admins are created when the client account is added; additional
-              users are typically Customer Service.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <section
-        class="staff-user-timeline-card mt-3"
-        aria-labelledby="portal-user-activity-heading"
-      >
-        <h2
-          id="portal-user-activity-heading"
-          class="staff-user-timeline-card__title mb-3"
-        >
-          User activity
-        </h2>
-        <div v-if="timelinePreview.length" class="staff-user-timeline">
-          <div
-            v-for="(item, idx) in timelinePreview"
-            :key="item.id"
-            class="staff-user-timeline__item"
-          >
-            <img
-              v-if="timelineActorAvatarUrl(item)"
-              :src="timelineActorAvatarUrl(item)"
-              alt=""
-              class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 object-fit-cover"
-            />
-            <span
-              v-else
-              class="staff-user-timeline__avatar-img rounded-circle flex-shrink-0 d-inline-flex align-items-center justify-content-center small fw-semibold"
-              style="width: 36px; height: 36px; font-size: 0.6875rem"
-              :class="avatarClassForTimelineActor(item.actor_name)"
-              :title="item.actor_name || 'User'"
-              aria-hidden="true"
-              >{{ item.actor_initials || "?" }}</span
+          <div class="staff-surface p-3 p-md-4 mb-4">
+            <div
+              class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3"
             >
-            <div class="staff-user-timeline__content min-w-0 flex-grow-1">
-              <div class="staff-user-timeline__row">
-                <h3 class="staff-user-timeline__heading">
-                  {{ item.actor_name || "System" }}
-                </h3>
-                <time
-                  class="staff-user-timeline__time"
-                  :datetime="item.created_at"
-                  >{{ formatDateTimeUs(item.created_at) }}</time
-                >
+              <h3 class="staff-user-section-title mb-0">Personal Information</h3>
+              <button
+                v-if="canUpdate"
+                type="button"
+                class="btn btn-sm btn-primary staff-page-primary"
+                @click="editModalOpen = true"
+              >
+                Edit
+              </button>
+            </div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <dl class="mb-0 small">
+                  <dt
+                    class="text-secondary text-uppercase fw-semibold mb-1"
+                    style="font-size: 0.65rem"
+                  >
+                    Full Name
+                  </dt>
+                  <dd class="mb-0 fw-semibold text-body">
+                    {{ display(row.name) }}
+                  </dd>
+                </dl>
               </div>
-              <p class="staff-user-timeline__body">
-                {{ item.body || item.line }}
-              </p>
+              <div class="col-md-6">
+                <dl class="mb-0 small">
+                  <dt
+                    class="text-secondary text-uppercase fw-semibold mb-1"
+                    style="font-size: 0.65rem"
+                  >
+                    Email
+                  </dt>
+                  <dd class="mb-0 fw-semibold text-body text-break">
+                    {{ display(row.email) }}
+                  </dd>
+                </dl>
+              </div>
+              <div class="col-md-6">
+                <dl class="mb-0 small">
+                  <dt
+                    class="text-secondary text-uppercase fw-semibold mb-1"
+                    style="font-size: 0.65rem"
+                  >
+                    Phone
+                  </dt>
+                  <dd class="mb-0 fw-semibold text-body">
+                    {{ display(row.phone) }}
+                  </dd>
+                </dl>
+              </div>
+              <div class="col-md-6">
+                <dl class="mb-0 small">
+                  <dt
+                    class="text-secondary text-uppercase fw-semibold mb-1"
+                    style="font-size: 0.65rem"
+                  >
+                    Created
+                  </dt>
+                  <dd class="mb-0 fw-semibold text-body">
+                    {{ formatDateUs(row.created_at) }}
+                  </dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+
+          <div class="staff-surface p-3 p-md-4">
+            <div
+              class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3"
+            >
+              <h3 class="staff-user-section-title mb-0">Notes</h3>
+            </div>
+
+            <ul v-if="notes.length" class="list-unstyled mb-0">
+              <li
+                v-for="note in notes"
+                :key="note.id"
+                class="border-bottom py-3"
+              >
+                <div class="d-flex flex-wrap align-items-start justify-content-between gap-2">
+                  <div class="min-w-0 flex-grow-1">
+                    <div class="d-flex flex-wrap align-items-center gap-2 small text-secondary mb-1">
+                      <span class="fw-semibold text-body">{{
+                        note.author_name || "Staff"
+                      }}</span>
+                      <time v-if="note.created_at" :datetime="note.created_at">{{
+                        formatDateTimeUs(note.created_at)
+                      }}</time>
+                    </div>
+                    <p class="mb-0 small text-body" style="white-space: pre-wrap">
+                      {{ note.body }}
+                    </p>
+                  </div>
+                  <button
+                    v-if="canUpdate"
+                    type="button"
+                    class="btn btn-link btn-sm text-danger text-decoration-none p-0 flex-shrink-0"
+                    @click="deleteNote(note)"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </li>
+            </ul>
+            <p v-else class="text-secondary small border-bottom pb-3 mb-0">
+              No notes yet.
+            </p>
+
+            <div v-if="canUpdate" class="pt-3">
+              <label class="form-label small text-secondary" for="portal-user-note"
+                >Add Note</label
+              >
+              <textarea
+                id="portal-user-note"
+                v-model="noteBody"
+                rows="3"
+                class="form-control"
+                placeholder="Write an internal note…"
+              />
+              <div class="mt-3">
+                <button
+                  type="button"
+                  class="btn btn-primary staff-page-primary"
+                  :disabled="noteSubmitting"
+                  @click="submitNote"
+                >
+                  {{ noteSubmitting ? "Adding…" : "Add Note" }}
+                </button>
+              </div>
             </div>
           </div>
         </div>
-        <p v-else class="staff-user-timeline__empty">
-          No activity logged yet.
-        </p>
-      </section>
+      </div>
 
       <CrmStatusUpdateModal
         v-model:open="statusModalOpen"

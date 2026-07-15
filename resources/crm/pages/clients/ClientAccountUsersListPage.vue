@@ -174,7 +174,6 @@ const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const stats = ref({
   total: 0,
   active: 0,
-  pending: 0,
   inactive: 0,
 });
 
@@ -196,9 +195,10 @@ const addForm = reactive({
   client_account_id: "",
   name: "",
   email: "",
+  phone: "",
   password: "",
   password_confirmation: "",
-  status: "pending",
+  status: "active",
 });
 
 const deleteTarget = ref(null);
@@ -452,16 +452,14 @@ async function fetchRows() {
 async function fetchStats() {
   try {
     const base = { per_page: 1, page: 1 };
-    const [all, active, pending, inactive] = await Promise.all([
+    const [all, active, inactive] = await Promise.all([
       api.get("/client-account-users", { params: { ...base } }),
       api.get("/client-account-users", { params: { ...base, status: "active" } }),
-      api.get("/client-account-users", { params: { ...base, status: "pending" } }),
       api.get("/client-account-users", { params: { ...base, status: "inactive" } }),
     ]);
     stats.value = {
       total: all.data?.total ?? 0,
       active: active.data?.total ?? 0,
-      pending: pending.data?.total ?? 0,
       inactive: inactive.data?.total ?? 0,
     };
   } catch {
@@ -617,15 +615,26 @@ function openAdd() {
   addForm.client_account_id = query.client_account_id || "";
   addForm.name = "";
   addForm.email = "";
+  addForm.phone = "";
   addForm.password = "";
   addForm.password_confirmation = "";
-  addForm.status = "pending";
+  addForm.status = "active";
   showAddPassword.value = false;
   addOpen.value = true;
 }
 
 function closeAdd() {
   if (!addSaving.value) addOpen.value = false;
+}
+
+function generateAddPassword() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*";
+  const bytes = new Uint8Array(14);
+  crypto.getRandomValues(bytes);
+  const password = Array.from(bytes, (b) => chars[b % chars.length]).join("");
+  addForm.password = password;
+  addForm.password_confirmation = password;
+  showAddPassword.value = true;
 }
 
 async function submitAdd() {
@@ -637,13 +646,16 @@ async function submitAdd() {
       addError.value = "Choose an account.";
       return;
     }
-    await api.post(`/client-accounts/${id}/account-users`, {
+    const payload = {
       name: addForm.name.trim(),
       email: addForm.email.trim(),
       password: addForm.password,
       password_confirmation: addForm.password_confirmation,
-      status: addForm.status,
-    });
+      status: addForm.status || "active",
+    };
+    const phone = String(addForm.phone || "").trim();
+    if (phone) payload.phone = phone;
+    await api.post(`/client-accounts/${id}/account-users`, payload);
     toast.success("User created.");
     addOpen.value = false;
     await refreshList();
@@ -806,15 +818,33 @@ onUnmounted(() => {
                       </p>
                     </div>
                     <div>
+                      <label class="form-label small text-secondary mb-1">Phone (optional)</label>
+                      <input
+                        v-model="addForm.phone"
+                        type="text"
+                        class="form-control"
+                        autocomplete="tel"
+                      />
+                    </div>
+                    <div>
                       <label class="form-label small text-secondary mb-1">Status</label>
                       <select v-model="addForm.status" class="form-select">
-                        <option value="pending">Pending</option>
                         <option value="active">Active</option>
                         <option value="inactive">Inactive</option>
                       </select>
                     </div>
                     <div>
-                      <label class="form-label small text-secondary mb-1">Password</label>
+                      <div class="d-flex align-items-center justify-content-between gap-2 mb-1">
+                        <label class="form-label small text-secondary mb-0">Password</label>
+                        <button
+                          type="button"
+                          class="btn btn-link btn-sm p-0"
+                          :disabled="addSaving"
+                          @click="generateAddPassword"
+                        >
+                          Generate Password
+                        </button>
+                      </div>
                       <div class="position-relative">
                         <input
                           v-model="addForm.password"
@@ -898,7 +928,7 @@ onUnmounted(() => {
     </div>
 
     <div class="row g-4 mb-2">
-      <div class="col-12 col-sm-6 col-xl-3">
+      <div class="col-12 col-sm-6 col-xl-4">
         <div class="staff-stat-card h-100">
           <p class="staff-stat-card__label">Total users</p>
           <p class="staff-stat-card__value">{{ nf.format(stats.total) }}</p>
@@ -916,7 +946,7 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
-      <div class="col-12 col-sm-6 col-xl-3">
+      <div class="col-12 col-sm-6 col-xl-4">
         <div class="staff-stat-card h-100">
           <p class="staff-stat-card__label">Active</p>
           <p class="staff-stat-card__value">{{ nf.format(stats.active) }}</p>
@@ -930,24 +960,7 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
-      <div class="col-12 col-sm-6 col-xl-3">
-        <div class="staff-stat-card h-100">
-          <p class="staff-stat-card__label">Pending</p>
-          <p class="staff-stat-card__value">{{ nf.format(stats.pending) }}</p>
-          <p class="staff-stat-card__sub">Awaiting activation</p>
-          <div
-            class="staff-stat-card__icon bg-warning-subtle text-warning-emphasis"
-            aria-hidden="true"
-          >
-            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24">
-              <path
-                d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 9.5 5 7.49 5 5c0-2.59 2.01-4.5 4.5-4.5S14 2.41 14 5c0 2.49-2.01 4.5-4.5 4.5z"
-              />
-            </svg>
-          </div>
-        </div>
-      </div>
-      <div class="col-12 col-sm-6 col-xl-3">
+      <div class="col-12 col-sm-6 col-xl-4">
         <div class="staff-stat-card h-100">
           <p class="staff-stat-card__label">Inactive</p>
           <p class="staff-stat-card__value">{{ nf.format(stats.inactive) }}</p>
@@ -1037,7 +1050,6 @@ onUnmounted(() => {
                   @change="applySearch"
                 >
                   <option value="all">All statuses</option>
-                  <option value="pending">Pending</option>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>

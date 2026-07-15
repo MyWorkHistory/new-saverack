@@ -29,7 +29,7 @@ const showPassword = ref(false);
 const form = reactive({
   name: "",
   email: "",
-  status: "active",
+  phone: "",
   password: "",
   password_confirmation: "",
 });
@@ -41,7 +41,7 @@ function reset() {
   fieldErrors.value = {};
   form.name = "";
   form.email = "";
-  form.status = "active";
+  form.phone = "";
   form.password = "";
   form.password_confirmation = "";
   showPassword.value = false;
@@ -53,6 +53,18 @@ function clearFieldError(key) {
   const next = { ...fieldErrors.value };
   delete next[key];
   fieldErrors.value = next;
+}
+
+function generatePassword() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*";
+  const bytes = new Uint8Array(14);
+  crypto.getRandomValues(bytes);
+  const password = Array.from(bytes, (b) => chars[b % chars.length]).join("");
+  form.password = password;
+  form.password_confirmation = password;
+  showPassword.value = true;
+  clearFieldError("password");
+  clearFieldError("password_confirmation");
 }
 
 async function load() {
@@ -67,7 +79,7 @@ async function load() {
     );
     form.name = data.name || "";
     form.email = data.email || "";
-    form.status = data.status || "active";
+    form.phone = data.phone || "";
     isPrimary.value = !!data.is_account_primary;
   } catch {
     errorMsg.value = "Could not load user.";
@@ -101,7 +113,7 @@ async function onSubmit() {
   try {
     const payload = {
       name: form.name.trim(),
-      status: form.status,
+      phone: String(form.phone || "").trim() || null,
     };
     if (!isPrimary.value) {
       payload.email = form.email.trim();
@@ -164,9 +176,11 @@ async function onSubmit() {
             </button>
 
             <header class="crm-vx-modal__head">
-              <h2 id="cau-edit-title" class="crm-vx-modal__title">Edit portal user</h2>
+              <h2 id="cau-edit-title" class="crm-vx-modal__title">
+                Personal Information
+              </h2>
               <p class="crm-vx-modal__subtitle">
-                Update name, email, status, or set a new password.
+                Update name, email, phone, or set a new password.
               </p>
             </header>
 
@@ -184,7 +198,7 @@ async function onSubmit() {
                 @submit.prevent="onSubmit"
               >
                 <div class="mb-3">
-                  <label class="form-label small">Full name</label>
+                  <label class="form-label small">Full Name</label>
                   <input
                     v-model="form.name"
                     type="text"
@@ -218,24 +232,32 @@ async function onSubmit() {
                   </p>
                 </div>
                 <div class="mb-3">
-                  <label class="form-label small">Status</label>
-                  <select
-                    v-model="form.status"
-                    class="form-select"
-                    :class="{ 'is-invalid': fieldErrors.status }"
-                    required
-                    @change="clearFieldError('status')"
-                  >
-                    <option value="pending">Pending</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
-                  <p v-if="fieldErrors.status" class="small text-danger mb-0 mt-1">
-                    {{ fieldErrors.status }}
+                  <label class="form-label small">Phone</label>
+                  <input
+                    v-model="form.phone"
+                    type="text"
+                    class="form-control"
+                    :class="{ 'is-invalid': fieldErrors.phone }"
+                    autocomplete="tel"
+                    placeholder="Optional"
+                    @input="clearFieldError('phone')"
+                  />
+                  <p v-if="fieldErrors.phone" class="small text-danger mb-0 mt-1">
+                    {{ fieldErrors.phone }}
                   </p>
                 </div>
                 <div class="mb-0">
-                  <label class="form-label small">New password (optional)</label>
+                  <div class="d-flex align-items-center justify-content-between gap-2 mb-1">
+                    <label class="form-label small mb-0">New Password (optional)</label>
+                    <button
+                      type="button"
+                      class="btn btn-link btn-sm p-0"
+                      :disabled="saving"
+                      @click="generatePassword"
+                    >
+                      Generate Password
+                    </button>
+                  </div>
                   <div class="position-relative">
                     <input
                       v-model="form.password"
@@ -259,7 +281,7 @@ async function onSubmit() {
                   </p>
                 </div>
                 <div v-if="form.password.trim() !== ''" class="mb-0 mt-3">
-                  <label class="form-label small">Confirm new password</label>
+                  <label class="form-label small">Confirm New Password</label>
                   <input
                     v-model="form.password_confirmation"
                     :type="showPassword ? 'text' : 'password'"

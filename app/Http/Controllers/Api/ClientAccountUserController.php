@@ -8,8 +8,10 @@ use App\Http\Requests\ClientAccountUserUpdateRequest;
 use App\Models\ActivityLog;
 use App\Models\ClientAccount;
 use App\Models\User;
+use App\Models\UserNote;
 use App\Policies\ClientAccountUserPolicy;
 use App\Services\ClientAccountUserService;
+use App\Services\UserAvatarService;
 use App\Support\CrmActivityPresenter;
 use App\Support\CsvExporter;
 use Illuminate\Http\JsonResponse;
@@ -22,9 +24,13 @@ class ClientAccountUserController extends Controller
     /** @var ClientAccountUserService */
     protected $accountUsers;
 
-    public function __construct(ClientAccountUserService $accountUsers)
+    /** @var UserAvatarService */
+    protected $avatars;
+
+    public function __construct(ClientAccountUserService $accountUsers, UserAvatarService $avatars)
     {
         $this->accountUsers = $accountUsers;
+        $this->avatars = $avatars;
     }
 
     public function index(Request $request): JsonResponse
@@ -167,6 +173,76 @@ class ClientAccountUserController extends Controller
         $this->accountUsers->deleteAccountUser($user, $auth);
 
         return response()->json(['message' => 'User deleted.']);
+    }
+
+    public function uploadAvatar(Request $request, ClientAccount $client_account, User $user): JsonResponse
+    {
+        $this->guardUserBelongsToAccount($client_account, $user);
+
+        $auth = $request->user();
+        if ($auth === null || ! app(ClientAccountUserPolicy::class)->update($auth, $user, $client_account)) {
+            abort(403);
+        }
+
+        $request->validate([
+            'avatar' => ['required', 'file', 'max:4096', 'mimes:jpeg,jpg,png,webp'],
+        ]);
+
+        $this->avatars->replaceForUser($user, $request->file('avatar'));
+
+        return response()->json($this->accountUsers->toApiArray($user->fresh()));
+    }
+
+    public function indexNotes(Request $request, ClientAccount $client_account, User $user): JsonResponse
+    {
+        $this->guardUserBelongsToAccount($client_account, $user);
+
+        $auth = $request->user();
+        if ($auth === null || ! app(ClientAccountUserPolicy::class)->view($auth, $user, $client_account)) {
+            abort(403);
+        }
+
+        return response()->json(['notes' => $this->accountUsers->notesForUser($user)]);
+    }
+
+    public function storeNote(Request $request, ClientAccount $client_account, User $user): JsonResponse
+    {
+        $this->guardUserBelongsToAccount($client_account, $user);
+
+        $auth = $request->user();
+        if ($auth === null || ! app(ClientAccountUserPolicy::class)->update($auth, $user, $client_account)) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'body' => ['required', 'string', 'max:10000'],
+        ]);
+
+        $note = $this->accountUsers->addNote($user, (string) $validated['body'], $auth);
+
+        return response()->json($this->accountUsers->noteToArray($note), 201);
+    }
+
+    public function destroyNote(
+        Request $request,
+        ClientAccount $client_account,
+        User $user,
+        UserNote $note
+    ): JsonResponse {
+        $this->guardUserBelongsToAccount($client_account, $user);
+
+        $auth = $request->user();
+        if ($auth === null || ! app(ClientAccountUserPolicy::class)->update($auth, $user, $client_account)) {
+            abort(403);
+        }
+
+        if ((int) $note->user_id !== (int) $user->id) {
+            abort(404);
+        }
+
+        $this->accountUsers->deleteNote($note);
+
+        return response()->json(['ok' => true]);
     }
 
     private function guardUserBelongsToAccount(ClientAccount $account, User $user): void

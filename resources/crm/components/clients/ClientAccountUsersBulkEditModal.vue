@@ -7,21 +7,21 @@ const props = defineProps({
   busy: { type: Boolean, default: false },
   statuses: {
     type: Array,
-    default: () => ["pending", "active", "inactive"],
+    default: () => ["active", "inactive"],
   },
 });
 
 const emit = defineEmits(["update:open", "apply"]);
 
 const changeStatus = ref(false);
-const status = ref("pending");
+const status = ref("active");
 
 watch(
   () => props.open,
   (o) => {
     if (!o) return;
     changeStatus.value = false;
-    status.value = "pending";
+    status.value = "active";
   },
 );
 

@@ -26,7 +26,8 @@ class ClientAccountUserStoreRequest extends FormRequest
             'name' => ['required', 'string', 'max:150'],
             'email' => ['required', 'email', 'max:190', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
-            'status' => ['required', Rule::in(['pending', 'active', 'inactive'])],
+            'status' => ['required', Rule::in(['active', 'inactive'])],
+            'phone' => ['nullable', 'string', 'max:50'],
         ];
     }
 
@@ -42,7 +43,7 @@ class ClientAccountUserStoreRequest extends FormRequest
             'password.min' => 'Password must be at least 8 characters.',
             'password.confirmed' => 'Password confirmation does not match.',
             'status.required' => 'Status is required.',
-            'status.in' => 'Status must be pending, active, or inactive.',
+            'status.in' => 'Status must be active or inactive.',
         ];
     }
 

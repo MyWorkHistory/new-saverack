@@ -1,9 +1,9 @@
 @extends('public.payment-method.layout')
 
-@section('title', 'ACH Bank Transfer on File')
+@section('title', 'ACH Bank Transfer Authorization')
 
 @section('content')
-    <h1 class="pm-title">ACH Bank Transfer on File</h1>
+    <h1 class="pm-title">ACH Bank Transfer Authorization</h1>
     <p class="pm-sub">
         Add your bank account to your account. This account will be used for automatic payments for invoices and services.
     </p>

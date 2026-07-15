@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ClientAccount;
 use App\Models\User;
+use App\Models\UserNote;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -34,7 +35,7 @@ class ClientAccountUserService
                 'clientAccount' => function ($q) {
                     $q->select('client_accounts.id', 'client_accounts.company_name', 'client_accounts.email');
                 },
-                'profile:id,user_id,avatar_path',
+                'profile:id,user_id,avatar_path,phone',
             ]);
 
         $this->applyAccountUserDirectoryFilters($query, $filters);
@@ -77,7 +78,7 @@ class ClientAccountUserService
             $query->where('users.client_account_id', $clientAccountId);
         }
 
-        if ($status !== '' && $status !== 'all' && in_array($status, ['pending', 'active', 'inactive'], true)) {
+        if ($status !== '' && $status !== 'all' && in_array($status, ['active', 'inactive'], true)) {
             $query->where('users.status', $status);
         }
 
@@ -100,7 +101,7 @@ class ClientAccountUserService
     {
         $user->loadMissing([
             'clientAccount:id,company_name,email',
-            'profile:id,user_id,avatar_path',
+            'profile:id,user_id,avatar_path,phone',
         ]);
         $account = $user->clientAccount;
         $profile = $user->profile;
@@ -109,6 +110,7 @@ class ClientAccountUserService
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
+            'phone' => $profile !== null ? $profile->phone : null,
             'avatar_url' => $profile !== null ? $profile->avatar_url : null,
             'status' => $user->status,
             'client_account_id' => $user->client_account_id,
@@ -170,18 +172,19 @@ class ClientAccountUserService
                 $name,
                 (string) $data['password']
             );
-            $status = (string) ($data['status'] ?? 'pending');
-            if (in_array($status, ['pending', 'active', 'inactive'], true) && $user->status !== $status) {
+            $status = (string) ($data['status'] ?? 'active');
+            if (in_array($status, ['active', 'inactive'], true) && $user->status !== $status) {
                 $user->update(['status' => $status]);
                 $user = $user->fresh(['clientAccount']);
             }
+            $this->syncPhone($user, $data['phone'] ?? null);
             if ($actor !== null) {
                 $this->activityLog->log($actor, 'portal_user.created', $user, null, [
                     'email' => (string) $user->email,
                 ]);
             }
 
-            return $user;
+            return $user->fresh(['clientAccount', 'profile']);
         }
 
         return $this->createSecondary($account, $data, $actor);
@@ -192,18 +195,23 @@ class ClientAccountUserService
         $email = (string) $data['email'];
 
         return DB::transaction(function () use ($account, $data, $email, $actor) {
+            $status = (string) ($data['status'] ?? 'active');
+            if (! in_array($status, ['active', 'inactive'], true)) {
+                $status = 'active';
+            }
             $user = User::query()->create([
                 'name' => trim((string) $data['name']),
                 'email' => $email,
                 'password' => Hash::make((string) $data['password']),
-                'status' => (string) $data['status'],
+                'status' => $status,
                 'client_account_id' => $account->id,
                 'account_user_role' => User::ACCOUNT_USER_ROLE_CUSTOMER_SERVICE,
                 'is_account_primary' => false,
             ]);
             $user->roles()->sync([]);
+            $this->syncPhone($user, $data['phone'] ?? null);
 
-            $fresh = $user->fresh(['clientAccount']);
+            $fresh = $user->fresh(['clientAccount', 'profile']);
             if ($actor !== null) {
                 $this->activityLog->log($actor, 'portal_user.created', $fresh, null, [
                     'email' => (string) $fresh->email,
@@ -223,6 +231,10 @@ class ClientAccountUserService
             unset($data['email']);
         }
 
+        $phone = array_key_exists('phone', $data) ? $data['phone'] : null;
+        $hasPhone = array_key_exists('phone', $data);
+        unset($data['phone']);
+
         if (isset($data['password']) && $data['password'] !== null && $data['password'] !== '') {
             $data['password'] = Hash::make((string) $data['password']);
         } else {
@@ -231,14 +243,24 @@ class ClientAccountUserService
 
         unset($data['client_account_id'], $data['account_user_role'], $data['is_account_primary']);
 
-        $changedKeys = array_keys($data);
-        $user->update($data);
+        if (isset($data['status']) && ! in_array((string) $data['status'], ['active', 'inactive'], true)) {
+            unset($data['status']);
+        }
 
-        $fresh = $user->fresh(['clientAccount']);
+        $changedKeys = array_keys($data);
+        if ($data !== []) {
+            $user->update($data);
+        }
+        if ($hasPhone) {
+            $this->syncPhone($user, $phone);
+            $changedKeys[] = 'phone';
+        }
+
+        $fresh = $user->fresh(['clientAccount', 'profile']);
         if ($actor !== null && $changedKeys !== []) {
             $this->activityLog->log($actor, 'portal_user.updated', $fresh, null, [
                 'email' => (string) $fresh->email,
-                'fields' => $changedKeys,
+                'fields' => array_values(array_unique($changedKeys)),
             ]);
         }
 
@@ -260,5 +282,72 @@ class ClientAccountUserService
             $user->tokens()->delete();
             $user->delete();
         });
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function notesForUser(User $user): array
+    {
+        return UserNote::query()
+            ->where('user_id', $user->id)
+            ->with('author:id,name')
+            ->orderByDesc('id')
+            ->get()
+            ->map(function (UserNote $note) {
+                return $this->noteToArray($note);
+            })
+            ->values()
+            ->all();
+    }
+
+    public function addNote(User $user, string $body, ?User $actor = null): UserNote
+    {
+        $body = trim($body);
+        if ($body === '') {
+            throw ValidationException::withMessages([
+                'body' => ['Note cannot be empty.'],
+            ]);
+        }
+
+        return UserNote::query()->create([
+            'user_id' => $user->id,
+            'author_id' => $actor ? $actor->id : null,
+            'body' => $body,
+        ])->fresh('author');
+    }
+
+    public function deleteNote(UserNote $note): void
+    {
+        $note->delete();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function noteToArray(UserNote $note): array
+    {
+        $note->loadMissing('author:id,name');
+
+        return [
+            'id' => $note->id,
+            'body' => $note->body,
+            'author_id' => $note->author_id,
+            'author_name' => $note->author ? $note->author->name : 'Staff',
+            'created_at' => $note->created_at ? $note->created_at->toIso8601String() : null,
+            'updated_at' => $note->updated_at ? $note->updated_at->toIso8601String() : null,
+        ];
+    }
+
+    private function syncPhone(User $user, $phone): void
+    {
+        $value = $phone === null ? null : trim((string) $phone);
+        if ($value === '') {
+            $value = null;
+        }
+        $user->profile()->updateOrCreate(
+            ['user_id' => $user->id],
+            ['phone' => $value]
+        );
     }
 }

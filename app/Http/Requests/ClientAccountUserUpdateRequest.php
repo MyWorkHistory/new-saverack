@@ -32,7 +32,8 @@ class ClientAccountUserUpdateRequest extends FormRequest
         $rules = [
             'name' => ['sometimes', 'required', 'string', 'max:150'],
             'password' => ['nullable', 'string', 'min:8', 'confirmed'],
-            'status' => ['sometimes', 'required', Rule::in(['pending', 'active', 'inactive'])],
+            'status' => ['sometimes', 'required', Rule::in(['active', 'inactive'])],
+            'phone' => ['nullable', 'string', 'max:50'],
         ];
 
         if (! $isPrimary) {
@@ -53,7 +54,7 @@ class ClientAccountUserUpdateRequest extends FormRequest
             'password.min' => 'Password must be at least 8 characters.',
             'password.confirmed' => 'Password confirmation does not match.',
             'status.required' => 'Status is required.',
-            'status.in' => 'Status must be pending, active, or inactive.',
+            'status.in' => 'Status must be active or inactive.',
         ];
     }
 }

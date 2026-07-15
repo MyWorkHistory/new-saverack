@@ -168,7 +168,7 @@ class PortalClientProvisioningService
             'name' => trim($fullName),
             'email' => $email,
             'password' => Hash::make($plainPassword),
-            'status' => 'pending',
+            'status' => 'active',
             'client_account_id' => $account->id,
             'account_user_role' => User::ACCOUNT_USER_ROLE_ADMIN,
             'is_account_primary' => true,

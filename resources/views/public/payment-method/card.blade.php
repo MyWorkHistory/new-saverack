@@ -1,9 +1,9 @@
 @extends('public.payment-method.layout')
 
-@section('title', 'Credit Card on File')
+@section('title', 'Credit Card Authorization')
 
 @section('content')
-    <h1 class="pm-title">Credit Card on File</h1>
+    <h1 class="pm-title">Credit Card Authorization</h1>
     <p class="pm-sub">
         Add a credit card to your account. This card will be used for automatic payments for invoices and services.
     </p>

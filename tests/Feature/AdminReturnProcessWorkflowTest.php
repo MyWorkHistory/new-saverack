@@ -31,7 +31,7 @@ class AdminReturnProcessWorkflowTest extends TestCase
     private function staffUser(array $extraPermissionKeys = []): User
     {
         $user = User::factory()->create(['client_account_id' => null]);
-        $keys = array_merge(['inventory.view', 'clients.view'], $extraPermissionKeys);
+        $keys = array_merge(['returns.view', 'clients.view'], $extraPermissionKeys);
         foreach ($keys as $key) {
             $perm = $this->permission($key, explode('.', $key)[0]);
             $user->permissions()->syncWithoutDetaching([$perm->id]);
@@ -316,7 +316,7 @@ class AdminReturnProcessWorkflowTest extends TestCase
     {
         $account = $this->account();
         $user = User::factory()->create(['client_account_id' => $account->id]);
-        $user->permissions()->attach($this->permission('inventory.view', 'inventory')->id);
+        $user->permissions()->attach($this->permission('returns.view', 'returns')->id);
         Sanctum::actingAs($user);
 
         $this->getJson('/api/admin/returns/pending')->assertForbidden();

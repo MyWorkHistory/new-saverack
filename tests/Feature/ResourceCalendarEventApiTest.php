@@ -345,6 +345,31 @@ class ResourceCalendarEventApiTest extends TestCase
         ]);
     }
 
+    public function test_update_can_change_repeat_on_edit(): void
+    {
+        $user = $this->staffWithCreate();
+        Sanctum::actingAs($user);
+
+        $event = ResourceCalendarEvent::query()->create([
+            'created_by_user_id' => $user->id,
+            'title' => 'One-off Meeting',
+            'category' => ResourceCalendarEvent::CATEGORY_MEETING,
+            'start_date' => '2026-03-01',
+            'end_date' => '2026-03-01',
+            'repeat' => ResourceCalendarEvent::REPEAT_NONE,
+            'is_personal' => false,
+        ]);
+
+        $this->patchJson('/api/resources/calendar-events/'.$event->id, [
+            'repeat' => ResourceCalendarEvent::REPEAT_MONTHLY,
+        ])
+            ->assertOk()
+            ->assertJsonPath('repeat', ResourceCalendarEvent::REPEAT_MONTHLY);
+
+        $this->assertDatabaseCount('resource_calendar_events', 24);
+        $this->assertNotNull($event->fresh()->series_id);
+    }
+
     public function test_list_endpoint_paginates_events(): void
     {
         $user = $this->staffWithCreate();

@@ -15,12 +15,12 @@ class ClientAccountReturnPolicy
 
     public function viewAny(User $user): bool
     {
-        return Gate::forUser($user)->allows('inventory.view');
+        return Gate::forUser($user)->allows('returns.view');
     }
 
     public function view(User $user, ClientAccountReturn $return): bool
     {
-        if (! Gate::forUser($user)->allows('inventory.view')) {
+        if (! Gate::forUser($user)->allows('returns.view')) {
             return false;
         }
         if ($this->ownsAccount($user, (int) $return->client_account_id)) {
@@ -32,11 +32,15 @@ class ClientAccountReturnPolicy
 
     public function update(User $user, ClientAccountReturn $return): bool
     {
-        return $this->view($user, $return);
+        if ($this->ownsAccount($user, (int) $return->client_account_id)) {
+            return Gate::forUser($user)->allows('returns.view');
+        }
+
+        return Gate::forUser($user)->allows('returns.update');
     }
 
     public function delete(User $user, ClientAccountReturn $return): bool
     {
-        return $this->view($user, $return);
+        return $this->update($user, $return);
     }
 }

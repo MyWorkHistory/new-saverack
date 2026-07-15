@@ -256,40 +256,40 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('returns')->group(function () {
-        Route::get('/items', [ReturnController::class, 'itemsIndex'])->middleware('can:inventory.view');
-        Route::post('/draft', [ReturnController::class, 'storeDraft'])->middleware('can:inventory.view');
-        Route::get('/', [ReturnController::class, 'index'])->middleware('can:inventory.view');
-        Route::get('/{clientAccountReturn}/packing-slip.pdf', [ReturnController::class, 'packingSlipPdf'])->middleware('can:inventory.view');
-        Route::get('/{clientAccountReturn}/shipping-label.pdf', [ReturnController::class, 'shippingLabelPdf'])->middleware('can:inventory.view');
-        Route::get('/{clientAccountReturn}/rma-barcode.pdf', [ReturnController::class, 'rmaBarcodePdf'])->middleware('can:inventory.view');
-        Route::put('/{clientAccountReturn}/submit', [ReturnController::class, 'submit'])->middleware('can:inventory.view');
-        Route::patch('/{clientAccountReturn}/warehouse-note', [ReturnController::class, 'updateWarehouseNote'])->middleware('can:inventory.view');
-        Route::get('/{clientAccountReturn}', [ReturnController::class, 'show'])->middleware('can:inventory.view');
-        Route::patch('/{clientAccountReturn}', [ReturnController::class, 'update'])->middleware('can:inventory.view');
-        Route::delete('/{clientAccountReturn}', [ReturnController::class, 'destroy'])->middleware('can:inventory.view');
+        Route::get('/items', [ReturnController::class, 'itemsIndex'])->middleware('can:returns.view');
+        Route::post('/draft', [ReturnController::class, 'storeDraft'])->middleware('can:returns.view');
+        Route::get('/', [ReturnController::class, 'index'])->middleware('can:returns.view');
+        Route::get('/{clientAccountReturn}/packing-slip.pdf', [ReturnController::class, 'packingSlipPdf'])->middleware('can:returns.view');
+        Route::get('/{clientAccountReturn}/shipping-label.pdf', [ReturnController::class, 'shippingLabelPdf'])->middleware('can:returns.view');
+        Route::get('/{clientAccountReturn}/rma-barcode.pdf', [ReturnController::class, 'rmaBarcodePdf'])->middleware('can:returns.view');
+        Route::put('/{clientAccountReturn}/submit', [ReturnController::class, 'submit'])->middleware('can:returns.view');
+        Route::patch('/{clientAccountReturn}/warehouse-note', [ReturnController::class, 'updateWarehouseNote'])->middleware('can:returns.view');
+        Route::get('/{clientAccountReturn}', [ReturnController::class, 'show'])->middleware('can:returns.view');
+        Route::patch('/{clientAccountReturn}', [ReturnController::class, 'update'])->middleware('can:returns.view');
+        Route::delete('/{clientAccountReturn}', [ReturnController::class, 'destroy'])->middleware('can:returns.view');
     });
 
     Route::prefix('admin/returns')->group(function () {
-        Route::post('/non-compliant', [AdminReturnController::class, 'storeNonCompliant'])->middleware('can:inventory.view');
-        Route::post('/third-party', [AdminReturnController::class, 'storeThirdParty'])->middleware('can:inventory.view');
-        Route::get('/bins', [AdminReturnController::class, 'listReturnBins'])->middleware('can:inventory.view');
-        Route::get('/bins/{binNumber}/items', [AdminReturnController::class, 'listReturnBinItems'])->middleware('can:inventory.view');
-        Route::post('/bins/{binNumber}/transfer', [AdminReturnController::class, 'transferReturnBinItem'])->middleware('can:inventory.update');
-        Route::post('/{clientAccountReturn}/lines', [AdminReturnController::class, 'storeLine'])->middleware('can:inventory.view');
-        Route::patch('/{clientAccountReturn}/lines/{line}', [AdminReturnController::class, 'updateLine'])->middleware('can:inventory.view');
-        Route::delete('/{clientAccountReturn}/lines/{line}', [AdminReturnController::class, 'destroyLine'])->middleware('can:inventory.view');
-        Route::get('/{clientAccountReturn}/lines/{line}/barcode.pdf', [AdminReturnController::class, 'lineBarcodePdf'])->middleware('can:inventory.view');
-        Route::get('/fee-defaults', [AdminReturnController::class, 'feeDefaults'])->middleware('can:inventory.view');
-        Route::patch('/{clientAccountReturn}/return-bin', [AdminReturnController::class, 'assignReturnBin'])->middleware('can:inventory.view');
-        Route::patch('/{clientAccountReturn}/fees', [AdminReturnController::class, 'updateFees'])->middleware('can:inventory.view');
-        Route::post('/{clientAccountReturn}/process-from-draft', [AdminReturnController::class, 'processFromDraft'])->middleware('can:inventory.view');
-        Route::get('/pending', [AdminReturnController::class, 'pending'])->middleware('can:inventory.view');
-        Route::get('/order-lookup', [AdminReturnController::class, 'orderLookup'])->middleware('can:inventory.view');
-        Route::get('/rma-lookup', [AdminReturnController::class, 'rmaLookup'])->middleware('can:inventory.view');
-        Route::get('/orders', [AdminReturnController::class, 'returnedOrders'])->middleware('can:inventory.view');
-        Route::get('/items', [AdminReturnController::class, 'returnedItems'])->middleware('can:inventory.view');
-        Route::post('/{clientAccountReturn}/process', [AdminReturnController::class, 'process'])->middleware('can:inventory.view');
-        Route::get('/process-lookup', [AdminReturnController::class, 'processLookup'])->middleware('can:inventory.view');
+        Route::post('/non-compliant', [AdminReturnController::class, 'storeNonCompliant'])->middleware('can:returns.update');
+        Route::post('/third-party', [AdminReturnController::class, 'storeThirdParty'])->middleware('can:returns.update');
+        Route::get('/bins', [AdminReturnController::class, 'listReturnBins'])->middleware('can:returns.view');
+        Route::get('/bins/{binNumber}/items', [AdminReturnController::class, 'listReturnBinItems'])->middleware('can:returns.view');
+        Route::post('/bins/{binNumber}/transfer', [AdminReturnController::class, 'transferReturnBinItem'])->middleware('can:returns.update');
+        Route::post('/{clientAccountReturn}/lines', [AdminReturnController::class, 'storeLine'])->middleware('can:returns.update');
+        Route::patch('/{clientAccountReturn}/lines/{line}', [AdminReturnController::class, 'updateLine'])->middleware('can:returns.update');
+        Route::delete('/{clientAccountReturn}/lines/{line}', [AdminReturnController::class, 'destroyLine'])->middleware('can:returns.update');
+        Route::get('/{clientAccountReturn}/lines/{line}/barcode.pdf', [AdminReturnController::class, 'lineBarcodePdf'])->middleware('can:returns.view');
+        Route::get('/fee-defaults', [AdminReturnController::class, 'feeDefaults'])->middleware('can:returns.view');
+        Route::patch('/{clientAccountReturn}/return-bin', [AdminReturnController::class, 'assignReturnBin'])->middleware('can:returns.update');
+        Route::patch('/{clientAccountReturn}/fees', [AdminReturnController::class, 'updateFees'])->middleware('can:returns.update');
+        Route::post('/{clientAccountReturn}/process-from-draft', [AdminReturnController::class, 'processFromDraft'])->middleware('can:returns.update');
+        Route::get('/pending', [AdminReturnController::class, 'pending'])->middleware('can:returns.view');
+        Route::get('/order-lookup', [AdminReturnController::class, 'orderLookup'])->middleware('can:returns.view');
+        Route::get('/rma-lookup', [AdminReturnController::class, 'rmaLookup'])->middleware('can:returns.view');
+        Route::get('/orders', [AdminReturnController::class, 'returnedOrders'])->middleware('can:returns.view');
+        Route::get('/items', [AdminReturnController::class, 'returnedItems'])->middleware('can:returns.view');
+        Route::post('/{clientAccountReturn}/process', [AdminReturnController::class, 'process'])->middleware('can:returns.update');
+        Route::get('/process-lookup', [AdminReturnController::class, 'processLookup'])->middleware('can:returns.view');
     });
 
     Route::prefix('admin/wholesale-orders')->group(function () {

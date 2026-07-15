@@ -180,7 +180,7 @@ class ResourceCalendarEventController extends Controller
         $this->authorize('view', $calendarEvent);
 
         $data = $request->validated();
-        unset($data['repeat'], $data['series_id']);
+        unset($data['series_id']);
 
         if (array_key_exists('description', $data)) {
             $data['description'] = $data['description'] !== null ? trim((string) $data['description']) : null;
@@ -193,10 +193,9 @@ class ResourceCalendarEventController extends Controller
             $data['is_personal'] = (bool) $data['is_personal'];
         }
 
-        $calendarEvent->fill($data);
-        $calendarEvent->save();
+        $updated = $this->calendarEvents->updateWithRepeat($calendarEvent, $data);
 
-        return response()->json($this->transformEvent($calendarEvent->fresh('creator')));
+        return response()->json($this->transformEvent($updated));
     }
 
     public function destroy(Request $request, ResourceCalendarEvent $calendarEvent): JsonResponse

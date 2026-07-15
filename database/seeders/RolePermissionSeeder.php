@@ -80,6 +80,8 @@ class RolePermissionSeeder extends Seeder
             ['key' => 'inventory.update', 'label' => 'Update inventory quantities', 'module' => 'inventory'],
             ['key' => 'receiving.view', 'label' => 'View receiving', 'module' => 'receiving'],
             ['key' => 'receiving.update', 'label' => 'Update receiving', 'module' => 'receiving'],
+            ['key' => 'returns.view', 'label' => 'View returns', 'module' => 'returns'],
+            ['key' => 'returns.update', 'label' => 'Update returns', 'module' => 'returns'],
             ['key' => 'orders.view', 'label' => 'View orders', 'module' => 'orders'],
             ['key' => 'orders.update', 'label' => 'Update orders', 'module' => 'orders'],
             ['key' => 'settings.view', 'label' => 'View settings', 'module' => 'settings'],

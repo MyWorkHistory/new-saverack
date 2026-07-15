@@ -45,6 +45,12 @@ const PAGE_META = {
     rowLabel: "Receiving",
     order: 65,
   },
+  returns: {
+    moduleKey: "returns",
+    moduleLabel: "Returns",
+    rowLabel: "Returns",
+    order: 67,
+  },
 };
 
 const props = defineProps({

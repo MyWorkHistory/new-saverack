@@ -153,6 +153,31 @@ class AuthServiceProvider extends ServiceProvider
             return in_array('receiving.update', $user->allPermissionKeys(), true);
         });
 
+        Gate::define('returns.view', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return true;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return in_array('returns.view', $user->allPermissionKeys(), true);
+        });
+
+        Gate::define('returns.update', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return in_array('returns.update', $user->allPermissionKeys(), true);
+        });
+
         Gate::define('crm.client-account-options', function ($user) {
             if (! $user) {
                 return false;
@@ -165,7 +190,7 @@ class AuthServiceProvider extends ServiceProvider
             }
 
             $keys = $user->allPermissionKeys();
-            foreach (['inventory.view', 'orders.view', 'receiving.view', 'clients.view', 'billing.view', 'projects.view'] as $perm) {
+            foreach (['inventory.view', 'orders.view', 'receiving.view', 'returns.view', 'clients.view', 'billing.view', 'projects.view'] as $perm) {
                 if (in_array($perm, $keys, true)) {
                     return true;
                 }

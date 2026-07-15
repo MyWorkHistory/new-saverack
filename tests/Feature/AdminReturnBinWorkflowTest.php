@@ -29,7 +29,7 @@ class AdminReturnBinWorkflowTest extends TestCase
     private function staffUser(array $extraPermissionKeys = []): User
     {
         $user = User::factory()->create(['client_account_id' => null, 'name' => 'Bin Staff']);
-        $keys = array_merge(['inventory.view', 'inventory.update', 'clients.view'], $extraPermissionKeys);
+        $keys = array_merge(['returns.view', 'returns.update', 'clients.view'], $extraPermissionKeys);
         foreach ($keys as $key) {
             $perm = $this->permission($key, explode('.', $key)[0]);
             $user->permissions()->syncWithoutDetaching([$perm->id]);
@@ -113,7 +113,7 @@ class AdminReturnBinWorkflowTest extends TestCase
             'items_count' => 1,
         ]);
         $line = $this->line($return, 'SKU-PR', 1);
-        Sanctum::actingAs($this->staffUser(['inventory.view']));
+        Sanctum::actingAs($this->staffUser(['returns.view']));
 
         $this->postJson('/api/admin/returns/'.$return->id.'/process', [
             'line_ids' => [$line->id],

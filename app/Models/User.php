@@ -44,6 +44,8 @@ class User extends Authenticatable
         'inventory.update',
         'receiving.view',
         'receiving.update',
+        'returns.view',
+        'returns.update',
         'orders.view',
         'orders.update',
     ];

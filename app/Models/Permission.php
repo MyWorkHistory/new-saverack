@@ -78,6 +78,8 @@ class Permission extends Model
             'inventory.update' => ['label' => 'Update inventory quantities', 'module' => 'inventory'],
             'receiving.view' => ['label' => 'View receiving', 'module' => 'receiving'],
             'receiving.update' => ['label' => 'Update receiving', 'module' => 'receiving'],
+            'returns.view' => ['label' => 'View returns', 'module' => 'returns'],
+            'returns.update' => ['label' => 'Update returns', 'module' => 'returns'],
             'orders.view' => ['label' => 'View orders', 'module' => 'orders'],
             'orders.update' => ['label' => 'Update orders', 'module' => 'orders'],
             'settings.view' => ['label' => 'View settings', 'module' => 'settings'],

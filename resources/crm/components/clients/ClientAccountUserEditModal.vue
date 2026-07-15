@@ -3,6 +3,10 @@ import { reactive, ref, watch } from "vue";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import {
+  allValidationMessages,
+  fieldValidationErrors,
+} from "../../utils/apiError.js";
+import {
   CRM_BTN_PRIMARY,
   CRM_BTN_SECONDARY,
   CRM_DIALOG_FOOTER_CLASS,
@@ -19,6 +23,7 @@ const emit = defineEmits(["update:open", "saved"]);
 const loading = ref(false);
 const saving = ref(false);
 const errorMsg = ref("");
+const fieldErrors = ref({});
 const showPassword = ref(false);
 
 const form = reactive({
@@ -33,6 +38,7 @@ const isPrimary = ref(false);
 
 function reset() {
   errorMsg.value = "";
+  fieldErrors.value = {};
   form.name = "";
   form.email = "";
   form.status = "active";
@@ -42,10 +48,18 @@ function reset() {
   isPrimary.value = false;
 }
 
+function clearFieldError(key) {
+  if (!fieldErrors.value[key]) return;
+  const next = { ...fieldErrors.value };
+  delete next[key];
+  fieldErrors.value = next;
+}
+
 async function load() {
   if (!props.clientAccountId || !props.userId) return;
   loading.value = true;
   errorMsg.value = "";
+  fieldErrors.value = {};
   reset();
   try {
     const { data } = await api.get(
@@ -83,6 +97,7 @@ async function onSubmit() {
   if (!props.clientAccountId || !props.userId) return;
   saving.value = true;
   errorMsg.value = "";
+  fieldErrors.value = {};
   try {
     const payload = {
       name: form.name.trim(),
@@ -101,18 +116,11 @@ async function onSubmit() {
       payload,
     );
     emit("saved");
-    close();
+    emit("update:open", false);
     reset();
   } catch (e) {
-    const errs = e.response?.data?.errors;
-    if (errs && typeof errs === "object") {
-      errorMsg.value = Object.values(errs).flat().join(" ");
-    } else {
-      errorMsg.value =
-        typeof e.response?.data?.message === "string"
-          ? e.response.data.message
-          : "Could not save.";
-    }
+    fieldErrors.value = fieldValidationErrors(e);
+    errorMsg.value = allValidationMessages(e, "Could not save.");
   } finally {
     saving.value = false;
   }
@@ -182,8 +190,13 @@ async function onSubmit() {
                     type="text"
                     required
                     class="form-control"
+                    :class="{ 'is-invalid': fieldErrors.name }"
                     autocomplete="name"
+                    @input="clearFieldError('name')"
                   />
+                  <p v-if="fieldErrors.name" class="small text-danger mb-0 mt-1">
+                    {{ fieldErrors.name }}
+                  </p>
                 </div>
                 <div class="mb-3">
                   <label class="form-label small">Email</label>
@@ -191,21 +204,35 @@ async function onSubmit() {
                     v-model="form.email"
                     type="email"
                     class="form-control"
+                    :class="{ 'is-invalid': fieldErrors.email }"
                     :disabled="isPrimary"
                     :required="!isPrimary"
                     autocomplete="email"
+                    @input="clearFieldError('email')"
                   />
-                  <p v-if="isPrimary" class="small text-secondary mb-0 mt-1">
+                  <p v-if="fieldErrors.email" class="small text-danger mb-0 mt-1">
+                    {{ fieldErrors.email }}
+                  </p>
+                  <p v-else-if="isPrimary" class="small text-secondary mb-0 mt-1">
                     Primary admin email matches the client account; it cannot be changed here.
                   </p>
                 </div>
                 <div class="mb-3">
                   <label class="form-label small">Status</label>
-                  <select v-model="form.status" class="form-select" required>
+                  <select
+                    v-model="form.status"
+                    class="form-select"
+                    :class="{ 'is-invalid': fieldErrors.status }"
+                    required
+                    @change="clearFieldError('status')"
+                  >
                     <option value="pending">Pending</option>
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                   </select>
+                  <p v-if="fieldErrors.status" class="small text-danger mb-0 mt-1">
+                    {{ fieldErrors.status }}
+                  </p>
                 </div>
                 <div class="mb-0">
                   <label class="form-label small">New password (optional)</label>
@@ -214,8 +241,10 @@ async function onSubmit() {
                       v-model="form.password"
                       :type="showPassword ? 'text' : 'password'"
                       class="form-control pe-5"
+                      :class="{ 'is-invalid': fieldErrors.password }"
                       autocomplete="new-password"
                       placeholder="Leave blank to keep current password"
+                      @input="clearFieldError('password')"
                     />
                     <button
                       type="button"
@@ -225,6 +254,9 @@ async function onSubmit() {
                       {{ showPassword ? "Hide" : "Show" }}
                     </button>
                   </div>
+                  <p v-if="fieldErrors.password" class="small text-danger mb-0 mt-1">
+                    {{ fieldErrors.password }}
+                  </p>
                 </div>
                 <div v-if="form.password.trim() !== ''" class="mb-0 mt-3">
                   <label class="form-label small">Confirm new password</label>
@@ -232,8 +264,16 @@ async function onSubmit() {
                     v-model="form.password_confirmation"
                     :type="showPassword ? 'text' : 'password'"
                     class="form-control"
+                    :class="{ 'is-invalid': fieldErrors.password_confirmation }"
                     autocomplete="new-password"
+                    @input="clearFieldError('password_confirmation')"
                   />
+                  <p
+                    v-if="fieldErrors.password_confirmation"
+                    class="small text-danger mb-0 mt-1"
+                  >
+                    {{ fieldErrors.password_confirmation }}
+                  </p>
                 </div>
               </form>
             </div>

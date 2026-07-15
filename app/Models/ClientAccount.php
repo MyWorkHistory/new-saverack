@@ -86,6 +86,7 @@ class ClientAccount extends Model
         'zip',
         'country',
         'notes',
+        'terms_of_service_body',
         'account_manager_id',
         'contract_date',
         'stripe_customer_id',

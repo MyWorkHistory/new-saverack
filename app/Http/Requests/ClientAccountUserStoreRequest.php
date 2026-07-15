@@ -30,6 +30,22 @@ class ClientAccountUserStoreRequest extends FormRequest
         ];
     }
 
+    public function messages(): array
+    {
+        return [
+            'name.required' => 'Full name is required.',
+            'name.max' => 'Full name may not be greater than 150 characters.',
+            'email.required' => 'Email is required.',
+            'email.email' => 'Enter a valid email address.',
+            'email.unique' => 'This email is already in use.',
+            'password.required' => 'Password is required.',
+            'password.min' => 'Password must be at least 8 characters.',
+            'password.confirmed' => 'Password confirmation does not match.',
+            'status.required' => 'Status is required.',
+            'status.in' => 'Status must be pending, active, or inactive.',
+        ];
+    }
+
     public function withValidator($validator): void
     {
         $validator->after(function ($v) {

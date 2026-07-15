@@ -23,6 +23,33 @@ export function humanizeValidationMessage(msg) {
   return s;
 }
 
+/** Flatten Laravel errors bag into a field → first humanized message map. */
+export function fieldValidationErrors(e) {
+  const errs = e?.response?.data?.errors;
+  if (!errs || typeof errs !== "object") {
+    return {};
+  }
+  const out = {};
+  for (const [key, val] of Object.entries(errs)) {
+    const messages = Array.isArray(val) ? val : val != null ? [val] : [];
+    const first = messages.map(humanizeValidationMessage).filter(Boolean)[0];
+    if (first) {
+      out[key] = first;
+    }
+  }
+  return out;
+}
+
+/** Join all humanized validation messages, or fall back to errorMessage. */
+export function allValidationMessages(e, fallback = "Could not save.") {
+  const fields = fieldValidationErrors(e);
+  const joined = Object.values(fields).filter(Boolean).join(" ");
+  if (joined) {
+    return joined;
+  }
+  return errorMessage(e, fallback);
+}
+
 /** Turn an axios/API error into a single user-facing string. */
 export function errorMessage(e, fallback = "Something Went Wrong.") {
   const d = e?.response?.data;

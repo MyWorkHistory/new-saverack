@@ -61,4 +61,4 @@ Route::get('/{any?}', function () use ($spaHtmlHeaders) {
     }
 
     return response()->file($index, $spaHtmlHeaders);
-})->where('any', '^(?!(?:api|sanctum|storage|avatars|billing-invoice|images|slack-icons)(?:/|$)).*$');
+})->where('any', '^(?!(?:api|sanctum|storage|avatars|billing-invoice|images|slack-icons|terms)(?:/|$)).*$');

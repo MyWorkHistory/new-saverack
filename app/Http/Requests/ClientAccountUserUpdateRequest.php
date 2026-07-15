@@ -41,4 +41,20 @@ class ClientAccountUserUpdateRequest extends FormRequest
 
         return $rules;
     }
+
+    public function messages(): array
+    {
+        return [
+            'name.required' => 'Full name is required.',
+            'name.max' => 'Full name may not be greater than 150 characters.',
+            'email.required' => 'Email is required.',
+            'email.email' => 'Enter a valid email address.',
+            'email.unique' => 'This email is already in use.',
+            'password.min' => 'Password must be at least 8 characters.',
+            'password.confirmed' => 'Password confirmation does not match.',
+            'status.required' => 'Status is required.',
+            'status.in' => 'Status must be pending, active, or inactive.',
+        ];
+    }
 }
+

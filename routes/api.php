@@ -26,6 +26,8 @@ use App\Http\Controllers\Api\PortalLookupController;
 use App\Http\Controllers\Api\PortalOnboardingController;
 use App\Http\Controllers\Api\PortalProfileController;
 use App\Http\Controllers\Api\PricingFeeTemplateController;
+use App\Http\Controllers\Api\TermsOfServiceController;
+use App\Http\Controllers\Api\ClientAccountTermsOfServiceController;
 use App\Http\Controllers\Api\ReturnBillController;
 use App\Http\Controllers\Api\AsnBillController;
 use App\Http\Controllers\Api\PutAwayController;
@@ -87,6 +89,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{pricingFeeTemplate}', [PricingFeeTemplateController::class, 'show']);
         Route::patch('/{pricingFeeTemplate}', [PricingFeeTemplateController::class, 'update']);
         Route::delete('/{pricingFeeTemplate}', [PricingFeeTemplateController::class, 'destroy']);
+    });
+
+    Route::prefix('settings/terms-of-service')->group(function () {
+        Route::get('/', [TermsOfServiceController::class, 'show']);
+        Route::put('/', [TermsOfServiceController::class, 'update']);
     });
 
         Route::prefix('return-bills')->group(function () {
@@ -520,6 +527,10 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.meta');
     Route::get('client-accounts/export-csv', [ClientAccountController::class, 'exportCsv'])
         ->name('client-accounts.export-csv');
+    Route::get('client-accounts/{client_account}/terms-of-service', [ClientAccountTermsOfServiceController::class, 'show'])
+        ->name('client-accounts.terms-of-service.show');
+    Route::put('client-accounts/{client_account}/terms-of-service', [ClientAccountTermsOfServiceController::class, 'update'])
+        ->name('client-accounts.terms-of-service.update');
     Route::get('client-accounts/{client_account}/history', [ClientAccountController::class, 'history'])
         ->name('client-accounts.history');
     Route::get('client-accounts/{client_account}/stripe-payment-methods', [ClientAccountController::class, 'stripePaymentMethods'])

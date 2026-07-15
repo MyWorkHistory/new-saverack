@@ -124,6 +124,7 @@ function navActive(mode) {
   if (mode === "users") return p.startsWith("/admin/staff");
   if (mode === "settings") return p.startsWith("/admin/settings");
   if (mode === "settings-pricing") return p.startsWith("/admin/settings/pricing");
+  if (mode === "settings-terms") return p.startsWith("/admin/settings/terms");
   if (mode === "webmaster") return p.startsWith("/admin/webmaster");
   if (mode === "clients") return p.startsWith("/admin/clients");
   if (mode === "clients-accounts") return p.startsWith("/admin/clients/accounts");
@@ -1090,6 +1091,16 @@ function collapseNav() {
                   @click="closeMobile"
                 >
                   Pricing
+                </RouterLink>
+              </li>
+              <li>
+                <RouterLink
+                  to="/admin/settings/terms"
+                  class="vx-nav-link vx-nav-sublink"
+                  :class="{ 'vx-nav-link--active': navActive('settings-terms') }"
+                  @click="closeMobile"
+                >
+                  Terms of Service
                 </RouterLink>
               </li>
             </ul>

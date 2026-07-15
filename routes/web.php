@@ -10,6 +10,7 @@
 */
 
 use App\Http\Controllers\PublicInvoiceController;
+use App\Http\Controllers\PublicTermsController;
 use App\Http\Controllers\SlackStatusIconController;
 use Illuminate\Support\Facades\Route;
 
@@ -29,3 +30,8 @@ Route::middleware(['throttle:public-invoice'])->group(function () {
     Route::get('/billing-invoice/{slug}/{token}/pay', [PublicInvoiceController::class, 'pay'])
         ->name('public.invoice.pay');
 });
+
+Route::get('/terms', [PublicTermsController::class, 'global'])
+    ->name('public.terms');
+Route::get('/terms/accounts/{client_account}', [PublicTermsController::class, 'account'])
+    ->name('public.terms.account');

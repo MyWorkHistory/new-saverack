@@ -1947,6 +1947,27 @@ onUnmounted(() => {
                     </dd>
                   </dl>
                 </div>
+                <div class="col-12">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      Terms and Conditions
+                    </dt>
+                    <dd class="mb-0">
+                      <RouterLink
+                        :to="{
+                          name: 'client-account-terms',
+                          params: { id: String(account.id) },
+                        }"
+                        class="link-primary text-decoration-none fw-semibold"
+                      >
+                        Terms and Conditions
+                      </RouterLink>
+                    </dd>
+                  </dl>
+                </div>
               </div>
             </div>
           </template>

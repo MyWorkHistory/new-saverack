@@ -20,6 +20,8 @@ import UserHistoryPage from "../pages/users/UserHistoryPage.vue";
 import WebmasterTasksPage from "../pages/webmaster/WebmasterTasksPage.vue";
 import WebmasterTaskDetailPage from "../pages/webmaster/WebmasterTaskDetailPage.vue";
 import SettingsPricingPage from "../pages/settings/SettingsPricingPage.vue";
+import SettingsTermsPage from "../pages/settings/SettingsTermsPage.vue";
+import ClientAccountTermsPage from "../pages/clients/ClientAccountTermsPage.vue";
 import ClientAccountsListPage from "../pages/clients/ClientAccountsListPage.vue";
 import ClientAccountDetailPage from "../pages/clients/ClientAccountDetailPage.vue";
 import ClientAccountHistoryPage from "../pages/clients/ClientAccountHistoryPage.vue";
@@ -85,6 +87,14 @@ const meta = {
   settingsPricing: {
     title: "Save Rack | Pricing",
     description: "Default fees applied to new client accounts.",
+  },
+  settingsTerms: {
+    title: "Save Rack | Terms of Service",
+    description: "Default Terms of Service for client accounts.",
+  },
+  clientAccountTerms: {
+    title: "Save Rack | Account Terms",
+    description: "Account Terms and Conditions.",
   },
   clientAccounts: {
     title: "Save Rack | Accounts",
@@ -435,6 +445,13 @@ const routes = [
     meta: meta.clientAccountDetail,
   },
   {
+    path: "/admin/clients/accounts/:id/terms",
+    name: "client-account-terms",
+    component: ClientAccountTermsPage,
+    props: true,
+    meta: meta.clientAccountTerms,
+  },
+  {
     path: "/admin/clients/users",
     name: "client-users",
     component: ClientAccountUsersListPage,
@@ -769,6 +786,12 @@ const routes = [
     name: "settings-pricing",
     component: SettingsPricingPage,
     meta: meta.settingsPricing,
+  },
+  {
+    path: "/admin/settings/terms",
+    name: "settings-terms",
+    component: SettingsTermsPage,
+    meta: meta.settingsTerms,
   },
   {
     path: "/admin/webmaster",

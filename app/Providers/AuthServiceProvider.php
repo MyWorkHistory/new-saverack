@@ -13,6 +13,8 @@ use App\Models\ReturnBill;
 use App\Models\AsnBill;
 use App\Models\Task;
 use App\Models\Ticket;
+use App\Models\PricingFeeTemplate;
+use App\Models\TermsOfService;
 use App\Models\Tutorial;
 use App\Models\ResourceCalendarEvent;
 use App\Models\ResourcePhoto;
@@ -25,11 +27,13 @@ use App\Policies\ClientAccountPolicy;
 use App\Policies\ClientStorePolicy;
 use App\Policies\CustomBillPolicy;
 use App\Policies\InvoicePolicy;
+use App\Policies\PricingFeeTemplatePolicy;
 use App\Policies\ReturnBillPolicy;
 use App\Policies\AsnBillPolicy;
 use App\Policies\ResourceCalendarEventPolicy;
 use App\Policies\ResourcePhotoPolicy;
 use App\Policies\TaskPolicy;
+use App\Policies\TermsOfServicePolicy;
 use App\Policies\TicketPolicy;
 use App\Policies\TutorialPolicy;
 use App\Policies\UserPolicy;
@@ -56,6 +60,7 @@ class AuthServiceProvider extends ServiceProvider
         ReturnBill::class => ReturnBillPolicy::class,
         AsnBill::class => AsnBillPolicy::class,
         PricingFeeTemplate::class => PricingFeeTemplatePolicy::class,
+        TermsOfService::class => TermsOfServicePolicy::class,
         Ticket::class => TicketPolicy::class,
         Task::class => TaskPolicy::class,
         Tutorial::class => TutorialPolicy::class,

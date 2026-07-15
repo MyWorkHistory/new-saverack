@@ -26,6 +26,8 @@ const canUpdate = computed(() => {
   return Array.isArray(u.permission_keys) && u.permission_keys.includes("settings.update");
 });
 
+const hasBody = computed(() => !!(body.value && body.value.replace(/<[^>]+>/g, "").trim()));
+
 setCrmPageMeta({
   title: "Save Rack | Terms of Service",
   description: "Default Terms of Service for client accounts.",
@@ -88,9 +90,9 @@ onMounted(load);
 </script>
 
 <template>
-  <div>
+  <div class="crm-terms-page">
     <div
-      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
+      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-3"
     >
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-semibold text-body">Terms of Service</h1>
@@ -101,7 +103,7 @@ onMounted(load);
       <div class="d-flex flex-wrap align-items-center gap-2 ms-md-auto flex-shrink-0">
         <button
           type="button"
-          class="btn btn-outline-secondary"
+          class="btn btn-outline-primary"
           :disabled="loading"
           @click="openPublic"
         >
@@ -123,11 +125,10 @@ onMounted(load);
       <CrmLoadingSpinner message="Loading…" />
     </div>
 
-    <div v-else class="staff-surface p-3 p-md-4">
+    <div v-else class="staff-surface p-3 p-md-4 crm-terms-page__surface">
       <p v-if="errorMsg" class="small text-danger mb-3">{{ errorMsg }}</p>
 
       <template v-if="editing">
-        <label class="form-label small fw-semibold">Agreement</label>
         <CrmRichTextEditor
           v-model="draft"
           :disabled="saving"
@@ -136,7 +137,7 @@ onMounted(load);
         <div class="d-flex justify-content-end gap-2 mt-3">
           <button
             type="button"
-            class="btn btn-outline-secondary"
+            class="btn btn-outline-primary"
             :disabled="saving"
             @click="cancelEdit"
           >
@@ -154,11 +155,7 @@ onMounted(load);
       </template>
 
       <template v-else>
-        <div
-          v-if="body && body.replace(/<[^>]+>/g, '').trim()"
-          class="crm-terms-preview"
-          v-html="body"
-        />
+        <div v-if="hasBody" class="crm-terms-preview" v-html="body" />
         <p v-else class="text-secondary mb-0">No Terms of Service have been set yet.</p>
       </template>
     </div>
@@ -166,8 +163,15 @@ onMounted(load);
 </template>
 
 <style scoped>
+.crm-terms-page__surface {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 170px);
+}
 .crm-terms-preview {
-  max-height: 420px;
+  flex: 1 1 auto;
+  min-height: calc(100vh - 220px);
+  max-height: calc(100vh - 170px);
   overflow-y: auto;
   font-size: 0.925rem;
   line-height: 1.55;
@@ -186,5 +190,14 @@ onMounted(load);
   margin: 0.85rem 0 0.45rem;
   font-size: 1.05rem;
   line-height: 1.3;
+}
+.crm-terms-preview :deep(blockquote) {
+  margin: 0 0 0.85rem;
+  padding-left: 0.85rem;
+  border-left: 3px solid rgba(47, 43, 61, 0.2);
+  color: #555;
+}
+.crm-terms-preview :deep(a) {
+  color: #2573ba;
 }
 </style>

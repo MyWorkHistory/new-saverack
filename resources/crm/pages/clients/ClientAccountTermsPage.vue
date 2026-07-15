@@ -33,6 +33,8 @@ const canUpdate = computed(() => {
   return Array.isArray(u.permission_keys) && u.permission_keys.includes("clients.update");
 });
 
+const hasBody = computed(() => !!(body.value && body.value.replace(/<[^>]+>/g, "").trim()));
+
 const accountDetailTo = computed(() => ({
   name: "client-account-detail",
   params: { id: props.id },
@@ -73,9 +75,7 @@ watch(
   () => companyName.value,
   (name) => {
     setCrmPageMeta({
-      title: name
-        ? `Save Rack | Terms: ${name}`
-        : "Save Rack | Account Terms",
+      title: name ? `Save Rack | Terms: ${name}` : "Save Rack | Account Terms",
       description: name
         ? `Terms and Conditions for ${name}.`
         : "Account Terms and Conditions.",
@@ -131,7 +131,7 @@ watch(
 </script>
 
 <template>
-  <div>
+  <div class="crm-terms-page">
     <nav
       class="staff-user-view__breadcrumb d-flex flex-wrap align-items-center gap-1 small mb-3"
       aria-label="Breadcrumb"
@@ -153,7 +153,7 @@ watch(
     </nav>
 
     <div
-      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
+      class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-3"
     >
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-semibold text-body">Terms and Conditions</h1>
@@ -169,7 +169,7 @@ watch(
       <div class="d-flex flex-wrap align-items-center gap-2 ms-md-auto flex-shrink-0">
         <button
           type="button"
-          class="btn btn-outline-secondary"
+          class="btn btn-outline-primary"
           :disabled="loading"
           @click="openPublic"
         >
@@ -193,11 +193,10 @@ watch(
     <div v-else-if="errorMsg && !editing" class="alert alert-danger" role="alert">
       {{ errorMsg }}
     </div>
-    <div v-else class="staff-surface p-3 p-md-4">
+    <div v-else class="staff-surface p-3 p-md-4 crm-terms-page__surface">
       <p v-if="errorMsg" class="small text-danger mb-3">{{ errorMsg }}</p>
 
       <template v-if="editing">
-        <label class="form-label small fw-semibold">Agreement</label>
         <CrmRichTextEditor
           v-model="draft"
           :disabled="saving"
@@ -206,7 +205,7 @@ watch(
         <div class="d-flex justify-content-end gap-2 mt-3">
           <button
             type="button"
-            class="btn btn-outline-secondary"
+            class="btn btn-outline-primary"
             :disabled="saving"
             @click="cancelEdit"
           >
@@ -224,11 +223,7 @@ watch(
       </template>
 
       <template v-else>
-        <div
-          v-if="body && body.replace(/<[^>]+>/g, '').trim()"
-          class="crm-terms-preview"
-          v-html="body"
-        />
+        <div v-if="hasBody" class="crm-terms-preview" v-html="body" />
         <p v-else class="text-secondary mb-0">No Terms and Conditions are available yet.</p>
       </template>
     </div>
@@ -236,8 +231,15 @@ watch(
 </template>
 
 <style scoped>
+.crm-terms-page__surface {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 210px);
+}
 .crm-terms-preview {
-  max-height: 420px;
+  flex: 1 1 auto;
+  min-height: calc(100vh - 260px);
+  max-height: calc(100vh - 210px);
   overflow-y: auto;
   font-size: 0.925rem;
   line-height: 1.55;
@@ -256,5 +258,14 @@ watch(
   margin: 0.85rem 0 0.45rem;
   font-size: 1.05rem;
   line-height: 1.3;
+}
+.crm-terms-preview :deep(blockquote) {
+  margin: 0 0 0.85rem;
+  padding-left: 0.85rem;
+  border-left: 3px solid rgba(47, 43, 61, 0.2);
+  color: #555;
+}
+.crm-terms-preview :deep(a) {
+  color: #2573ba;
 }
 </style>

@@ -14,12 +14,16 @@ class HtmlSanitizer
         'b',
         'em',
         'i',
+        'u',
+        's',
         'ul',
         'ol',
         'li',
         'h2',
         'h3',
         'h4',
+        'blockquote',
+        'a',
     ];
 
     public static function sanitize(?string $html): string
@@ -32,8 +36,33 @@ class HtmlSanitizer
             return '<'.$tag.'>';
         }, self::ALLOWED_TAGS));
 
-        $cleaned = strip_tags($html, $allowed);
-        // Drop on* attributes and javascript: URLs if any attributes slipped through strip_tags.
+        $hrefMap = [];
+        $tokenized = $html;
+        if (preg_match_all('/<a\b[^>]*\bhref\s*=\s*(["\'])(.*?)\1[^>]*>/iu', $html, $matches, PREG_SET_ORDER)) {
+            $i = 0;
+            foreach ($matches as $match) {
+                $href = trim(html_entity_decode($match[2], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                if (! preg_match('#^https?://#i', $href)) {
+                    $tokenized = str_replace($match[0], '<a>', $tokenized);
+                    continue;
+                }
+                $token = 'HREFTOKEN'.$i.'X';
+                $hrefMap[$token] = htmlspecialchars($href, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                $tokenized = str_replace($match[0], '<a href="'.$token.'">', $tokenized);
+                $i++;
+            }
+        }
+
+        $cleaned = strip_tags($tokenized, $allowed);
+
+        foreach ($hrefMap as $token => $safeHref) {
+            $cleaned = str_replace(
+                'href="'.$token.'"',
+                'href="'.$safeHref.'" rel="noopener noreferrer" target="_blank"',
+                $cleaned
+            );
+        }
+
         $cleaned = preg_replace('/\s+on\w+\s*=\s*(".*?"|\'.*?\'|[^\s>]+)/iu', '', $cleaned) ?? $cleaned;
         $cleaned = preg_replace('/\s+(href|src)\s*=\s*("\s*javascript:[^"]*"|\'\s*javascript:[^\']*\'|[^\s>]*javascript:[^\s>]*)/iu', '', $cleaned) ?? $cleaned;
 

@@ -26,6 +26,8 @@ import ClientAccountsListPage from "../pages/clients/ClientAccountsListPage.vue"
 import ClientAccountDetailPage from "../pages/clients/ClientAccountDetailPage.vue";
 import ClientAccountHistoryPage from "../pages/clients/ClientAccountHistoryPage.vue";
 import ClientAccountUsersListPage from "../pages/clients/ClientAccountUsersListPage.vue";
+import ProjectsListPage from "../pages/projects/ProjectsListPage.vue";
+import ProjectDetailPage from "../pages/projects/ProjectDetailPage.vue";
 import ClientAccountUserDetailPage from "../pages/clients/ClientAccountUserDetailPage.vue";
 import BillingSummaryPage from "../pages/billing/BillingSummaryPage.vue";
 import BillingInvoicesListPage from "../pages/billing/BillingInvoicesListPage.vue";
@@ -107,6 +109,14 @@ const meta = {
   clientUsers: {
     title: "Save Rack | Client users",
     description: "Portal logins for client accounts.",
+  },
+  projects: {
+    title: "Save Rack | Projects",
+    description: "Client projects.",
+  },
+  projectDetail: {
+    title: "Save Rack | Project",
+    description: "Project detail.",
   },
   clientAccountUserDetail: {
     title: "Save Rack | Client user",
@@ -463,6 +473,19 @@ const routes = [
     component: ClientAccountUserDetailPage,
     props: true,
     meta: meta.clientAccountUserDetail,
+  },
+  {
+    path: "/admin/clients/projects",
+    name: "projects",
+    component: ProjectsListPage,
+    meta: meta.projects,
+  },
+  {
+    path: "/admin/clients/projects/:id",
+    name: "project-detail",
+    component: ProjectDetailPage,
+    props: true,
+    meta: meta.projectDetail,
   },
   { path: "/admin/clients", redirect: "/admin/clients/accounts" },
   {

@@ -608,7 +608,7 @@ onUnmounted(() => {
                   :to="`/admin/billing/custom-bills/${row.id}`"
                   class="text-decoration-none text-body"
                 >
-                  {{ row.bill_number }}
+                  {{ row.display_name || row.bill_number }}
                 </RouterLink>
               </td>
               <td class="text-secondary staff-table-cell__meta">

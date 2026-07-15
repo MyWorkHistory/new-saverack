@@ -100,7 +100,7 @@ async function loadBill() {
     const { data } = await api.get(`/custom-bills/${props.id}`);
     bill.value = data;
     setCrmPageMeta({
-      title: `Save Rack | Bill #${data?.bill_number ?? props.id}`,
+      title: `Save Rack | ${data?.name || (data?.bill_number ? `Bill #${data.bill_number}` : `Bill`)}`,
       description: "Custom bill detail.",
     });
   } catch (e) {
@@ -445,7 +445,7 @@ onUnmounted(() => {
       <span class="text-secondary" aria-hidden="true">/</span>
       <RouterLink to="/admin/billing/custom-bills">Custom Bills</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
-      <span class="text-body-secondary">{{ bill?.bill_number ? `#${bill.bill_number}` : "Bill" }}</span>
+      <span class="text-body-secondary">{{ bill?.display_name || (bill?.bill_number ? `#${bill.bill_number}` : "Bill") }}</span>
     </nav>
 
     <div v-if="loading" class="d-flex justify-content-center py-5">
@@ -458,7 +458,9 @@ onUnmounted(() => {
       >
         <div class="min-w-0 flex-grow-1">
           <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-            <h1 class="h4 mb-0 fw-semibold text-body">Bill #{{ bill.bill_number }}</h1>
+            <h1 class="h4 mb-0 fw-semibold text-body">
+              {{ bill.name || `Bill #${bill.bill_number}` }}
+            </h1>
             <span class="badge rounded-pill fw-medium" :class="statusBadgeClass(bill.status)">
               {{ bill.status_label }}
             </span>

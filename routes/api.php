@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\PortalLookupController;
 use App\Http\Controllers\Api\PortalOnboardingController;
 use App\Http\Controllers\Api\PortalProfileController;
 use App\Http\Controllers\Api\PricingFeeTemplateController;
+use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\TermsOfServiceController;
 use App\Http\Controllers\Api\ClientAccountPaymentMethodController;
 use App\Http\Controllers\Api\ReturnBillController;
@@ -140,7 +141,21 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{customBill}/items', [CustomBillController::class, 'storeItem']);
         Route::put('/{customBill}/items/{item}', [CustomBillController::class, 'updateItem']);
         Route::delete('/{customBill}/items/{item}', [CustomBillController::class, 'destroyItem']);
-    });
+        });
+
+        Route::prefix('projects')->group(function () {
+            Route::get('/', [ProjectController::class, 'index']);
+            Route::get('/summary', [ProjectController::class, 'summary']);
+            Route::post('/', [ProjectController::class, 'store']);
+            Route::get('/{project}', [ProjectController::class, 'show']);
+            Route::patch('/{project}/status', [ProjectController::class, 'updateStatus']);
+            Route::delete('/{project}', [ProjectController::class, 'destroy']);
+            Route::post('/{project}/notes', [ProjectController::class, 'storeNote']);
+            Route::patch('/{project}/notes/{note}', [ProjectController::class, 'updateNote']);
+            Route::delete('/{project}/notes/{note}', [ProjectController::class, 'destroyNote']);
+            Route::post('/{project}/quote-items', [ProjectController::class, 'storeQuoteItem']);
+            Route::delete('/{project}/quote-items/{item}', [ProjectController::class, 'destroyQuoteItem']);
+        });
 
     Route::prefix('inventory')->group(function () {
         Route::get('/client-account-options', [InventoryController::class, 'clientAccountOptions'])

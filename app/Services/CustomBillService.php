@@ -61,6 +61,7 @@ class CustomBillService
                 if (ctype_digit($search)) {
                     $q->orWhere('bill_number', (int) $search);
                 }
+                $q->orWhere('name', 'like', '%'.$search.'%');
                 $q->orWhereHas('clientAccount', function (Builder $cq) use ($search) {
                     $cq->where('company_name', 'like', '%'.$search.'%');
                 });
@@ -95,6 +96,7 @@ class CustomBillService
         return DB::transaction(function () use ($header, $items, $actor) {
             $bill = CustomBill::query()->create([
                 'bill_number' => $this->nextBillNumber(),
+                'name' => isset($header['name']) ? (trim((string) $header['name']) ?: null) : null,
                 'status' => CustomBill::STATUS_OPEN,
                 'client_account_id' => (int) $header['client_account_id'],
                 'bill_date' => $header['bill_date'],
@@ -314,6 +316,8 @@ class CustomBillService
         return [
             'id' => $bill->id,
             'bill_number' => $bill->bill_number,
+            'name' => $bill->name,
+            'display_name' => $bill->name ? (string) $bill->name : (string) $bill->bill_number,
             'status' => $bill->status,
             'status_label' => $bill->isOpen() ? 'Open' : 'Invoiced',
             'client_account_id' => $bill->client_account_id,
@@ -354,6 +358,8 @@ class CustomBillService
         return [
             'id' => $bill->id,
             'bill_number' => $bill->bill_number,
+            'name' => $bill->name,
+            'display_name' => $bill->name ? (string) $bill->name : (string) $bill->bill_number,
             'status' => $bill->status,
             'status_label' => $bill->isOpen() ? 'Open' : 'Invoiced',
             'client_account_id' => $bill->client_account_id,

@@ -16,6 +16,7 @@ class CustomBill extends Model
 
     protected $fillable = [
         'bill_number',
+        'name',
         'status',
         'client_account_id',
         'bill_date',

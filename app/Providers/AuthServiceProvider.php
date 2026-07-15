@@ -14,6 +14,7 @@ use App\Models\AsnBill;
 use App\Models\Task;
 use App\Models\Ticket;
 use App\Models\PricingFeeTemplate;
+use App\Models\Project;
 use App\Models\TermsOfService;
 use App\Models\Tutorial;
 use App\Models\ResourceCalendarEvent;
@@ -28,6 +29,7 @@ use App\Policies\ClientStorePolicy;
 use App\Policies\CustomBillPolicy;
 use App\Policies\InvoicePolicy;
 use App\Policies\PricingFeeTemplatePolicy;
+use App\Policies\ProjectPolicy;
 use App\Policies\ReturnBillPolicy;
 use App\Policies\AsnBillPolicy;
 use App\Policies\ResourceCalendarEventPolicy;
@@ -60,6 +62,7 @@ class AuthServiceProvider extends ServiceProvider
         ReturnBill::class => ReturnBillPolicy::class,
         AsnBill::class => AsnBillPolicy::class,
         PricingFeeTemplate::class => PricingFeeTemplatePolicy::class,
+        Project::class => ProjectPolicy::class,
         TermsOfService::class => TermsOfServicePolicy::class,
         Ticket::class => TicketPolicy::class,
         Task::class => TaskPolicy::class,
@@ -162,7 +165,7 @@ class AuthServiceProvider extends ServiceProvider
             }
 
             $keys = $user->allPermissionKeys();
-            foreach (['inventory.view', 'orders.view', 'receiving.view', 'clients.view', 'billing.view'] as $perm) {
+            foreach (['inventory.view', 'orders.view', 'receiving.view', 'clients.view', 'billing.view', 'projects.view'] as $perm) {
                 if (in_array($perm, $keys, true)) {
                     return true;
                 }

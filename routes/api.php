@@ -27,7 +27,7 @@ use App\Http\Controllers\Api\PortalOnboardingController;
 use App\Http\Controllers\Api\PortalProfileController;
 use App\Http\Controllers\Api\PricingFeeTemplateController;
 use App\Http\Controllers\Api\TermsOfServiceController;
-use App\Http\Controllers\Api\ClientAccountTermsOfServiceController;
+use App\Http\Controllers\Api\ClientAccountPaymentMethodController;
 use App\Http\Controllers\Api\ReturnBillController;
 use App\Http\Controllers\Api\AsnBillController;
 use App\Http\Controllers\Api\PutAwayController;
@@ -41,6 +41,7 @@ use App\Http\Controllers\Api\ResourcePhotoController;
 use App\Http\Controllers\Api\WholesaleOrderController;
 use App\Http\Controllers\ShipHeroWebhookController;
 use App\Http\Controllers\StripeWebhookController;
+use App\Http\Controllers\PublicPaymentMethodController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -53,6 +54,11 @@ Route::prefix('auth')->group(function () {
 
 Route::post('stripe/webhook', [StripeWebhookController::class, 'handle']);
 Route::match(['post', 'head'], 'shiphero/webhook', [ShipHeroWebhookController::class, 'handle']);
+
+Route::middleware('throttle:public-payment-method')->prefix('public/payment-method')->group(function () {
+    Route::post('{token}/setup-intent', [PublicPaymentMethodController::class, 'setupIntent']);
+    Route::post('{token}/complete', [PublicPaymentMethodController::class, 'complete']);
+});
 
 Route::get('/slack/status-icons/{icon}', [\App\Http\Controllers\SlackStatusIconController::class, 'show'])
     ->where('icon', 'shipping-status-(?:live|paused)(?:-thumb)?\.png')
@@ -536,6 +542,13 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.history');
     Route::get('client-accounts/{client_account}/stripe-payment-methods', [ClientAccountController::class, 'stripePaymentMethods'])
         ->name('client-accounts.stripe-payment-methods');
+    Route::post('client-accounts/{client_account}/payment-method-links', [ClientAccountPaymentMethodController::class, 'createLink'])
+        ->name('client-accounts.payment-method-links.store');
+    Route::delete('client-accounts/{client_account}/stripe-payment-methods/{paymentMethodId}', [ClientAccountPaymentMethodController::class, 'destroy'])
+        ->name('client-accounts.stripe-payment-methods.destroy');
+    Route::post('client-accounts/{client_account}/stripe-payment-methods/{paymentMethodId}/unlock', [ClientAccountPaymentMethodController::class, 'unlock'])
+        ->middleware('throttle:payment-method-pin')
+        ->name('client-accounts.stripe-payment-methods.unlock');
     Route::get('client-accounts/{client_account}/onboarding', [ClientAccountOnboardingController::class, 'show'])
         ->name('client-accounts.onboarding.show');
     Route::patch('client-accounts/{client_account}/onboarding/profile', [ClientAccountOnboardingController::class, 'updateProfile'])

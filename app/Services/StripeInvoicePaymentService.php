@@ -4,9 +4,7 @@ namespace App\Services;
 
 use App\Models\ClientAccount;
 use App\Models\Invoice;
-use App\Services\StripeInvoicePaymentService;
 use App\Models\User;
-use App\Services\PortalOnboardingStripeService;
 use Illuminate\Support\Str;
 use Stripe\Exception\ApiErrorException;
 use Stripe\Exception\SignatureVerificationException;
@@ -71,15 +69,7 @@ class StripeInvoicePaymentService
                     continue;
                 }
                 $type = trim((string) ($arr['type'] ?? ''));
-                $label = $type === 'us_bank_account'
-                    ? $this->bankLabel($arr)
-                    : $this->cardLabel($arr);
-                $rows[] = [
-                    'id' => $id,
-                    'label' => $label,
-                    'type' => $type,
-                    'is_default' => $defaultPm !== '' && hash_equals($defaultPm, $id),
-                ];
+                $rows[] = $this->serializePaymentMethodListRow($arr, $defaultPm);
             }
             usort($rows, static function (array $a, array $b): int {
                 return (int) ($b['is_default'] ?? false) <=> (int) ($a['is_default'] ?? false);
@@ -89,6 +79,82 @@ class StripeInvoicePaymentService
         } catch (ApiErrorException $e) {
             throw new \RuntimeException($e->getMessage());
         }
+    }
+
+    /**
+     * @param array<string, mixed> $pm
+     * @return array<string, mixed>
+     */
+    public function serializePaymentMethodListRow(array $pm, string $defaultPm = ''): array
+    {
+        $id = trim((string) ($pm['id'] ?? ''));
+        $type = trim((string) ($pm['type'] ?? ''));
+        $isBank = $type === 'us_bank_account';
+        $label = $isBank ? $this->bankLabel($pm) : $this->cardLabel($pm);
+        $last4 = $isBank
+            ? trim((string) (($pm['us_bank_account']['last4'] ?? '')))
+            : trim((string) (($pm['card']['last4'] ?? '')));
+        $brand = $isBank
+            ? trim((string) (($pm['us_bank_account']['bank_name'] ?? 'Bank')))
+            : trim((string) (($pm['card']['brand'] ?? 'card')));
+
+        return [
+            'id' => $id,
+            'label' => $label,
+            'type' => $type,
+            'type_label' => $isBank ? 'ACH Bank' : 'Credit Card',
+            'last4' => $last4,
+            'brand' => $brand,
+            'is_default' => $defaultPm !== '' && $id !== '' && hash_equals($defaultPm, $id),
+        ];
+    }
+
+    /**
+     * Safe detail payload for PIN-unlocked staff view (never includes full PAN / account # / CVV).
+     *
+     * @param array<string, mixed> $pm
+     * @return array<string, mixed>
+     */
+    public function serializePaymentMethodDetail(array $pm): array
+    {
+        $list = $this->serializePaymentMethodListRow($pm);
+        $billing = is_array($pm['billing_details'] ?? null) ? $pm['billing_details'] : [];
+        $address = is_array($billing['address'] ?? null) ? $billing['address'] : [];
+        $type = $list['type'];
+        $detail = [
+            'id' => $list['id'],
+            'type' => $type,
+            'type_label' => $list['type_label'],
+            'last4' => $list['last4'],
+            'brand' => $list['brand'],
+            'label' => $list['label'],
+            'name' => trim((string) ($billing['name'] ?? '')),
+            'email' => trim((string) ($billing['email'] ?? '')),
+            'phone' => trim((string) ($billing['phone'] ?? '')),
+            'address' => [
+                'line1' => trim((string) ($address['line1'] ?? '')),
+                'line2' => trim((string) ($address['line2'] ?? '')),
+                'city' => trim((string) ($address['city'] ?? '')),
+                'state' => trim((string) ($address['state'] ?? '')),
+                'postal_code' => trim((string) ($address['postal_code'] ?? '')),
+                'country' => trim((string) ($address['country'] ?? '')),
+            ],
+        ];
+
+        if ($type === 'card') {
+            $card = is_array($pm['card'] ?? null) ? $pm['card'] : [];
+            $detail['exp_month'] = (int) ($card['exp_month'] ?? 0);
+            $detail['exp_year'] = (int) ($card['exp_year'] ?? 0);
+            $detail['funding'] = trim((string) ($card['funding'] ?? ''));
+        } else {
+            $bank = is_array($pm['us_bank_account'] ?? null) ? $pm['us_bank_account'] : [];
+            $detail['account_type'] = trim((string) ($bank['account_type'] ?? ''));
+            $detail['account_holder_type'] = trim((string) ($bank['account_holder_type'] ?? ''));
+            $detail['bank_name'] = trim((string) ($bank['bank_name'] ?? ''));
+            $detail['routing_number_last4'] = ''; // Stripe does not expose full routing on retrieve for safety
+        }
+
+        return $detail;
     }
 
     /**

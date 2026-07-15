@@ -11,6 +11,7 @@
 
 use App\Http\Controllers\PublicInvoiceController;
 use App\Http\Controllers\PublicTermsController;
+use App\Http\Controllers\PublicPaymentMethodController;
 use App\Http\Controllers\SlackStatusIconController;
 use Illuminate\Support\Facades\Route;
 
@@ -35,3 +36,12 @@ Route::get('/terms', [PublicTermsController::class, 'global'])
     ->name('public.terms');
 Route::get('/terms/accounts/{client_account}', [PublicTermsController::class, 'account'])
     ->name('public.terms.account');
+
+Route::middleware(['throttle:public-payment-method'])->group(function () {
+    Route::get('/payment-method/{token}', [PublicPaymentMethodController::class, 'show'])
+        ->where('token', '[A-Za-z0-9]+')
+        ->name('public.payment-method.show');
+    Route::get('/payment-method/{token}/thanks', [PublicPaymentMethodController::class, 'thanks'])
+        ->where('token', '[A-Za-z0-9]+')
+        ->name('public.payment-method.thanks');
+});

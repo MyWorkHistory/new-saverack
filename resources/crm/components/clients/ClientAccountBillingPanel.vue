@@ -35,6 +35,16 @@ const paymentMethodsError = ref("");
 const addPaymentOpen = ref(false);
 const addPaymentMethod = ref("credit_card");
 const addPaymentBusy = ref(false);
+const replacePaymentMethodId = ref(null);
+
+const pinModalOpen = ref(false);
+const pinTarget = ref(null);
+const pinValue = ref("");
+const pinBusy = ref(false);
+const pinError = ref("");
+const detailModalOpen = ref(false);
+const detailPayload = ref(null);
+const deleteBusyId = ref("");
 
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
@@ -88,11 +98,18 @@ function display(val) {
   return String(val);
 }
 
-const defaultPaymentMethod = computed(() => {
-  const methods = paymentMethods.value;
-  if (!Array.isArray(methods) || !methods.length) return null;
-  return methods.find((m) => m.is_default) || methods[0];
-});
+function lastFourDisplay(row) {
+  const last4 = String(row?.last4 || "").trim();
+  if (last4) return `**** ${last4}`;
+  const label = String(row?.label || "");
+  const m = label.match(/\*{0,}\s*(\d{4})\b/);
+  return m ? `**** ${m[1]}` : "—";
+}
+
+function typeLabel(row) {
+  if (row?.type_label) return row.type_label;
+  return row?.type === "us_bank_account" ? "ACH Bank" : "Credit Card";
+}
 
 function invoicesUrl(status) {
   const q = new URLSearchParams({
@@ -188,14 +205,19 @@ function statusBadgeClass(status) {
   return "bg-body-secondary text-body-secondary";
 }
 
-function openAddPaymentModal() {
-  addPaymentMethod.value = "credit_card";
+function openAddPaymentModal(replaceId = null, preferredMethod = "credit_card") {
+  replacePaymentMethodId.value = replaceId;
+  addPaymentMethod.value =
+    preferredMethod === "ach" || preferredMethod === "us_bank_account"
+      ? "ach"
+      : "credit_card";
   addPaymentOpen.value = true;
 }
 
 function closeAddPaymentModal() {
   if (!addPaymentBusy.value) {
     addPaymentOpen.value = false;
+    replacePaymentMethodId.value = null;
   }
 }
 
@@ -203,26 +225,99 @@ async function confirmAddPaymentMethod() {
   if (addPaymentBusy.value) return;
   addPaymentBusy.value = true;
   try {
+    const payload = {
+      method: addPaymentMethod.value,
+    };
+    if (replacePaymentMethodId.value) {
+      payload.replace_payment_method_id = replacePaymentMethodId.value;
+    }
     const { data } = await api.post(
-      `/client-accounts/${props.accountId}/onboarding/billing`,
-      {
-        method: addPaymentMethod.value,
-        use_stripe_checkout: true,
-        return_context: "account_billing",
-      },
+      `/client-accounts/${props.accountId}/payment-method-links`,
+      payload,
     );
-    const url = String(data?.checkout_url || "").trim();
+    const url = String(data?.url || "").trim();
     if (!url) {
-      throw new Error("Checkout URL missing.");
+      throw new Error("Payment method link missing.");
     }
     addPaymentOpen.value = false;
+    replacePaymentMethodId.value = null;
     window.open(url, "_blank", "noopener,noreferrer");
-    toast.info("Complete payment setup in the new tab, then return here.");
+    toast.info("Complete the form in the new tab, then return here.");
   } catch (e) {
-    toast.errorFrom(e, "Could not start payment setup.");
+    toast.errorFrom(e, "Could not open payment method form.");
   } finally {
     addPaymentBusy.value = false;
   }
+}
+
+function openEditPaymentMethod(row) {
+  if (!row?.id) return;
+  const preferred =
+    row.type === "us_bank_account" || row.type_label === "ACH Bank"
+      ? "ach"
+      : "credit_card";
+  openAddPaymentModal(row.id, preferred);
+}
+
+async function deletePaymentMethod(row) {
+  if (!row?.id || deleteBusyId.value) return;
+  const ok = window.confirm(
+    `Remove payment method ${lastFourDisplay(row)} (${typeLabel(row)})?`,
+  );
+  if (!ok) return;
+  deleteBusyId.value = row.id;
+  try {
+    await api.delete(
+      `/client-accounts/${props.accountId}/stripe-payment-methods/${row.id}`,
+    );
+    toast.success("Payment method removed.");
+    await loadPaymentMethods();
+  } catch (e) {
+    toast.errorFrom(e, "Could not remove payment method.");
+  } finally {
+    deleteBusyId.value = "";
+  }
+}
+
+function openPinForRow(row) {
+  pinTarget.value = row;
+  pinValue.value = "";
+  pinError.value = "";
+  pinModalOpen.value = true;
+}
+
+function closePinModal() {
+  if (pinBusy.value) return;
+  pinModalOpen.value = false;
+  pinTarget.value = null;
+  pinValue.value = "";
+  pinError.value = "";
+}
+
+async function submitPin() {
+  if (!pinTarget.value?.id || pinBusy.value) return;
+  pinBusy.value = true;
+  pinError.value = "";
+  try {
+    const { data } = await api.post(
+      `/client-accounts/${props.accountId}/stripe-payment-methods/${pinTarget.value.id}/unlock`,
+      { pin: pinValue.value },
+    );
+    detailPayload.value = data?.payment_method || null;
+    pinModalOpen.value = false;
+    detailModalOpen.value = true;
+  } catch (e) {
+    pinError.value =
+      e?.response?.data?.message ||
+      (e?.response?.status === 403 ? "Incorrect PIN." : "Could not unlock.");
+  } finally {
+    pinBusy.value = false;
+  }
+}
+
+function closeDetailModal() {
+  detailModalOpen.value = false;
+  detailPayload.value = null;
 }
 
 function onWindowFocus() {
@@ -234,6 +329,12 @@ function onWindowFocus() {
 function onEsc(e) {
   if (e.key === "Escape" && addPaymentOpen.value) {
     closeAddPaymentModal();
+  }
+  if (e.key === "Escape" && pinModalOpen.value) {
+    closePinModal();
+  }
+  if (e.key === "Escape" && detailModalOpen.value) {
+    closeDetailModal();
   }
 }
 
@@ -448,16 +549,72 @@ watch(() => props.accountId, load);
             </div>
 
             <div class="client-account-billing-card-on-file mt-4 pt-3 border-top">
-              <h4 class="h6 fw-semibold mb-3">Card on file</h4>
-              <div
-                v-if="defaultPaymentMethod"
-                class="client-account-billing-card-filled small"
-              >
-                <span class="fw-semibold text-body">{{ defaultPaymentMethod.label }}</span>
-                <span v-if="defaultPaymentMethod.is_default" class="text-secondary ms-1">
-                  (default)
-                </span>
+              <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+                <h4 class="h6 fw-semibold mb-0">Payment Method</h4>
+                <button
+                  v-if="canEdit"
+                  type="button"
+                  class="btn btn-sm btn-outline-primary"
+                  @click="openAddPaymentModal()"
+                >
+                  Add Payment Method
+                </button>
               </div>
+
+              <div
+                v-if="paymentMethods.length"
+                class="table-responsive client-account-billing-pm-table"
+              >
+                <table class="table table-sm align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th scope="col">Last #</th>
+                      <th scope="col">Type</th>
+                      <th scope="col" class="text-end">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in paymentMethods" :key="row.id">
+                      <td>
+                        <button
+                          type="button"
+                          class="btn btn-link btn-sm p-0 text-decoration-none fw-semibold"
+                          @click="openPinForRow(row)"
+                        >
+                          {{ lastFourDisplay(row) }}
+                        </button>
+                        <span
+                          v-if="row.is_default"
+                          class="badge rounded-pill bg-primary-subtle text-primary-emphasis ms-1"
+                        >
+                          Default
+                        </span>
+                      </td>
+                      <td>{{ typeLabel(row) }}</td>
+                      <td class="text-end text-nowrap">
+                        <button
+                          v-if="canEdit"
+                          type="button"
+                          class="btn btn-sm btn-outline-primary me-1"
+                          @click="openEditPaymentMethod(row)"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          v-if="canEdit"
+                          type="button"
+                          class="btn btn-sm btn-outline-danger"
+                          :disabled="deleteBusyId === row.id"
+                          @click="deletePaymentMethod(row)"
+                        >
+                          {{ deleteBusyId === row.id ? "…" : "Delete" }}
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
               <div
                 v-else
                 class="client-account-billing-card-empty text-center"
@@ -483,7 +640,7 @@ watch(() => props.accountId, load);
                   v-if="canEdit"
                   type="button"
                   class="btn btn-sm btn-outline-primary"
-                  @click="openAddPaymentModal"
+                  @click="openAddPaymentModal()"
                 >
                   Add Payment Method
                 </button>
@@ -587,7 +744,11 @@ watch(() => props.accountId, load);
             </div>
             <div class="modal-body">
               <p class="small text-secondary mb-3">
-                Choose how this account will save a payment method through Stripe checkout.
+                {{
+                  replacePaymentMethodId
+                    ? "Choose a payment type, then continue to open the secure form to replace this method."
+                    : "Choose a payment type, then continue to the secure form to save it on file."
+                }}
               </p>
               <div class="d-flex flex-column gap-2">
                 <label class="border rounded p-3 mb-0 d-flex gap-2 align-items-start">
@@ -642,6 +803,142 @@ watch(() => props.accountId, load);
         </div>
       </div>
       <div v-if="addPaymentOpen" class="modal-backdrop fade show" @click="closeAddPaymentModal" />
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="pinModalOpen"
+        class="modal fade show d-block"
+        tabindex="-1"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pm-pin-title"
+      >
+        <div class="modal-dialog modal-dialog-centered modal-sm" role="document">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h2 id="pm-pin-title" class="modal-title h5 mb-0">Enter PIN</h2>
+              <button
+                type="button"
+                class="btn-close"
+                aria-label="Close"
+                :disabled="pinBusy"
+                @click="closePinModal"
+              />
+            </div>
+            <div class="modal-body">
+              <p class="small text-secondary mb-3">
+                Enter the PIN to view payment method details.
+              </p>
+              <p v-if="pinError" class="small text-danger mb-2">{{ pinError }}</p>
+              <input
+                v-model="pinValue"
+                type="password"
+                inputmode="numeric"
+                class="form-control"
+                autocomplete="one-time-code"
+                placeholder="PIN"
+                @keyup.enter="submitPin"
+              />
+            </div>
+            <div class="modal-footer">
+              <button
+                type="button"
+                class="btn btn-outline-primary"
+                :disabled="pinBusy"
+                @click="closePinModal"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="btn btn-primary staff-page-primary"
+                :disabled="pinBusy || !pinValue"
+                @click="submitPin"
+              >
+                {{ pinBusy ? "Checking…" : "Unlock" }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div v-if="pinModalOpen" class="modal-backdrop fade show" @click="closePinModal" />
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="detailModalOpen && detailPayload"
+        class="modal fade show d-block"
+        tabindex="-1"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pm-detail-title"
+      >
+        <div class="modal-dialog modal-dialog-centered" role="document">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h2 id="pm-detail-title" class="modal-title h5 mb-0">Payment Method</h2>
+              <button
+                type="button"
+                class="btn-close"
+                aria-label="Close"
+                @click="closeDetailModal"
+              />
+            </div>
+            <div class="modal-body">
+              <dl class="row mb-0 small">
+                <dt class="col-5 text-secondary">Type</dt>
+                <dd class="col-7">{{ detailPayload.type_label || "—" }}</dd>
+                <dt class="col-5 text-secondary">Last #</dt>
+                <dd class="col-7">**** {{ detailPayload.last4 || "—" }}</dd>
+                <dt class="col-5 text-secondary">Name</dt>
+                <dd class="col-7">{{ detailPayload.name || "—" }}</dd>
+                <template v-if="detailPayload.type === 'card'">
+                  <dt class="col-5 text-secondary">Brand</dt>
+                  <dd class="col-7 text-uppercase">{{ detailPayload.brand || "—" }}</dd>
+                  <dt class="col-5 text-secondary">Expiration</dt>
+                  <dd class="col-7">
+                    <template v-if="detailPayload.exp_month && detailPayload.exp_year">
+                      {{ String(detailPayload.exp_month).padStart(2, "0") }}/{{
+                        String(detailPayload.exp_year).slice(-2)
+                      }}
+                    </template>
+                    <template v-else>—</template>
+                  </dd>
+                </template>
+                <template v-else>
+                  <dt class="col-5 text-secondary">Bank</dt>
+                  <dd class="col-7">{{ detailPayload.bank_name || detailPayload.brand || "—" }}</dd>
+                  <dt class="col-5 text-secondary">Account Type</dt>
+                  <dd class="col-7 text-capitalize">
+                    {{ detailPayload.account_type || "—" }}
+                  </dd>
+                </template>
+                <dt class="col-5 text-secondary">Billing Address</dt>
+                <dd class="col-7">
+                  <template v-if="detailPayload.address?.line1">
+                    {{ detailPayload.address.line1 }}<br />
+                    {{ detailPayload.address.city }}
+                    {{ detailPayload.address.state }}
+                    {{ detailPayload.address.postal_code }}
+                  </template>
+                  <template v-else>—</template>
+                </dd>
+              </dl>
+            </div>
+            <div class="modal-footer">
+              <button
+                type="button"
+                class="btn btn-primary staff-page-primary"
+                @click="closeDetailModal"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div v-if="detailModalOpen" class="modal-backdrop fade show" @click="closeDetailModal" />
     </Teleport>
   </div>
 </template>
@@ -743,6 +1040,20 @@ watch(() => props.accountId, load);
   justify-content: center;
   background: var(--bs-secondary-bg);
   color: var(--bs-secondary-color);
+}
+
+.client-account-billing-pm-table {
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.client-account-billing-pm-table thead th {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--bs-secondary-color);
+  background: var(--bs-secondary-bg);
 }
 
 .client-account-billing-card-filled {

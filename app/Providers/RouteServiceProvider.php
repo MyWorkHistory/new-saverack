@@ -59,5 +59,15 @@ class RouteServiceProvider extends ServiceProvider
         RateLimiter::for('public-invoice', function (Request $request) {
             return Limit::perMinute(30)->by($request->ip());
         });
+
+        RateLimiter::for('payment-method-pin', function (Request $request) {
+            $userId = optional($request->user())->id ?: 'guest';
+
+            return Limit::perMinute(10)->by($userId.'|'.$request->ip());
+        });
+
+        RateLimiter::for('public-payment-method', function (Request $request) {
+            return Limit::perMinute(30)->by($request->ip());
+        });
     }
 }

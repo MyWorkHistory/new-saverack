@@ -47,6 +47,12 @@ return [
     'stripe_onboarding_deposit_amount_cents' => (int) env('STRIPE_ONBOARDING_DEPOSIT_AMOUNT_CENTS', 500),
     'stripe_onboarding_payment_link_url' => env('STRIPE_ONBOARDING_PAYMENT_LINK_URL', 'https://buy.stripe.com/8x2eVcbpz6PIdm0blw1Fe0C'),
 
+    /** Staff PIN to view payment method details on account Billing tab. */
+    'payment_method_view_pin' => env('PAYMENT_METHOD_VIEW_PIN', '0912'),
+
+    /** Hours until a public add-payment-method link expires. */
+    'payment_method_link_ttl_hours' => (int) env('PAYMENT_METHOD_LINK_TTL_HOURS', 48),
+
     'portal_manual_payment_instructions' => [
         'company' => 'Save Rack LLC',
         'street' => '3135 Drane Field Rd #20',

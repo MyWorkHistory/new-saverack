@@ -25,9 +25,8 @@ function adminOnboardingBase() {
 
 const toast = useToast();
 const method = ref("");
-const stripeLoading = ref(false);
+const formLoading = ref(false);
 const manualSaving = ref(false);
-const adminSaving = ref(false);
 const errorMsg = ref("");
 
 const manual = computed(() => {
@@ -74,6 +73,8 @@ const savedBillingStatusLabel = computed(() => {
   return BILLING_STATUS_LABELS[raw] || "";
 });
 
+const busy = computed(() => formLoading.value || manualSaving.value);
+
 function fillFromProfile() {
   const saved = String(props.profile?.onboarding_billing_method || "").trim();
   method.value = saved in BILLING_METHOD_LABELS ? saved : "";
@@ -102,26 +103,29 @@ watch(
 
 onUnmounted(() => document.removeEventListener("keydown", onEsc));
 
-async function startStripeCheckout(billingMethod) {
-  if (stripeLoading.value) return;
-  stripeLoading.value = true;
+async function openPaymentMethodForm(billingMethod) {
+  if (formLoading.value) return;
+  formLoading.value = true;
   errorMsg.value = "";
   try {
-    const { data } = await api.post("/portal/onboarding/billing/stripe-checkout", {
-      method: billingMethod,
-    });
-    const url = String(data?.checkout_url || "").trim();
+    const base = adminOnboardingBase();
+    const { data } = base
+      ? await api.post(`${base}/billing/payment-method-link`, { method: billingMethod })
+      : await api.post("/portal/onboarding/billing/payment-method-link", {
+          method: billingMethod,
+        });
+    const url = String(data?.url || "").trim();
     if (url === "") {
-      throw new Error("Checkout URL missing.");
+      throw new Error("Payment method form URL missing.");
     }
     emit("saved", data?.onboarding || null);
     window.open(url, "_blank", "noopener,noreferrer");
-    toast.info("Complete payment setup in the new tab, then return here.");
+    toast.info("Complete the form in the new tab, then return here.");
   } catch (e) {
-    errorMsg.value = "Could not start checkout.";
-    toast.errorFrom(e, "Could not start checkout.");
+    errorMsg.value = "Could not open payment method form.";
+    toast.errorFrom(e, "Could not open payment method form.");
   } finally {
-    stripeLoading.value = false;
+    formLoading.value = false;
   }
 }
 
@@ -144,24 +148,6 @@ async function confirmManual() {
     manualSaving.value = false;
   }
 }
-
-async function saveAdminBilling() {
-  if (adminSaving.value || !method.value) return;
-  adminSaving.value = true;
-  errorMsg.value = "";
-  try {
-    const base = adminOnboardingBase();
-    const { data } = await api.post(`${base}/billing`, { method: method.value });
-    toast.success("Saved.");
-    emit("saved", data);
-    close();
-  } catch (e) {
-    errorMsg.value = "Could not save billing.";
-    toast.errorFrom(e, "Could not save billing.");
-  } finally {
-    adminSaving.value = false;
-  }
-}
 </script>
 
 <template>
@@ -170,7 +156,7 @@ async function saveAdminBilling() {
       type="button"
       class="crm-vx-modal__close"
       aria-label="Close"
-      :disabled="stripeLoading || manualSaving"
+      :disabled="busy"
       @click="close"
     >
       <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
@@ -247,41 +233,21 @@ async function saveAdminBilling() {
             </div>
 
             <div
-              v-if="adminMode && method"
-              class="portal-billing-detail mt-4 p-3 rounded bg-light"
-            >
-              <p class="small text-secondary mb-3">
-                Save the selected payment method to this account. Credit Card and ACH will set the
-                account default payment type for invoices.
-              </p>
-              <button
-                type="button"
-                class="btn btn-primary staff-page-primary"
-                :disabled="adminSaving"
-                @click="saveAdminBilling"
-              >
-                <CrmLoadingSpinner v-if="adminSaving" small class="me-1" />
-                Save Billing Method
-              </button>
-            </div>
-
-            <div
-              v-else-if="method === 'credit_card'"
+              v-if="method === 'credit_card'"
               class="portal-billing-detail mt-4 p-3 rounded bg-light"
             >
               <p class="mb-3">
-                Please click the link below to submit your authorization deposit and securely save
-                your credit card on file for future billing. The $5 authorization deposit will be
-                credited toward your next invoice.
+                Continue to securely save your credit card on file for future billing. Card details
+                are collected on a secure Save Rack form and never stored in this app.
               </p>
               <button
                 type="button"
                 class="btn btn-primary staff-page-primary"
-                :disabled="stripeLoading"
-                @click="startStripeCheckout('credit_card')"
+                :disabled="formLoading"
+                @click="openPaymentMethodForm('credit_card')"
               >
-                <CrmLoadingSpinner v-if="stripeLoading" small class="me-1" />
-                Continue to Stripe
+                <CrmLoadingSpinner v-if="formLoading" small class="me-1" />
+                Continue to Payment Form
               </button>
             </div>
 
@@ -290,19 +256,17 @@ async function saveAdminBilling() {
               class="portal-billing-detail mt-4 p-3 rounded bg-light"
             >
               <p class="mb-3">
-                Please click the link below to submit your authorization deposit and securely save
-                your bank account on file for future billing. When completing the setup, please
-                select <strong>Bank Transfer (ACH)</strong> as your payment option. The $5
-                authorization deposit will be credited toward your next invoice.
+                Continue to securely save your bank account on file for future billing. Bank details
+                are collected on a secure Save Rack form and never stored in this app.
               </p>
               <button
                 type="button"
                 class="btn btn-primary staff-page-primary"
-                :disabled="stripeLoading"
-                @click="startStripeCheckout('ach')"
+                :disabled="formLoading"
+                @click="openPaymentMethodForm('ach')"
               >
-                <CrmLoadingSpinner v-if="stripeLoading" small class="me-1" />
-                Continue to Stripe
+                <CrmLoadingSpinner v-if="formLoading" small class="me-1" />
+                Continue to Payment Form
               </button>
             </div>
 
@@ -342,7 +306,7 @@ async function saveAdminBilling() {
         v-if="adminMode && taskVerified"
         type="button"
         class="crm-vx-modal-btn crm-vx-modal-btn--secondary me-auto"
-        :disabled="stripeLoading || manualSaving || adminSaving || verifying"
+        :disabled="busy || verifying"
         @click="emit('unverify')"
       >
         <CrmLoadingSpinner v-if="verifying" small class="me-1" />
@@ -352,7 +316,7 @@ async function saveAdminBilling() {
         v-else-if="adminMode"
         type="button"
         class="crm-vx-modal-btn crm-vx-modal-btn--secondary me-auto"
-        :disabled="stripeLoading || manualSaving || adminSaving || verifying"
+        :disabled="busy || verifying"
         @click="emit('verify')"
       >
         <CrmLoadingSpinner v-if="verifying" small class="me-1" />
@@ -361,7 +325,7 @@ async function saveAdminBilling() {
       <button
         type="button"
         class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-        :disabled="stripeLoading || manualSaving || adminSaving || verifying"
+        :disabled="busy || verifying"
         @click="close"
       >
         Cancel

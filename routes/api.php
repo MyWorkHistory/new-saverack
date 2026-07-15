@@ -236,6 +236,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/onboarding/branding/logo', [PortalOnboardingController::class, 'uploadBrandLogo'])->middleware('can:inventory.view');
         Route::post('/onboarding/billing/manual', [PortalOnboardingController::class, 'saveManualBilling'])->middleware('can:inventory.view');
         Route::post('/onboarding/billing/stripe-checkout', [PortalOnboardingController::class, 'startStripeCheckout'])->middleware('can:inventory.view');
+        Route::post('/onboarding/billing/payment-method-link', [PortalOnboardingController::class, 'createPaymentMethodLink'])->middleware('can:inventory.view');
         Route::post('/onboarding/fulfillment-agreement/accept', [PortalOnboardingController::class, 'acceptFulfillmentAgreement'])->middleware('can:inventory.view');
     });
 
@@ -559,6 +560,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.onboarding.brand-logo');
     Route::post('client-accounts/{client_account}/onboarding/billing', [ClientAccountOnboardingController::class, 'saveBilling'])
         ->name('client-accounts.onboarding.billing');
+    Route::post('client-accounts/{client_account}/onboarding/billing/payment-method-link', [ClientAccountOnboardingController::class, 'createPaymentMethodLink'])
+        ->name('client-accounts.onboarding.billing.payment-method-link');
     Route::patch('client-accounts/{client_account}/onboarding/tasks/{task}/verification', [ClientAccountOnboardingController::class, 'updateTaskVerification'])
         ->name('client-accounts.onboarding.tasks.verification');
     Route::patch('client-accounts/{client_account}/onboarding/tasks/{task}/verification/fields/{field}', [ClientAccountOnboardingController::class, 'updateTaskFieldVerification'])

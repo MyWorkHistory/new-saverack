@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
 use App\Models\User;
+use App\Services\AccountPaymentMethodService;
 use App\Services\ClientBrandLogoService;
 use App\Services\PortalOnboardingService;
 use App\Services\PortalOnboardingStripeService;
@@ -27,14 +28,19 @@ class PortalOnboardingController extends Controller
     /** @var ClientBrandLogoService */
     protected $brandLogos;
 
+    /** @var AccountPaymentMethodService */
+    protected $paymentMethods;
+
     public function __construct(
         PortalOnboardingService $onboarding,
         PortalOnboardingStripeService $stripeOnboarding,
-        ClientBrandLogoService $brandLogos
+        ClientBrandLogoService $brandLogos,
+        AccountPaymentMethodService $paymentMethods
     ) {
         $this->onboarding = $onboarding;
         $this->stripeOnboarding = $stripeOnboarding;
         $this->brandLogos = $brandLogos;
+        $this->paymentMethods = $paymentMethods;
     }
 
     public function show(Request $request): JsonResponse
@@ -78,6 +84,30 @@ class PortalOnboardingController extends Controller
 
         return response()->json([
             'checkout_url' => $checkoutUrl,
+            'onboarding' => $this->onboarding->buildOnboardingPayload($user, $account),
+        ]);
+    }
+
+    public function createPaymentMethodLink(Request $request): JsonResponse
+    {
+        [$user, $account] = $this->resolvePortalUserAndAccount($request);
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        $validated = $request->validate([
+            'method' => ['required', 'string', Rule::in([
+                PortalOnboardingService::BILLING_METHOD_CREDIT_CARD,
+                PortalOnboardingService::BILLING_METHOD_ACH,
+            ])],
+        ]);
+
+        $method = (string) $validated['method'];
+        $link = $this->paymentMethods->createLink($account, $method, $user);
+        $account = $this->onboarding->markBillingStripeCheckoutStarted($account, $method);
+
+        return response()->json([
+            'url' => $link['url'],
+            'token' => $link['token'] ?? null,
+            'method' => $link['method'] ?? $method,
             'onboarding' => $this->onboarding->buildOnboardingPayload($user, $account),
         ]);
     }

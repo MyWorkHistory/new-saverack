@@ -136,4 +136,31 @@ class ClientAccountOnboardingApiTest extends TestCase
 
         $response->assertStatus(422);
     }
+
+    public function test_admin_payment_method_link_marks_billing_started(): void
+    {
+        $this->staffWithClientsUpdate();
+
+        $account = ClientAccount::create([
+            'company_name' => 'Admin PM Link Co',
+            'status' => ClientAccount::STATUS_PENDING,
+            'email' => 'admin-pm-link@test.com',
+        ]);
+
+        $response = $this->postJson(
+            '/api/client-accounts/'.$account->id.'/onboarding/billing/payment-method-link',
+            ['method' => 'ach']
+        );
+
+        $response->assertOk();
+        $response->assertJsonStructure(['url', 'method', 'onboarding']);
+        $this->assertStringContainsString('/payment-method/', (string) $response->json('url'));
+        $response->assertJsonPath('onboarding.profile.onboarding_billing_method', 'ach');
+        $response->assertJsonPath('onboarding.profile.onboarding_billing_status', 'processing');
+
+        $this->assertDatabaseHas('payment_method_links', [
+            'client_account_id' => $account->id,
+            'method' => 'ach',
+        ]);
+    }
 }

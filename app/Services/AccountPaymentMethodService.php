@@ -14,9 +14,15 @@ class AccountPaymentMethodService
     /** @var StripeInvoicePaymentService */
     private $stripePayments;
 
-    public function __construct(StripeInvoicePaymentService $stripePayments)
-    {
+    /** @var PortalOnboardingService */
+    private $onboarding;
+
+    public function __construct(
+        StripeInvoicePaymentService $stripePayments,
+        PortalOnboardingService $onboarding
+    ) {
         $this->stripePayments = $stripePayments;
+        $this->onboarding = $onboarding;
     }
 
     public function publishableKey(): string
@@ -129,10 +135,13 @@ class AccountPaymentMethodService
 
     public function markLinkConsumed(PaymentMethodLink $link, ?string $newPaymentMethodId = null): void
     {
+        $account = $link->clientAccount;
         $replaceId = trim((string) ($link->replace_payment_method_id ?? ''));
         if ($replaceId !== '' && $newPaymentMethodId !== null && $newPaymentMethodId !== '' && $replaceId !== $newPaymentMethodId) {
             try {
-                $this->detachPaymentMethod($link->clientAccount, $replaceId);
+                if ($account instanceof ClientAccount) {
+                    $this->detachPaymentMethod($account, $replaceId);
+                }
             } catch (\Throwable $e) {
                 // Best-effort detach of the replaced method.
             }
@@ -140,6 +149,33 @@ class AccountPaymentMethodService
 
         $link->consumed_at = now();
         $link->save();
+
+        if ($account instanceof ClientAccount) {
+            $this->onboarding->completeBillingFromSavedPaymentMethod($account, (string) $link->method);
+
+            $pmId = trim((string) ($newPaymentMethodId ?? ''));
+            if ($pmId !== '') {
+                $this->setCustomerDefaultPaymentMethodBestEffort($account, $pmId);
+            }
+        }
+    }
+
+    private function setCustomerDefaultPaymentMethodBestEffort(ClientAccount $account, string $paymentMethodId): void
+    {
+        $customerId = trim((string) ($account->stripe_customer_id ?? ''));
+        if ($customerId === '') {
+            return;
+        }
+
+        try {
+            $this->client()->customers->update($customerId, [
+                'invoice_settings' => [
+                    'default_payment_method' => $paymentMethodId,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            // Best-effort: onboarding and local defaults already saved.
+        }
     }
 
     public function detachPaymentMethod(ClientAccount $account, string $paymentMethodId): void

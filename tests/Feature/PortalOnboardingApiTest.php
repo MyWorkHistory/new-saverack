@@ -139,6 +139,33 @@ class PortalOnboardingApiTest extends TestCase
         $response->assertJsonPath('profile.onboarding_billing_status', 'completed');
     }
 
+    public function test_payment_method_link_marks_billing_started_and_returns_url(): void
+    {
+        [$account] = $this->pendingPortalUser();
+
+        $response = $this->postJson('/api/portal/onboarding/billing/payment-method-link', [
+            'method' => 'credit_card',
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonStructure(['url', 'method', 'onboarding']);
+        $this->assertStringContainsString('/payment-method/', (string) $response->json('url'));
+        $response->assertJsonPath('onboarding.profile.onboarding_billing_method', 'credit_card');
+        $response->assertJsonPath('onboarding.profile.onboarding_billing_status', 'not_started');
+
+        $this->assertDatabaseHas('payment_method_links', [
+            'client_account_id' => $account->id,
+            'method' => 'credit_card',
+        ]);
+
+        $ach = $this->postJson('/api/portal/onboarding/billing/payment-method-link', [
+            'method' => 'ach',
+        ]);
+        $ach->assertOk();
+        $ach->assertJsonPath('onboarding.profile.onboarding_billing_status', 'processing');
+        $ach->assertJsonPath('onboarding.profile.onboarding_billing_method', 'ach');
+    }
+
     public function test_onboarding_webhook_completes_billing_for_card_deposit(): void
     {
         $account = ClientAccount::create([

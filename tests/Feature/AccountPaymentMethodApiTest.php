@@ -8,6 +8,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\AccountPaymentMethodService;
+use App\Services\PortalOnboardingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -140,5 +141,58 @@ class AccountPaymentMethodApiTest extends TestCase
         $this->postJson('/api/client-accounts/'.$account->id.'/payment-method-links', [
             'method' => 'ach',
         ])->assertCreated()->assertJsonPath('method', 'ach');
+    }
+
+    public function test_completing_payment_method_link_updates_onboarding_billing(): void
+    {
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_PENDING,
+            'company_name' => 'Onboard PM Complete Co',
+            'email' => 'onboard-pm@example.test',
+            'onboarding_billing_method' => PortalOnboardingService::BILLING_METHOD_CREDIT_CARD,
+            'onboarding_billing_status' => PortalOnboardingService::BILLING_STATUS_NOT_STARTED,
+            'stripe_customer_id' => 'cus_test_onboard_pm',
+        ]);
+        $link = PaymentMethodLink::query()->create([
+            'client_account_id' => $account->id,
+            'token' => 'completetoken1234567890abcdefghi',
+            'method' => PaymentMethodLink::METHOD_CREDIT_CARD,
+            'expires_at' => now()->addDay(),
+        ]);
+
+        $this->postJson('/api/public/payment-method/'.$link->token.'/complete', [
+            'payment_method_id' => 'pm_test_complete',
+        ])->assertOk()->assertJsonPath('ok', true);
+
+        $account->refresh();
+        $this->assertSame(PortalOnboardingService::BILLING_STATUS_COMPLETED, $account->onboarding_billing_status);
+        $this->assertSame(PortalOnboardingService::BILLING_METHOD_CREDIT_CARD, $account->onboarding_billing_method);
+        $this->assertSame('Credit Card', $account->default_payment_type);
+        $this->assertNotNull($link->fresh()->consumed_at);
+    }
+
+    public function test_completing_ach_payment_method_link_sets_ach_defaults(): void
+    {
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_PENDING,
+            'company_name' => 'Onboard ACH Complete Co',
+            'email' => 'onboard-ach@example.test',
+            'onboarding_billing_status' => PortalOnboardingService::BILLING_STATUS_PROCESSING,
+            'onboarding_billing_method' => PortalOnboardingService::BILLING_METHOD_ACH,
+        ]);
+        $link = PaymentMethodLink::query()->create([
+            'client_account_id' => $account->id,
+            'token' => 'completeachtoken1234567890abcdef',
+            'method' => PaymentMethodLink::METHOD_ACH,
+            'expires_at' => now()->addDay(),
+        ]);
+
+        $this->postJson('/api/public/payment-method/'.$link->token.'/complete')
+            ->assertOk();
+
+        $account->refresh();
+        $this->assertSame(PortalOnboardingService::BILLING_STATUS_COMPLETED, $account->onboarding_billing_status);
+        $this->assertSame(PortalOnboardingService::BILLING_METHOD_ACH, $account->onboarding_billing_method);
+        $this->assertSame('ACH', $account->default_payment_type);
     }
 }

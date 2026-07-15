@@ -535,6 +535,25 @@ class PortalOnboardingService
         return $account->fresh();
     }
 
+    /**
+     * Complete onboarding billing after a SetupIntent payment method was saved.
+     */
+    public function completeBillingFromSavedPaymentMethod(ClientAccount $account, string $method): ClientAccount
+    {
+        $method = $method === self::BILLING_METHOD_ACH
+            ? self::BILLING_METHOD_ACH
+            : self::BILLING_METHOD_CREDIT_CARD;
+
+        $account->onboarding_billing_method = $method;
+        $account->onboarding_billing_status = self::BILLING_STATUS_COMPLETED;
+        $account->default_payment_type = $method === self::BILLING_METHOD_ACH
+            ? 'ACH'
+            : 'Credit Card';
+        $account->save();
+
+        return $account->fresh();
+    }
+
     public function welcomeBillingReturnUrl(string $queryFlag): string
     {
         $base = CrmUrls::frontendBase().'/users/welcome';

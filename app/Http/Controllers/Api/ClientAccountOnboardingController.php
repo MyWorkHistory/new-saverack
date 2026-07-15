@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
+use App\Models\User;
+use App\Services\AccountPaymentMethodService;
 use App\Services\ClientBrandLogoService;
 use App\Services\PortalOnboardingService;
 use App\Services\PortalOnboardingStripeService;
@@ -26,14 +28,19 @@ class ClientAccountOnboardingController extends Controller
     /** @var ClientBrandLogoService */
     protected $brandLogos;
 
+    /** @var AccountPaymentMethodService */
+    protected $paymentMethods;
+
     public function __construct(
         PortalOnboardingService $onboarding,
         PortalOnboardingStripeService $stripeOnboarding,
-        ClientBrandLogoService $brandLogos
+        ClientBrandLogoService $brandLogos,
+        AccountPaymentMethodService $paymentMethods
     ) {
         $this->onboarding = $onboarding;
         $this->stripeOnboarding = $stripeOnboarding;
         $this->brandLogos = $brandLogos;
+        $this->paymentMethods = $paymentMethods;
     }
 
     public function show(ClientAccount $client_account): JsonResponse
@@ -167,6 +174,34 @@ class ClientAccountOnboardingController extends Controller
         $client_account = $this->onboarding->applyAdminBillingMethod($client_account, $method);
 
         return response()->json($this->onboarding->buildAdminOnboardingPayload($client_account));
+    }
+
+    public function createPaymentMethodLink(Request $request, ClientAccount $client_account): JsonResponse
+    {
+        Gate::authorize('update', $client_account);
+
+        $validated = $request->validate([
+            'method' => ['required', 'string', Rule::in([
+                PortalOnboardingService::BILLING_METHOD_CREDIT_CARD,
+                PortalOnboardingService::BILLING_METHOD_ACH,
+            ])],
+        ]);
+
+        $method = (string) $validated['method'];
+        $actor = $request->user();
+        $link = $this->paymentMethods->createLink(
+            $client_account,
+            $method,
+            $actor instanceof User ? $actor : null
+        );
+        $client_account = $this->onboarding->markBillingStripeCheckoutStarted($client_account, $method);
+
+        return response()->json([
+            'url' => $link['url'],
+            'token' => $link['token'] ?? null,
+            'method' => $link['method'] ?? $method,
+            'onboarding' => $this->onboarding->buildAdminOnboardingPayload($client_account),
+        ]);
     }
 
     public function updateTaskVerification(Request $request, ClientAccount $client_account, string $task): JsonResponse

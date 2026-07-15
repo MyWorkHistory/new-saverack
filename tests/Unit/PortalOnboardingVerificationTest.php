@@ -94,6 +94,36 @@ class PortalOnboardingVerificationTest extends TestCase
         $this->assertSame('ACH', $account->default_payment_type);
     }
 
+    public function test_complete_billing_from_saved_payment_method_sets_defaults(): void
+    {
+        $account = ClientAccount::create([
+            'company_name' => 'PM Complete Co',
+            'status' => ClientAccount::STATUS_PENDING,
+            'email' => 'pm-complete@test.com',
+            'onboarding_billing_status' => PortalOnboardingService::BILLING_STATUS_NOT_STARTED,
+            'onboarding_billing_method' => PortalOnboardingService::BILLING_METHOD_CREDIT_CARD,
+        ]);
+        $service = new PortalOnboardingService(Mockery::mock(ClientBrandLogoService::class));
+
+        $service->completeBillingFromSavedPaymentMethod(
+            $account,
+            PortalOnboardingService::BILLING_METHOD_CREDIT_CARD
+        );
+        $account->refresh();
+
+        $this->assertSame(PortalOnboardingService::BILLING_STATUS_COMPLETED, $account->onboarding_billing_status);
+        $this->assertSame(PortalOnboardingService::BILLING_METHOD_CREDIT_CARD, $account->onboarding_billing_method);
+        $this->assertSame('Credit Card', $account->default_payment_type);
+
+        $service->completeBillingFromSavedPaymentMethod(
+            $account->fresh(),
+            PortalOnboardingService::BILLING_METHOD_ACH
+        );
+        $account->refresh();
+        $this->assertSame('ACH', $account->default_payment_type);
+        $this->assertSame(PortalOnboardingService::BILLING_METHOD_ACH, $account->onboarding_billing_method);
+    }
+
     public function test_task_titles_use_account_and_billing_information_labels(): void
     {
         $account = ClientAccount::create([

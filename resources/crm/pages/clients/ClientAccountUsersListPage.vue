@@ -109,11 +109,19 @@ function openEditFromMenu(row) {
 
 function openRemoveFromMenu(row) {
   closeManageMenu();
+  if (!canDelete.value) {
+    toast.error("You do not have permission to delete users.");
+    return;
+  }
+  if (row?.is_account_primary) {
+    toast.warning("Primary account admins cannot be deleted.");
+    return;
+  }
   confirmDelete(row);
 }
 
 function canRemoveRow(row) {
-  return canDelete.value && !row.is_account_primary;
+  return canDelete.value && !row?.is_account_primary;
 }
 
 function onWindowScrollOrResize() {
@@ -656,13 +664,20 @@ async function submitAdd() {
 }
 
 function confirmDelete(row) {
-  if (row.is_account_primary) return;
+  if (!canDelete.value) {
+    toast.error("You do not have permission to delete users.");
+    return;
+  }
+  if (row?.is_account_primary) {
+    toast.warning("Primary account admins cannot be deleted.");
+    return;
+  }
   deleteTarget.value = row;
 }
 
 async function runDelete() {
   const r = deleteTarget.value;
-  if (!r) return;
+  if (!r || !canDelete.value) return;
   deleteBusy.value = true;
   try {
     await api.delete(`/client-accounts/${r.client_account_id}/account-users/${r.id}`);
@@ -1603,7 +1618,7 @@ onUnmounted(() => {
             View
           </button>
           <hr
-            v-if="canUpdate || canRemoveRow(manageMenuRow)"
+            v-if="canUpdate || canDelete"
             class="staff-row-menu__divider"
           />
           <button
@@ -1616,14 +1631,20 @@ onUnmounted(() => {
             Edit
           </button>
           <hr
-            v-if="canUpdate && canRemoveRow(manageMenuRow)"
+            v-if="canUpdate && canDelete"
             class="staff-row-menu__divider"
           />
           <button
-            v-if="canRemoveRow(manageMenuRow)"
+            v-if="canDelete"
             type="button"
             class="staff-row-menu__item staff-row-menu__item--danger"
             role="menuitem"
+            :disabled="!!manageMenuRow?.is_account_primary"
+            :title="
+              manageMenuRow?.is_account_primary
+                ? 'Primary account admins cannot be deleted.'
+                : 'Delete user'
+            "
             @click="openRemoveFromMenu(manageMenuRow)"
           >
             Delete

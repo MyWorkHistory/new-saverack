@@ -1,5 +1,9 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
+import { useToast } from "../../composables/useToast.js";
+import { crmIsAdmin } from "../../utils/crmUser.js";
+import { formatDateUs } from "../../utils/formatUserDates.js";
+import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
@@ -9,13 +13,21 @@ import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue
 import ProjectCreateDrawer from "../../components/projects/ProjectCreateDrawer.vue";
 import ProjectHubSummaryCards from "../../components/projects/ProjectHubSummaryCards.vue";
 import ProjectStatusChip from "../../components/projects/ProjectStatusChip.vue";
-import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
-import { useToast } from "../../composables/useToast.js";
-import { formatDateUs } from "../../utils/formatUserDates.js";
 
+const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
 const router = useRouter();
 const route = useRoute();
+
+function userHasPerm(key) {
+  const u = crmUser.value;
+  if (!u) return false;
+  if (crmIsAdmin(u) || u.is_crm_owner) return true;
+  return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
+}
+
+const canCreate = computed(() => userHasPerm("projects.create"));
+const canDelete = computed(() => userHasPerm("projects.delete"));
 
 setCrmPageMeta({ title: "Save Rack | Projects", description: "Client projects." });
 
@@ -148,16 +160,23 @@ async function changeStatus(row, status) {
 function openManage(row, event) {
   const btn = event?.currentTarget;
   const rect = btn?.getBoundingClientRect?.();
+  const MENU_W = 200;
   if (rect) {
+    let left = Math.round(rect.right - MENU_W);
+    left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
     manageMenuRect.value = {
       top: Math.round(rect.bottom + 4),
-      left: Math.round(Math.min(rect.left, window.innerWidth - 180)),
+      left,
     };
   }
   manageOpenId.value = manageOpenId.value === row.id ? null : row.id;
 }
 
 function openDelete(row) {
+  if (!canDelete.value) {
+    toast.error("You do not have permission to delete projects.");
+    return;
+  }
   deleteTarget.value = row;
   manageOpenId.value = null;
   deleteOpen.value = true;
@@ -231,6 +250,7 @@ onUnmounted(() => {
         <p class="text-secondary small mb-0">Track client projects and quotes.</p>
       </div>
       <button
+        v-if="canCreate"
         type="button"
         class="btn btn-primary staff-page-primary"
         @click="createOpen = true"
@@ -248,47 +268,48 @@ onUnmounted(() => {
       />
     </div>
 
-    <div class="staff-table-card">
-      <div class="d-flex flex-wrap gap-2 align-items-end p-3 border-bottom">
-        <div style="min-width: 220px; flex: 1 1 220px">
-          <label class="form-label small text-secondary mb-1">Account</label>
-          <CrmSearchableSelect
-            v-model="accountFilter"
-            appearance="staff"
-            :options="accountOptions"
-            placeholder="All accounts"
-            :allow-empty="true"
-            empty-label="All accounts"
-          />
-        </div>
-        <div style="min-width: 240px; flex: 1 1 260px">
-          <label class="form-label small text-secondary mb-1" for="project-search">
-            Search PID / Project Name
-          </label>
-          <input
-            id="project-search"
-            v-model="search"
-            type="search"
-            class="form-control"
-            placeholder="Search by PID or project name…"
-            autocomplete="off"
-          />
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white projects-list-table">
+      <div class="staff-table-toolbar">
+        <div class="staff-table-toolbar--row projects-toolbar-row">
+          <div class="projects-toolbar-account">
+            <CrmSearchableSelect
+              v-model="accountFilter"
+              class="staff-toolbar-search staff-toolbar-search--inline w-100"
+              appearance="staff"
+              aria-label="Client account"
+              :options="accountOptions"
+              placeholder="All accounts"
+              :allow-empty="true"
+              empty-label="All accounts"
+            />
+          </div>
+          <div class="projects-toolbar-search">
+            <input
+              id="project-search"
+              v-model="search"
+              type="search"
+              class="form-control staff-toolbar-search staff-toolbar-search--inline w-100"
+              placeholder="Search PID or project name"
+              autocomplete="off"
+              aria-label="Search PID or project name"
+            />
+          </div>
         </div>
       </div>
 
       <div v-if="loading" class="p-5 d-flex justify-content-center">
         <CrmLoadingSpinner message="Loading projects…" />
       </div>
-      <div v-else class="table-responsive">
-        <table class="table staff-data-table mb-0 align-middle">
-          <thead>
+      <div v-else class="table-responsive staff-table-wrap">
+        <table class="table table-hover align-middle mb-0 staff-data-table">
+          <thead class="table-light staff-table-head">
             <tr>
-              <th class="staff-table-head__th" scope="col">Status</th>
-              <th class="staff-table-head__th" scope="col">PID</th>
+              <th class="staff-table-head__th text-center" scope="col">Status</th>
+              <th class="staff-table-head__th text-center" scope="col">PID</th>
               <th class="staff-table-head__th" scope="col">Project Name</th>
-              <th class="staff-table-head__th" scope="col">Date Created</th>
-              <th class="staff-table-head__th" scope="col">Date Completed</th>
-              <th class="staff-table-head__th text-end" scope="col">Action</th>
+              <th class="staff-table-head__th text-center" scope="col">Date Created</th>
+              <th class="staff-table-head__th text-center" scope="col">Date Completed</th>
+              <th class="staff-table-head__th staff-actions-col text-center" scope="col">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -296,14 +317,14 @@ onUnmounted(() => {
               <td colspan="6" class="text-center text-secondary py-5">No projects found.</td>
             </tr>
             <tr v-for="row in rows" :key="row.id">
-              <td>
+              <td class="text-center">
                 <ProjectStatusChip
                   :status="row.status"
                   :disabled="statusBusyId === row.id"
                   @change="(s) => changeStatus(row, s)"
                 />
               </td>
-              <td>
+              <td class="text-center">
                 <RouterLink
                   class="fw-semibold text-decoration-none"
                   :to="`/admin/clients/projects/${row.id}`"
@@ -322,17 +343,25 @@ onUnmounted(() => {
                   {{ row.client_account_name }}
                 </div>
               </td>
-              <td>{{ formatDateUs(row.created_at) || "—" }}</td>
-              <td>{{ formatDateUs(row.completed_at) || "—" }}</td>
-              <td class="text-end" @click.stop>
-                <button
-                  type="button"
-                  class="btn btn-link btn-sm text-secondary p-1"
-                  aria-label="Row actions"
-                  @click="(e) => openManage(row, e)"
+              <td class="text-center">{{ formatDateUs(row.created_at) || "—" }}</td>
+              <td class="text-center">{{ formatDateUs(row.completed_at) || "—" }}</td>
+              <td class="staff-actions-cell text-center" @click.stop>
+                <div
+                  data-row-actions
+                  class="staff-actions-inner staff-actions-inner--single justify-content-center"
                 >
-                  <CrmIconRowActions variant="horizontal" />
-                </button>
+                  <button
+                    type="button"
+                    class="staff-action-btn staff-action-btn--more"
+                    :class="{ 'is-open': manageOpenId === row.id }"
+                    :aria-expanded="manageOpenId === row.id"
+                    aria-haspopup="true"
+                    aria-label="Row actions"
+                    @click="(e) => openManage(row, e)"
+                  >
+                    <CrmIconRowActions variant="horizontal" />
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -341,15 +370,15 @@ onUnmounted(() => {
 
       <div
         v-if="meta.last_page > 1"
-        class="d-flex justify-content-between align-items-center p-3 border-top"
+        class="staff-table-footer card-footer d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-2"
       >
         <span class="small text-secondary">
-          Page {{ meta.current_page }} of {{ meta.last_page }} ({{ meta.total }})
+          Page {{ meta.current_page }} of {{ meta.last_page }}
         </span>
-        <div class="d-flex gap-2">
+        <div class="btn-group btn-group-sm ms-sm-auto">
           <button
             type="button"
-            class="btn btn-sm btn-outline-secondary"
+            class="btn btn-outline-secondary"
             :disabled="meta.current_page <= 1"
             @click="loadList(meta.current_page - 1)"
           >
@@ -357,7 +386,7 @@ onUnmounted(() => {
           </button>
           <button
             type="button"
-            class="btn btn-sm btn-outline-secondary"
+            class="btn btn-outline-secondary"
             :disabled="meta.current_page >= meta.last_page"
             @click="loadList(meta.current_page + 1)"
           >
@@ -368,32 +397,37 @@ onUnmounted(() => {
     </div>
 
     <Teleport to="body">
-      <ul
+      <div
         v-if="manageMenuRow"
-        class="dropdown-menu show shadow"
+        data-row-actions
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
         :style="{
-          position: 'fixed',
-          top: manageMenuRect.top + 'px',
-          left: manageMenuRect.left + 'px',
-          zIndex: 1080,
+          top: `${manageMenuRect.top}px`,
+          left: `${manageMenuRect.left}px`,
         }"
         @click.stop
       >
-        <li>
-          <RouterLink
-            class="dropdown-item"
-            :to="`/admin/clients/projects/${manageMenuRow.id}`"
-            @click="manageOpenId = null"
+        <RouterLink
+          class="staff-row-menu__item"
+          role="menuitem"
+          :to="`/admin/clients/projects/${manageMenuRow.id}`"
+          @click="manageOpenId = null"
+        >
+          View
+        </RouterLink>
+        <template v-if="canDelete">
+          <hr class="staff-row-menu__divider" />
+          <button
+            type="button"
+            class="staff-row-menu__item staff-row-menu__item--danger"
+            role="menuitem"
+            @click="openDelete(manageMenuRow)"
           >
-            View
-          </RouterLink>
-        </li>
-        <li>
-          <button type="button" class="dropdown-item text-danger" @click="openDelete(manageMenuRow)">
             Delete
           </button>
-        </li>
-      </ul>
+        </template>
+      </div>
     </Teleport>
 
     <ProjectCreateDrawer
@@ -419,3 +453,22 @@ onUnmounted(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.projects-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.projects-toolbar-account {
+  flex: 0 0 auto;
+  width: min(280px, 100%);
+}
+
+.projects-toolbar-search {
+  flex: 0 0 auto;
+  width: min(18rem, 100%);
+}
+</style>

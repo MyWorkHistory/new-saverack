@@ -1619,6 +1619,16 @@ button.staff-status-badge:focus-visible {
   color: #403f4b;
 }
 
+.staff-row-menu__item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.staff-row-menu__item:disabled:hover {
+  background: transparent;
+  color: #5d596c;
+}
+
 .staff-row-menu__item--danger {
   color: #ff4c51;
 }

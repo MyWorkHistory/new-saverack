@@ -164,13 +164,6 @@ async function confirmRowDelete() {
   }
 }
 
-watch(
-  () => crmUser.value,
-  () => {
-    // no-op; permissions used at render
-  },
-);
-
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Calendar Events",

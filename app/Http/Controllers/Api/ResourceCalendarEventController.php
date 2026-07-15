@@ -14,9 +14,13 @@ use Illuminate\Http\Request;
 
 class ResourceCalendarEventController extends Controller
 {
-    public function __construct(
-        private readonly ResourceCalendarEventService $calendarEvents
-    ) {}
+    /** @var ResourceCalendarEventService */
+    protected $calendarEvents;
+
+    public function __construct(ResourceCalendarEventService $calendarEvents)
+    {
+        $this->calendarEvents = $calendarEvents;
+    }
 
     public function meta(Request $request): JsonResponse
     {

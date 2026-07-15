@@ -77,11 +77,15 @@ class ResourceCalendarEvent extends Model
 
     public static function repeatLabel(?string $repeat): string
     {
-        return match (self::normalizeRepeat($repeat)) {
-            self::REPEAT_MONTHLY => 'Monthly',
-            self::REPEAT_YEARLY => 'Yearly',
-            default => 'Do Not Repeat',
-        };
+        $normalized = self::normalizeRepeat($repeat);
+        if ($normalized === self::REPEAT_MONTHLY) {
+            return 'Monthly';
+        }
+        if ($normalized === self::REPEAT_YEARLY) {
+            return 'Yearly';
+        }
+
+        return 'Do Not Repeat';
     }
 
     public function creator(): BelongsTo

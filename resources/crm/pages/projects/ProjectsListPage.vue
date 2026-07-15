@@ -68,7 +68,11 @@ async function loadAccounts() {
   accountsLoading.value = true;
   try {
     const { data } = await api.get("/inventory/client-account-options");
-    accounts.value = Array.isArray(data) ? data : data?.data || [];
+    accounts.value = Array.isArray(data?.accounts)
+      ? data.accounts
+      : Array.isArray(data?.data)
+        ? data.data
+        : [];
   } catch (e) {
     toast.errorFrom(e, "Could not load accounts.");
     accounts.value = [];

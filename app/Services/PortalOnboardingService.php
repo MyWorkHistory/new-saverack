@@ -6,6 +6,7 @@ use App\Models\ClientAccount;
 use App\Models\User;
 use App\Support\ClientAccountBillingPreferences;
 use App\Support\CrmUrls;
+use App\Support\HtmlSanitizer;
 use App\Support\PortalOnboardingSectionRegistry;
 
 class PortalOnboardingService
@@ -107,7 +108,36 @@ class PortalOnboardingService
             ],
             'manual_payment_instructions' => config('crm.portal_manual_payment_instructions'),
             'stripe_payment_link_url' => config('crm.stripe_onboarding_payment_link_url'),
+            'fulfillment_agreement' => $this->serializeFulfillmentAgreement($account),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function serializeFulfillmentAgreement(ClientAccount $account): array
+    {
+        /** @var TermsOfServiceService $terms */
+        $terms = app(TermsOfServiceService::class);
+        $acceptedAt = $account->fulfillment_agreement_accepted_at;
+        $accepted = $acceptedAt !== null;
+
+        return [
+            'status' => $accepted ? 'completed' : 'not_completed',
+            'accepted_at' => $accepted ? optional($acceptedAt)->toIso8601String() : null,
+            'body' => HtmlSanitizer::sanitize($terms->effectiveBodyForAccount($account)),
+            'public_url' => url('/terms/accounts/'.$account->id),
+        ];
+    }
+
+    public function acceptFulfillmentAgreement(ClientAccount $account): ClientAccount
+    {
+        if ($account->fulfillment_agreement_accepted_at === null) {
+            $account->fulfillment_agreement_accepted_at = now();
+            $account->save();
+        }
+
+        return $account->fresh();
     }
 
     /**
@@ -715,6 +745,10 @@ class PortalOnboardingService
 
     public function isOnboardingReadyForActivation(ClientAccount $account): bool
     {
+        if ($account->fulfillment_agreement_accepted_at === null) {
+            return false;
+        }
+
         $tasks = $this->adminOnboardingTasks($account);
 
         if ($tasks === []) {

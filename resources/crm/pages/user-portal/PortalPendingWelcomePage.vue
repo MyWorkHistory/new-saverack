@@ -7,12 +7,14 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import PortalOnboardingAccountModal from "../../components/user-portal/PortalOnboardingAccountModal.vue";
 import PortalOnboardingBillingModal from "../../components/user-portal/PortalOnboardingBillingModal.vue";
 import PortalOnboardingSectionModal from "../../components/user-portal/PortalOnboardingSectionModal.vue";
+import PortalFulfillmentAgreementModal from "../../components/user-portal/PortalFulfillmentAgreementModal.vue";
 import { useToast } from "../../composables/useToast";
 import { PORTAL_MATERIAL_ICON } from "../../constants/portalMaterialIcons.js";
 import {
   PORTAL_ONBOARDING_SECTION_IDS,
   PORTAL_ONBOARDING_TASK_ICON_KEYS,
 } from "../../constants/portalOnboardingSections.js";
+import { parseCalendarDay } from "../../utils/formatUserDates.js";
 
 const router = useRouter();
 const route = useRoute();
@@ -25,6 +27,7 @@ const onboarding = ref(null);
 const accountModalOpen = ref(false);
 const billingModalOpen = ref(false);
 const sectionModalOpen = ref(false);
+const agreementModalOpen = ref(false);
 const activeSectionId = ref("");
 
 const profile = computed(() => onboarding.value?.profile || null);
@@ -32,6 +35,21 @@ const tasks = computed(() => onboarding.value?.tasks || []);
 const preferences = computed(() => onboarding.value?.preferences || {});
 const brandLogoUrl = computed(() => onboarding.value?.brand_logo_url || "");
 const progress = computed(() => onboarding.value?.progress || { total: 8, completed: 0, remaining: 8 });
+const fulfillmentAgreement = computed(() => onboarding.value?.fulfillment_agreement || null);
+const agreementCompleted = computed(
+  () => fulfillmentAgreement.value?.status === "completed",
+);
+const agreementAcceptedLabel = computed(() => {
+  const raw = fulfillmentAgreement.value?.accepted_at;
+  const d = parseCalendarDay(raw) || (raw ? new Date(raw) : null);
+  if (!d || Number.isNaN(d.getTime())) return "";
+  const formatted = new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(d);
+  return `Agreement accepted on ${formatted}`;
+});
 const manualInstructions = computed(
   () => onboarding.value?.manual_payment_instructions || null,
 );
@@ -113,6 +131,14 @@ function onSectionSaved(data) {
 function onBillingSaved(data) {
   applyOnboardingPayload(data);
   loadOnboarding({ quiet: true });
+}
+
+function onAgreementAccepted(data) {
+  applyOnboardingPayload(data);
+}
+
+function openAgreementModal() {
+  agreementModalOpen.value = true;
 }
 
 function recalcProgress(taskList) {
@@ -289,6 +315,96 @@ onUnmounted(() => {
               </div>
             </div>
 
+            <div
+              class="staff-table-card staff-datatable-card--white p-3 p-md-4 portal-fulfillment-agreement"
+              :class="{
+                'portal-fulfillment-agreement--completed': agreementCompleted,
+                'portal-fulfillment-agreement--pending': !agreementCompleted,
+              }"
+            >
+              <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+                <div class="min-w-0">
+                  <h2 class="h6 fw-semibold mb-2">Fulfillment Agreement</h2>
+                  <p class="small text-secondary mb-0">
+                    Review and accept our fulfillment agreement to proceed with your onboarding.
+                  </p>
+                </div>
+                <div
+                  class="portal-welcome-page__panel-icon portal-fulfillment-agreement__doc-icon flex-shrink-0"
+                  aria-hidden="true"
+                >
+                  <svg class="portal-welcome-page__icon-svg" fill="currentColor" viewBox="0 0 24 24">
+                    <path :d="PORTAL_MATERIAL_ICON.description" />
+                  </svg>
+                </div>
+              </div>
+
+              <div class="portal-fulfillment-agreement__status d-flex align-items-start gap-2 mb-3">
+                <span
+                  class="portal-fulfillment-agreement__status-icon flex-shrink-0"
+                  aria-hidden="true"
+                >
+                  <svg
+                    v-if="agreementCompleted"
+                    class="portal-fulfillment-agreement__status-svg"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
+                    />
+                  </svg>
+                  <svg
+                    v-else
+                    class="portal-fulfillment-agreement__status-svg"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path :d="PORTAL_MATERIAL_ICON.cancel" />
+                  </svg>
+                </span>
+                <div class="min-w-0">
+                  <p
+                    class="portal-fulfillment-agreement__status-label mb-0 fw-semibold"
+                  >
+                    {{ agreementCompleted ? "Completed" : "Not Completed" }}
+                  </p>
+                  <p
+                    v-if="agreementCompleted && agreementAcceptedLabel"
+                    class="small text-secondary mb-0 mt-1"
+                  >
+                    {{ agreementAcceptedLabel }}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                class="portal-fulfillment-agreement__action w-100"
+                @click="openAgreementModal"
+              >
+                <span class="d-inline-flex align-items-center gap-2 min-w-0">
+                  <svg
+                    class="portal-fulfillment-agreement__action-icon flex-shrink-0"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path :d="PORTAL_MATERIAL_ICON.description" />
+                  </svg>
+                  <span class="fw-semibold">View Agreement</span>
+                </span>
+                <svg
+                  class="portal-fulfillment-agreement__chevron flex-shrink-0"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path :d="PORTAL_MATERIAL_ICON.chevronRight" />
+                </svg>
+              </button>
+            </div>
+
             <div class="staff-table-card staff-datatable-card--white p-3 p-md-4 portal-welcome-page__support">
               <div class="d-flex align-items-center justify-content-between gap-3">
                 <div class="min-w-0">
@@ -334,6 +450,11 @@ onUnmounted(() => {
       :brand-logo-url="brandLogoUrl"
       :profile="profile"
       @saved="onSectionSaved"
+    />
+    <PortalFulfillmentAgreementModal
+      v-model:open="agreementModalOpen"
+      :agreement="fulfillmentAgreement"
+      @accepted="onAgreementAccepted"
     />
   </div>
 </template>
@@ -484,5 +605,64 @@ onUnmounted(() => {
 .portal-welcome-page__panel-icon .portal-welcome-page__icon-svg {
   width: 1.4375rem;
   height: 1.4375rem;
+}
+
+.portal-fulfillment-agreement__doc-icon {
+  background: rgba(40, 199, 111, 0.14);
+  color: #28c76f;
+}
+
+.portal-fulfillment-agreement__status-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.portal-fulfillment-agreement__status-svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  display: block;
+}
+
+.portal-fulfillment-agreement--completed .portal-fulfillment-agreement__status-icon,
+.portal-fulfillment-agreement--completed .portal-fulfillment-agreement__status-label {
+  color: #28c76f;
+}
+
+.portal-fulfillment-agreement--pending .portal-fulfillment-agreement__status-icon,
+.portal-fulfillment-agreement--pending .portal-fulfillment-agreement__status-label {
+  color: #ea5455;
+}
+
+.portal-fulfillment-agreement__action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(47, 43, 61, 0.12);
+  border-radius: 0.5rem;
+  background: #fff;
+  color: #2f2b3d;
+  text-align: left;
+}
+
+.portal-fulfillment-agreement__action:hover {
+  background: #f8f9fb;
+}
+
+.portal-fulfillment-agreement__action-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+  color: #2573ba;
+}
+
+.portal-fulfillment-agreement__chevron {
+  width: 1.125rem;
+  height: 1.125rem;
+  color: #9ca3af;
 }
 </style>

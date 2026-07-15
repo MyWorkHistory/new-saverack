@@ -129,6 +129,16 @@ class PortalOnboardingController extends Controller
         ]);
     }
 
+    public function acceptFulfillmentAgreement(Request $request): JsonResponse
+    {
+        [$user, $account] = $this->resolvePortalUserAndAccount($request);
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        $account = $this->onboarding->acceptFulfillmentAgreement($account);
+
+        return response()->json($this->onboarding->buildOnboardingPayload($user, $account));
+    }
+
     /**
      * @return array{0: User, 1: ClientAccount}
      */

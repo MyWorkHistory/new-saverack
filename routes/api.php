@@ -230,6 +230,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/onboarding/branding/logo', [PortalOnboardingController::class, 'uploadBrandLogo'])->middleware('can:inventory.view');
         Route::post('/onboarding/billing/manual', [PortalOnboardingController::class, 'saveManualBilling'])->middleware('can:inventory.view');
         Route::post('/onboarding/billing/stripe-checkout', [PortalOnboardingController::class, 'startStripeCheckout'])->middleware('can:inventory.view');
+        Route::post('/onboarding/fulfillment-agreement/accept', [PortalOnboardingController::class, 'acceptFulfillmentAgreement'])->middleware('can:inventory.view');
     });
 
     Route::prefix('returns')->group(function () {

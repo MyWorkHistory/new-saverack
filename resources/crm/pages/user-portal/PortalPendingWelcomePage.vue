@@ -200,7 +200,7 @@ onMounted(() => {
     if (billing === "success") {
       refreshAfterBillingReturn();
     } else if (billing === "cancel") {
-      toast.info("Payment setup was cancelled.");
+      toast.warning("Payment setup was cancelled.");
       router.replace({ path: "/users/welcome", query: {} });
     }
   });

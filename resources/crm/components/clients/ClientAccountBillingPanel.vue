@@ -242,7 +242,7 @@ async function confirmAddPaymentMethod() {
     addPaymentOpen.value = false;
     replacePaymentMethodId.value = null;
     window.open(url, "_blank", "noopener,noreferrer");
-    toast.info("Complete the form in the new tab, then return here.");
+    toast.success("Complete the form in the new tab, then return here.");
   } catch (e) {
     toast.errorFrom(e, "Could not open payment method form.");
   } finally {

@@ -480,6 +480,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/photos/{photo}', [ResourcePhotoController::class, 'destroy']);
         Route::get('/photos/{photo}/file', [ResourcePhotoController::class, 'file']);
         Route::get('/calendar-events/meta', [ResourceCalendarEventController::class, 'meta']);
+        Route::get('/calendar-events/list', [ResourceCalendarEventController::class, 'listEvents']);
         Route::get('/calendar-events', [ResourceCalendarEventController::class, 'index']);
         Route::post('/calendar-events', [ResourceCalendarEventController::class, 'store']);
         Route::patch('/calendar-events/{calendarEvent}', [ResourceCalendarEventController::class, 'update']);

@@ -359,7 +359,7 @@ class ResourceCalendarEventApiTest extends TestCase
             'is_personal' => false,
         ]);
 
-        $this->getJson('/api/resources/calendar-events?list=1&per_page=25')
+        $this->getJson('/api/resources/calendar-events/list?per_page=25')
             ->assertOk()
             ->assertJsonFragment(['title' => 'Listable Event'])
             ->assertJsonStructure(['data', 'meta' => ['current_page', 'last_page', 'total']]);

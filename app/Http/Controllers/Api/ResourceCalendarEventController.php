@@ -46,35 +46,9 @@ class ResourceCalendarEventController extends Controller
             ->visibleTo($user)
             ->with('creator:id,name,email');
 
-        if ($request->boolean('list')) {
-            $validated = $request->validate([
-                'query' => ['sometimes', 'nullable', 'string', 'max:255'],
-                'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
-                'page' => ['sometimes', 'integer', 'min:1'],
-            ]);
-            $search = trim((string) ($validated['query'] ?? ''));
-            if ($search !== '') {
-                $query->where('title', 'like', '%'.$search.'%');
-            }
-
-            $perPage = (int) ($validated['per_page'] ?? 25);
-            $paginator = $query
-                ->orderByDesc('start_date')
-                ->orderByDesc('id')
-                ->paginate($perPage);
-
-            return response()->json([
-                'data' => collect($paginator->items())
-                    ->map(fn (ResourceCalendarEvent $event) => $this->transformEvent($event))
-                    ->values()
-                    ->all(),
-                'meta' => [
-                    'current_page' => $paginator->currentPage(),
-                    'last_page' => $paginator->lastPage(),
-                    'per_page' => $paginator->perPage(),
-                    'total' => $paginator->total(),
-                ],
-            ]);
+        // Legacy flag support; prefer GET /calendar-events/list.
+        if ($this->wantsList($request)) {
+            return $this->paginateList($request, $query);
         }
 
         if ($request->boolean('upcoming')) {
@@ -89,7 +63,9 @@ class ResourceCalendarEventController extends Controller
                 ->get();
 
             return response()->json([
-                'data' => $events->map(fn (ResourceCalendarEvent $event) => $this->transformEvent($event))->values()->all(),
+                'data' => $events->map(function (ResourceCalendarEvent $event) {
+                    return $this->transformEvent($event);
+                })->values()->all(),
             ]);
         }
 
@@ -106,8 +82,75 @@ class ResourceCalendarEventController extends Controller
             ->get();
 
         return response()->json([
-            'data' => $events->map(fn (ResourceCalendarEvent $event) => $this->transformEvent($event))->values()->all(),
+            'data' => $events->map(function (ResourceCalendarEvent $event) {
+                return $this->transformEvent($event);
+            })->values()->all(),
         ]);
+    }
+
+    public function listEvents(Request $request): JsonResponse
+    {
+        $this->authorize('viewAny', ResourceCalendarEvent::class);
+
+        $user = $this->requireUser($request);
+
+        $query = ResourceCalendarEvent::query()
+            ->visibleTo($user)
+            ->with('creator:id,name,email');
+
+        return $this->paginateList($request, $query);
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<\App\Models\ResourceCalendarEvent>  $query
+     */
+    private function paginateList(Request $request, $query): JsonResponse
+    {
+        $search = trim((string) $request->input('search', $request->input('query', '')));
+        if ($search !== '') {
+            $query->where('title', 'like', '%'.$search.'%');
+        }
+
+        $perPage = (int) $request->input('per_page', 25);
+        if ($perPage < 1) {
+            $perPage = 25;
+        }
+        if ($perPage > 500) {
+            $perPage = 500;
+        }
+
+        $paginator = $query
+            ->orderByDesc('start_date')
+            ->orderByDesc('id')
+            ->paginate($perPage);
+
+        $rows = [];
+        foreach ($paginator->items() as $event) {
+            if ($event instanceof ResourceCalendarEvent) {
+                $rows[] = $this->transformEvent($event);
+            }
+        }
+
+        return response()->json([
+            'data' => $rows,
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+            ],
+        ]);
+    }
+
+    private function wantsList(Request $request): bool
+    {
+        $raw = $request->input('list');
+
+        return $request->boolean('list')
+            || $raw === 1
+            || $raw === '1'
+            || $raw === true
+            || $raw === 'true';
     }
 
     public function store(ResourceCalendarEventStoreRequest $request): JsonResponse

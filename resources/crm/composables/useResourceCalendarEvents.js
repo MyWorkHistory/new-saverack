@@ -65,14 +65,15 @@ export function useResourceCalendarEvents() {
   async function loadList({ page = 1, perPage = 25, query = "" } = {}) {
     loading.value = true;
     try {
-      const { data } = await api.get("/resources/calendar-events", {
-        params: {
-          list: 1,
-          page,
-          per_page: perPage,
-          ...(query.trim() ? { query: query.trim() } : {}),
-        },
-      });
+      const params = {
+        page,
+        per_page: perPage,
+      };
+      const q = String(query || "").trim();
+      if (q) {
+        params.search = q;
+      }
+      const { data } = await api.get("/resources/calendar-events/list", { params });
       return {
         rows: Array.isArray(data?.data) ? data.data : [],
         meta: data?.meta || { current_page: 1, last_page: 1, per_page: perPage, total: 0 },

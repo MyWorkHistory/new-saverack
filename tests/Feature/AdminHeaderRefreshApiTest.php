@@ -156,6 +156,44 @@ class AdminHeaderRefreshApiTest extends TestCase
             ->assertJsonPath('name', 'After Name');
     }
 
+    public function test_empty_role_ids_array_is_rejected_on_user_update(): void
+    {
+        $adminRole = Role::query()->firstOrCreate(
+            ['name' => 'admin'],
+            ['label' => 'Administrator', 'description' => 'Full access', 'is_system' => true]
+        );
+        $admin = User::factory()->create(['client_account_id' => null]);
+        $admin->roles()->attach($adminRole->id);
+
+        $staff = User::factory()->create([
+            'client_account_id' => null,
+            'name' => 'Staff Name',
+            'email' => 'staff-roles@example.com',
+        ]);
+        $picker = Role::query()->firstOrCreate(
+            ['name' => 'picker'],
+            ['label' => 'Picker', 'description' => 'Picker', 'is_system' => false]
+        );
+        $staff->roles()->attach($picker->id);
+
+        Sanctum::actingAs($admin);
+
+        $this->putJson('/api/users/'.$staff->id, [
+            'name' => 'Staff Name',
+            'email' => $staff->email,
+            'role_ids' => [],
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['role_ids']);
+
+        $this->putJson('/api/users/'.$staff->id, [
+            'name' => 'Staff Renamed',
+            'email' => $staff->email,
+        ])->assertOk()
+            ->assertJsonPath('name', 'Staff Renamed');
+
+        $this->assertTrue($staff->fresh()->roles->contains('id', $picker->id));
+    }
+
     public function test_staff_can_view_own_user_record(): void
     {
         $staff = User::factory()->create(['client_account_id' => null]);

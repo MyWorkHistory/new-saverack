@@ -62,11 +62,35 @@ export function useResourceCalendarEvents() {
     return Array.isArray(data?.data) ? data.data : [];
   }
 
+  async function loadList({ page = 1, perPage = 25, query = "" } = {}) {
+    loading.value = true;
+    try {
+      const { data } = await api.get("/resources/calendar-events", {
+        params: {
+          list: 1,
+          page,
+          per_page: perPage,
+          ...(query.trim() ? { query: query.trim() } : {}),
+        },
+      });
+      return {
+        rows: Array.isArray(data?.data) ? data.data : [],
+        meta: data?.meta || { current_page: 1, last_page: 1, per_page: perPage, total: 0 },
+      };
+    } catch (e) {
+      toast.errorFrom(e, "Could not load events.");
+      throw e;
+    } finally {
+      loading.value = false;
+    }
+  }
+
   async function createEvent(payload) {
     saving.value = true;
     try {
       const { data } = await api.post("/resources/calendar-events", payload);
-      toast.success("Event saved.");
+      const count = Number(data?.created_count || 1);
+      toast.success(count > 1 ? `${count} events saved.` : "Event saved.");
       return data;
     } catch (e) {
       toast.errorFrom(e, "Could not save event.");
@@ -103,6 +127,23 @@ export function useResourceCalendarEvents() {
     }
   }
 
+  async function bulkDeleteEvents(ids) {
+    deleting.value = true;
+    try {
+      const { data } = await api.delete("/resources/calendar-events/bulk", {
+        data: { ids },
+      });
+      const deleted = Number(data?.deleted ?? ids.length);
+      toast.success(deleted === 1 ? "1 event deleted." : `${deleted} events deleted.`);
+      return data;
+    } catch (e) {
+      toast.errorFrom(e, "Could not delete events.");
+      throw e;
+    } finally {
+      deleting.value = false;
+    }
+  }
+
   return {
     loading,
     saving,
@@ -112,9 +153,11 @@ export function useResourceCalendarEvents() {
     loadMeta,
     loadRange,
     loadUpcoming,
+    loadList,
     createEvent,
     updateEvent,
     deleteEvent,
+    bulkDeleteEvents,
     errorMessage,
   };
 }

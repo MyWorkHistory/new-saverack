@@ -168,7 +168,13 @@ function navActive(mode) {
   if (mode === "billing-asn-bills") return p.startsWith("/admin/billing/asn-bills");
   if (mode === "resources-tutorials") return p.startsWith("/admin/resources/tutorials");
   if (mode === "resources-photos") return p.startsWith("/admin/resources/photos");
-  if (mode === "resources-calendar") return p.startsWith("/admin/resources/calendar");
+  if (mode === "resources-calendar-events") {
+    return p === "/admin/resources/calendar/events" || p.startsWith("/admin/resources/calendar/events/");
+  }
+  if (mode === "resources-calendar") {
+    if (p.startsWith("/admin/resources/calendar/events")) return false;
+    return p === "/admin/resources/calendar" || p.startsWith("/admin/resources/calendar/");
+  }
   return false;
 }
 
@@ -967,6 +973,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Calendar
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/resources/calendar/events"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('resources-calendar-events') }"
+                    @click="closeMobile"
+                  >
+                    Events
                   </RouterLink>
                 </li>
               </ul>

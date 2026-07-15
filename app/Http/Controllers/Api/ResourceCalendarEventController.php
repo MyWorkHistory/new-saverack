@@ -3,21 +3,32 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ResourceCalendarEventBulkDeleteRequest;
 use App\Http\Requests\ResourceCalendarEventStoreRequest;
 use App\Http\Requests\ResourceCalendarEventUpdateRequest;
 use App\Models\ResourceCalendarEvent;
 use App\Models\User;
+use App\Services\ResourceCalendarEventService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ResourceCalendarEventController extends Controller
 {
+    public function __construct(
+        private readonly ResourceCalendarEventService $calendarEvents
+    ) {}
+
     public function meta(Request $request): JsonResponse
     {
         $this->authorize('viewAny', ResourceCalendarEvent::class);
 
         return response()->json([
             'categories' => ResourceCalendarEvent::categoryOptions(),
+            'repeats' => [
+                ['value' => ResourceCalendarEvent::REPEAT_NONE, 'label' => ResourceCalendarEvent::repeatLabel(ResourceCalendarEvent::REPEAT_NONE)],
+                ['value' => ResourceCalendarEvent::REPEAT_MONTHLY, 'label' => ResourceCalendarEvent::repeatLabel(ResourceCalendarEvent::REPEAT_MONTHLY)],
+                ['value' => ResourceCalendarEvent::REPEAT_YEARLY, 'label' => ResourceCalendarEvent::repeatLabel(ResourceCalendarEvent::REPEAT_YEARLY)],
+            ],
         ]);
     }
 
@@ -30,6 +41,37 @@ class ResourceCalendarEventController extends Controller
         $query = ResourceCalendarEvent::query()
             ->visibleTo($user)
             ->with('creator:id,name,email');
+
+        if ($request->boolean('list')) {
+            $validated = $request->validate([
+                'query' => ['sometimes', 'nullable', 'string', 'max:255'],
+                'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+                'page' => ['sometimes', 'integer', 'min:1'],
+            ]);
+            $search = trim((string) ($validated['query'] ?? ''));
+            if ($search !== '') {
+                $query->where('title', 'like', '%'.$search.'%');
+            }
+
+            $perPage = (int) ($validated['per_page'] ?? 25);
+            $paginator = $query
+                ->orderByDesc('start_date')
+                ->orderByDesc('id')
+                ->paginate($perPage);
+
+            return response()->json([
+                'data' => collect($paginator->items())
+                    ->map(fn (ResourceCalendarEvent $event) => $this->transformEvent($event))
+                    ->values()
+                    ->all(),
+                'meta' => [
+                    'current_page' => $paginator->currentPage(),
+                    'last_page' => $paginator->lastPage(),
+                    'per_page' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                ],
+            ]);
+        }
 
         if ($request->boolean('upcoming')) {
             $limit = max(1, min((int) $request->input('limit', 4), 20));
@@ -74,12 +116,16 @@ class ResourceCalendarEventController extends Controller
             $data['description'] = null;
         }
 
-        $event = ResourceCalendarEvent::query()->create($data);
+        $created = $this->calendarEvents->createWithRepeat($data);
+        $first = $created[0] ?? null;
+        if (! $first instanceof ResourceCalendarEvent) {
+            return response()->json(['message' => 'Could not create event.'], 500);
+        }
 
-        return response()->json(
-            $this->transformEvent($event->fresh('creator')),
-            201
-        );
+        $payload = $this->transformEvent($first);
+        $payload['created_count'] = count($created);
+
+        return response()->json($payload, 201);
     }
 
     public function update(ResourceCalendarEventUpdateRequest $request, ResourceCalendarEvent $calendarEvent): JsonResponse
@@ -87,6 +133,7 @@ class ResourceCalendarEventController extends Controller
         $this->authorize('view', $calendarEvent);
 
         $data = $request->validated();
+        unset($data['repeat'], $data['series_id']);
 
         if (array_key_exists('description', $data)) {
             $data['description'] = $data['description'] !== null ? trim((string) $data['description']) : null;
@@ -115,6 +162,31 @@ class ResourceCalendarEventController extends Controller
         return response()->json(['deleted' => true]);
     }
 
+    public function bulkDestroy(ResourceCalendarEventBulkDeleteRequest $request): JsonResponse
+    {
+        $ids = array_map('intval', $request->validated()['ids']);
+        $user = $this->requireUser($request);
+
+        $events = ResourceCalendarEvent::query()
+            ->visibleTo($user)
+            ->whereIn('id', $ids)
+            ->get();
+
+        $deleted = 0;
+        foreach ($events as $event) {
+            if (! $user->can('delete', $event)) {
+                continue;
+            }
+            $event->delete();
+            $deleted++;
+        }
+
+        return response()->json([
+            'message' => 'Events deleted.',
+            'deleted' => $deleted,
+        ]);
+    }
+
     private function requireUser(Request $request): User
     {
         $user = $request->user();
@@ -140,6 +212,9 @@ class ResourceCalendarEventController extends Controller
             'end_date' => optional($event->end_date)->toDateString(),
             'description' => $event->description,
             'is_personal' => (bool) $event->is_personal,
+            'repeat' => ResourceCalendarEvent::normalizeRepeat($event->repeat ?? null),
+            'repeat_label' => ResourceCalendarEvent::repeatLabel($event->repeat ?? null),
+            'series_id' => $event->series_id,
             'created_by_user_id' => (int) $event->created_by_user_id,
             'creator' => $event->relationLoaded('creator') && $event->creator
                 ? [

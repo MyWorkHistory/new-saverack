@@ -301,4 +301,99 @@ class ResourceCalendarEventApiTest extends TestCase
             ->assertJsonFragment(['title' => 'Future Event'])
             ->assertJsonMissing(['title' => 'Past Event']);
     }
+
+    public function test_monthly_repeat_creates_materialized_occurrences(): void
+    {
+        Sanctum::actingAs($this->staffWithCreate());
+
+        $response = $this->postJson('/api/resources/calendar-events', [
+            'title' => 'Monthly Sync',
+            'category' => ResourceCalendarEvent::CATEGORY_MEETING,
+            'start_date' => '2026-01-15',
+            'end_date' => '2026-01-16',
+            'repeat' => ResourceCalendarEvent::REPEAT_MONTHLY,
+            'is_personal' => false,
+        ])->assertCreated();
+
+        $this->assertSame(24, (int) $response->json('created_count'));
+        $this->assertDatabaseCount('resource_calendar_events', 24);
+        $this->assertNotNull($response->json('series_id'));
+        $this->assertDatabaseHas('resource_calendar_events', [
+            'title' => 'Monthly Sync',
+            'start_date' => '2026-02-15',
+            'end_date' => '2026-02-16',
+        ]);
+    }
+
+    public function test_yearly_repeat_creates_materialized_occurrences(): void
+    {
+        Sanctum::actingAs($this->staffWithCreate());
+
+        $response = $this->postJson('/api/resources/calendar-events', [
+            'title' => 'Yearly Review',
+            'category' => ResourceCalendarEvent::CATEGORY_HOLIDAY,
+            'start_date' => '2026-07-04',
+            'end_date' => '2026-07-04',
+            'repeat' => ResourceCalendarEvent::REPEAT_YEARLY,
+        ])->assertCreated();
+
+        $this->assertSame(10, (int) $response->json('created_count'));
+        $this->assertDatabaseCount('resource_calendar_events', 10);
+        $this->assertDatabaseHas('resource_calendar_events', [
+            'title' => 'Yearly Review',
+            'start_date' => '2027-07-04',
+        ]);
+    }
+
+    public function test_list_endpoint_paginates_events(): void
+    {
+        $user = $this->staffWithCreate();
+        Sanctum::actingAs($user);
+
+        ResourceCalendarEvent::query()->create([
+            'created_by_user_id' => $user->id,
+            'title' => 'Listable Event',
+            'category' => ResourceCalendarEvent::CATEGORY_PROJECT,
+            'start_date' => '2026-08-01',
+            'end_date' => '2026-08-01',
+            'is_personal' => false,
+        ]);
+
+        $this->getJson('/api/resources/calendar-events?list=1&per_page=25')
+            ->assertOk()
+            ->assertJsonFragment(['title' => 'Listable Event'])
+            ->assertJsonStructure(['data', 'meta' => ['current_page', 'last_page', 'total']]);
+    }
+
+    public function test_bulk_delete_removes_selected_events(): void
+    {
+        $user = $this->staffWithCreate();
+        $user->permissions()->attach($this->resourcesDeletePermission()->id);
+        Sanctum::actingAs($user);
+
+        $a = ResourceCalendarEvent::query()->create([
+            'created_by_user_id' => $user->id,
+            'title' => 'Bulk A',
+            'category' => ResourceCalendarEvent::CATEGORY_MEETING,
+            'start_date' => '2026-09-01',
+            'end_date' => '2026-09-01',
+            'is_personal' => false,
+        ]);
+        $b = ResourceCalendarEvent::query()->create([
+            'created_by_user_id' => $user->id,
+            'title' => 'Bulk B',
+            'category' => ResourceCalendarEvent::CATEGORY_MEETING,
+            'start_date' => '2026-09-02',
+            'end_date' => '2026-09-02',
+            'is_personal' => false,
+        ]);
+
+        $this->deleteJson('/api/resources/calendar-events/bulk', [
+            'ids' => [$a->id, $b->id],
+        ])->assertOk()
+            ->assertJsonPath('deleted', 2);
+
+        $this->assertDatabaseMissing('resource_calendar_events', ['id' => $a->id]);
+        $this->assertDatabaseMissing('resource_calendar_events', ['id' => $b->id]);
+    }
 }

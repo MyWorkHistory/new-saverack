@@ -18,6 +18,18 @@ class ResourceCalendarEvent extends Model
 
     public const CATEGORY_RECEIVING = 'receiving';
 
+    public const REPEAT_NONE = 'none';
+
+    public const REPEAT_MONTHLY = 'monthly';
+
+    public const REPEAT_YEARLY = 'yearly';
+
+    public const REPEATS = [
+        self::REPEAT_NONE,
+        self::REPEAT_MONTHLY,
+        self::REPEAT_YEARLY,
+    ];
+
     public const CATEGORIES = [
         self::CATEGORY_MEETING,
         self::CATEGORY_OUT_OF_OFFICE,
@@ -43,6 +55,8 @@ class ResourceCalendarEvent extends Model
         'end_date',
         'description',
         'is_personal',
+        'repeat',
+        'series_id',
     ];
 
     protected $casts = [
@@ -50,6 +64,25 @@ class ResourceCalendarEvent extends Model
         'end_date' => 'date',
         'is_personal' => 'boolean',
     ];
+
+    public static function normalizeRepeat(?string $repeat): string
+    {
+        $value = strtolower(trim((string) $repeat));
+        if (in_array($value, self::REPEATS, true)) {
+            return $value;
+        }
+
+        return self::REPEAT_NONE;
+    }
+
+    public static function repeatLabel(?string $repeat): string
+    {
+        return match (self::normalizeRepeat($repeat)) {
+            self::REPEAT_MONTHLY => 'Monthly',
+            self::REPEAT_YEARLY => 'Yearly',
+            default => 'Do Not Repeat',
+        };
+    }
 
     public function creator(): BelongsTo
     {

@@ -33,11 +33,20 @@ const form = reactive({
   end_date: "",
   description: "",
   is_personal: false,
+  repeat: "none",
 });
 
 const drawerTitle = computed(() => (props.mode === "edit" ? "Edit Event" : "Add Event"));
 
 const displayCategories = computed(() => props.categories);
+
+const showRepeatField = computed(() => props.mode !== "edit");
+
+const repeatOptions = [
+  { value: "none", label: "Do Not Repeat" },
+  { value: "monthly", label: "Monthly" },
+  { value: "yearly", label: "Yearly" },
+];
 
 function resetForm() {
   form.title = "";
@@ -46,6 +55,7 @@ function resetForm() {
   form.end_date = props.initialEndDate || props.initialStartDate || "";
   form.description = "";
   form.is_personal = false;
+  form.repeat = "none";
   errorMsg.value = "";
 }
 
@@ -60,6 +70,7 @@ function populateFromEvent(event) {
   form.end_date = event.end_date || event.start_date || "";
   form.description = event.description || "";
   form.is_personal = Boolean(event.is_personal);
+  form.repeat = event.repeat || "none";
   errorMsg.value = "";
 }
 
@@ -120,6 +131,7 @@ function onSubmit() {
     end_date: form.end_date,
     description: form.description.trim() || null,
     is_personal: Boolean(form.is_personal),
+    ...(props.mode === "create" ? { repeat: form.repeat || "none" } : {}),
   });
 }
 
@@ -177,6 +189,15 @@ function confirmDelete() {
           <label class="form-label small text-muted mb-1">End Date<span class="text-danger">*</span></label>
           <input v-model="form.end_date" type="date" required class="form-control" />
         </div>
+      </div>
+
+      <div v-if="showRepeatField">
+        <label class="form-label small text-muted mb-1" for="calendar-event-repeat">Repeat</label>
+        <select id="calendar-event-repeat" v-model="form.repeat" class="form-select">
+          <option v-for="opt in repeatOptions" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
+        </select>
       </div>
 
       <div class="d-flex align-items-center justify-content-between gap-3 py-1">

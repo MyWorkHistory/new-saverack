@@ -1,5 +1,6 @@
 <script setup>
 import { computed, inject, onMounted, reactive, ref, watch } from "vue";
+import { RouterLink } from "vue-router";
 import FullCalendar from "@fullcalendar/vue3";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
@@ -243,9 +244,17 @@ onMounted(async () => {
 
 <template>
   <div class="resources-calendar-page staff-page staff-page--wide">
-    <div class="mb-4">
-      <h1 class="h4 mb-1 fw-semibold text-body staff-page__heading">Calendar</h1>
-      <p class="staff-page__intro mb-0">Shared team events and personal reminders.</p>
+    <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4">
+      <div class="min-w-0 flex-grow-1">
+        <h1 class="h4 mb-1 fw-semibold text-body staff-page__heading">Calendar</h1>
+        <p class="staff-page__intro mb-0">Shared team events and personal reminders.</p>
+      </div>
+      <RouterLink
+        to="/admin/resources/calendar/events"
+        class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn flex-shrink-0"
+      >
+        View List
+      </RouterLink>
     </div>
 
     <div class="resources-calendar-layout">

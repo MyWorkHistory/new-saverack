@@ -483,6 +483,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/calendar-events', [ResourceCalendarEventController::class, 'index']);
         Route::post('/calendar-events', [ResourceCalendarEventController::class, 'store']);
         Route::patch('/calendar-events/{calendarEvent}', [ResourceCalendarEventController::class, 'update']);
+        Route::delete('/calendar-events/bulk', [ResourceCalendarEventController::class, 'bulkDestroy']);
         Route::delete('/calendar-events/{calendarEvent}', [ResourceCalendarEventController::class, 'destroy']);
     });
 

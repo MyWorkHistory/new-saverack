@@ -22,6 +22,7 @@ class ResourceCalendarEventStoreRequest extends FormRequest
             'end_date' => ['required', 'date', 'after_or_equal:start_date'],
             'description' => ['nullable', 'string', 'max:65535'],
             'is_personal' => ['sometimes', 'boolean'],
+            'repeat' => ['sometimes', 'string', Rule::in(ResourceCalendarEvent::REPEATS)],
         ];
     }
 }

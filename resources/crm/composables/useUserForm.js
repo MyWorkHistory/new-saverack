@@ -1,6 +1,7 @@
 import { reactive, ref } from "vue";
 import api from "../services/api";
 import { useToast } from "./useToast";
+import { humanizeValidationMessage } from "../utils/apiError";
 import {
   birthdayFromMonthDay,
   parseBirthdayParts,
@@ -96,10 +97,13 @@ export function useUserForm() {
     form.email = data.email || "";
     form.password = "";
     form.status = data.status || "pending";
-    const allowedRoleIds = new Set(roles.value.map((r) => Number(r.id)));
-    form.role_ids = (data.roles || [])
-      .map((r) => Number(r.id))
-      .filter((id) => allowedRoleIds.has(id));
+    const fromApi = (data.roles || []).map((r) => Number(r.id)).filter((id) => id > 0);
+    if (roles.value.length > 0) {
+      const allowedRoleIds = new Set(roles.value.map((r) => Number(r.id)));
+      form.role_ids = fromApi.filter((id) => allowedRoleIds.has(id));
+    } else {
+      form.role_ids = fromApi;
+    }
     applyProfileToForm(data.profile);
     profileAvatarUrl.value = data.profile?.avatar_url || "";
   }
@@ -173,9 +177,10 @@ export function useUserForm() {
   }
 
   /**
+   * @param {{ isEdit: boolean, userId?: string|null, profileOnly?: boolean, includeRoles?: boolean }} opts
    * @returns {Promise<boolean>}
    */
-  async function submit({ isEdit, userId, profileOnly = false }) {
+  async function submit({ isEdit, userId, profileOnly = false, includeRoles = true }) {
     saving.value = true;
     errorMsg.value = "";
     fieldErrors.value = {};
@@ -188,9 +193,6 @@ export function useUserForm() {
         name: form.name.trim(),
         email: form.email.trim(),
         status: form.status,
-        role_ids: form.role_ids.filter((id) =>
-          roles.value.some((r) => Number(r.id) === Number(id)),
-        ),
         phone: form.phone?.trim() || null,
         personal_email: form.personal_email?.trim() || null,
         birthday: birthdayIso,
@@ -205,9 +207,21 @@ export function useUserForm() {
         terminate_date: form.terminate_date?.trim() || null,
         bio: form.bio?.trim() || null,
       };
+      const shouldSendRoles = includeRoles && !profileOnly;
+      if (shouldSendRoles) {
+        const filtered = form.role_ids.filter((id) =>
+          roles.value.some((r) => Number(r.id) === Number(id)),
+        );
+        // Only send role_ids when roles catalog is loaded and selection is non-empty.
+        // Omitting avoids wiping roles / validation.min.array on section edits.
+        if (roles.value.length > 0 && filtered.length > 0) {
+          payload.role_ids = filtered;
+        } else if (!isEdit) {
+          payload.role_ids = filtered;
+        }
+      }
       if (profileOnly) {
         delete payload.status;
-        delete payload.role_ids;
         delete payload.employee_type;
         delete payload.job_position;
         delete payload.hire_date;
@@ -243,7 +257,10 @@ export function useUserForm() {
         fieldErrors.value = e.response.data.errors;
         const first = Object.values(e.response.data.errors)[0];
         const msg = Array.isArray(first) ? first[0] : String(first);
-        toast.error(typeof msg === "string" ? msg : "Validation failed.");
+        toast.error(
+          humanizeValidationMessage(typeof msg === "string" ? msg : "") ||
+            "Validation failed.",
+        );
       } else {
         const msg =
           e.response?.data?.message ||

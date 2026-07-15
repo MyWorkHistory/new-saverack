@@ -49,10 +49,10 @@ async function hydrate() {
   errorMsg.value = "";
   try {
     const needsRoles = props.sectionKeys.includes("access");
-    await Promise.all([
-      needsRoles ? loadRoles() : Promise.resolve(),
-      loadUser(id),
-    ]);
+    if (needsRoles) {
+      await loadRoles();
+    }
+    await loadUser(id);
   } catch {
     errorMsg.value = "Could Not Load User.";
   } finally {
@@ -97,7 +97,11 @@ onUnmounted(() => {
 async function onSubmit() {
   const id = props.userId;
   if (!id) return;
-  const ok = await submit({ isEdit: true, userId: id });
+  const ok = await submit({
+    isEdit: true,
+    userId: id,
+    includeRoles: props.sectionKeys.includes("access"),
+  });
   if (ok) {
     emit("saved");
     close();

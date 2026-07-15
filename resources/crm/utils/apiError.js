@@ -4,6 +4,7 @@ const VALIDATION_KEY_MESSAGES = {
   "validation.email": "Enter a valid email address.",
   "validation.confirmed": "Confirmation does not match.",
   "validation.min.string": "This value is too short.",
+  "validation.min.array": "Select at least one item.",
   "validation.max.string": "This value is too long.",
 };
 

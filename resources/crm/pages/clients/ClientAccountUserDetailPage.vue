@@ -298,7 +298,7 @@ watch(
     <div
       class="staff-user-view__title-row d-flex flex-wrap align-items-center justify-content-between gap-2"
     >
-      <h1 class="staff-user-view__title">Portal User</h1>
+      <h1 class="staff-user-view__title">Client User</h1>
     </div>
 
     <div v-if="loading" class="d-flex justify-content-center py-5">
@@ -368,17 +368,7 @@ watch(
             <h2 class="staff-user-profile__name">
               {{ row.name }}
             </h2>
-            <div class="staff-user-profile__role-pill">
-              <span class="badge rounded-pill bg-body-secondary text-body px-3 py-2">
-                {{ row.account_user_role_label || row.account_user_role || "—" }}
-              </span>
-              <span
-                v-if="row.is_account_primary"
-                class="badge rounded-pill bg-primary-subtle text-primary-emphasis ms-1"
-                >Primary</span
-              >
-            </div>
-            <div class="staff-user-profile__role-pill w-100 mt-2">
+            <div class="staff-user-profile__role-pill w-100">
               <button
                 v-if="canUpdate"
                 type="button"
@@ -397,7 +387,11 @@ watch(
               >
             </div>
             <div class="staff-user-profile__stats">
-              <div class="staff-user-profile__stat">
+              <RouterLink
+                :to="accountDetailLink"
+                class="staff-user-profile__stat text-decoration-none text-reset"
+                title="View client account"
+              >
                 <div class="staff-user-profile__stat-icon" aria-hidden="true">
                   <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
                     <path
@@ -409,7 +403,7 @@ watch(
                   {{ display(row.company_name) }}
                 </div>
                 <div class="staff-user-profile__stat-lbl">Company</div>
-              </div>
+              </RouterLink>
               <div class="staff-user-profile__stat">
                 <div class="staff-user-profile__stat-icon" aria-hidden="true">
                   <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
@@ -425,23 +419,38 @@ watch(
               </div>
             </div>
 
-            <div class="staff-user-profile__actions d-flex flex-wrap gap-2 mb-3">
-              <RouterLink
-                :to="{ name: 'client-users' }"
-                class="btn btn-sm btn-outline-secondary"
-              >
-                Back to directory
-              </RouterLink>
-              <RouterLink
-                :to="accountDetailLink"
-                class="btn btn-sm btn-primary staff-page-primary"
-              >
-                View client account
-              </RouterLink>
-            </div>
+            <h3 class="staff-user-profile__details-title">Details</h3>
+            <dl class="staff-user-profile__dl">
+              <div>
+                <dt class="staff-user-profile__dt">Email</dt>
+                <dd class="staff-user-profile__dd text-break">{{ display(row.email) }}</dd>
+              </div>
+              <div>
+                <dt class="staff-user-profile__dt">Account type</dt>
+                <dd class="staff-user-profile__dd">
+                  {{
+                    display(row.account_user_role_label || row.account_user_role)
+                  }}
+                </dd>
+              </div>
+              <div>
+                <dt class="staff-user-profile__dt">Account email</dt>
+                <dd class="staff-user-profile__dd text-break">
+                  {{ display(row.account_email) }}
+                </dd>
+              </div>
+              <div>
+                <dt class="staff-user-profile__dt">Created</dt>
+                <dd class="staff-user-profile__dd">{{ formatDateUs(row.created_at) }}</dd>
+              </div>
+              <div>
+                <dt class="staff-user-profile__dt">Updated</dt>
+                <dd class="staff-user-profile__dd">{{ formatDateUs(row.updated_at) }}</dd>
+              </div>
+            </dl>
 
             <section
-              class="staff-user-timeline-card staff-user-timeline-card--aside"
+              class="staff-user-timeline-card staff-user-timeline-card--aside mt-3"
               aria-labelledby="portal-user-activity-heading"
             >
               <h2
@@ -549,19 +558,6 @@ watch(
                   </dt>
                   <dd class="mb-0 fw-semibold text-body">
                     {{ display(row.phone) }}
-                  </dd>
-                </dl>
-              </div>
-              <div class="col-md-6">
-                <dl class="mb-0 small">
-                  <dt
-                    class="text-secondary text-uppercase fw-semibold mb-1"
-                    style="font-size: 0.65rem"
-                  >
-                    Created
-                  </dt>
-                  <dd class="mb-0 fw-semibold text-body">
-                    {{ formatDateUs(row.created_at) }}
                   </dd>
                 </dl>
               </div>

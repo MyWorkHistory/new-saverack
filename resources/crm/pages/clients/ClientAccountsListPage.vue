@@ -850,6 +850,29 @@ onUnmounted(() => {
         class="d-flex flex-wrap align-items-center gap-2 ms-md-auto flex-shrink-0"
       >
         <button
+          type="button"
+          class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center"
+          title="Copy public signup link"
+          aria-label="Copy public signup link"
+          @click="copyPublicCreateLink"
+        >
+          <svg
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+            />
+          </svg>
+        </button>
+        <button
           v-if="canCreate"
           type="button"
           class="btn btn-primary staff-page-primary d-inline-flex align-items-center gap-2"
@@ -1023,29 +1046,6 @@ onUnmounted(() => {
                 </button>
               </div>
             </div>
-            <button
-              type="button"
-              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center justify-content-center"
-              title="Copy public signup link"
-              aria-label="Copy public signup link"
-              @click="copyPublicCreateLink"
-            >
-              <svg
-                width="18"
-                height="18"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                />
-              </svg>
-            </button>
             <div
               v-if="canBulkUpdate || canBulkDelete"
               class="d-none d-md-flex align-items-center gap-2 flex-shrink-0"

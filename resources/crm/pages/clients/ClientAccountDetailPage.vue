@@ -19,7 +19,7 @@ import { crmIsAdmin } from "../../utils/crmUser";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 import { errorMessage } from "../../utils/apiError";
-import { formatDateTimeUs } from "../../utils/formatUserDates";
+import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 import {
   ONBOARDING_ACTIVATION_BLOCKED_MESSAGE,
@@ -236,6 +236,11 @@ const noteDeleteMessage = computed(() => {
 function display(val) {
   if (val == null || val === "") return "—";
   return String(val);
+}
+
+function accountStartDate(acc) {
+  if (!acc) return null;
+  return acc.contract_date || acc.created_at || null;
 }
 
 const avatarPalettes = [
@@ -1293,6 +1298,12 @@ onUnmounted(() => {
                     }}</span>
                   </template>
                   <template v-else>{{ display(account.in_house_slack) }}</template>
+                </dd>
+              </div>
+              <div>
+                <dt class="staff-user-profile__dt">Start Date</dt>
+                <dd class="staff-user-profile__dd text-end">
+                  {{ formatDateUs(accountStartDate(account)) }}
                 </dd>
               </div>
             </dl>

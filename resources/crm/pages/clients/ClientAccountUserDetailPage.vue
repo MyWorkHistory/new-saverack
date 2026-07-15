@@ -419,7 +419,19 @@ watch(
               </div>
             </div>
 
-            <h3 class="staff-user-profile__details-title">Details</h3>
+            <div
+              class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"
+            >
+              <h3 class="staff-user-profile__details-title mb-0">Details</h3>
+              <button
+                v-if="canUpdate"
+                type="button"
+                class="btn btn-sm btn-primary staff-page-primary"
+                @click="editModalOpen = true"
+              >
+                Edit
+              </button>
+            </div>
             <dl class="staff-user-profile__dl">
               <div>
                 <dt class="staff-user-profile__dt">Email</dt>
@@ -442,10 +454,6 @@ watch(
               <div>
                 <dt class="staff-user-profile__dt">Created</dt>
                 <dd class="staff-user-profile__dd">{{ formatDateUs(row.created_at) }}</dd>
-              </div>
-              <div>
-                <dt class="staff-user-profile__dt">Updated</dt>
-                <dd class="staff-user-profile__dd">{{ formatDateUs(row.updated_at) }}</dd>
               </div>
             </dl>
 

@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import {
@@ -16,6 +16,11 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   clientAccountId: { type: String, default: "" },
   userId: { type: String, default: "" },
+  mode: {
+    type: String,
+    default: "personal",
+    validator: (v) => v === "personal" || v === "access",
+  },
 });
 
 const emit = defineEmits(["update:open", "saved"]);
@@ -30,11 +35,25 @@ const form = reactive({
   name: "",
   email: "",
   phone: "",
+  status: "active",
+  account_user_role: "customer_service",
   password: "",
   password_confirmation: "",
 });
 
 const isPrimary = ref(false);
+
+const isPersonal = computed(() => props.mode === "personal");
+const isAccess = computed(() => props.mode === "access");
+
+const modalTitle = computed(() =>
+  isAccess.value ? "Details" : "Personal Information",
+);
+const modalSubtitle = computed(() =>
+  isAccess.value
+    ? "Update status, account type, or set a new password."
+    : "Update name, email, or phone.",
+);
 
 function reset() {
   errorMsg.value = "";
@@ -42,6 +61,8 @@ function reset() {
   form.name = "";
   form.email = "";
   form.phone = "";
+  form.status = "active";
+  form.account_user_role = "customer_service";
   form.password = "";
   form.password_confirmation = "";
   showPassword.value = false;
@@ -80,7 +101,13 @@ async function load() {
     form.name = data.name || "";
     form.email = data.email || "";
     form.phone = data.phone || "";
+    form.status = data.status === "inactive" ? "inactive" : "active";
+    form.account_user_role =
+      data.account_user_role === "admin" ? "admin" : "customer_service";
     isPrimary.value = !!data.is_account_primary;
+    if (isPrimary.value) {
+      form.account_user_role = "admin";
+    }
   } catch {
     errorMsg.value = "Could not load user.";
   } finally {
@@ -89,7 +116,7 @@ async function load() {
 }
 
 watch(
-  () => [props.open, props.clientAccountId, props.userId],
+  () => [props.open, props.clientAccountId, props.userId, props.mode],
   ([isOpen]) => {
     if (isOpen && props.clientAccountId && props.userId) {
       load();
@@ -111,17 +138,24 @@ async function onSubmit() {
   errorMsg.value = "";
   fieldErrors.value = {};
   try {
-    const payload = {
-      name: form.name.trim(),
-      phone: String(form.phone || "").trim() || null,
-    };
-    if (!isPrimary.value) {
-      payload.email = form.email.trim();
-    }
-    const pw = form.password.trim();
-    if (pw !== "") {
-      payload.password = pw;
-      payload.password_confirmation = form.password_confirmation.trim();
+    const payload = {};
+    if (isPersonal.value) {
+      payload.name = form.name.trim();
+      payload.phone = String(form.phone || "").trim() || null;
+      if (!isPrimary.value) {
+        payload.email = form.email.trim();
+      }
+    } else {
+      payload.status = form.status === "inactive" ? "inactive" : "active";
+      if (!isPrimary.value) {
+        payload.account_user_role =
+          form.account_user_role === "admin" ? "admin" : "customer_service";
+      }
+      const pw = form.password.trim();
+      if (pw !== "") {
+        payload.password = pw;
+        payload.password_confirmation = form.password_confirmation.trim();
+      }
     }
     await api.patch(
       `/client-accounts/${props.clientAccountId}/account-users/${props.userId}`,
@@ -177,10 +211,10 @@ async function onSubmit() {
 
             <header class="crm-vx-modal__head">
               <h2 id="cau-edit-title" class="crm-vx-modal__title">
-                Personal Information
+                {{ modalTitle }}
               </h2>
               <p class="crm-vx-modal__subtitle">
-                Update name, email, phone, or set a new password.
+                {{ modalSubtitle }}
               </p>
             </header>
 
@@ -197,106 +231,156 @@ async function onSubmit() {
                 class="text-start"
                 @submit.prevent="onSubmit"
               >
-                <div class="mb-3">
-                  <label class="form-label small">Full Name</label>
-                  <input
-                    v-model="form.name"
-                    type="text"
-                    required
-                    class="form-control"
-                    :class="{ 'is-invalid': fieldErrors.name }"
-                    autocomplete="name"
-                    @input="clearFieldError('name')"
-                  />
-                  <p v-if="fieldErrors.name" class="small text-danger mb-0 mt-1">
-                    {{ fieldErrors.name }}
-                  </p>
-                </div>
-                <div class="mb-3">
-                  <label class="form-label small">Email</label>
-                  <input
-                    v-model="form.email"
-                    type="email"
-                    class="form-control"
-                    :class="{ 'is-invalid': fieldErrors.email }"
-                    :disabled="isPrimary"
-                    :required="!isPrimary"
-                    autocomplete="email"
-                    @input="clearFieldError('email')"
-                  />
-                  <p v-if="fieldErrors.email" class="small text-danger mb-0 mt-1">
-                    {{ fieldErrors.email }}
-                  </p>
-                  <p v-else-if="isPrimary" class="small text-secondary mb-0 mt-1">
-                    Primary admin email matches the client account; it cannot be changed here.
-                  </p>
-                </div>
-                <div class="mb-3">
-                  <label class="form-label small">Phone</label>
-                  <input
-                    v-model="form.phone"
-                    type="text"
-                    class="form-control"
-                    :class="{ 'is-invalid': fieldErrors.phone }"
-                    autocomplete="tel"
-                    placeholder="Optional"
-                    @input="clearFieldError('phone')"
-                  />
-                  <p v-if="fieldErrors.phone" class="small text-danger mb-0 mt-1">
-                    {{ fieldErrors.phone }}
-                  </p>
-                </div>
-                <div class="mb-0">
-                  <div class="d-flex align-items-center justify-content-between gap-2 mb-1">
-                    <label class="form-label small mb-0">New Password (optional)</label>
-                    <button
-                      type="button"
-                      class="btn btn-link btn-sm p-0"
-                      :disabled="saving"
-                      @click="generatePassword"
-                    >
-                      Generate Password
-                    </button>
-                  </div>
-                  <div class="position-relative">
+                <template v-if="isPersonal">
+                  <div class="mb-3">
+                    <label class="form-label small">Full Name</label>
                     <input
-                      v-model="form.password"
-                      :type="showPassword ? 'text' : 'password'"
-                      class="form-control pe-5"
-                      :class="{ 'is-invalid': fieldErrors.password }"
-                      autocomplete="new-password"
-                      placeholder="Leave blank to keep current password"
-                      @input="clearFieldError('password')"
+                      v-model="form.name"
+                      type="text"
+                      required
+                      class="form-control"
+                      :class="{ 'is-invalid': fieldErrors.name }"
+                      autocomplete="name"
+                      @input="clearFieldError('name')"
                     />
-                    <button
-                      type="button"
-                      class="btn btn-link btn-sm position-absolute end-0 top-50 translate-middle-y me-1 py-0"
-                      @click="showPassword = !showPassword"
-                    >
-                      {{ showPassword ? "Hide" : "Show" }}
-                    </button>
+                    <p v-if="fieldErrors.name" class="small text-danger mb-0 mt-1">
+                      {{ fieldErrors.name }}
+                    </p>
                   </div>
-                  <p v-if="fieldErrors.password" class="small text-danger mb-0 mt-1">
-                    {{ fieldErrors.password }}
-                  </p>
-                </div>
-                <div v-if="form.password.trim() !== ''" class="mb-0 mt-3">
-                  <label class="form-label small">Confirm New Password</label>
-                  <input
-                    v-model="form.password_confirmation"
-                    :type="showPassword ? 'text' : 'password'"
-                    class="form-control"
-                    :class="{ 'is-invalid': fieldErrors.password_confirmation }"
-                    autocomplete="new-password"
-                    @input="clearFieldError('password_confirmation')"
-                  />
-                  <p
-                    v-if="fieldErrors.password_confirmation"
-                    class="small text-danger mb-0 mt-1"
-                  >
-                    {{ fieldErrors.password_confirmation }}
-                  </p>
-                </div>
+                  <div class="mb-3">
+                    <label class="form-label small">Email</label>
+                    <input
+                      v-model="form.email"
+                      type="email"
+                      class="form-control"
+                      :class="{ 'is-invalid': fieldErrors.email }"
+                      :disabled="isPrimary"
+                      :required="!isPrimary"
+                      autocomplete="email"
+                      @input="clearFieldError('email')"
+                    />
+                    <p v-if="fieldErrors.email" class="small text-danger mb-0 mt-1">
+                      {{ fieldErrors.email }}
+                    </p>
+                    <p v-else-if="isPrimary" class="small text-secondary mb-0 mt-1">
+                      Primary admin email matches the client account; it cannot be
+                      changed here.
+                    </p>
+                  </div>
+                  <div class="mb-0">
+                    <label class="form-label small">Phone</label>
+                    <input
+                      v-model="form.phone"
+                      type="text"
+                      class="form-control"
+                      :class="{ 'is-invalid': fieldErrors.phone }"
+                      autocomplete="tel"
+                      placeholder="Optional"
+                      @input="clearFieldError('phone')"
+                    />
+                    <p v-if="fieldErrors.phone" class="small text-danger mb-0 mt-1">
+                      {{ fieldErrors.phone }}
+                    </p>
+                  </div>
+                </template>
+
+                <template v-else>
+                  <div class="mb-3">
+                    <label class="form-label small">Status</label>
+                    <select
+                      v-model="form.status"
+                      class="form-select"
+                      :class="{ 'is-invalid': fieldErrors.status }"
+                      @change="clearFieldError('status')"
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                    <p v-if="fieldErrors.status" class="small text-danger mb-0 mt-1">
+                      {{ fieldErrors.status }}
+                    </p>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label small">Account Type</label>
+                    <select
+                      v-model="form.account_user_role"
+                      class="form-select"
+                      :class="{ 'is-invalid': fieldErrors.account_user_role }"
+                      :disabled="isPrimary"
+                      @change="clearFieldError('account_user_role')"
+                    >
+                      <option value="admin">Admin</option>
+                      <option value="customer_service">Customer Service</option>
+                    </select>
+                    <p
+                      v-if="fieldErrors.account_user_role"
+                      class="small text-danger mb-0 mt-1"
+                    >
+                      {{ fieldErrors.account_user_role }}
+                    </p>
+                    <p v-else-if="isPrimary" class="small text-secondary mb-0 mt-1">
+                      Primary users are always Admin.
+                    </p>
+                  </div>
+                  <div class="mb-0">
+                    <div
+                      class="d-flex align-items-center justify-content-between gap-2 mb-1"
+                    >
+                      <label class="form-label small mb-0"
+                        >New Password (optional)</label
+                      >
+                      <button
+                        type="button"
+                        class="btn btn-link btn-sm p-0"
+                        :disabled="saving"
+                        @click="generatePassword"
+                      >
+                        Generate Password
+                      </button>
+                    </div>
+                    <div class="position-relative">
+                      <input
+                        v-model="form.password"
+                        :type="showPassword ? 'text' : 'password'"
+                        class="form-control pe-5"
+                        :class="{ 'is-invalid': fieldErrors.password }"
+                        autocomplete="new-password"
+                        placeholder="Leave blank to keep current password"
+                        @input="clearFieldError('password')"
+                      />
+                      <button
+                        type="button"
+                        class="btn btn-link btn-sm position-absolute end-0 top-50 translate-middle-y me-1 py-0"
+                        @click="showPassword = !showPassword"
+                      >
+                        {{ showPassword ? "Hide" : "Show" }}
+                      </button>
+                    </div>
+                    <p
+                      v-if="fieldErrors.password"
+                      class="small text-danger mb-0 mt-1"
+                    >
+                      {{ fieldErrors.password }}
+                    </p>
+                  </div>
+                  <div v-if="form.password.trim() !== ''" class="mb-0 mt-3">
+                    <label class="form-label small">Confirm New Password</label>
+                    <input
+                      v-model="form.password_confirmation"
+                      :type="showPassword ? 'text' : 'password'"
+                      class="form-control"
+                      :class="{ 'is-invalid': fieldErrors.password_confirmation }"
+                      autocomplete="new-password"
+                      @input="clearFieldError('password_confirmation')"
+                    />
+                    <p
+                      v-if="fieldErrors.password_confirmation"
+                      class="small text-danger mb-0 mt-1"
+                    >
+                      {{ fieldErrors.password_confirmation }}
+                    </p>
+                  </div>
+                </template>
               </form>
             </div>
 

@@ -21,7 +21,7 @@ export function initialsFromName(name) {
   return word[0]?.toUpperCase() ?? "?";
 }
 
-/** Brand logo, then portal user avatar — for account directory rows. */
+/** Brand logo, then portal user avatar — for account directory rows / shared components. */
 export function accountRowAvatarUrl(row) {
   if (!row || typeof row !== "object") return null;
   const brand = String(row.brand_logo_url || "").trim();
@@ -34,6 +34,23 @@ export function accountRowAvatarUrl(row) {
 /** True when the row avatar should use brand-logo contain styling (not user photo cover). */
 export function accountRowAvatarIsBrand(row) {
   if (!row || typeof row !== "object") return false;
+  return Boolean(String(row.brand_logo_url || "").trim());
+}
+
+/** Primary user photo, then brand logo — accounts list only. */
+export function accountsListAvatarUrl(row) {
+  if (!row || typeof row !== "object") return null;
+  const primary = String(row.primary_avatar_url || "").trim();
+  if (primary) return primary;
+  const brand = String(row.brand_logo_url || "").trim();
+  if (brand) return brand;
+  return null;
+}
+
+/** True when accounts list is showing brand logo (no primary avatar). */
+export function accountsListAvatarIsBrand(row) {
+  if (!row || typeof row !== "object") return false;
+  if (String(row.primary_avatar_url || "").trim()) return false;
   return Boolean(String(row.brand_logo_url || "").trim());
 }
 

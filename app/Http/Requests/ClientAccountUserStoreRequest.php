@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\ClientAccount;
+use App\Models\User;
 use App\Policies\ClientAccountUserPolicy;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -28,6 +29,11 @@ class ClientAccountUserStoreRequest extends FormRequest
             'password' => ['required', 'string', 'min:8', 'confirmed'],
             'status' => ['required', Rule::in(['active', 'inactive'])],
             'phone' => ['nullable', 'string', 'max:50'],
+            'account_user_role' => [
+                'sometimes',
+                'required',
+                Rule::in([User::ACCOUNT_USER_ROLE_ADMIN, User::ACCOUNT_USER_ROLE_CUSTOMER_SERVICE]),
+            ],
         ];
     }
 
@@ -44,6 +50,8 @@ class ClientAccountUserStoreRequest extends FormRequest
             'password.confirmed' => 'Password confirmation does not match.',
             'status.required' => 'Status is required.',
             'status.in' => 'Status must be active or inactive.',
+            'account_user_role.required' => 'Account type is required.',
+            'account_user_role.in' => 'Account type must be Admin or Customer Service.',
         ];
     }
 

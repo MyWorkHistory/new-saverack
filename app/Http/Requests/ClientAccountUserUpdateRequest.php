@@ -38,6 +38,11 @@ class ClientAccountUserUpdateRequest extends FormRequest
 
         if (! $isPrimary) {
             $rules['email'] = ['sometimes', 'required', 'email', 'max:190', Rule::unique('users', 'email')->ignore($userId)];
+            $rules['account_user_role'] = [
+                'sometimes',
+                'required',
+                Rule::in([User::ACCOUNT_USER_ROLE_ADMIN, User::ACCOUNT_USER_ROLE_CUSTOMER_SERVICE]),
+            ];
         }
 
         return $rules;
@@ -55,6 +60,8 @@ class ClientAccountUserUpdateRequest extends FormRequest
             'password.confirmed' => 'Password confirmation does not match.',
             'status.required' => 'Status is required.',
             'status.in' => 'Status must be active or inactive.',
+            'account_user_role.required' => 'Account type is required.',
+            'account_user_role.in' => 'Account type must be Admin or Customer Service.',
         ];
     }
 }

@@ -199,13 +199,17 @@ class ClientAccountUserService
             if (! in_array($status, ['active', 'inactive'], true)) {
                 $status = 'active';
             }
+            $role = (string) ($data['account_user_role'] ?? User::ACCOUNT_USER_ROLE_CUSTOMER_SERVICE);
+            if (! in_array($role, [User::ACCOUNT_USER_ROLE_ADMIN, User::ACCOUNT_USER_ROLE_CUSTOMER_SERVICE], true)) {
+                $role = User::ACCOUNT_USER_ROLE_CUSTOMER_SERVICE;
+            }
             $user = User::query()->create([
                 'name' => trim((string) $data['name']),
                 'email' => $email,
                 'password' => Hash::make((string) $data['password']),
                 'status' => $status,
                 'client_account_id' => $account->id,
-                'account_user_role' => User::ACCOUNT_USER_ROLE_CUSTOMER_SERVICE,
+                'account_user_role' => $role,
                 'is_account_primary' => false,
             ]);
             $user->roles()->sync([]);
@@ -228,7 +232,7 @@ class ClientAccountUserService
     public function updateAccountUser(User $user, array $data, ?User $actor = null): User
     {
         if ($user->is_account_primary) {
-            unset($data['email']);
+            unset($data['email'], $data['account_user_role']);
         }
 
         $phone = array_key_exists('phone', $data) ? $data['phone'] : null;
@@ -241,7 +245,15 @@ class ClientAccountUserService
             unset($data['password']);
         }
 
-        unset($data['client_account_id'], $data['account_user_role'], $data['is_account_primary']);
+        unset($data['client_account_id'], $data['is_account_primary']);
+
+        if (isset($data['account_user_role'])
+            && ! in_array((string) $data['account_user_role'], [
+                User::ACCOUNT_USER_ROLE_ADMIN,
+                User::ACCOUNT_USER_ROLE_CUSTOMER_SERVICE,
+            ], true)) {
+            unset($data['account_user_role']);
+        }
 
         if (isset($data['status']) && ! in_array((string) $data['status'], ['active', 'inactive'], true)) {
             unset($data['status']);

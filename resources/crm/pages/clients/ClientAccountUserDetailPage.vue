@@ -30,6 +30,7 @@ const statusForm = ref("active");
 const statusSaving = ref(false);
 const userStatuses = ["active", "inactive"];
 const editModalOpen = ref(false);
+const editModalMode = ref("personal");
 const heroAvatarInput = ref(null);
 const heroAvatarLoadFailed = ref(false);
 
@@ -150,6 +151,16 @@ async function saveStatusFromModal() {
 function onEditModalSaved() {
   toast.success("User updated.");
   load();
+}
+
+function openAccessEdit() {
+  editModalMode.value = "access";
+  editModalOpen.value = true;
+}
+
+function openPersonalEdit() {
+  editModalMode.value = "personal";
+  editModalOpen.value = true;
 }
 
 const accountDetailLink = computed(() => ({
@@ -427,28 +438,18 @@ watch(
                 v-if="canUpdate"
                 type="button"
                 class="btn btn-sm btn-primary staff-page-primary"
-                @click="editModalOpen = true"
+                @click="openAccessEdit"
               >
                 Edit
               </button>
             </div>
             <dl class="staff-user-profile__dl">
               <div>
-                <dt class="staff-user-profile__dt">Email</dt>
-                <dd class="staff-user-profile__dd text-break">{{ display(row.email) }}</dd>
-              </div>
-              <div>
                 <dt class="staff-user-profile__dt">Account type</dt>
                 <dd class="staff-user-profile__dd">
                   {{
                     display(row.account_user_role_label || row.account_user_role)
                   }}
-                </dd>
-              </div>
-              <div>
-                <dt class="staff-user-profile__dt">Account email</dt>
-                <dd class="staff-user-profile__dd text-break">
-                  {{ display(row.account_email) }}
                 </dd>
               </div>
               <div>
@@ -524,7 +525,7 @@ watch(
                 v-if="canUpdate"
                 type="button"
                 class="btn btn-sm btn-primary staff-page-primary"
-                @click="editModalOpen = true"
+                @click="openPersonalEdit"
               >
                 Edit
               </button>
@@ -654,6 +655,7 @@ watch(
     <ClientAccountUserEditModal
       v-if="canUpdate"
       v-model:open="editModalOpen"
+      :mode="editModalMode"
       :client-account-id="accountId"
       :user-id="userId"
       @saved="onEditModalSaved"

@@ -29,8 +29,8 @@ import { getPublicSignupUrl } from "../../utils/publicSignupUrl.js";
 import { downloadListCsv } from "../../utils/downloadListCsv.js";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 import {
-  accountRowAvatarUrl,
-  accountRowAvatarIsBrand,
+  accountsListAvatarUrl,
+  accountsListAvatarIsBrand,
   accountRowInitials,
   avatarClassFromSeed,
 } from "../../utils/avatarDisplay.js";
@@ -287,7 +287,7 @@ function markAvatarLoadFailed(rowId) {
 }
 
 function showAccountAvatarImage(row) {
-  return Boolean(accountRowAvatarUrl(row)) && !avatarLoadFailedIds.value.has(row.id);
+  return Boolean(accountsListAvatarUrl(row)) && !avatarLoadFailedIds.value.has(row.id);
 }
 
 const TABLE_SORT_COLUMNS = [
@@ -1295,11 +1295,11 @@ onUnmounted(() => {
                   >
                     <img
                       v-if="showAccountAvatarImage(row)"
-                      :src="resolvePublicUrl(accountRowAvatarUrl(row))"
+                      :src="resolvePublicUrl(accountsListAvatarUrl(row))"
                       alt=""
                       :class="[
                         'w-100 h-100',
-                        accountRowAvatarIsBrand(row) ? 'object-fit-contain p-1' : 'object-fit-cover',
+                        accountsListAvatarIsBrand(row) ? 'object-fit-contain p-1' : 'object-fit-cover',
                       ]"
                       @error="markAvatarLoadFailed(row.id)"
                     />

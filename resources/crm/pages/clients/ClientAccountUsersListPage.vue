@@ -28,6 +28,7 @@ import {
 } from "../../constants/dialogFooter.js";
 import { downloadListCsv } from "../../utils/downloadListCsv.js";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
+import { formatDateUs } from "../../utils/formatUserDates";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -199,6 +200,7 @@ const addForm = reactive({
   password: "",
   password_confirmation: "",
   status: "active",
+  account_user_role: "customer_service",
 });
 
 const deleteTarget = ref(null);
@@ -208,8 +210,8 @@ const query = reactive({
   search: "",
   per_page: DEFAULT_PER_PAGE,
   page: 1,
-  sort_by: "name",
-  sort_dir: "asc",
+  sort_by: "created_at",
+  sort_dir: "desc",
   client_account_id: "",
   status: "all",
 });
@@ -217,7 +219,14 @@ const query = reactive({
 let searchDebounce = null;
 let searchWatchLock = false;
 
-const SORT_KEYS = ["status", "name", "company_name", "account_user_role", "id"];
+const SORT_KEYS = [
+  "status",
+  "name",
+  "company_name",
+  "created_at",
+  "account_user_role",
+  "id",
+];
 
 function toggleSort(column) {
   if (!SORT_KEYS.includes(column)) return;
@@ -478,8 +487,8 @@ function clearFilters() {
   query.search = "";
   query.status = "all";
   query.client_account_id = "";
-  query.sort_by = "name";
-  query.sort_dir = "asc";
+  query.sort_by = "created_at";
+  query.sort_dir = "desc";
   query.page = 1;
   selectedIds.value = [];
   fetchRows().finally(() => {
@@ -619,6 +628,7 @@ function openAdd() {
   addForm.password = "";
   addForm.password_confirmation = "";
   addForm.status = "active";
+  addForm.account_user_role = "customer_service";
   showAddPassword.value = false;
   addOpen.value = true;
 }
@@ -652,6 +662,7 @@ async function submitAdd() {
       password: addForm.password,
       password_confirmation: addForm.password_confirmation,
       status: addForm.status || "active",
+      account_user_role: addForm.account_user_role || "customer_service",
     };
     const phone = String(addForm.phone || "").trim();
     if (phone) payload.phone = phone;
@@ -876,9 +887,18 @@ onUnmounted(() => {
                         autocomplete="new-password"
                       />
                     </div>
-                    <p class="small text-secondary mb-0">
-                      Role: <strong>Customer Service</strong>
-                    </p>
+                    <div>
+                      <label class="form-label small text-secondary mb-1"
+                        >Role</label
+                      >
+                      <select
+                        v-model="addForm.account_user_role"
+                        class="form-select"
+                      >
+                        <option value="admin">Admin</option>
+                        <option value="customer_service">Customer Service</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
                 <footer :class="CRM_DIALOG_FOOTER_CLASS_DRAWER">
@@ -1302,6 +1322,25 @@ onUnmounted(() => {
               <th
                 class="staff-table-head__th staff-table-head__th--sort"
                 scope="col"
+                :aria-sort="thAriaSort('created_at')"
+              >
+                <button
+                  type="button"
+                  class="staff-sort-btn"
+                  :disabled="loading"
+                  @click="toggleSort('created_at')"
+                >
+                  Created
+                  <span
+                    v-if="sortIndicator('created_at')"
+                    class="staff-sort-ind"
+                    >{{ sortIndicator("created_at") }}</span
+                  >
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
                 :aria-sort="thAriaSort('account_user_role')"
               >
                 <button
@@ -1400,6 +1439,9 @@ onUnmounted(() => {
                 :title="row.company_name || undefined"
               >
                 {{ row.company_name || "—" }}
+              </td>
+              <td class="text-secondary staff-table-cell__meta text-nowrap">
+                {{ formatDateUs(row.created_at) }}
               </td>
               <td>
                 <span class="text-body text-truncate staff-table-cell__meta">{{
@@ -1567,6 +1609,7 @@ onUnmounted(() => {
 
     <ClientAccountUserEditModal
       v-model:open="editModalOpen"
+      mode="personal"
       :client-account-id="editAccountId"
       :user-id="editUserId"
       @saved="refreshList"

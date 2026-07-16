@@ -279,6 +279,55 @@ class ClientAccountUserService
         return $fresh;
     }
 
+    /**
+     * Transfer primary admin flag to another portal user on this account.
+     */
+    public function makePrimary(ClientAccount $account, User $user, ?User $actor = null): User
+    {
+        if ($user->client_account_id === null
+            || (int) $user->client_account_id !== (int) $account->id) {
+            abort(404);
+        }
+
+        if ($user->is_account_primary) {
+            return $user->fresh(['clientAccount', 'profile']);
+        }
+
+        if ((string) $user->status !== 'active') {
+            throw ValidationException::withMessages([
+                'user' => ['Only an active user can be made the primary admin.'],
+            ]);
+        }
+
+        return DB::transaction(function () use ($account, $user, $actor) {
+            User::query()
+                ->where('client_account_id', $account->id)
+                ->where('is_account_primary', true)
+                ->update(['is_account_primary' => false]);
+
+            $user->is_account_primary = true;
+            $user->account_user_role = User::ACCOUNT_USER_ROLE_ADMIN;
+            $user->save();
+
+            $email = trim((string) $user->email);
+            if ($email !== '') {
+                $account->email = $email;
+                $account->save();
+            }
+
+            $fresh = $user->fresh(['clientAccount', 'profile']);
+            if ($actor !== null) {
+                $this->activityLog->log($actor, 'portal_user.updated', $fresh, null, [
+                    'email' => (string) $fresh->email,
+                    'fields' => ['is_account_primary', 'account_user_role'],
+                    'made_primary' => true,
+                ]);
+            }
+
+            return $fresh;
+        });
+    }
+
     public function deleteAccountUser(User $user, ?User $actor = null): void
     {
         if ($user->is_account_primary) {

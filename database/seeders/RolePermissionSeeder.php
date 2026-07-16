@@ -114,16 +114,10 @@ class RolePermissionSeeder extends Seeder
         $client->permissions()->sync([]);
 
         $admin->permissions()->sync($permissions->pluck('id'));
-        // Staff: dashboard + clients + view stores; orders/inventory/receiving via direct user permissions.
-        $staff->permissions()->sync(
-            $permissions->whereIn('key', [
-                'dashboard.view',
-                'clients.view',
-                'client_users.view',
-                'stores.view',
-                'resources.view',
-            ])->pluck('id')
-        );
+        // Copy any leftover staff-role matrix grants onto users before clearing the role.
+        app(\App\Services\StaffPermissionMatrixService::class)->migrateRoleMatrixGrantsToDirect();
+        // Staff CRM module access is assigned per user in the permissions matrix (not via role).
+        $staff->permissions()->sync([]);
 
         if ($this->shouldSeedEnvAdminUser()) {
             $email = env('ADMIN_EMAIL', 'audi@saverack.com');

@@ -47,6 +47,7 @@ const canUpdate = computed(() => userHasPerm("client_users.update"));
 const canDelete = computed(() => userHasPerm("client_users.delete"));
 
 const editModalOpen = ref(false);
+const editModalMode = ref("personal");
 const editAccountId = ref("");
 const editUserId = ref("");
 /** Show kebab column whenever any row menu action exists (View for everyone on this page). */
@@ -59,8 +60,8 @@ const manageMenuRow = computed(
   () => rows.value.find((r) => r.id === manageOpenId.value) ?? null,
 );
 
-const MENU_W = 200;
-const MENU_H = 220;
+const MENU_W = 220;
+const MENU_H = 320;
 
 function placeManageMenu(anchorEl) {
   if (!(anchorEl instanceof HTMLElement)) return;
@@ -101,10 +102,11 @@ function goViewRow(row) {
   router.push(detailRoute(row));
 }
 
-function openEditFromMenu(row) {
+function openEditFromMenu(row, mode = "personal") {
   closeManageMenu();
   editAccountId.value = String(row.client_account_id);
   editUserId.value = String(row.id);
+  editModalMode.value = mode === "access" ? "access" : "personal";
   editModalOpen.value = true;
 }
 
@@ -119,6 +121,23 @@ function openRemoveFromMenu(row) {
     return;
   }
   confirmDelete(row);
+}
+
+function openMakePrimaryFromMenu(row) {
+  closeManageMenu();
+  if (!canUpdate.value) {
+    toast.error("You do not have permission to update users.");
+    return;
+  }
+  if (row?.is_account_primary) {
+    toast.info("This user is already the primary admin.");
+    return;
+  }
+  if (String(row?.status || "").toLowerCase() !== "active") {
+    toast.warning("Only an active user can be made the primary admin.");
+    return;
+  }
+  makePrimaryTarget.value = row;
 }
 
 function canRemoveRow(row) {
@@ -204,6 +223,8 @@ const addForm = reactive({
 });
 
 const deleteTarget = ref(null);
+const makePrimaryTarget = ref(null);
+const makePrimaryBusy = ref(false);
 const deleteBusy = ref(false);
 
 const query = reactive({
@@ -255,11 +276,17 @@ function thAriaSort(column) {
 }
 
 const deleteModalOpen = computed(() => deleteTarget.value !== null);
+const makePrimaryModalOpen = computed(() => makePrimaryTarget.value !== null);
 const deleteMessage = computed(() => {
   const r = deleteTarget.value;
   return r
     ? `Remove ${r.name} (${r.email}) from this directory? This cannot be undone.`
     : "";
+});
+const makePrimaryMessage = computed(() => {
+  const r = makePrimaryTarget.value;
+  if (!r) return "";
+  return `Make ${r.name || r.email || "this user"} the primary admin for ${r.company_name || "this account"}? The previous primary will become a regular admin, and the account contact email will update to this user's email.`;
 });
 
 const showingFrom = computed(() => {
@@ -711,6 +738,24 @@ async function runDelete() {
     toast.errorFrom(e, "Could not delete user.");
   } finally {
     deleteBusy.value = false;
+  }
+}
+
+async function runMakePrimary() {
+  const r = makePrimaryTarget.value;
+  if (!r || !canUpdate.value) return;
+  makePrimaryBusy.value = true;
+  try {
+    await api.post(
+      `/client-accounts/${r.client_account_id}/account-users/${r.id}/make-primary`,
+    );
+    toast.success("Primary admin updated.");
+    makePrimaryTarget.value = null;
+    await refreshList();
+  } catch (e) {
+    toast.errorFrom(e, "Could not make this user primary.");
+  } finally {
+    makePrimaryBusy.value = false;
   }
 }
 
@@ -1609,7 +1654,7 @@ onUnmounted(() => {
 
     <ClientAccountUserEditModal
       v-model:open="editModalOpen"
-      mode="personal"
+      :mode="editModalMode"
       :client-account-id="editAccountId"
       :user-id="editUserId"
       @saved="refreshList"
@@ -1631,6 +1676,16 @@ onUnmounted(() => {
       danger
       @close="deleteTarget = null"
       @confirm="runDelete"
+    />
+
+    <ConfirmModal
+      :open="makePrimaryModalOpen"
+      title="Make Primary Admin?"
+      :message="makePrimaryMessage"
+      confirm-label="Make Primary"
+      :busy="makePrimaryBusy"
+      @close="makePrimaryTarget = null"
+      @confirm="runMakePrimary"
     />
 
     <ConfirmModal
@@ -1681,9 +1736,33 @@ onUnmounted(() => {
             type="button"
             class="staff-row-menu__item"
             role="menuitem"
-            @click="openEditFromMenu(manageMenuRow)"
+            @click="openEditFromMenu(manageMenuRow, 'personal')"
           >
-            Edit
+            Edit Personal
+          </button>
+          <button
+            v-if="canUpdate"
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            @click="openEditFromMenu(manageMenuRow, 'access')"
+          >
+            Edit Access
+          </button>
+          <button
+            v-if="canUpdate && !manageMenuRow?.is_account_primary"
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            :disabled="String(manageMenuRow?.status || '').toLowerCase() !== 'active'"
+            :title="
+              String(manageMenuRow?.status || '').toLowerCase() !== 'active'
+                ? 'User must be active to become primary.'
+                : 'Make this user the primary admin'
+            "
+            @click="openMakePrimaryFromMenu(manageMenuRow)"
+          >
+            Make Primary
           </button>
           <hr
             v-if="canUpdate && canDelete"

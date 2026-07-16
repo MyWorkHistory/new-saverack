@@ -161,6 +161,20 @@ class ClientAccountUserController extends Controller
         return response()->json($this->accountUsers->toApiArray($updated));
     }
 
+    public function makePrimary(Request $request, ClientAccount $client_account, User $user): JsonResponse
+    {
+        $this->guardUserBelongsToAccount($client_account, $user);
+
+        $auth = $request->user();
+        if ($auth === null || ! app(ClientAccountUserPolicy::class)->update($auth, $user, $client_account)) {
+            abort(403);
+        }
+
+        $updated = $this->accountUsers->makePrimary($client_account, $user, $auth);
+
+        return response()->json($this->accountUsers->toApiArray($updated));
+    }
+
     public function destroy(Request $request, ClientAccount $client_account, User $user): JsonResponse
     {
         $this->guardUserBelongsToAccount($client_account, $user);

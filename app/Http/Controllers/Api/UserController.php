@@ -13,6 +13,7 @@ use App\Models\Permission;
 use App\Models\User;
 use App\Support\CrmActivityPresenter;
 use App\Support\UserStaffHistory;
+use App\Services\StaffPermissionMatrixService;
 use App\Services\UserAvatarService;
 use App\Services\UserService;
 use App\Support\CsvExporter;
@@ -218,6 +219,8 @@ class UserController extends Controller
             ], 422);
         }
 
+        app(StaffPermissionMatrixService::class)->migrateRoleMatrixGrantsToDirect();
+
         $editableKeys = User::editableCrmPermissionKeys();
         $keys = User::normalizeCrmPermissionKeys(
             $request->validated('permission_keys'),
@@ -270,6 +273,8 @@ class UserController extends Controller
         if (! $request->user()->isAdministrator()) {
             return response()->json(['message' => 'Only administrators can view permission metadata.'], 403);
         }
+
+        app(StaffPermissionMatrixService::class)->migrateRoleMatrixGrantsToDirect();
 
         User::editableCrmPermissionKeys();
 

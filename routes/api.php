@@ -559,6 +559,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.account-users.store');
     Route::patch('client-accounts/{client_account}/account-users/{user}', [ClientAccountUserController::class, 'update'])
         ->name('client-accounts.account-users.update');
+    Route::post('client-accounts/{client_account}/account-users/{user}/make-primary', [ClientAccountUserController::class, 'makePrimary'])
+        ->name('client-accounts.account-users.make-primary');
     Route::delete('client-accounts/{client_account}/account-users/{user}', [ClientAccountUserController::class, 'destroy'])
         ->name('client-accounts.account-users.destroy');
 

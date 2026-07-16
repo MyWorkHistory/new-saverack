@@ -4,6 +4,7 @@ import { RouterLink } from "vue-router";
 import api from "../../services/api";
 import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import ClientAccountUserEditModal from "../../components/clients/ClientAccountUserEditModal.vue";
 import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -31,6 +32,8 @@ const statusSaving = ref(false);
 const userStatuses = ["active", "inactive"];
 const editModalOpen = ref(false);
 const editModalMode = ref("personal");
+const makePrimaryOpen = ref(false);
+const makePrimaryBusy = ref(false);
 const heroAvatarInput = ref(null);
 const heroAvatarLoadFailed = ref(false);
 
@@ -161,6 +164,32 @@ function openAccessEdit() {
 function openPersonalEdit() {
   editModalMode.value = "personal";
   editModalOpen.value = true;
+}
+
+function openMakePrimary() {
+  if (!canUpdate.value || !row.value || row.value.is_account_primary) return;
+  if (String(row.value.status || "").toLowerCase() !== "active") {
+    toast.warning("Only an active user can be made the primary admin.");
+    return;
+  }
+  makePrimaryOpen.value = true;
+}
+
+async function runMakePrimary() {
+  if (!row.value || !canUpdate.value) return;
+  makePrimaryBusy.value = true;
+  try {
+    await api.post(
+      `/client-accounts/${props.accountId}/account-users/${props.userId}/make-primary`,
+    );
+    toast.success("Primary admin updated.");
+    makePrimaryOpen.value = false;
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not make this user primary.");
+  } finally {
+    makePrimaryBusy.value = false;
+  }
 }
 
 const accountDetailLink = computed(() => ({
@@ -429,9 +458,22 @@ watch(
                 <div class="staff-user-profile__stat-lbl">Primary</div>
               </div>
             </div>
+            <div
+              v-if="canUpdate && !row.is_account_primary"
+              class="mt-2"
+            >
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-primary"
+                :disabled="String(row.status || '').toLowerCase() !== 'active'"
+                @click="openMakePrimary"
+              >
+                Make Primary
+              </button>
+            </div>
 
             <div
-              class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"
+              class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2 mt-3"
             >
               <h3 class="staff-user-profile__details-title mb-0">Details</h3>
               <button
@@ -649,6 +691,16 @@ watch(
         :statuses="userStatuses"
         :busy="statusSaving"
         @save="saveStatusFromModal"
+      />
+
+      <ConfirmModal
+        :open="makePrimaryOpen"
+        title="Make Primary Admin?"
+        :message="`Make ${row?.name || row?.email || 'this user'} the primary admin? The previous primary will become a regular admin, and the account contact email will update to this user's email.`"
+        confirm-label="Make Primary"
+        :busy="makePrimaryBusy"
+        @close="makePrimaryOpen = false"
+        @confirm="runMakePrimary"
       />
     </template>
 

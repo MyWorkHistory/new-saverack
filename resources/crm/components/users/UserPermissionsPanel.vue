@@ -98,11 +98,11 @@ const loading = ref(true);
 const saving = ref(false);
 const errorMsg = ref("");
 const subject = ref(null);
-/** Direct user grants only (what Save writes). */
+/** Editable CRM matrix grants (saved as direct user permissions). */
 const draftKeys = ref([]);
-/** Role grants shown as checked + locked. */
-const roleKeys = ref([]);
 const permissionDefs = ref([]);
+const draftKeySet = computed(() => new Set(draftKeys.value));
+
 const modules = computed(() => {
   const byModule = new Map();
   for (const def of permissionDefs.value) {
@@ -146,15 +146,14 @@ const modules = computed(() => {
       ),
     }));
 });
+
 const editablePermissionKeys = computed(() =>
   new Set(
     modules.value.flatMap((m) => m.rows.flatMap((r) => r.keys.filter(Boolean))),
   ),
 );
-const roleKeySet = computed(() => new Set(roleKeys.value));
-const hasRoleGrants = computed(() => roleKeys.value.length > 0);
-const expanded = ref({});
 
+const expanded = ref({});
 const isAdminTarget = computed(() => subject.value?.is_admin === true);
 
 async function load() {
@@ -163,10 +162,9 @@ async function load() {
   errorMsg.value = "";
   subject.value = null;
   try {
-    const [userRes, metaRes] = await Promise.all([
-      api.get(`/users/${props.userId}`),
-      api.get("/users/permissions/meta"),
-    ]);
+    // Meta runs staff-role → direct migration; load user after so draft sees updated grants.
+    const metaRes = await api.get("/users/permissions/meta");
+    const userRes = await api.get(`/users/${props.userId}`);
     subject.value = userRes.data;
     permissionDefs.value = normalizePermissionDefs(metaRes.data?.items);
     const nextExpanded = {};
@@ -176,17 +174,10 @@ async function load() {
     expanded.value = nextExpanded;
 
     const editable = editablePermissionKeys.value;
+    // Draft = direct grants only (what Save writes). Meta already migrated role → direct.
     const direct = Array.isArray(userRes.data.direct_permission_keys)
       ? userRes.data.direct_permission_keys
       : [];
-    const role = Array.isArray(userRes.data.role_permission_keys)
-      ? userRes.data.role_permission_keys
-      : [];
-
-    roleKeys.value = role.filter(
-      (k) => typeof k === "string" && editable.has(k),
-    );
-    // Direct draft only — role grants are shown separately as locked checks.
     draftKeys.value = direct.filter(
       (k) => typeof k === "string" && editable.has(k),
     );
@@ -216,36 +207,29 @@ function toggleExpanded(modKey) {
   expanded.value[modKey] = !expanded.value[modKey];
 }
 
-function isRoleGranted(key) {
-  return !!(key && roleKeySet.value.has(key));
-}
-
 function hasKey(key) {
   if (!key) return false;
   if (isAdminTarget.value) return true;
-  return draftKeys.value.includes(key) || isRoleGranted(key);
+  return draftKeySet.value.has(key);
 }
 
-function setKey(key, on) {
-  if (!key) return;
+/** Batch update so column multi-select is one reactive write. */
+function setKeys(keys, on) {
   if (isAdminTarget.value) return;
-  // Role grants cannot be removed from this matrix (they come from the Staff role).
-  if (isRoleGranted(key) && !on) return;
+  const list = (keys || []).filter((k) => typeof k === "string" && k !== "");
+  if (list.length === 0) return;
+  const editable = editablePermissionKeys.value;
   const next = new Set(draftKeys.value);
-  if (on) {
-    next.add(key);
-  } else {
-    next.delete(key);
+  for (const key of list) {
+    if (!editable.has(key)) continue;
+    if (on) next.add(key);
+    else next.delete(key);
   }
   draftKeys.value = [...next];
 }
 
 function keysForColumn(module, colIdx) {
   return (module?.rows || []).map((r) => r.keys[colIdx]).filter(Boolean);
-}
-
-function toggleableKeysForColumn(module, colIdx) {
-  return keysForColumn(module, colIdx).filter((k) => !isRoleGranted(k));
 }
 
 function columnAllChecked(module, colIdx) {
@@ -260,22 +244,20 @@ function columnSomeChecked(module, colIdx) {
   return some && !columnAllChecked(module, colIdx);
 }
 
-function columnDisabled(module, colIdx) {
-  if (isAdminTarget.value) return true;
-  return toggleableKeysForColumn(module, colIdx).length === 0;
+function columnHasKeys(module, colIdx) {
+  return keysForColumn(module, colIdx).length > 0;
 }
 
-function onColToggle(module, colIdx, ev) {
-  if (columnDisabled(module, colIdx)) return;
-  const on = ev.target.checked;
-  for (const key of toggleableKeysForColumn(module, colIdx)) {
-    setKey(key, on);
-  }
+/** Toggle whole column from current state (avoids flaky controlled @change). */
+function toggleColumn(module, colIdx) {
+  if (isAdminTarget.value || !columnHasKeys(module, colIdx)) return;
+  const keys = keysForColumn(module, colIdx);
+  setKeys(keys, !columnAllChecked(module, colIdx));
 }
 
-function onCellToggle(key, ev) {
-  if (!key || isRoleGranted(key)) return;
-  setKey(key, ev.target.checked);
+function toggleCell(key) {
+  if (!key || isAdminTarget.value) return;
+  setKeys([key], !hasKey(key));
 }
 
 const checkboxClass =
@@ -285,15 +267,21 @@ async function save() {
   if (isAdminTarget.value || saving.value) return;
   saving.value = true;
   try {
-    // Persist direct grants only. Role grants stay on the Staff role.
     const payloadKeys = draftKeys.value.filter((k) =>
       editablePermissionKeys.value.has(k),
     );
-    await api.put(`/users/${props.userId}/permissions`, {
+    const { data } = await api.put(`/users/${props.userId}/permissions`, {
       permission_keys: payloadKeys,
     });
+    subject.value = data;
+    const editable = editablePermissionKeys.value;
+    const direct = Array.isArray(data?.direct_permission_keys)
+      ? data.direct_permission_keys
+      : payloadKeys;
+    draftKeys.value = direct.filter(
+      (k) => typeof k === "string" && editable.has(k),
+    );
     toast.success("Permissions Saved.");
-    await load();
     if (props.embedded) {
       emit("saved");
     }
@@ -363,11 +351,11 @@ function normalizePermissionDefs(items) {
         Are Not Stored Per User.
       </p>
       <p
-        v-else-if="hasRoleGrants"
+        v-else
         class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200"
       >
-        Checked boxes that are disabled come from the Staff role and always stay
-        on. Your Save updates the additional permissions you toggle here.
+        Check any boxes (or a column header to select all in that column), then
+        click Save. A dash means that action is not available for that row.
       </p>
 
       <div
@@ -446,20 +434,37 @@ function normalizePermissionDefs(items) {
                       <div
                         class="grid grid-cols-[1.125rem_minmax(0,1fr)] items-center gap-x-3 gap-y-0"
                       >
-                        <input
-                          type="checkbox"
-                          :class="checkboxClass"
-                          :checked="columnAllChecked(mod, colIdx)"
-                          :indeterminate.prop="columnSomeChecked(mod, colIdx)"
-                          :disabled="columnDisabled(mod, colIdx)"
-                          :aria-label="`${mod.label} ${col}`"
-                          @change="onColToggle(mod, colIdx, $event)"
-                        />
-                        <span
-                          class="text-sm font-medium text-gray-800 dark:text-gray-200"
-                        >
-                          {{ col }}
-                        </span>
+                        <template v-if="columnHasKeys(mod, colIdx)">
+                          <input
+                            type="checkbox"
+                            :class="checkboxClass"
+                            :checked="columnAllChecked(mod, colIdx)"
+                            :indeterminate.prop="columnSomeChecked(mod, colIdx)"
+                            :disabled="isAdminTarget"
+                            :aria-label="`${mod.label} ${col}`"
+                            @click.prevent="toggleColumn(mod, colIdx)"
+                          />
+                          <button
+                            type="button"
+                            class="text-left text-sm font-medium text-gray-800 dark:text-gray-200"
+                            :disabled="isAdminTarget"
+                            @click="toggleColumn(mod, colIdx)"
+                          >
+                            {{ col }}
+                          </button>
+                        </template>
+                        <template v-else>
+                          <span
+                            class="inline-block h-4 w-4 text-center text-xs leading-4 text-gray-300 dark:text-gray-600"
+                            aria-hidden="true"
+                            >—</span
+                          >
+                          <span
+                            class="text-sm font-medium text-gray-400 dark:text-gray-500"
+                          >
+                            {{ col }}
+                          </span>
+                        </template>
                       </div>
                     </td>
                   </tr>
@@ -485,21 +490,23 @@ function normalizePermissionDefs(items) {
                       <div
                         class="grid grid-cols-[1.125rem_minmax(0,1fr)] items-center gap-x-3"
                       >
-                        <input
-                          type="checkbox"
-                          :class="checkboxClass"
-                          :checked="hasKey(colKey)"
-                          :disabled="
-                            isAdminTarget || !colKey || isRoleGranted(colKey)
-                          "
-                          :title="
-                            isRoleGranted(colKey)
-                              ? 'Granted by Staff role'
-                              : undefined
-                          "
-                          :aria-label="`${row.rowLabel} ${ACTION_HEADERS[colIdx]}`"
-                          @change="onCellToggle(colKey, $event)"
-                        />
+                        <template v-if="colKey">
+                          <input
+                            type="checkbox"
+                            :class="checkboxClass"
+                            :checked="hasKey(colKey)"
+                            :disabled="isAdminTarget"
+                            :aria-label="`${row.rowLabel} ${ACTION_HEADERS[colIdx]}`"
+                            @click.prevent="toggleCell(colKey)"
+                          />
+                        </template>
+                        <template v-else>
+                          <span
+                            class="inline-block h-4 w-4 text-center text-xs leading-4 text-gray-300 dark:text-gray-600"
+                            aria-hidden="true"
+                            >—</span
+                          >
+                        </template>
                         <span
                           class="invisible select-none text-sm font-medium"
                           aria-hidden="true"

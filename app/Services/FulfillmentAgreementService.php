@@ -102,7 +102,9 @@ class FulfillmentAgreementService
      */
     public function verifyAndCounterSign(ClientAccount $account, array $data, ?int $verifiedByUserId = null): ClientAccount
     {
-        if ($account->fulfillment_agreement_accepted_at === null || ! $account->fulfillment_agreement_path) {
+        // Status "completed" is driven by accepted_at; path may be missing on legacy
+        // click-accept rows or if PDF generation failed after the client signed.
+        if ($account->fulfillment_agreement_accepted_at === null) {
             throw ValidationException::withMessages([
                 'agreement' => ['The client has not completed the fulfillment agreement yet.'],
             ]);
@@ -121,6 +123,9 @@ class FulfillmentAgreementService
         $account->fulfillment_agreement_staff_rep_name = trim((string) $data['rep_name']);
         $account->fulfillment_agreement_staff_signed_at = $signedAt;
         $account->fulfillment_agreement_staff_signature = json_encode($meta);
+        if ($account->fulfillment_agreement_method === null || $account->fulfillment_agreement_method === '') {
+            $account->fulfillment_agreement_method = FulfillmentAgreementPdfService::METHOD_ESIGN;
+        }
         $account->save();
 
         $account = $this->pdf->buildAndStoreSigned($account);

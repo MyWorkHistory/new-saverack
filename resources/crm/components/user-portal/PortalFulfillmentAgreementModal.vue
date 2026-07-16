@@ -28,7 +28,6 @@ const esignOpen = ref(false);
 const fileInput = ref(null);
 
 const accepted = computed(() => props.agreement?.status === "completed");
-const hasSignedPdf = computed(() => !!props.agreement?.has_signed_pdf);
 const bodyHtml = computed(() => props.agreement?.body || "");
 const hasBody = computed(
   () => !!(bodyHtml.value && String(bodyHtml.value).replace(/<[^>]+>/g, "").trim()),
@@ -133,33 +132,16 @@ async function onEsignSubmit(payload) {
 
 <template>
   <PortalOnboardingModalShell :open="open" lg scrollable @update:open="close">
-    <header class="crm-vx-modal__head d-flex align-items-start justify-content-between gap-3">
-      <div class="min-w-0">
-        <h2 class="crm-vx-modal__title">Fulfillment Agreement</h2>
-        <p class="crm-vx-modal__subtitle mb-0">
-          <template v-if="accepted">
-            This agreement is complete. You can view the signed PDF below.
-          </template>
-          <template v-else>
-            Review the agreement, download a printable copy, then upload a signed PDF or e-sign online.
-          </template>
-        </p>
-      </div>
-      <button
-        v-if="!accepted"
-        type="button"
-        class="portal-fa-modal__download btn btn-link p-1 flex-shrink-0"
-        :disabled="downloading || busy"
-        title="Download Agreement"
-        aria-label="Download Agreement"
-        @click="downloadBlank"
-      >
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path
-            d="M5 20h14v-2H5v2zm7-18v10.17l3.59-3.58L17 10l-5 5-5-5 1.41-1.41L11 12.17V2h1z"
-          />
-        </svg>
-      </button>
+    <header class="crm-vx-modal__head">
+      <h2 class="crm-vx-modal__title">Fulfillment Agreement</h2>
+      <p class="crm-vx-modal__subtitle mb-0">
+        <template v-if="accepted">
+          This agreement is complete. You can view the signed PDF below.
+        </template>
+        <template v-else>
+          Review the agreement, download a printable copy, then upload a signed PDF or e-sign online.
+        </template>
+      </p>
     </header>
 
     <div class="crm-vx-modal__body portal-onboard-modal__body">
@@ -174,38 +156,55 @@ async function onEsignSubmit(payload) {
     </div>
 
     <footer :class="[CRM_DIALOG_FOOTER_CLASS, 'portal-fa-modal__footer']">
-      <button type="button" :class="CRM_BTN_SECONDARY" :disabled="busy" @click="close">
-        {{ accepted ? "Close" : "Cancel" }}
-      </button>
-      <template v-if="accepted">
+      <div class="portal-fa-modal__footer-start d-flex flex-wrap align-items-center gap-2 me-auto">
         <button
-          v-if="hasSignedPdf"
+          v-if="!accepted"
           type="button"
-          :class="CRM_BTN_PRIMARY"
-          :disabled="downloading"
-          @click="viewSigned"
+          class="btn btn-outline-primary fw-semibold px-3 rounded-3 d-inline-flex align-items-center gap-2"
+          :disabled="downloading || busy || !hasBody"
+          @click="downloadBlank"
         >
-          {{ downloading ? "Opening…" : "View Signed PDF" }}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path
+              d="M5 20h14v-2H5v2zm7-18v10.17l3.59-3.58L17 10l-5 5-5-5 1.41-1.41L11 12.17V2h1z"
+            />
+          </svg>
+          {{ downloading ? "Downloading…" : "Download" }}
         </button>
-      </template>
-      <template v-else>
-        <button
-          type="button"
-          :class="CRM_BTN_SECONDARY"
-          :disabled="busy || !hasBody"
-          @click="triggerUpload"
-        >
-          Upload Agreement
+        <button type="button" :class="CRM_BTN_SECONDARY" :disabled="busy" @click="close">
+          {{ accepted ? "Close" : "Cancel" }}
         </button>
-        <button
-          type="button"
-          :class="CRM_BTN_PRIMARY"
-          :disabled="busy || !hasBody"
-          @click="esignOpen = true"
-        >
-          E-Sign Agreement
-        </button>
-      </template>
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <template v-if="accepted">
+          <button
+            type="button"
+            :class="CRM_BTN_PRIMARY"
+            :disabled="downloading"
+            @click="viewSigned"
+          >
+            {{ downloading ? "Opening…" : "View Signed PDF" }}
+          </button>
+        </template>
+        <template v-else>
+          <button
+            type="button"
+            :class="CRM_BTN_SECONDARY"
+            :disabled="busy || !hasBody"
+            @click="triggerUpload"
+          >
+            Upload Agreement
+          </button>
+          <button
+            type="button"
+            :class="CRM_BTN_PRIMARY"
+            :disabled="busy || !hasBody"
+            @click="esignOpen = true"
+          >
+            E-Sign Agreement
+          </button>
+        </template>
+      </div>
     </footer>
 
     <input
@@ -249,15 +248,12 @@ async function onEsignSubmit(payload) {
   font-size: 1.05rem;
   line-height: 1.3;
 }
-.portal-fa-modal__download {
-  color: #1e3a8a;
-  text-decoration: none;
-}
-.portal-fa-modal__download:hover {
-  color: #1e40af;
-}
 .portal-fa-modal__footer {
   flex-wrap: wrap;
   gap: 0.5rem;
+  justify-content: space-between;
+}
+.portal-fa-modal__footer-start {
+  min-width: 0;
 }
 </style>

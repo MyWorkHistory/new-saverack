@@ -116,14 +116,21 @@ class FulfillmentAgreementPdfService
     public function signedPdfResponse(ClientAccount $account): Response
     {
         $path = (string) $account->fulfillment_agreement_path;
-        if ($path === '' || ! Storage::disk(self::DISK)->exists($path)) {
+        $disk = Storage::disk(self::DISK);
+
+        if (($path === '' || ! $disk->exists($path)) && $account->fulfillment_agreement_accepted_at !== null) {
+            $account = $this->buildAndStoreSigned($account);
+            $path = (string) $account->fulfillment_agreement_path;
+        }
+
+        if ($path === '' || ! $disk->exists($path)) {
             abort(404, 'Signed agreement not found.');
         }
 
         $name = $account->fulfillment_agreement_original_name ?: 'fulfillment-agreement-signed.pdf';
         $mime = $account->fulfillment_agreement_mime ?: 'application/pdf';
 
-        return response(Storage::disk(self::DISK)->get($path), 200, [
+        return response($disk->get($path), 200, [
             'Content-Type' => $mime,
             'Content-Disposition' => 'inline; filename="'.str_replace('"', '', $name).'"',
         ]);

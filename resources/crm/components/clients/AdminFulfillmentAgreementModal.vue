@@ -28,7 +28,6 @@ const counterSignOpen = ref(false);
 const viewing = ref(false);
 
 const accepted = computed(() => props.agreement?.status === "completed");
-const hasSignedPdf = computed(() => !!props.agreement?.has_signed_pdf);
 const counterSigned = computed(() => !!props.agreement?.staff_counter_signed);
 const taskVerified = computed(() => !!props.task?.verified);
 const bodyHtml = computed(() => props.agreement?.body || "");
@@ -131,7 +130,7 @@ async function onCounterSign(payload) {
         Close
       </button>
       <button
-        v-if="hasSignedPdf"
+        v-if="accepted"
         type="button"
         :class="CRM_BTN_SECONDARY"
         :disabled="viewing || busy"

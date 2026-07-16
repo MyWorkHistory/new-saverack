@@ -5,6 +5,7 @@ import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import PortalOnboardingAccountModal from "../user-portal/PortalOnboardingAccountModal.vue";
 import PortalOnboardingBillingModal from "../user-portal/PortalOnboardingBillingModal.vue";
 import PortalOnboardingSectionModal from "../user-portal/PortalOnboardingSectionModal.vue";
+import AdminFulfillmentAgreementModal from "./AdminFulfillmentAgreementModal.vue";
 import { useToast } from "../../composables/useToast";
 import { PORTAL_MATERIAL_ICON } from "../../constants/portalMaterialIcons.js";
 import {
@@ -28,12 +29,14 @@ const onboarding = ref(null);
 const accountModalOpen = ref(false);
 const billingModalOpen = ref(false);
 const sectionModalOpen = ref(false);
+const agreementModalOpen = ref(false);
 const activeTask = ref(null);
 
 const profile = computed(() => onboarding.value?.profile || null);
 const tasks = computed(() => onboarding.value?.tasks || []);
 const preferences = computed(() => onboarding.value?.preferences || {});
 const brandLogoUrl = computed(() => onboarding.value?.brand_logo_url || "");
+const fulfillmentAgreement = computed(() => onboarding.value?.fulfillment_agreement || null);
 const manualInstructions = computed(() => onboarding.value?.manual_payment_instructions || null);
 const activeSectionId = computed(() => activeTask.value?.id || "");
 
@@ -122,6 +125,10 @@ function openTask(task) {
   }
   if (task.id === "billing_information") {
     billingModalOpen.value = true;
+    return;
+  }
+  if (task.id === "fulfillment_agreement") {
+    agreementModalOpen.value = true;
     return;
   }
   if (PORTAL_ONBOARDING_SECTION_IDS.includes(task.id)) {
@@ -307,6 +314,15 @@ loadOnboarding();
       @verify="verifyActiveTask"
       @unverify="unverifyActiveTask"
       @toggle-field-verification="toggleFieldVerification"
+    />
+    <AdminFulfillmentAgreementModal
+      v-model:open="agreementModalOpen"
+      :client-account-id="clientAccountId"
+      :agreement="fulfillmentAgreement"
+      :task="activeTask"
+      :verifying="verifyingTaskId === 'fulfillment_agreement'"
+      @saved="onSaved"
+      @unverify="unverifyActiveTask"
     />
   </div>
 </template>

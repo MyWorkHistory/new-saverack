@@ -254,6 +254,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/onboarding/billing/stripe-checkout', [PortalOnboardingController::class, 'startStripeCheckout'])->middleware('can:inventory.view');
         Route::post('/onboarding/billing/payment-method-link', [PortalOnboardingController::class, 'createPaymentMethodLink'])->middleware('can:inventory.view');
         Route::post('/onboarding/fulfillment-agreement/accept', [PortalOnboardingController::class, 'acceptFulfillmentAgreement'])->middleware('can:inventory.view');
+        Route::get('/onboarding/fulfillment-agreement.pdf', [PortalOnboardingController::class, 'downloadFulfillmentAgreementPdf'])->middleware('can:inventory.view');
+        Route::post('/onboarding/fulfillment-agreement/upload', [PortalOnboardingController::class, 'uploadFulfillmentAgreement'])->middleware('can:inventory.view');
+        Route::post('/onboarding/fulfillment-agreement/esign', [PortalOnboardingController::class, 'esignFulfillmentAgreement'])->middleware('can:inventory.view');
+        Route::get('/onboarding/fulfillment-agreement/signed.pdf', [PortalOnboardingController::class, 'downloadSignedFulfillmentAgreement'])->middleware('can:inventory.view');
     });
 
     Route::prefix('returns')->group(function () {
@@ -593,6 +597,10 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.onboarding.tasks.verification');
     Route::patch('client-accounts/{client_account}/onboarding/tasks/{task}/verification/fields/{field}', [ClientAccountOnboardingController::class, 'updateTaskFieldVerification'])
         ->name('client-accounts.onboarding.tasks.verification.fields');
+    Route::post('client-accounts/{client_account}/onboarding/fulfillment-agreement/verify', [ClientAccountOnboardingController::class, 'verifyFulfillmentAgreement'])
+        ->name('client-accounts.onboarding.fulfillment-agreement.verify');
+    Route::get('client-accounts/{client_account}/onboarding/fulfillment-agreement/signed.pdf', [ClientAccountOnboardingController::class, 'downloadSignedFulfillmentAgreement'])
+        ->name('client-accounts.onboarding.fulfillment-agreement.signed');
     Route::post('client-accounts/{client_account}/comments', [ClientAccountController::class, 'storeComment'])
         ->name('client-accounts.comments.store');
     Route::patch('client-accounts/{client_account}/comments/{comment}', [ClientAccountController::class, 'updateComment'])

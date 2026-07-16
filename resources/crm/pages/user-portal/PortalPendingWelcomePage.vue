@@ -34,11 +34,22 @@ const profile = computed(() => onboarding.value?.profile || null);
 const tasks = computed(() => onboarding.value?.tasks || []);
 const preferences = computed(() => onboarding.value?.preferences || {});
 const brandLogoUrl = computed(() => onboarding.value?.brand_logo_url || "");
-const progress = computed(() => onboarding.value?.progress || { total: 8, completed: 0, remaining: 8 });
+const progress = computed(() => onboarding.value?.progress || { total: 10, completed: 0, remaining: 10 });
 const fulfillmentAgreement = computed(() => onboarding.value?.fulfillment_agreement || null);
 const agreementCompleted = computed(
   () => fulfillmentAgreement.value?.status === "completed",
 );
+const agreementDefaultCompany = computed(() => profile.value?.company_name || "");
+const agreementDefaultRepName = computed(() => {
+  const name = String(profile.value?.name || "").trim();
+  if (name) return name;
+  return [
+    String(profile.value?.contact_first_name || "").trim(),
+    String(profile.value?.contact_last_name || "").trim(),
+  ]
+    .filter(Boolean)
+    .join(" ");
+});
 const agreementAcceptedLabel = computed(() => {
   const raw = fulfillmentAgreement.value?.accepted_at;
   const d = parseCalendarDay(raw) || (raw ? new Date(raw) : null);
@@ -82,6 +93,10 @@ function openTask(task) {
   }
   if (task.id === "billing_information") {
     billingModalOpen.value = true;
+    return;
+  }
+  if (task.id === "fulfillment_agreement") {
+    agreementModalOpen.value = true;
     return;
   }
   if (PORTAL_ONBOARDING_SECTION_IDS.includes(task.id)) {
@@ -326,7 +341,7 @@ onUnmounted(() => {
                 <div class="min-w-0">
                   <h2 class="h6 fw-semibold mb-2">Fulfillment Agreement</h2>
                   <p class="small text-secondary mb-0">
-                    Review and accept our fulfillment agreement to proceed with your onboarding.
+                    Download, upload, or e-sign our fulfillment agreement to proceed with your onboarding.
                   </p>
                 </div>
                 <div
@@ -454,6 +469,8 @@ onUnmounted(() => {
     <PortalFulfillmentAgreementModal
       v-model:open="agreementModalOpen"
       :agreement="fulfillmentAgreement"
+      :default-company="agreementDefaultCompany"
+      :default-rep-name="agreementDefaultRepName"
       @accepted="onAgreementAccepted"
     />
   </div>

@@ -8,6 +8,7 @@ use App\Support\ClientAccountBillingPreferences;
 use App\Support\CrmUrls;
 use App\Support\HtmlSanitizer;
 use App\Support\PortalOnboardingSectionRegistry;
+use Illuminate\Validation\ValidationException;
 
 class PortalOnboardingService
 {
@@ -78,6 +79,7 @@ class PortalOnboardingService
         'shipping_carrier_preferences',
         'returns_handling_preferences',
         'inventory_sync',
+        'fulfillment_agreement',
     ];
 
     /**
@@ -121,23 +123,37 @@ class PortalOnboardingService
         $terms = app(TermsOfServiceService::class);
         $acceptedAt = $account->fulfillment_agreement_accepted_at;
         $accepted = $acceptedAt !== null;
+        $hasSignedPdf = $accepted && is_string($account->fulfillment_agreement_path)
+            && $account->fulfillment_agreement_path !== '';
 
         return [
             'status' => $accepted ? 'completed' : 'not_completed',
             'accepted_at' => $accepted ? optional($acceptedAt)->toIso8601String() : null,
             'body' => HtmlSanitizer::sanitize($terms->effectiveBodyForAccount($account)),
             'public_url' => url('/terms/accounts/'.$account->id),
+            'method' => $account->fulfillment_agreement_method,
+            'has_signed_pdf' => $hasSignedPdf,
+            'company' => $account->fulfillment_agreement_company,
+            'rep_name' => $account->fulfillment_agreement_rep_name,
+            'client_signed_at' => $account->fulfillment_agreement_client_signed_at
+                ? optional($account->fulfillment_agreement_client_signed_at)->toIso8601String()
+                : null,
+            'staff_rep_name' => $account->fulfillment_agreement_staff_rep_name,
+            'staff_signed_at' => $account->fulfillment_agreement_staff_signed_at
+                ? optional($account->fulfillment_agreement_staff_signed_at)->toIso8601String()
+                : null,
+            'staff_counter_signed' => $account->fulfillment_agreement_staff_signed_at !== null,
         ];
     }
 
+    /**
+     * @deprecated Click-accept removed; clients must upload or e-sign.
+     */
     public function acceptFulfillmentAgreement(ClientAccount $account): ClientAccount
     {
-        if ($account->fulfillment_agreement_accepted_at === null) {
-            $account->fulfillment_agreement_accepted_at = now();
-            $account->save();
-        }
-
-        return $account->fresh();
+        throw ValidationException::withMessages([
+            'agreement' => ['Please upload or e-sign the fulfillment agreement.'],
+        ]);
     }
 
     /**
@@ -276,6 +292,10 @@ class PortalOnboardingService
 
         if ($verified && ! $this->areTaskFieldVerificationsComplete($account, $taskId)) {
             throw new \InvalidArgumentException('Complete all field verifications before verifying this section.');
+        }
+
+        if ($verified && $taskId === 'fulfillment_agreement' && $account->fulfillment_agreement_staff_signed_at === null) {
+            throw new \InvalidArgumentException('Counter-sign the fulfillment agreement before verifying this task.');
         }
 
         $verifications = $this->verificationsArray($account);
@@ -437,6 +457,12 @@ class PortalOnboardingService
                 'description' => 'Choose how inventory quantities should sync between your store, sales channels, and warehouse inventory management system.',
                 'icon' => 'sync',
             ],
+            [
+                'id' => 'fulfillment_agreement',
+                'title' => 'Fulfillment Agreement',
+                'description' => 'Download, upload, or e-sign the fulfillment agreement to complete this onboarding step.',
+                'icon' => 'description',
+            ],
         ];
 
         $tasks = [
@@ -465,9 +491,13 @@ class PortalOnboardingService
 
         foreach ($preferenceTasks as $meta) {
             $id = $meta['id'];
-            $complete = $id === 'order_handling_preferences'
-                ? $this->isOrderHandlingGroupComplete($account)
-                : $this->isPreferenceSectionComplete($account, $id);
+            if ($id === 'fulfillment_agreement') {
+                $complete = $account->fulfillment_agreement_accepted_at !== null;
+            } else {
+                $complete = $id === 'order_handling_preferences'
+                    ? $this->isOrderHandlingGroupComplete($account)
+                    : $this->isPreferenceSectionComplete($account, $id);
+            }
             $tasks[] = [
                 'id' => $id,
                 'title' => $meta['title'],

@@ -44,7 +44,7 @@ class PortalOnboardingApiTest extends TestCase
         return [$account, $user];
     }
 
-    public function test_onboarding_returns_eight_tasks_with_account_incomplete(): void
+    public function test_onboarding_returns_ten_tasks_with_account_incomplete(): void
     {
         [$account] = $this->pendingPortalUser();
 
@@ -52,15 +52,16 @@ class PortalOnboardingApiTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonPath('client_account_status', ClientAccount::STATUS_PENDING);
-        $response->assertJsonCount(8, 'tasks');
+        $response->assertJsonCount(10, 'tasks');
         $response->assertJsonPath('tasks.0.id', 'account_information');
         $response->assertJsonPath('tasks.0.status', 'not_completed');
-        $response->assertJsonPath('tasks.2.id', 'branding_information');
-        $response->assertJsonPath('tasks.3.id', 'order_handling_preferences');
-        $response->assertJsonPath('tasks.7.id', 'inventory_sync');
+        $response->assertJsonPath('tasks.3.id', 'branding_information');
+        $response->assertJsonPath('tasks.4.id', 'order_handling_preferences');
+        $response->assertJsonPath('tasks.8.id', 'inventory_sync');
+        $response->assertJsonPath('tasks.9.id', 'fulfillment_agreement');
         $response->assertJsonPath('profile.client_account_id', $account->id);
         $response->assertJsonPath('profile.account_information_complete', false);
-        $response->assertJsonPath('progress.total', 8);
+        $response->assertJsonPath('progress.total', 10);
         $response->assertJsonPath('progress.completed', 0);
         $response->assertJsonStructure(['preferences', 'brand_logo_url']);
     }
@@ -76,8 +77,8 @@ class PortalOnboardingApiTest extends TestCase
         ]);
 
         $response->assertOk();
-        $response->assertJsonPath('tasks.2.id', 'branding_information');
-        $response->assertJsonPath('tasks.2.status', 'completed');
+        $response->assertJsonPath('tasks.3.id', 'branding_information');
+        $response->assertJsonPath('tasks.3.status', 'completed');
         $response->assertJsonPath('preferences.branding_information.brand_name', 'Test Brand');
 
         $account->refresh();
@@ -133,8 +134,8 @@ class PortalOnboardingApiTest extends TestCase
         $response = $this->postJson('/api/portal/onboarding/billing/manual');
 
         $response->assertOk();
-        $response->assertJsonPath('tasks.1.id', 'billing_information');
-        $response->assertJsonPath('tasks.1.status', 'completed');
+        $response->assertJsonPath('tasks.2.id', 'billing_information');
+        $response->assertJsonPath('tasks.2.status', 'completed');
         $response->assertJsonPath('profile.onboarding_billing_method', 'manual');
         $response->assertJsonPath('profile.onboarding_billing_status', 'completed');
     }

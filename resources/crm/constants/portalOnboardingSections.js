@@ -455,4 +455,5 @@ export const PORTAL_ONBOARDING_TASK_ICON_KEYS = {
   local_shipping: "localShipping",
   assignment_return: "assignmentReturn",
   sync: "sync",
+  fulfillment_agreement: "description",
 };

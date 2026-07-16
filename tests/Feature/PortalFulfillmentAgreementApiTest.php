@@ -3,10 +3,15 @@
 namespace Tests\Feature;
 
 use App\Models\ClientAccount;
+use App\Models\Permission;
 use App\Models\TermsOfService;
 use App\Models\User;
+use App\Services\SlackDeliveryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
+use Mockery;
 use Tests\TestCase;
 
 class PortalFulfillmentAgreementApiTest extends TestCase
@@ -15,21 +20,31 @@ class PortalFulfillmentAgreementApiTest extends TestCase
 
     private function actingAsPortalUser(ClientAccount $account): User
     {
+        $permission = Permission::query()->firstOrCreate(
+            ['key' => 'inventory.view'],
+            ['label' => 'View inventory', 'module' => 'inventory']
+        );
         $user = User::factory()->create([
             'client_account_id' => $account->id,
             'is_account_primary' => true,
             'status' => 'pending',
         ]);
+        $user->permissions()->attach($permission->id);
         Sanctum::actingAs($user);
 
         return $user;
     }
 
-    public function test_onboarding_includes_fulfillment_agreement_and_accept(): void
+    private function seedTerms(): void
     {
         TermsOfService::query()->create([
             'body' => '<p>Fulfillment terms body</p>',
         ]);
+    }
+
+    public function test_onboarding_includes_fulfillment_agreement_payload(): void
+    {
+        $this->seedTerms();
 
         $account = ClientAccount::query()->create([
             'status' => ClientAccount::STATUS_PENDING,
@@ -42,13 +57,103 @@ class PortalFulfillmentAgreementApiTest extends TestCase
         $show->assertOk();
         $show->assertJsonPath('fulfillment_agreement.status', 'not_completed');
         $show->assertJsonPath('fulfillment_agreement.body', '<p>Fulfillment terms body</p>');
+        $show->assertJsonPath('fulfillment_agreement.has_signed_pdf', false);
         $this->assertNull($show->json('fulfillment_agreement.accepted_at'));
+        $show->assertJsonPath('tasks.9.id', 'fulfillment_agreement');
+        $show->assertJsonPath('progress.total', 10);
+    }
+
+    public function test_accept_endpoint_is_rejected_in_favor_of_upload_or_esign(): void
+    {
+        $this->seedTerms();
+
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_PENDING,
+            'company_name' => 'Agreement Portal Co',
+            'email' => 'agreement-portal@example.test',
+        ]);
+        $this->actingAsPortalUser($account);
 
         $accept = $this->postJson('/api/portal/onboarding/fulfillment-agreement/accept');
-        $accept->assertOk();
-        $accept->assertJsonPath('fulfillment_agreement.status', 'completed');
-        $this->assertNotNull($accept->json('fulfillment_agreement.accepted_at'));
+        $accept->assertStatus(422);
+        $this->assertNull($account->fresh()->fulfillment_agreement_accepted_at);
+    }
 
-        $this->assertNotNull($account->fresh()->fulfillment_agreement_accepted_at);
+    public function test_blank_pdf_download_and_esign_completes_agreement(): void
+    {
+        Storage::fake('local');
+        $this->seedTerms();
+
+        $slack = Mockery::mock(SlackDeliveryService::class);
+        $slack->shouldReceive('post')->once()->andReturn(['method' => 'webhook', 'channel' => '#alerts', 'ts' => null]);
+        $this->app->instance(SlackDeliveryService::class, $slack);
+
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_PENDING,
+            'company_name' => 'Agreement Portal Co',
+            'email' => 'agreement-portal@example.test',
+        ]);
+        $this->actingAsPortalUser($account);
+
+        $pdf = $this->get('/api/portal/onboarding/fulfillment-agreement.pdf');
+        $pdf->assertOk();
+        $this->assertStringContainsString('application/pdf', (string) $pdf->headers->get('content-type'));
+
+        $tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+        $esign = $this->postJson('/api/portal/onboarding/fulfillment-agreement/esign', [
+            'company' => 'Agreement Portal Co',
+            'rep_name' => 'Alex Client',
+            'signed_at' => '2026-07-16',
+            'signature_style' => 'dancing_script',
+            'signature_text' => 'Alex Client',
+            'signature_image' => $tinyPng,
+        ]);
+        $esign->assertOk();
+        $esign->assertJsonPath('fulfillment_agreement.status', 'completed');
+        $esign->assertJsonPath('fulfillment_agreement.method', 'esign');
+        $esign->assertJsonPath('fulfillment_agreement.has_signed_pdf', true);
+        $esign->assertJsonPath('tasks.9.status', 'completed');
+
+        $account->refresh();
+        $this->assertNotNull($account->fulfillment_agreement_accepted_at);
+        $this->assertNotNull($account->fulfillment_agreement_path);
+        Storage::disk('local')->assertExists($account->fulfillment_agreement_path);
+
+        $signed = $this->get('/api/portal/onboarding/fulfillment-agreement/signed.pdf');
+        $signed->assertOk();
+    }
+
+    public function test_upload_completes_agreement(): void
+    {
+        Storage::fake('local');
+        $this->seedTerms();
+
+        $slack = Mockery::mock(SlackDeliveryService::class);
+        $slack->shouldReceive('post')->once()->andReturn(['method' => 'webhook', 'channel' => '#alerts', 'ts' => null]);
+        $this->app->instance(SlackDeliveryService::class, $slack);
+
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_PENDING,
+            'company_name' => 'Upload Co',
+            'email' => 'upload-portal@example.test',
+        ]);
+        $this->actingAsPortalUser($account);
+
+        $file = UploadedFile::fake()->create('signed-agreement.pdf', 120, 'application/pdf');
+
+        $upload = $this->post('/api/portal/onboarding/fulfillment-agreement/upload', [
+            'file' => $file,
+            'company' => 'Upload Co',
+            'rep_name' => 'Sam Upload',
+        ], ['Accept' => 'application/json']);
+
+        $upload->assertOk();
+        $upload->assertJsonPath('fulfillment_agreement.status', 'completed');
+        $upload->assertJsonPath('fulfillment_agreement.method', 'upload');
+
+        $account->refresh();
+        $this->assertSame('upload', $account->fulfillment_agreement_method);
+        Storage::disk('local')->assertExists($account->fulfillment_agreement_path);
     }
 }

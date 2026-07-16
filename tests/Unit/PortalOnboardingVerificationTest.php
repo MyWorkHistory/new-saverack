@@ -175,6 +175,14 @@ class PortalOnboardingVerificationTest extends TestCase
 
         foreach (PortalOnboardingService::ONBOARDING_TASK_IDS as $taskId) {
             $fresh = $account->fresh();
+            if ($taskId === 'fulfillment_agreement') {
+                $fresh->fulfillment_agreement_accepted_at = now();
+                $fresh->fulfillment_agreement_path = 'fulfillment-agreements/'.$fresh->id.'/signed.pdf';
+                $fresh->fulfillment_agreement_staff_signed_at = now();
+                $fresh->fulfillment_agreement_staff_rep_name = 'Audi Kowalski';
+                $fresh->save();
+                $fresh = $account->fresh();
+            }
             if (PortalOnboardingSectionRegistry::taskUsesAdminFieldVerification($taskId)) {
                 $prefs = is_array($fresh->onboarding_preferences) ? $fresh->onboarding_preferences : [];
                 foreach (PortalOnboardingSectionRegistry::adminVerificationFieldKeysForPreferences($taskId, $prefs) as $fieldKey) {

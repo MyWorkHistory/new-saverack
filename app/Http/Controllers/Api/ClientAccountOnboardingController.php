@@ -7,6 +7,8 @@ use App\Models\ClientAccount;
 use App\Models\User;
 use App\Services\AccountPaymentMethodService;
 use App\Services\ClientBrandLogoService;
+use App\Services\FulfillmentAgreementPdfService;
+use App\Services\FulfillmentAgreementService;
 use App\Services\PortalOnboardingService;
 use App\Services\PortalOnboardingStripeService;
 use Illuminate\Http\JsonResponse;
@@ -16,6 +18,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
+use Symfony\Component\HttpFoundation\Response;
 
 class ClientAccountOnboardingController extends Controller
 {
@@ -31,16 +34,26 @@ class ClientAccountOnboardingController extends Controller
     /** @var AccountPaymentMethodService */
     protected $paymentMethods;
 
+    /** @var FulfillmentAgreementService */
+    protected $agreements;
+
+    /** @var FulfillmentAgreementPdfService */
+    protected $agreementPdfs;
+
     public function __construct(
         PortalOnboardingService $onboarding,
         PortalOnboardingStripeService $stripeOnboarding,
         ClientBrandLogoService $brandLogos,
-        AccountPaymentMethodService $paymentMethods
+        AccountPaymentMethodService $paymentMethods,
+        FulfillmentAgreementService $agreements,
+        FulfillmentAgreementPdfService $agreementPdfs
     ) {
         $this->onboarding = $onboarding;
         $this->stripeOnboarding = $stripeOnboarding;
         $this->brandLogos = $brandLogos;
         $this->paymentMethods = $paymentMethods;
+        $this->agreements = $agreements;
+        $this->agreementPdfs = $agreementPdfs;
     }
 
     public function show(ClientAccount $client_account): JsonResponse
@@ -261,5 +274,40 @@ class ClientAccountOnboardingController extends Controller
         }
 
         return response()->json($this->onboarding->buildAdminOnboardingPayload($client_account));
+    }
+
+    public function verifyFulfillmentAgreement(Request $request, ClientAccount $client_account): JsonResponse
+    {
+        Gate::authorize('update', $client_account);
+
+        $validated = $request->validate([
+            'rep_name' => ['required', 'string', 'max:255'],
+            'signed_at' => ['nullable', 'date'],
+            'signature_style' => ['required', 'string', 'max:64'],
+            'signature_text' => ['required', 'string', 'max:255'],
+            'signature_image' => ['required', 'string'],
+        ]);
+
+        $adminUser = $request->user();
+        try {
+            $client_account = $this->agreements->verifyAndCounterSign(
+                $client_account,
+                $validated,
+                $adminUser !== null ? (int) $adminUser->id : null
+            );
+        } catch (\InvalidArgumentException $e) {
+            throw ValidationException::withMessages([
+                'agreement' => [$e->getMessage()],
+            ]);
+        }
+
+        return response()->json($this->onboarding->buildAdminOnboardingPayload($client_account));
+    }
+
+    public function downloadSignedFulfillmentAgreement(ClientAccount $client_account): Response
+    {
+        Gate::authorize('view', $client_account);
+
+        return $this->agreementPdfs->signedPdfResponse($client_account);
     }
 }

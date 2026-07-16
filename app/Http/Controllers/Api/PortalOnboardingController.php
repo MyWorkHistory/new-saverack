@@ -7,6 +7,8 @@ use App\Models\ClientAccount;
 use App\Models\User;
 use App\Services\AccountPaymentMethodService;
 use App\Services\ClientBrandLogoService;
+use App\Services\FulfillmentAgreementPdfService;
+use App\Services\FulfillmentAgreementService;
 use App\Services\PortalOnboardingService;
 use App\Services\PortalOnboardingStripeService;
 use App\Support\PortalOnboardingSectionRegistry;
@@ -16,6 +18,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
+use Symfony\Component\HttpFoundation\Response;
 
 class PortalOnboardingController extends Controller
 {
@@ -31,16 +34,26 @@ class PortalOnboardingController extends Controller
     /** @var AccountPaymentMethodService */
     protected $paymentMethods;
 
+    /** @var FulfillmentAgreementService */
+    protected $agreements;
+
+    /** @var FulfillmentAgreementPdfService */
+    protected $agreementPdfs;
+
     public function __construct(
         PortalOnboardingService $onboarding,
         PortalOnboardingStripeService $stripeOnboarding,
         ClientBrandLogoService $brandLogos,
-        AccountPaymentMethodService $paymentMethods
+        AccountPaymentMethodService $paymentMethods,
+        FulfillmentAgreementService $agreements,
+        FulfillmentAgreementPdfService $agreementPdfs
     ) {
         $this->onboarding = $onboarding;
         $this->stripeOnboarding = $stripeOnboarding;
         $this->brandLogos = $brandLogos;
         $this->paymentMethods = $paymentMethods;
+        $this->agreements = $agreements;
+        $this->agreementPdfs = $agreementPdfs;
     }
 
     public function show(Request $request): JsonResponse
@@ -164,9 +177,73 @@ class PortalOnboardingController extends Controller
         [$user, $account] = $this->resolvePortalUserAndAccount($request);
         Gate::forUser($request->user())->authorize('view', $account);
 
-        $account = $this->onboarding->acceptFulfillmentAgreement($account);
+        try {
+            $this->onboarding->acceptFulfillmentAgreement($account);
+        } catch (ValidationException $e) {
+            throw $e;
+        }
 
         return response()->json($this->onboarding->buildOnboardingPayload($user, $account));
+    }
+
+    public function downloadFulfillmentAgreementPdf(Request $request): Response
+    {
+        [$user, $account] = $this->resolvePortalUserAndAccount($request);
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        return $this->agreementPdfs->downloadBlank($account);
+    }
+
+    public function uploadFulfillmentAgreement(Request $request): JsonResponse
+    {
+        [$user, $account] = $this->resolvePortalUserAndAccount($request);
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        $validated = $request->validate([
+            'file' => ['required', 'file', 'mimes:pdf', 'max:20480'],
+            'company' => ['nullable', 'string', 'max:255'],
+            'rep_name' => ['nullable', 'string', 'max:255'],
+            'signed_at' => ['nullable', 'date'],
+        ]);
+
+        $account = $this->agreements->completeUpload(
+            $account,
+            $request->file('file'),
+            [
+                'company' => $validated['company'] ?? null,
+                'rep_name' => $validated['rep_name'] ?? null,
+                'signed_at' => $validated['signed_at'] ?? null,
+            ]
+        );
+
+        return response()->json($this->onboarding->buildOnboardingPayload($user, $account));
+    }
+
+    public function esignFulfillmentAgreement(Request $request): JsonResponse
+    {
+        [$user, $account] = $this->resolvePortalUserAndAccount($request);
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        $validated = $request->validate([
+            'company' => ['required', 'string', 'max:255'],
+            'rep_name' => ['required', 'string', 'max:255'],
+            'signed_at' => ['nullable', 'date'],
+            'signature_style' => ['required', 'string', 'max:64'],
+            'signature_text' => ['required', 'string', 'max:255'],
+            'signature_image' => ['required', 'string'],
+        ]);
+
+        $account = $this->agreements->completeEsign($account, $validated);
+
+        return response()->json($this->onboarding->buildOnboardingPayload($user, $account));
+    }
+
+    public function downloadSignedFulfillmentAgreement(Request $request): Response
+    {
+        [$user, $account] = $this->resolvePortalUserAndAccount($request);
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        return $this->agreementPdfs->signedPdfResponse($account);
     }
 
     /**

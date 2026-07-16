@@ -262,27 +262,27 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('returns')->group(function () {
         Route::get('/items', [ReturnController::class, 'itemsIndex'])->middleware('can:returns.view');
-        Route::post('/draft', [ReturnController::class, 'storeDraft'])->middleware('can:returns.view');
+        Route::post('/draft', [ReturnController::class, 'storeDraft'])->middleware('can:returns.create');
         Route::get('/', [ReturnController::class, 'index'])->middleware('can:returns.view');
         Route::get('/{clientAccountReturn}/packing-slip.pdf', [ReturnController::class, 'packingSlipPdf'])->middleware('can:returns.view');
         Route::get('/{clientAccountReturn}/shipping-label.pdf', [ReturnController::class, 'shippingLabelPdf'])->middleware('can:returns.view');
         Route::get('/{clientAccountReturn}/rma-barcode.pdf', [ReturnController::class, 'rmaBarcodePdf'])->middleware('can:returns.view');
-        Route::put('/{clientAccountReturn}/submit', [ReturnController::class, 'submit'])->middleware('can:returns.view');
-        Route::patch('/{clientAccountReturn}/warehouse-note', [ReturnController::class, 'updateWarehouseNote'])->middleware('can:returns.view');
+        Route::put('/{clientAccountReturn}/submit', [ReturnController::class, 'submit'])->middleware('can:returns.update');
+        Route::patch('/{clientAccountReturn}/warehouse-note', [ReturnController::class, 'updateWarehouseNote'])->middleware('can:returns.update');
         Route::get('/{clientAccountReturn}', [ReturnController::class, 'show'])->middleware('can:returns.view');
-        Route::patch('/{clientAccountReturn}', [ReturnController::class, 'update'])->middleware('can:returns.view');
-        Route::delete('/{clientAccountReturn}', [ReturnController::class, 'destroy'])->middleware('can:returns.view');
+        Route::patch('/{clientAccountReturn}', [ReturnController::class, 'update'])->middleware('can:returns.update');
+        Route::delete('/{clientAccountReturn}', [ReturnController::class, 'destroy'])->middleware('can:returns.delete');
     });
 
     Route::prefix('admin/returns')->group(function () {
-        Route::post('/non-compliant', [AdminReturnController::class, 'storeNonCompliant'])->middleware('can:returns.update');
-        Route::post('/third-party', [AdminReturnController::class, 'storeThirdParty'])->middleware('can:returns.update');
+        Route::post('/non-compliant', [AdminReturnController::class, 'storeNonCompliant'])->middleware('can:returns.create');
+        Route::post('/third-party', [AdminReturnController::class, 'storeThirdParty'])->middleware('can:returns.create');
         Route::get('/bins', [AdminReturnController::class, 'listReturnBins'])->middleware('can:returns.view');
         Route::get('/bins/{binNumber}/items', [AdminReturnController::class, 'listReturnBinItems'])->middleware('can:returns.view');
         Route::post('/bins/{binNumber}/transfer', [AdminReturnController::class, 'transferReturnBinItem'])->middleware('can:returns.update');
-        Route::post('/{clientAccountReturn}/lines', [AdminReturnController::class, 'storeLine'])->middleware('can:returns.update');
+        Route::post('/{clientAccountReturn}/lines', [AdminReturnController::class, 'storeLine'])->middleware('can:returns.create');
         Route::patch('/{clientAccountReturn}/lines/{line}', [AdminReturnController::class, 'updateLine'])->middleware('can:returns.update');
-        Route::delete('/{clientAccountReturn}/lines/{line}', [AdminReturnController::class, 'destroyLine'])->middleware('can:returns.update');
+        Route::delete('/{clientAccountReturn}/lines/{line}', [AdminReturnController::class, 'destroyLine'])->middleware('can:returns.delete');
         Route::get('/{clientAccountReturn}/lines/{line}/barcode.pdf', [AdminReturnController::class, 'lineBarcodePdf'])->middleware('can:returns.view');
         Route::get('/fee-defaults', [AdminReturnController::class, 'feeDefaults'])->middleware('can:returns.view');
         Route::patch('/{clientAccountReturn}/return-bin', [AdminReturnController::class, 'assignReturnBin'])->middleware('can:returns.update');
@@ -300,21 +300,21 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('admin/wholesale-orders')->group(function () {
         Route::get('/', [WholesaleOrderController::class, 'index'])->middleware('can:orders.view');
         Route::get('/pick-list', [WholesaleOrderController::class, 'pickList'])->middleware('can:orders.view');
-        Route::post('/', [WholesaleOrderController::class, 'store'])->middleware('can:orders.update');
+        Route::post('/', [WholesaleOrderController::class, 'store'])->middleware('can:orders.create');
         Route::get('/{wholesaleOrder}/product-catalog', [WholesaleOrderController::class, 'productCatalog'])->middleware('can:orders.view');
         Route::get('/{wholesaleOrder}', [WholesaleOrderController::class, 'show'])->middleware('can:orders.view');
         Route::patch('/{wholesaleOrder}', [WholesaleOrderController::class, 'update'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/ready-to-ship', [WholesaleOrderController::class, 'readyToShip'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/mark-picked', [WholesaleOrderController::class, 'markPicked'])->middleware('can:orders.update');
-        Route::post('/{wholesaleOrder}/lines', [WholesaleOrderController::class, 'storeLine'])->middleware('can:orders.update');
+        Route::post('/{wholesaleOrder}/lines', [WholesaleOrderController::class, 'storeLine'])->middleware('can:orders.create');
         Route::patch('/{wholesaleOrder}/lines/{line}', [WholesaleOrderController::class, 'updateLine'])->middleware('can:orders.update');
         Route::patch('/{wholesaleOrder}/lines/{line}/pick', [WholesaleOrderController::class, 'updateLinePick'])->middleware('can:orders.update');
-        Route::delete('/{wholesaleOrder}/lines/{line}', [WholesaleOrderController::class, 'destroyLine'])->middleware('can:orders.update');
+        Route::delete('/{wholesaleOrder}/lines/{line}', [WholesaleOrderController::class, 'destroyLine'])->middleware('can:orders.delete');
         Route::post('/{wholesaleOrder}/lines/{line}/barcode', [WholesaleOrderController::class, 'uploadLineBarcode'])->middleware('can:orders.update');
         Route::get('/{wholesaleOrder}/lines/{line}/barcode.pdf', [WholesaleOrderController::class, 'lineBarcodePdf'])->middleware('can:orders.view');
         Route::post('/{wholesaleOrder}/shipping-label', [WholesaleOrderController::class, 'uploadShippingLabel'])->middleware('can:orders.update');
         Route::get('/{wholesaleOrder}/shipping-label.pdf', [WholesaleOrderController::class, 'shippingLabelDownload'])->middleware('can:orders.view');
-        Route::delete('/{wholesaleOrder}/shipping-labels/{shippingLabel}', [WholesaleOrderController::class, 'destroyShippingLabel'])->middleware('can:orders.update');
+        Route::delete('/{wholesaleOrder}/shipping-labels/{shippingLabel}', [WholesaleOrderController::class, 'destroyShippingLabel'])->middleware('can:orders.delete');
         Route::put('/{wholesaleOrder}/packages', [WholesaleOrderController::class, 'syncPackages'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/packages/send-slack', [WholesaleOrderController::class, 'sendPackagesSlack'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/comments', [WholesaleOrderController::class, 'storeComment'])->middleware('can:orders.view');
@@ -325,7 +325,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/summary', [AdminAsnController::class, 'summary'])->middleware('can:receiving_asn.view');
         Route::get('/charge-options', [AdminAsnController::class, 'chargeOptions'])->middleware('can:receiving_asn.view');
         Route::get('/', [AdminAsnController::class, 'index'])->middleware('can:receiving_asn.view');
-        Route::post('/non-compliant', [AdminAsnController::class, 'storeNonCompliant'])->middleware('can:receiving_asn.update');
+        Route::post('/non-compliant', [AdminAsnController::class, 'storeNonCompliant'])->middleware('can:receiving_asn.create');
         Route::get('/{asn}/product-catalog', [AsnController::class, 'productCatalog'])->middleware('can:receiving_asn.view');
         Route::post('/{asn}/catalog-products', [AsnController::class, 'storeCatalogProduct'])->middleware('can:receiving_asn.update');
         Route::get('/{asn}', [AdminAsnController::class, 'show'])->middleware('can:receiving_asn.view');
@@ -337,9 +337,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{asn}/lines/{line}/receive-override', [AdminAsnController::class, 'receiveOverride'])->middleware('can:receiving_asn.update');
         Route::post('/{asn}/lines/{line}/reject-override', [AdminAsnController::class, 'rejectOverride'])->middleware('can:receiving_asn.update');
         Route::patch('/{asn}/lines/{line}/specs', [AdminAsnController::class, 'updateLineSpecs'])->middleware('can:receiving_asn.update');
-        Route::post('/{asn}/bill-items', [AdminAsnController::class, 'storeBillItem'])->middleware('can:receiving_asn.update');
+        Route::post('/{asn}/bill-items', [AdminAsnController::class, 'storeBillItem'])->middleware('can:receiving_asn.create');
         Route::put('/{asn}/bill-items/{item}', [AdminAsnController::class, 'updateBillItem'])->middleware('can:receiving_asn.update');
-        Route::delete('/{asn}/bill-items/{item}', [AdminAsnController::class, 'destroyBillItem'])->middleware('can:receiving_asn.update');
+        Route::delete('/{asn}/bill-items/{item}', [AdminAsnController::class, 'destroyBillItem'])->middleware('can:receiving_asn.delete');
     });
 
     Route::prefix('admin/put-away')->group(function () {
@@ -349,25 +349,25 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('asns')->group(function () {
-        Route::get('/', [AsnController::class, 'index'])->middleware('can:inventory.view');
-        Route::post('/', [AsnController::class, 'store'])->middleware('can:inventory.view');
-        Route::post('/bulk-delete', [AsnController::class, 'bulkDestroy'])->middleware('can:inventory.view');
-        Route::get('/{asn}/packing-slip.pdf', [AsnController::class, 'packingSlipPdf'])->middleware('can:inventory.view');
-        Route::get('/{asn}/identification-label.pdf', [AsnController::class, 'identificationLabelPdf'])->middleware('can:inventory.view');
-        Route::get('/{asn}/lines/{line}/barcode.pdf', [AsnController::class, 'barcodePdf'])->middleware('can:inventory.view');
-        Route::get('/{asn}/product-catalog', [AsnController::class, 'productCatalog'])->middleware('can:inventory.view');
-        Route::post('/{asn}/catalog-products', [AsnController::class, 'storeCatalogProduct'])->middleware('can:inventory.view');
-        Route::get('/{asn}', [AsnController::class, 'show'])->middleware('can:inventory.view');
-        Route::patch('/{asn}', [AsnController::class, 'update'])->middleware('can:inventory.view');
-        Route::post('/{asn}/mark-ready', [AsnController::class, 'markReady'])->middleware('can:inventory.view');
-        Route::post('/{asn}/reopen-for-edit', [AsnController::class, 'reopenForEdit'])->middleware('can:inventory.view');
-        Route::delete('/{asn}', [AsnController::class, 'destroy'])->middleware('can:inventory.view');
-        Route::patch('/{asn}/warehouse-notes', [AsnController::class, 'updateWarehouseNotes'])->middleware('can:inventory.view');
-        Route::post('/{asn}/lines', [AsnController::class, 'storeLine'])->middleware('can:inventory.view');
-        Route::patch('/{asn}/lines/{line}', [AsnController::class, 'updateLine'])->middleware('can:inventory.view');
-        Route::delete('/{asn}/lines/{line}', [AsnController::class, 'destroyLine'])->middleware('can:inventory.view');
-        Route::put('/{asn}/trackings', [AsnController::class, 'syncTrackings'])->middleware('can:inventory.view');
-        Route::put('/{asn}/vendor-lines', [AsnController::class, 'syncVendorLines'])->middleware('can:inventory.view');
+        Route::get('/', [AsnController::class, 'index'])->middleware('can:asns.view');
+        Route::post('/', [AsnController::class, 'store'])->middleware('can:asns.create');
+        Route::post('/bulk-delete', [AsnController::class, 'bulkDestroy'])->middleware('can:asns.delete');
+        Route::get('/{asn}/packing-slip.pdf', [AsnController::class, 'packingSlipPdf'])->middleware('can:asns.view');
+        Route::get('/{asn}/identification-label.pdf', [AsnController::class, 'identificationLabelPdf'])->middleware('can:asns.view');
+        Route::get('/{asn}/lines/{line}/barcode.pdf', [AsnController::class, 'barcodePdf'])->middleware('can:asns.view');
+        Route::get('/{asn}/product-catalog', [AsnController::class, 'productCatalog'])->middleware('can:asns.view');
+        Route::post('/{asn}/catalog-products', [AsnController::class, 'storeCatalogProduct'])->middleware('can:asns.update');
+        Route::get('/{asn}', [AsnController::class, 'show'])->middleware('can:asns.view');
+        Route::patch('/{asn}', [AsnController::class, 'update'])->middleware('can:asns.update');
+        Route::post('/{asn}/mark-ready', [AsnController::class, 'markReady'])->middleware('can:asns.update');
+        Route::post('/{asn}/reopen-for-edit', [AsnController::class, 'reopenForEdit'])->middleware('can:asns.update');
+        Route::delete('/{asn}', [AsnController::class, 'destroy'])->middleware('can:asns.delete');
+        Route::patch('/{asn}/warehouse-notes', [AsnController::class, 'updateWarehouseNotes'])->middleware('can:asns.update');
+        Route::post('/{asn}/lines', [AsnController::class, 'storeLine'])->middleware('can:asns.create');
+        Route::patch('/{asn}/lines/{line}', [AsnController::class, 'updateLine'])->middleware('can:asns.update');
+        Route::delete('/{asn}/lines/{line}', [AsnController::class, 'destroyLine'])->middleware('can:asns.delete');
+        Route::put('/{asn}/trackings', [AsnController::class, 'syncTrackings'])->middleware('can:asns.update');
+        Route::put('/{asn}/vendor-lines', [AsnController::class, 'syncVendorLines'])->middleware('can:asns.update');
     });
 
     Route::prefix('order-drafts')->group(function () {

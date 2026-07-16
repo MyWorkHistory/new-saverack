@@ -204,7 +204,12 @@ const canViewOrdersWholesale = computed(() =>
 
 const canWriteOrders = computed(() => {
   if (isPortal.value) return false;
-  return hasPerm("orders_create.update", "orders.update");
+  return hasPerm(
+    "orders_create.create",
+    "orders_create.update",
+    "orders.create",
+    "orders.update",
+  );
 });
 
 const clientsGroupOpen = ref(route.path.startsWith("/admin/clients"));

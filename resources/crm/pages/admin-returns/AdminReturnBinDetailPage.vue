@@ -38,7 +38,11 @@ const transferForm = reactive({
 const canTransfer = computed(() => {
   const u = crmUser.value;
   if (!u) return false;
-  return Array.isArray(u.permission_keys) && u.permission_keys.includes("inventory.update");
+  return Array.isArray(u.permission_keys) && (
+    u.permission_keys.includes("returns_bins.update") ||
+    u.permission_keys.includes("returns.update") ||
+    u.permission_keys.includes("inventory.update")
+  );
 });
 
 const lineMenuRow = computed(() => {

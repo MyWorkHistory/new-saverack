@@ -1,7 +1,8 @@
-import { crmIsAdmin, crmIsPortalUser } from "./crmUser";
+import { crmIsPortalUser } from "./crmUser";
+import { userHasModuleAction, userHasPerm } from "./crmPerms";
 
 /**
- * Matches Laravel `shiphero.orders.write`: orders.update for CRM staff.
+ * Matches Laravel `shiphero.orders.write`: any orders create/update/delete for CRM staff.
  * Portal client accounts may mutate their own orders (API enforces client_account_id scope).
  *
  * @param {object|null|undefined} user
@@ -10,11 +11,7 @@ export function canWriteShipHeroOrders(user) {
   if (!user || typeof user !== "object") {
     return false;
   }
-  if (crmIsAdmin(user) || user.is_crm_owner === true || user.is_crm_owner === 1 || user.is_crm_owner === "1") {
-    return true;
-  }
-  const keys = Array.isArray(user.permission_keys) ? user.permission_keys : [];
-  if (keys.includes("orders.update")) {
+  if (userHasModuleAction(user, "orders", ["create", "update", "delete"])) {
     return true;
   }
   if (crmIsPortalUser(user) && Number(user.client_account_id || 0) > 0) {
@@ -22,4 +19,24 @@ export function canWriteShipHeroOrders(user) {
   }
 
   return false;
+}
+
+/**
+ * Create Order page / drawer.
+ */
+export function canCreateOrders(user) {
+  return (
+    userHasPerm(user, "orders_create.create", "orders_create.update", "orders.create") ||
+    userHasModuleAction(user, "orders", ["create", "update"])
+  );
+}
+
+/**
+ * Cancel / remove order (treated as delete).
+ */
+export function canDeleteOrders(user) {
+  return (
+    userHasPerm(user, "orders_search.delete", "orders.delete") ||
+    userHasModuleAction(user, "orders", ["delete", "update"])
+  );
 }

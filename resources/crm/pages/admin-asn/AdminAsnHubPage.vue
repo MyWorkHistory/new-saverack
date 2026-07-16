@@ -1,5 +1,5 @@
 <script setup>
-import { Transition, computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { Transition, computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter, RouterLink } from "vue-router";
 import api from "../../services/api";
 import AsnHubSummaryCards from "../../components/asn/AsnHubSummaryCards.vue";
@@ -16,6 +16,26 @@ import { asnTrackingUrl } from "../../utils/asnTrackingUrl.js";
 import { formatAsnDisplay } from "../../utils/formatAsnDisplay.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
 import { avatarClassFromSeed, initialsFromName } from "../../utils/avatarDisplay.js";
+import { userHasPerm } from "../../utils/crmPerms";
+
+const crmUser = inject("crmUser", ref(null));
+
+const canCreateAsn = computed(() =>
+  userHasPerm(
+    crmUser.value,
+    "receiving_asn.create",
+    "receiving.create",
+    "receiving.update",
+  ),
+);
+const canDeleteAsn = computed(() =>
+  userHasPerm(
+    crmUser.value,
+    "receiving_asn.delete",
+    "receiving.delete",
+    "receiving.update",
+  ),
+);
 
 const toast = useToast();
 const router = useRouter();
@@ -94,9 +114,12 @@ const selectedDeletableIds = computed(() =>
   rows.value.filter((r) => selected.value.has(r.id)).map((r) => r.id),
 );
 
-const bulkDeleteDisabled = computed(() => selectedCount.value === 0);
-
-const manageMenuRowCanDelete = computed(() => Boolean(manageMenuRow.value));
+const manageMenuRowCanDelete = computed(
+  () => Boolean(manageMenuRow.value) && canDeleteAsn.value,
+);
+const bulkDeleteDisabled = computed(
+  () => selectedCount.value === 0 || !canDeleteAsn.value,
+);
 
 const summaryActiveStatus = computed(() =>
   statusFilter.value === "all" ? "" : statusFilter.value,
@@ -497,10 +520,16 @@ onUnmounted(() => {
         <p class="small admin-asn-list__subtitle mb-0">Search by ASN # or tracking #.</p>
       </div>
       <div class="d-flex flex-wrap gap-2 align-items-center">
-        <button type="button" class="btn btn-primary staff-page-primary" @click="openCreateModal">
+        <button
+          v-if="canCreateAsn"
+          type="button"
+          class="btn btn-primary staff-page-primary"
+          @click="openCreateModal"
+        >
           Create ASN
         </button>
         <button
+          v-if="canCreateAsn"
           type="button"
           class="btn btn-outline-secondary orders-toolbar-outline-btn fw-semibold"
           @click="openNonCompliant"

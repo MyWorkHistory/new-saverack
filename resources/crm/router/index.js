@@ -1207,7 +1207,7 @@ export function setOrdersNavFromUser(user) {
       backorder: page("orders_backorder.view"),
       shipped: page("orders_shipped.view"),
       wholesale: page("orders_wholesale.view"),
-      create: k.includes("orders_create.update") || k.includes("orders.update"),
+      create: k.includes("orders_create.create") || k.includes("orders_create.update") || k.includes("orders.update") || k.includes("orders.create"),
     },
   };
 }
@@ -1751,7 +1751,7 @@ async function ensureOrdersRouteAccess(path) {
     }
   }
   if (path === "/admin/orders/create") {
-    return ordersNavCache.pages?.create === true || ordersNavCache.update === true;
+    return ordersNavCache.pages?.create === true;
   }
   if (path.startsWith("/admin/orders") || path.startsWith("/users/orders")) {
     const pages = ordersNavCache.pages || {};

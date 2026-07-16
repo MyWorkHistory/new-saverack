@@ -119,7 +119,36 @@ const canManageReceivingFees = computed(() => {
   if (!u) return false;
   if (Number(u.client_account_id ?? 0) > 0) return false;
   if (crmIsAdmin(u) || u.is_crm_owner) return true;
-  return Array.isArray(u.permission_keys) && u.permission_keys.includes("receiving.update");
+  const keys = Array.isArray(u.permission_keys) ? u.permission_keys : [];
+  return (
+    keys.includes("receiving_asn.update") ||
+    keys.includes("receiving_asn.create") ||
+    keys.includes("receiving.update")
+  );
+});
+
+const canCreateAsn = computed(() => {
+  const u = crmUser.value;
+  if (!u) return false;
+  if (crmIsAdmin(u) || u.is_crm_owner) return true;
+  const keys = Array.isArray(u.permission_keys) ? u.permission_keys : [];
+  return (
+    keys.includes("receiving_asn.create") ||
+    keys.includes("receiving.create") ||
+    keys.includes("receiving.update")
+  );
+});
+
+const canDeleteAsn = computed(() => {
+  const u = crmUser.value;
+  if (!u || !asn.value?.id) return false;
+  if (crmIsAdmin(u) || u.is_crm_owner) return true;
+  const keys = Array.isArray(u.permission_keys) ? u.permission_keys : [];
+  return (
+    keys.includes("receiving_asn.delete") ||
+    keys.includes("receiving.delete") ||
+    keys.includes("receiving.update")
+  );
 });
 
 const feesModalOpen = ref(false);
@@ -244,7 +273,6 @@ const clientAccountId = computed(() => {
   return Number(route.query.client_account_id ?? 0);
 });
 const asnNumericId = computed(() => asnRouteId.value || Number(asn.value?.id ?? 0));
-const canDeleteAsn = computed(() => Boolean(asn.value?.id));
 
 const lineMenuRow = computed(
   () => (asn.value?.lines || []).find((l) => l.id === lineMenuOpenId.value) ?? null,

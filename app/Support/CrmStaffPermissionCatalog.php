@@ -34,7 +34,7 @@ class CrmStaffPermissionCatalog
             $add($rows, 'projects.'.$a, ucfirst($a).' projects', 'projects');
         }
 
-        // Orders subpages
+        // Orders subpages — full CRUD (queue mutations, wholesale, create order)
         foreach ([
             'orders_search' => 'orders search',
             'orders_fulfillment' => 'orders fulfillment',
@@ -45,25 +45,28 @@ class CrmStaffPermissionCatalog
             'orders_wholesale' => 'orders wholesale',
             'orders_create' => 'create order',
         ] as $mod => $label) {
-            $add($rows, $mod.'.view', 'View '.$label, $mod);
-            $add($rows, $mod.'.update', 'Update '.$label, $mod);
+            foreach (['view', 'create', 'update', 'delete'] as $a) {
+                $add($rows, $mod.'.'.$a, ucfirst($a).' '.$label, $mod);
+            }
         }
 
-        // Receiving
+        // Receiving — ASN create/receive/delete; Put Away stock edits
         foreach (['receiving_asn' => 'ASN', 'receiving_put_away' => 'put away'] as $mod => $label) {
-            $add($rows, $mod.'.view', 'View '.$label, $mod);
-            $add($rows, $mod.'.update', 'Update '.$label, $mod);
+            foreach (['view', 'create', 'update', 'delete'] as $a) {
+                $add($rows, $mod.'.'.$a, ucfirst($a).' '.$label, $mod);
+            }
         }
 
-        // Returns
+        // Returns — process create/edit/delete; lists + bins
         foreach ([
             'returns_process' => 'process returns',
             'returns_orders' => 'returned orders',
             'returns_items' => 'returned items',
             'returns_bins' => 'return bins',
         ] as $mod => $label) {
-            $add($rows, $mod.'.view', 'View '.$label, $mod);
-            $add($rows, $mod.'.update', 'Update '.$label, $mod);
+            foreach (['view', 'create', 'update', 'delete'] as $a) {
+                $add($rows, $mod.'.'.$a, ucfirst($a).' '.$label, $mod);
+            }
         }
 
         // Inventory
@@ -73,8 +76,9 @@ class CrmStaffPermissionCatalog
             'inventory_restock' => 'restock',
             'inventory_on_demand' => 'on-demand',
         ] as $mod => $label) {
-            $add($rows, $mod.'.view', 'View '.$label, $mod);
-            $add($rows, $mod.'.update', 'Update '.$label, $mod);
+            foreach (['view', 'create', 'update', 'delete'] as $a) {
+                $add($rows, $mod.'.'.$a, ucfirst($a).' '.$label, $mod);
+            }
         }
 
         // Billing
@@ -117,15 +121,33 @@ class CrmStaffPermissionCatalog
             $add($rows, 'resources.'.$a, ucfirst($a).' resources (legacy)', 'resources');
         }
         $add($rows, 'inventory.view', 'View inventory (legacy)', 'inventory');
+        $add($rows, 'inventory.create', 'Create inventory (legacy)', 'inventory');
         $add($rows, 'inventory.update', 'Update inventory (legacy)', 'inventory');
+        $add($rows, 'inventory.delete', 'Delete inventory (legacy)', 'inventory');
         $add($rows, 'receiving.view', 'View receiving (legacy)', 'receiving');
+        $add($rows, 'receiving.create', 'Create receiving (legacy)', 'receiving');
         $add($rows, 'receiving.update', 'Update receiving (legacy)', 'receiving');
+        $add($rows, 'receiving.delete', 'Delete receiving (legacy)', 'receiving');
         $add($rows, 'returns.view', 'View returns (legacy)', 'returns');
+        $add($rows, 'returns.create', 'Create returns (legacy)', 'returns');
         $add($rows, 'returns.update', 'Update returns (legacy)', 'returns');
+        $add($rows, 'returns.delete', 'Delete returns (legacy)', 'returns');
         $add($rows, 'orders.view', 'View orders (legacy)', 'orders');
+        $add($rows, 'orders.create', 'Create orders (legacy)', 'orders');
         $add($rows, 'orders.update', 'Update orders (legacy)', 'orders');
+        $add($rows, 'orders.delete', 'Delete orders (legacy)', 'orders');
 
         return $rows;
+    }
+
+    /**
+     * Ops modules where legacy `.update` historically covered create/delete mutations.
+     *
+     * @return list<string>
+     */
+    public static function opsModulesWhereUpdateImpliesMutations(): array
+    {
+        return ['orders', 'receiving', 'returns', 'inventory'];
     }
 
     /**
@@ -231,13 +253,24 @@ class CrmStaffPermissionCatalog
         if ($children === null) {
             return [];
         }
-        // orders_create only needs update for "Create Order"; still expand both for consistency.
+
         $out = [];
         foreach ($children as $child) {
             $out[] = $child.'.'.$action;
         }
 
-        return $out;
+        // Legacy update covered create/delete mutations on ops pages.
+        if (
+            $action === 'update'
+            && in_array($module, self::opsModulesWhereUpdateImpliesMutations(), true)
+        ) {
+            foreach ($children as $child) {
+                $out[] = $child.'.create';
+                $out[] = $child.'.delete';
+            }
+        }
+
+        return array_values(array_unique($out));
     }
 
     /**
@@ -254,7 +287,7 @@ class CrmStaffPermissionCatalog
 
         $out = [$key];
 
-        // Checking legacy parent → also accept any child with same action.
+        // Checking legacy parent → also accept any child with same action (+ create/delete for update).
         foreach (self::expandLegacyKey($key) as $child) {
             $out[] = $child;
         }
@@ -264,10 +297,18 @@ class CrmStaffPermissionCatalog
             $module = strtolower($m[1]);
             $action = strtolower($m[2]);
             foreach (self::legacyToChildren() as $legacy => $children) {
-                if (in_array($module, $children, true)) {
-                    $out[] = $legacy.'.'.$action;
-                    break;
+                if (! in_array($module, $children, true)) {
+                    continue;
                 }
+                $out[] = $legacy.'.'.$action;
+                // Child create/delete also satisfied by legacy update on ops modules.
+                if (
+                    in_array($action, ['create', 'delete'], true)
+                    && in_array($legacy, self::opsModulesWhereUpdateImpliesMutations(), true)
+                ) {
+                    $out[] = $legacy.'.update';
+                }
+                break;
             }
         }
 

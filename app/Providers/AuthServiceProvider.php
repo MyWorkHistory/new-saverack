@@ -222,6 +222,165 @@ class AuthServiceProvider extends ServiceProvider
             return $user->hasPermission('returns.update');
         });
 
+        Gate::define('receiving_asn.create', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return $user->hasPermission('receiving_asn.create');
+        });
+
+        Gate::define('receiving_asn.delete', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return $user->hasPermission('receiving_asn.delete');
+        });
+
+        Gate::define('receiving_put_away.create', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return $user->hasPermission('receiving_put_away.create');
+        });
+
+        Gate::define('receiving_put_away.delete', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return $user->hasPermission('receiving_put_away.delete');
+        });
+
+        Gate::define('returns.create', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return true;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return $user->hasPermission('returns.create');
+        });
+
+        Gate::define('returns.delete', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return true;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return $user->hasPermission('returns.delete');
+        });
+
+        Gate::define('orders.create', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return true;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return $user->hasPermission('orders.create');
+        });
+
+        Gate::define('orders.delete', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return true;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return $user->hasPermission('orders.delete');
+        });
+
+        /**
+         * Shared ASN routes (portal + admin hub): portal by account; staff by receiving_asn.*.
+         */
+        Gate::define('asns.view', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return true;
+            }
+
+            return $user->hasPermission('receiving_asn.view');
+        });
+
+        Gate::define('asns.create', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return true;
+            }
+
+            return $user->hasPermission('receiving_asn.create');
+        });
+
+        Gate::define('asns.update', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return true;
+            }
+
+            return $user->hasPermission('receiving_asn.update');
+        });
+
+        Gate::define('asns.delete', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return true;
+            }
+
+            return $user->hasPermission('receiving_asn.delete');
+        });
+
         Gate::define('crm.client-account-options', function ($user) {
             if (! $user) {
                 return false;
@@ -265,7 +424,11 @@ class AuthServiceProvider extends ServiceProvider
                 return false;
             }
 
-            if (Gate::forUser($user)->allows('orders.update')) {
+            if (
+                Gate::forUser($user)->allows('orders.update')
+                || Gate::forUser($user)->allows('orders.create')
+                || Gate::forUser($user)->allows('orders.delete')
+            ) {
                 return true;
             }
 

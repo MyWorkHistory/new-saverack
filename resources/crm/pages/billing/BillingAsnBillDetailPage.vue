@@ -5,6 +5,7 @@ import api from "../../services/api";
 import BillingDollarStatIcon from "../../components/billing/BillingDollarStatIcon.vue";
 import BillingAsnBillLineModal from "../../components/billing/BillingAsnBillLineModal.vue";
 import BillingBillAddToInvoiceDrawer from "../../components/billing/BillingBillAddToInvoiceDrawer.vue";
+import BillingBillDetailsCard from "../../components/billing/BillingBillDetailsCard.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -12,7 +13,7 @@ import { useToast } from "../../composables/useToast.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
 import { formatCents } from "../../utils/formatMoney.js";
-import { formatIsoDate, formatDateTimeUs } from "../../utils/formatUserDates.js";
+import { formatDateUs, formatIsoDate, formatDateTimeUs } from "../../utils/formatUserDates.js";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -82,6 +83,54 @@ const billTotalSubtext = computed(() => {
     return `On invoice #${bill.value.invoice_number}`;
   }
   return "Sum of line items";
+});
+
+const timeFmt = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+function timeUs(val) {
+  if (!val) return "";
+  const d = new Date(val);
+  if (Number.isNaN(d.getTime())) return "";
+  return timeFmt.format(d);
+}
+
+const billDetailFields = computed(() => {
+  const b = bill.value;
+  if (!b) return [];
+  const fields = [
+    { icon: "doc", label: "Bill Type", value: "ASN Bill" },
+    { icon: "calendar", label: "Bill Date", value: formatIsoDate(b.bill_date) },
+    {
+      icon: "clock",
+      label: "Created Date",
+      value: formatDateUs(b.created_at) || "—",
+      sub: timeUs(b.created_at),
+    },
+    { icon: "user", label: "Created By", value: b.created_by_name },
+    {
+      icon: "status",
+      label: "Status",
+      badge: { label: b.status_label, class: statusBadgeClass(b.status) },
+    },
+  ];
+  if (b.asn_number) {
+    fields.push({
+      icon: "box",
+      label: "ASN #",
+      value: b.asn_number,
+      link: b.client_account_asn_id
+        ? {
+            to: { name: "admin-asn-detail", params: { id: String(b.client_account_asn_id) } },
+            label: "View ASN",
+            targetBlank: true,
+          }
+        : null,
+    });
+  }
+  return fields;
 });
 
 const MENU_W = 128;
@@ -335,7 +384,7 @@ async function confirmDeleteBill() {
   try {
     await api.delete(`/asn-bills/${props.id}`);
     toast.success("ASN bill deleted.");
-    router.push("/admin/billing/asn-bills");
+    router.push("/admin/billing/custom-bills");
   } catch (e) {
     toast.errorFrom(e, "Could not delete ASN bill.");
   } finally {
@@ -425,7 +474,7 @@ onUnmounted(() => {
     >
       <RouterLink to="/admin/billing/summary">Billing</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
-      <RouterLink to="/admin/billing/asn-bills">ASN Bills</RouterLink>
+      <RouterLink to="/admin/billing/custom-bills">Custom Bills</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
       <span class="text-body-secondary">{{ bill?.bill_number ? `#${bill.bill_number}` : "Bill" }}</span>
     </nav>
@@ -453,39 +502,51 @@ onUnmounted(() => {
             </RouterLink>
           </p>
         </div>
-        <div
-          v-if="isOpen && canUpdate"
-          class="ms-md-auto d-flex flex-wrap align-items-center gap-2"
-        >
+        <div class="ms-md-auto d-flex flex-wrap align-items-center gap-2">
           <button
+            v-if="isOpen && canUpdate"
             type="button"
             class="btn btn-primary btn-sm staff-page-primary fw-semibold"
             @click="openAddToInvoiceModal"
           >
             Add To Invoice
           </button>
-          <div data-rb-action class="position-relative">
+          <div
+            v-if="canUpdate || canDelete || bill.invoice_id"
+            class="staff-detail-tab-bar-actions"
+            data-rb-action
+          >
             <button
               type="button"
-              class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn fw-semibold d-inline-flex align-items-center gap-2"
-              :class="{ 'is-open': actionMenuOpen }"
+              class="staff-detail-tab-btn"
+              :class="{ 'staff-detail-tab-btn--active': actionMenuOpen }"
+              :aria-expanded="actionMenuOpen"
               aria-haspopup="true"
-              :aria-expanded="actionMenuOpen ? 'true' : 'false'"
+              aria-label="Actions"
               @click.stop="toggleActionMenu"
             >
-              Action
               <svg
-                class="flex-shrink-0"
-                width="14"
-                height="14"
+                class="staff-detail-tab-btn__icon"
+                width="26"
+                height="26"
                 fill="none"
-                viewBox="0 0 24 24"
                 stroke="currentColor"
-                stroke-width="2"
+                stroke-width="1.75"
+                viewBox="0 0 24 24"
                 aria-hidden="true"
               >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
               </svg>
+              <span class="staff-detail-tab-btn__label">Actions</span>
             </button>
           </div>
         </div>
@@ -494,6 +555,23 @@ onUnmounted(() => {
       <div class="row g-4">
         <div class="col-lg-8">
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-0 mb-4">
+            <div class="billing-bill-preview-head">
+              <div class="billing-bill-preview-head__row">
+                <div class="min-w-0">
+                  <div class="billing-bill-section-label">Bill To</div>
+                  <div class="fw-bold text-body fs-6">{{ bill.client_account_name || "—" }}</div>
+                </div>
+                <div class="text-end">
+                  <div class="d-flex align-items-center justify-content-end gap-2">
+                    <span class="badge rounded-pill fw-medium" :class="statusBadgeClass(bill.status)">
+                      {{ bill.status_label }}
+                    </span>
+                    <span class="fw-bold text-body">#{{ bill.bill_number }}</span>
+                  </div>
+                  <div class="small text-secondary mt-1">{{ formatIsoDate(bill.bill_date) }}</div>
+                </div>
+              </div>
+            </div>
             <div class="px-4 py-3 border-bottom d-flex align-items-center justify-content-between gap-2">
               <h2 class="h6 mb-0 fw-semibold">Line Items</h2>
               <button
@@ -593,37 +671,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="staff-surface p-3 p-md-4 mb-4">
-            <dl class="billing-custom-bill-info small mb-0">
-              <div class="billing-custom-bill-info__row">
-                <dt class="text-secondary">Created by</dt>
-                <dd class="mb-0 text-body">{{ bill.created_by_name || "—" }}</dd>
-              </div>
-              <div class="billing-custom-bill-info__row">
-                <dt class="text-secondary">Account</dt>
-                <dd class="mb-0 text-body">{{ bill.client_account_name || "—" }}</dd>
-              </div>
-              <div class="billing-custom-bill-info__row">
-                <dt class="text-secondary">Date</dt>
-                <dd class="mb-0 text-body">{{ formatIsoDate(bill.bill_date) }}</dd>
-              </div>
-              <div v-if="bill.asn_number" class="billing-custom-bill-info__row">
-                <dt class="text-secondary">ASN #</dt>
-                <dd class="mb-0 text-body">
-                  {{ bill.asn_number }}
-                  <RouterLink
-                    v-if="bill.client_account_asn_id"
-                    :to="{ name: 'admin-asn-detail', params: { id: String(bill.client_account_asn_id) } }"
-                    class="ms-2 text-decoration-none"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    View ASN
-                  </RouterLink>
-                </dd>
-              </div>
-            </dl>
-          </div>
+          <BillingBillDetailsCard class="mb-4" :fields="billDetailFields" />
 
           <div class="staff-surface p-3 p-md-4">
             <h2 class="h6 fw-semibold mb-3">History</h2>
@@ -661,8 +709,14 @@ onUnmounted(() => {
         :style="{ top: `${actionMenuRect.top}px`, left: `${actionMenuRect.left}px` }"
         @click.stop
       >
-        <button type="button" class="staff-row-menu__item" role="menuitem" @click="openEditDateModal">
-          Edit Bill Date
+        <button
+          v-if="isOpen && canUpdate"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openEditDateModal"
+        >
+          Edit
         </button>
         <RouterLink
           v-if="bill?.invoice_id"
@@ -683,7 +737,7 @@ onUnmounted(() => {
             deleteBillModalOpen = true;
           "
         >
-          Delete Bill
+          Delete
         </button>
       </div>
     </Teleport>
@@ -799,20 +853,6 @@ onUnmounted(() => {
   max-width: 7rem;
 }
 
-.billing-custom-bill-info {
-  display: grid;
-  gap: 0.5rem 1rem;
-  grid-template-columns: minmax(6rem, auto) 1fr;
-}
-.billing-custom-bill-info__row {
-  display: contents;
-}
-.billing-custom-bill-info__row dt {
-  margin: 0;
-}
-.billing-custom-bill-info__row dd {
-  margin: 0;
-}
 .billing-custom-bill-history__item + .billing-custom-bill-history__item {
   margin-top: 0.75rem;
   padding-top: 0.75rem;

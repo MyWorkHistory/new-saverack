@@ -48,7 +48,7 @@ const bulkAddOpen = ref(false);
 const bulkBusy = ref(false);
 
 const manageMenuRow = computed(
-  () => rows.value.find((r) => r.id === manageOpenId.value) ?? null,
+  () => rows.value.find((r) => rowKey(r) === manageOpenId.value) ?? null,
 );
 
 const showingFrom = computed(() => {
@@ -67,33 +67,38 @@ const deleteBusy = ref(false);
 const query = reactive({
   search: "",
   status: "all",
+  bill_kind: "all",
   client_account_id: "",
   date_from: "",
   date_to: "",
   per_page: DEFAULT_PER_PAGE,
   page: 1,
-  sort_by: "id",
   sort_dir: "desc",
 });
 
+function rowKey(row) {
+  return `${row.bill_kind || "custom"}:${row.id}`;
+}
+
 const isAllPageSelected = computed(
-  () => rows.value.length > 0 && rows.value.every((r) => selectedIds.value.includes(r.id)),
+  () =>
+    rows.value.length > 0 &&
+    rows.value.every((r) => selectedIds.value.includes(rowKey(r))),
 );
 
 const selectedRows = computed(() => {
   const idSet = new Set(selectedIds.value);
-  return rows.value.filter((r) => idSet.has(r.id));
+  return rows.value.filter((r) => idSet.has(rowKey(r)));
 });
 
-const selectedOpenCount = computed(
-  () => selectedRows.value.filter((r) => r.status === "open").length,
+const selectedCustomOpen = computed(() =>
+  selectedRows.value.filter((r) => r.bill_kind === "custom" && r.status === "open"),
 );
 
+const selectedOpenCount = computed(() => selectedCustomOpen.value.length);
+
 const selectedOpenWithLinesCount = computed(
-  () =>
-    selectedRows.value.filter(
-      (r) => r.status === "open" && Number(r.items_count ?? 0) > 0,
-    ).length,
+  () => selectedCustomOpen.value.filter((r) => Number(r.items_count ?? 0) > 0).length,
 );
 
 let searchDebounce = null;
@@ -110,7 +115,7 @@ watch(
 );
 
 watch(
-  () => [query.status, query.client_account_id, query.date_from, query.date_to],
+  () => [query.status, query.bill_kind, query.client_account_id, query.date_from, query.date_to],
   () => {
     query.page = 1;
     selectedIds.value = [];
@@ -118,22 +123,23 @@ watch(
   },
 );
 
-function toggleRowSelect(id) {
-  const i = selectedIds.value.indexOf(id);
+function toggleRowSelect(row) {
+  const key = rowKey(row);
+  const i = selectedIds.value.indexOf(key);
   if (i === -1) {
-    selectedIds.value = [...selectedIds.value, id];
+    selectedIds.value = [...selectedIds.value, key];
   } else {
-    selectedIds.value = selectedIds.value.filter((x) => x !== id);
+    selectedIds.value = selectedIds.value.filter((x) => x !== key);
   }
 }
 
 function toggleSelectAllPage() {
   if (isAllPageSelected.value) {
-    const pageIds = new Set(rows.value.map((r) => r.id));
+    const pageIds = new Set(rows.value.map((r) => rowKey(r)));
     selectedIds.value = selectedIds.value.filter((id) => !pageIds.has(id));
   } else {
     const next = new Set(selectedIds.value);
-    rows.value.forEach((r) => next.add(r.id));
+    rows.value.forEach((r) => next.add(rowKey(r)));
     selectedIds.value = [...next];
   }
 }
@@ -150,16 +156,16 @@ async function fetchMeta() {
 async function fetchRows() {
   loading.value = true;
   try {
-    const { data } = await api.get("/custom-bills", {
+    const { data } = await api.get("/billing/bills", {
       params: {
         search: query.search || undefined,
         status: query.status !== "all" ? query.status : undefined,
+        bill_kind: query.bill_kind !== "all" ? query.bill_kind : undefined,
         client_account_id: query.client_account_id || undefined,
         date_from: query.date_from || undefined,
         date_to: query.date_to || undefined,
         per_page: query.per_page,
         page: query.page,
-        sort_by: query.sort_by,
         sort_dir: query.sort_dir,
       },
     });
@@ -171,7 +177,7 @@ async function fetchRows() {
       per_page: data?.per_page ?? query.per_page,
     };
   } catch (e) {
-    toast.errorFrom(e, "Could not load custom bills.");
+    toast.errorFrom(e, "Could not load bills.");
     rows.value = [];
   } finally {
     loading.value = false;
@@ -180,6 +186,22 @@ async function fetchRows() {
 
 function statusBadgeClass(status) {
   return status === "invoiced" ? "bg-success-subtle text-success" : "bg-warning-subtle text-warning";
+}
+
+function kindBadgeClass(kind) {
+  if (kind === "asn") return "bg-info-subtle text-info";
+  if (kind === "return") return "bg-secondary-subtle text-secondary";
+  return "bg-primary-subtle text-primary";
+}
+
+function detailPath(row) {
+  return row.detail_path || `/admin/billing/custom-bills/${row.id}`;
+}
+
+function refDisplay(row) {
+  if (!row.ref_value) return "—";
+  if (row.ref_label) return `${row.ref_label} ${row.ref_value}`.replace(/\s+/g, " ").trim();
+  return row.ref_value;
 }
 
 function placeManageMenu(anchorEl) {
@@ -198,14 +220,15 @@ function closeManageMenu() {
   manageOpenId.value = null;
 }
 
-async function toggleManageMenu(rowId, e) {
+async function toggleManageMenu(row, e) {
   e.stopPropagation();
-  if (manageOpenId.value === rowId) {
+  const key = rowKey(row);
+  if (manageOpenId.value === key) {
     closeManageMenu();
     return;
   }
   const btn = e.currentTarget;
-  manageOpenId.value = rowId;
+  manageOpenId.value = key;
   await nextTick();
   requestAnimationFrame(() => {
     if (btn instanceof HTMLElement) placeManageMenu(btn);
@@ -231,15 +254,16 @@ function openDeleteModal(row) {
 }
 
 async function confirmDelete() {
-  if (!deleteTarget.value) return;
+  if (!deleteTarget.value || deleteTarget.value.bill_kind !== "custom") return;
   const deletedId = deleteTarget.value.id;
+  const deletedKey = rowKey(deleteTarget.value);
   deleteBusy.value = true;
   try {
     await api.delete(`/custom-bills/${deletedId}`);
     toast.success("Custom bill deleted.");
     deleteModalOpen.value = false;
     deleteTarget.value = null;
-    selectedIds.value = selectedIds.value.filter((id) => id !== deletedId);
+    selectedIds.value = selectedIds.value.filter((id) => id !== deletedKey);
     await fetchRows();
   } catch (e) {
     toast.errorFrom(e, "Could not delete custom bill.");
@@ -254,30 +278,25 @@ const bulkDeleteMessage = computed(() => {
   if (open === total) {
     return `Delete ${open} selected custom bill${open === 1 ? "" : "s"}? This cannot be undone.`;
   }
-  return `Delete ${open} open bill${open === 1 ? "" : "s"} from ${total} selected? Invoiced bills will be skipped.`;
+  return `Delete ${open} open custom bill${open === 1 ? "" : "s"} from ${total} selected? ASN, Return, and invoiced bills will be skipped.`;
 });
 
 const bulkAddMessage = computed(() => {
   const total = selectedIds.value.length;
   const eligible = selectedOpenWithLinesCount.value;
-  return `Add ${eligible} open bill${eligible === 1 ? "" : "s"} to each account's newest draft invoice? Bills are processed one by one; line items are not combined. ${total - eligible > 0 ? `${total - eligible} selected bill${total - eligible === 1 ? "" : "s"} will be skipped (invoiced or no lines).` : ""}`;
+  return `Add ${eligible} open custom bill${eligible === 1 ? "" : "s"} to each account's newest draft invoice? Bills are processed one by one; line items are not combined. ${total - eligible > 0 ? `${total - eligible} selected bill${total - eligible === 1 ? "" : "s"} will be skipped (non-custom, invoiced, or no lines).` : ""}`;
 });
 
 async function confirmBulkDelete() {
-  const ids = [...selectedIds.value];
-  if (!ids.length || bulkBusy.value) return;
+  const customOpen = selectedCustomOpen.value;
+  if (!customOpen.length || bulkBusy.value) return;
   bulkBusy.value = true;
   let deleted = 0;
-  let skipped = 0;
+  let skipped = selectedIds.value.length - customOpen.length;
   try {
-    for (const id of ids) {
-      const row = rows.value.find((r) => r.id === id);
-      if (!row || row.status !== "open") {
-        skipped++;
-        continue;
-      }
+    for (const row of customOpen) {
       try {
-        await api.delete(`/custom-bills/${id}`);
+        await api.delete(`/custom-bills/${row.id}`);
         deleted++;
       } catch {
         skipped++;
@@ -299,27 +318,24 @@ async function confirmBulkDelete() {
 }
 
 async function confirmBulkAddToInvoices() {
-  const ids = [...selectedIds.value];
-  if (!ids.length || bulkBusy.value) return;
+  const customOpen = selectedCustomOpen.value.filter(
+    (r) => Number(r.items_count ?? 0) > 0,
+  );
+  if (!selectedIds.value.length || bulkBusy.value) return;
   bulkBusy.value = true;
   let added = 0;
-  let skipped = 0;
+  let skipped = selectedIds.value.length - customOpen.length;
   let failed = 0;
   try {
-    for (const id of ids) {
-      const row = rows.value.find((r) => r.id === id);
-      if (!row || row.status !== "open" || Number(row.items_count ?? 0) <= 0) {
-        skipped++;
-        continue;
-      }
+    for (const row of customOpen) {
       try {
-        const { data: draftData } = await api.get(`/custom-bills/${id}/draft-invoices`);
+        const { data: draftData } = await api.get(`/custom-bills/${row.id}/draft-invoices`);
         const drafts = Array.isArray(draftData?.invoices) ? draftData.invoices : [];
         if (!drafts.length) {
           failed++;
           continue;
         }
-        await api.post(`/custom-bills/${id}/add-to-invoice`, {
+        await api.post(`/custom-bills/${row.id}/add-to-invoice`, {
           invoice_id: Number(drafts[0].id),
         });
         added++;
@@ -363,7 +379,7 @@ onMounted(async () => {
   document.addEventListener("click", onDocClick);
   setCrmPageMeta({
     title: "Save Rack | Custom Bills",
-    description: "Custom bills for client accounts.",
+    description: "Custom, ASN, and Return bills for client accounts.",
   });
   try {
     await fetchMeta();
@@ -387,7 +403,7 @@ onUnmounted(() => {
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-semibold text-body">Custom Bills</h1>
         <p class="text-secondary small mb-0">
-          Create bills and add their lines to draft invoices when ready.
+          Custom, ASN, and Return bills — add lines to draft invoices when ready.
         </p>
       </div>
       <div v-if="canCreate" class="ms-md-auto">
@@ -408,7 +424,7 @@ onUnmounted(() => {
             v-model="query.search"
             type="search"
             class="form-control staff-toolbar-search staff-toolbar-search--inline"
-            placeholder="Search bill # or account"
+            placeholder="Search bill #, account, ASN, RMA, or project"
             autocomplete="off"
           />
           <div class="position-relative flex-shrink-0" data-toolbar-filter>
@@ -431,6 +447,7 @@ onUnmounted(() => {
                   class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
                   @click="
                     query.status = 'all';
+                    query.bill_kind = 'all';
                     query.client_account_id = '';
                     query.date_from = '';
                     query.date_to = '';
@@ -446,6 +463,13 @@ onUnmounted(() => {
                   <option value="all">All</option>
                   <option value="open">Open</option>
                   <option value="invoiced">Invoiced</option>
+                </select>
+                <label class="form-label">Type</label>
+                <select v-model="query.bill_kind" class="form-select mb-3">
+                  <option value="all">All</option>
+                  <option value="custom">Custom</option>
+                  <option value="asn">ASN</option>
+                  <option value="return">Return</option>
                 </select>
                 <label class="form-label">Account</label>
                 <CrmSearchableSelect
@@ -567,8 +591,10 @@ onUnmounted(() => {
                 />
               </th>
               <th class="staff-table-head__th" scope="col">Status</th>
-              <th class="staff-table-head__th" scope="col">Bill #</th>
+              <th class="staff-table-head__th" scope="col">Type</th>
+              <th class="staff-table-head__th" scope="col">Bill # / Name</th>
               <th class="staff-table-head__th" scope="col">Account</th>
+              <th class="staff-table-head__th" scope="col">Ref</th>
               <th class="staff-table-head__th" scope="col">Date</th>
               <th class="staff-table-head__th text-end" scope="col">Price</th>
               <th
@@ -582,20 +608,20 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td :colspan="showCheckboxColumn ? (canDelete ? 7 : 6) : (canDelete ? 6 : 5)" class="py-5">
+              <td :colspan="showCheckboxColumn ? (canDelete ? 9 : 8) : (canDelete ? 8 : 7)" class="py-5">
                 <div class="d-flex justify-content-center py-3">
-                  <CrmLoadingSpinner message="Loading custom bills…" />
+                  <CrmLoadingSpinner message="Loading bills…" />
                 </div>
               </td>
             </tr>
-            <tr v-for="row in rows" v-else :key="row.id" class="align-middle">
+            <tr v-for="row in rows" v-else :key="rowKey(row)" class="align-middle">
               <td v-if="showCheckboxColumn" class="staff-checkbox-col">
                 <input
                   type="checkbox"
                   class="form-check-input"
-                  :checked="selectedIds.includes(row.id)"
+                  :checked="selectedIds.includes(rowKey(row))"
                   :aria-label="`Select bill #${row.bill_number}`"
-                  @change="toggleRowSelect(row.id)"
+                  @change="toggleRowSelect(row)"
                 />
               </td>
               <td>
@@ -603,9 +629,14 @@ onUnmounted(() => {
                   {{ row.status_label }}
                 </span>
               </td>
+              <td>
+                <span class="badge rounded-pill fw-medium" :class="kindBadgeClass(row.bill_kind)">
+                  {{ row.bill_kind_label || "Custom" }}
+                </span>
+              </td>
               <td class="fw-medium text-body">
                 <RouterLink
-                  :to="`/admin/billing/custom-bills/${row.id}`"
+                  :to="detailPath(row)"
                   class="text-decoration-none text-body"
                 >
                   {{ row.display_name || row.bill_number }}
@@ -613,6 +644,9 @@ onUnmounted(() => {
               </td>
               <td class="text-secondary staff-table-cell__meta">
                 {{ row.client_account_name || "—" }}
+              </td>
+              <td class="text-secondary staff-table-cell__meta text-nowrap">
+                {{ refDisplay(row) }}
               </td>
               <td class="text-body staff-table-cell__meta text-nowrap">
                 {{ formatIsoDate(row.bill_date) }}
@@ -625,18 +659,18 @@ onUnmounted(() => {
                 class="staff-actions-cell text-center billing-custom-bills-actions-col"
               >
                 <div
-                  v-if="row.status === 'open'"
+                  v-if="row.bill_kind === 'custom' && row.status === 'open'"
                   data-row-actions
                   class="staff-actions-inner staff-actions-inner--single"
                 >
                   <button
                     type="button"
                     class="staff-action-btn staff-action-btn--more"
-                    :class="{ 'is-open': manageOpenId === row.id }"
-                    :aria-expanded="manageOpenId === row.id"
+                    :class="{ 'is-open': manageOpenId === rowKey(row) }"
+                    :aria-expanded="manageOpenId === rowKey(row)"
                     aria-haspopup="true"
                     aria-label="Row actions"
-                    @click="toggleManageMenu(row.id, $event)"
+                    @click="toggleManageMenu(row, $event)"
                   >
                     <CrmIconRowActions variant="horizontal" />
                   </button>
@@ -645,10 +679,10 @@ onUnmounted(() => {
             </tr>
             <tr v-if="!loading && !rows.length">
               <td
-                :colspan="showCheckboxColumn ? (canDelete ? 7 : 6) : (canDelete ? 6 : 5)"
+                :colspan="showCheckboxColumn ? (canDelete ? 9 : 8) : (canDelete ? 8 : 7)"
                 class="px-4 py-5 text-center text-secondary"
               >
-                No custom bills found.
+                No bills found.
               </td>
             </tr>
           </tbody>
@@ -702,7 +736,7 @@ onUnmounted(() => {
         @click.stop
       >
         <button
-          v-if="canDelete && manageMenuRow.status === 'open'"
+          v-if="canDelete && manageMenuRow.bill_kind === 'custom' && manageMenuRow.status === 'open'"
           type="button"
           class="staff-row-menu__item staff-row-menu__item--danger"
           role="menuitem"

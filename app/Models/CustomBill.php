@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class CustomBill extends Model
 {
@@ -53,6 +54,11 @@ class CustomBill extends Model
     public function histories(): HasMany
     {
         return $this->hasMany(CustomBillHistory::class)->orderByDesc('id');
+    }
+
+    public function project(): HasOne
+    {
+        return $this->hasOne(Project::class, 'custom_bill_id');
     }
 
     public function isOpen(): bool

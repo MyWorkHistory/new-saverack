@@ -37,7 +37,7 @@ class CustomBillService
         $sortDir = strtolower((string) ($filters['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
 
         $query = CustomBill::query()
-            ->with(['clientAccount:id,company_name'])
+            ->with(['clientAccount:id,company_name', 'project:id,custom_bill_id,pid'])
             ->withCount('items');
 
         if (! empty($filters['status']) && $filters['status'] !== 'all') {
@@ -311,7 +311,7 @@ class CustomBillService
 
     public function toDetailArray(CustomBill $bill): array
     {
-        $bill->loadMissing(['items', 'clientAccount', 'createdBy', 'histories.user', 'invoice']);
+        $bill->loadMissing(['items', 'clientAccount', 'createdBy', 'histories.user', 'invoice', 'project']);
 
         return [
             'id' => $bill->id,
@@ -327,6 +327,8 @@ class CustomBillService
             'invoice_id' => $bill->invoice_id,
             'invoice_number' => $bill->invoice ? $bill->invoice->invoice_number : null,
             'created_by_name' => $bill->createdBy ? $bill->createdBy->name : null,
+            'project_id' => $bill->project ? $bill->project->id : null,
+            'project_pid' => $bill->project ? $bill->project->pid : null,
             'items' => $bill->items->map(function (CustomBillItem $item) {
                 return $this->itemToArray($item);
             })->values()->all(),
@@ -353,7 +355,7 @@ class CustomBillService
 
     private function toListArray(CustomBill $bill): array
     {
-        $bill->loadMissing('clientAccount');
+        $bill->loadMissing(['clientAccount', 'project']);
 
         return [
             'id' => $bill->id,
@@ -368,6 +370,8 @@ class CustomBillService
             'total_cents' => (int) $bill->total_cents,
             'invoice_id' => $bill->invoice_id,
             'items_count' => (int) ($bill->items_count ?? 0),
+            'project_id' => $bill->project ? $bill->project->id : null,
+            'project_pid' => $bill->project ? $bill->project->pid : null,
         ];
     }
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AsnController;
 use App\Http\Controllers\Api\ReturnController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BillingSummaryController;
+use App\Http\Controllers\Api\BillingBillsController;
 use App\Http\Controllers\Api\CustomBillController;
 use App\Http\Controllers\Api\ClientAccountController;
 use App\Http\Controllers\Api\ClientAccountOnboardingController;
@@ -89,6 +90,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/billing/summary', BillingSummaryController::class)
         ->name('billing.summary');
+
+    Route::get('/billing/bills', [BillingBillsController::class, 'index'])
+        ->name('billing.bills');
 
     Route::prefix('settings/pricing-fees')->group(function () {
         Route::get('/', [PricingFeeTemplateController::class, 'index']);

@@ -71,14 +71,11 @@ const canViewBillingSummary = computed(() =>
 const canViewBillingInvoices = computed(() =>
   hasPerm("billing_invoices.view", "billing.view"),
 );
-const canViewBillingCustomBills = computed(() =>
-  hasPerm("billing_custom_bills.view", "billing.view"),
-);
-const canViewBillingAsnBills = computed(() =>
-  hasPerm("billing_asn_bills.view", "billing.view"),
-);
-const canViewBillingReturnBills = computed(() =>
-  hasPerm("billing_return_bills.view", "billing.view"),
+const canViewBillingCustomBills = computed(
+  () =>
+    hasPerm("billing_custom_bills.view", "billing.view") ||
+    hasPerm("billing_asn_bills.view", "billing.view") ||
+    hasPerm("billing_return_bills.view", "billing.view"),
 );
 
 const canViewResources = computed(() => {
@@ -299,9 +296,13 @@ function navActive(mode) {
   if (mode === "inventory-on-demand") return p.startsWith("/admin/inventory/on-demand");
   if (mode === "billing-summary") return p === "/admin/billing/summary";
   if (mode === "billing-invoices") return p.startsWith("/admin/billing/invoices");
-  if (mode === "billing-custom-bills") return p.startsWith("/admin/billing/custom-bills");
-  if (mode === "billing-return-bills") return p.startsWith("/admin/billing/return-bills");
-  if (mode === "billing-asn-bills") return p.startsWith("/admin/billing/asn-bills");
+  if (mode === "billing-custom-bills") {
+    return (
+      p.startsWith("/admin/billing/custom-bills") ||
+      p.startsWith("/admin/billing/asn-bills") ||
+      p.startsWith("/admin/billing/return-bills")
+    );
+  }
   if (mode === "resources-tutorials") return p.startsWith("/admin/resources/tutorials");
   if (mode === "resources-photos") return p.startsWith("/admin/resources/photos");
   if (mode === "resources-calendar-events") {
@@ -1005,26 +1006,6 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Custom Bills
-                  </RouterLink>
-                </li>
-                <li v-if="canViewBillingAsnBills">
-                  <RouterLink
-                    to="/admin/billing/asn-bills"
-                    class="vx-nav-link vx-nav-sublink"
-                    :class="{ 'vx-nav-link--active': navActive('billing-asn-bills') }"
-                    @click="closeMobile"
-                  >
-                    ASN Bills
-                  </RouterLink>
-                </li>
-                <li v-if="canViewBillingReturnBills">
-                  <RouterLink
-                    to="/admin/billing/return-bills"
-                    class="vx-nav-link vx-nav-sublink"
-                    :class="{ 'vx-nav-link--active': navActive('billing-return-bills') }"
-                    @click="closeMobile"
-                  >
-                    Returns Bills
                   </RouterLink>
                 </li>
               </ul>

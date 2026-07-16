@@ -33,8 +33,6 @@ import BillingSummaryPage from "../pages/billing/BillingSummaryPage.vue";
 import BillingInvoicesListPage from "../pages/billing/BillingInvoicesListPage.vue";
 import BillingInvoiceDetailPage from "../pages/billing/BillingInvoiceDetailPage.vue";
 import BillingCustomBillsListPage from "../pages/billing/BillingCustomBillsListPage.vue";
-import BillingReturnBillsListPage from "../pages/billing/BillingReturnBillsListPage.vue";
-import BillingAsnBillsListPage from "../pages/billing/BillingAsnBillsListPage.vue";
 import BillingCustomBillDetailPage from "../pages/billing/BillingCustomBillDetailPage.vue";
 import BillingReturnBillDetailPage from "../pages/billing/BillingReturnBillDetailPage.vue";
 import BillingAsnBillDetailPage from "../pages/billing/BillingAsnBillDetailPage.vue";
@@ -136,7 +134,7 @@ const meta = {
   },
   billingCustomBills: {
     title: "Save Rack | Custom Bills",
-    description: "Custom bills for client accounts.",
+    description: "Custom, ASN, and Return bills for client accounts.",
   },
   billingCustomBillDetail: {
     title: "Save Rack | Custom Bill",
@@ -522,9 +520,7 @@ const routes = [
   },
   {
     path: "/admin/billing/return-bills",
-    name: "billing-return-bills",
-    component: BillingReturnBillsListPage,
-    meta: meta.billingReturnBills,
+    redirect: "/admin/billing/custom-bills",
   },
   {
     path: "/admin/billing/return-bills/:id",
@@ -535,9 +531,7 @@ const routes = [
   },
   {
     path: "/admin/billing/asn-bills",
-    name: "billing-asn-bills",
-    component: BillingAsnBillsListPage,
-    meta: meta.billingAsnBills,
+    redirect: "/admin/billing/custom-bills",
   },
   {
     path: "/admin/billing/asn-bills/:id",
@@ -1076,7 +1070,10 @@ export function setBillingNavFromUser(user) {
     pages: {
       summary: page("billing_summary.view"),
       invoices: page("billing_invoices.view"),
-      customBills: page("billing_custom_bills.view"),
+      customBills:
+        page("billing_custom_bills.view") ||
+        page("billing_asn_bills.view") ||
+        page("billing_return_bills.view"),
       asnBills: page("billing_asn_bills.view"),
       returnBills: page("billing_return_bills.view"),
     },

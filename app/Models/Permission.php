@@ -97,7 +97,7 @@ class Permission extends Model
 
             $meta = $metaByKey[$key] ?? [
                 'label' => $key,
-                'module' => (str_contains($key, '.')) ? strstr($key, '.', true) : 'crm',
+                'module' => (strpos($key, '.') !== false) ? strstr($key, '.', true) : 'crm',
             ];
 
             static::query()->firstOrCreate(['key' => $key], $meta);

@@ -168,24 +168,6 @@ class ShipHeroWebhookPayloadResolver
 
     private function findAccountByShipHeroCustomerId(string $customerId): ?ClientAccount
     {
-        $customerId = trim($customerId);
-        if ($customerId === '') {
-            return null;
-        }
-
-        $exact = ClientAccount::query()
-            ->where('shiphero_customer_account_id', $customerId)
-            ->first();
-        if ($exact !== null) {
-            return $exact;
-        }
-
-        if (ctype_digit($customerId)) {
-            return ClientAccount::query()
-                ->where('shiphero_customer_account_id', 'like', '%'.$customerId)
-                ->first();
-        }
-
-        return null;
+        return ClientAccount::resolveByShipHeroCustomerId($customerId);
     }
 }

@@ -9,6 +9,24 @@ const ACTION_HEADERS = ["View", "Create", "Edit", "Delete"];
 const ACTION_SUFFIXES = ["view", "create", "update", "delete"];
 
 const PAGE_META = {
+  dashboard: {
+    moduleKey: "dashboard",
+    moduleLabel: "Dashboard",
+    rowLabel: "Dashboard",
+    order: 10,
+  },
+  tickets: {
+    moduleKey: "tickets",
+    moduleLabel: "Tickets",
+    rowLabel: "Tickets",
+    order: 20,
+  },
+  resources: {
+    moduleKey: "resources",
+    moduleLabel: "Resources",
+    rowLabel: "Resources",
+    order: 25,
+  },
   clients: {
     moduleKey: "clients",
     moduleLabel: "Clients",
@@ -18,8 +36,20 @@ const PAGE_META = {
   client_users: {
     moduleKey: "clients",
     moduleLabel: "Clients",
-    rowLabel: "Account users",
+    rowLabel: "Account Users",
     order: 31,
+  },
+  stores: {
+    moduleKey: "clients",
+    moduleLabel: "Clients",
+    rowLabel: "Stores",
+    order: 32,
+  },
+  projects: {
+    moduleKey: "projects",
+    moduleLabel: "Projects",
+    rowLabel: "Projects",
+    order: 35,
   },
   billing: {
     moduleKey: "billing",
@@ -68,7 +98,10 @@ const loading = ref(true);
 const saving = ref(false);
 const errorMsg = ref("");
 const subject = ref(null);
+/** Direct user grants only (what Save writes). */
 const draftKeys = ref([]);
+/** Role grants shown as checked + locked. */
+const roleKeys = ref([]);
 const permissionDefs = ref([]);
 const modules = computed(() => {
   const byModule = new Map();
@@ -118,6 +151,8 @@ const editablePermissionKeys = computed(() =>
     modules.value.flatMap((m) => m.rows.flatMap((r) => r.keys.filter(Boolean))),
   ),
 );
+const roleKeySet = computed(() => new Set(roleKeys.value));
+const hasRoleGrants = computed(() => roleKeys.value.length > 0);
 const expanded = ref({});
 
 const isAdminTarget = computed(() => subject.value?.is_admin === true);
@@ -139,15 +174,21 @@ async function load() {
       nextExpanded[mod.key] = expanded.value[mod.key] ?? true;
     }
     expanded.value = nextExpanded;
-    const merged = Array.isArray(userRes.data.permission_keys)
-      ? [...userRes.data.permission_keys]
-      : [];
+
+    const editable = editablePermissionKeys.value;
     const direct = Array.isArray(userRes.data.direct_permission_keys)
-      ? [...userRes.data.direct_permission_keys]
-      : null;
-    const source = direct !== null ? direct : merged;
-    draftKeys.value = source.filter(
-      (k) => typeof k === "string" && editablePermissionKeys.value.has(k),
+      ? userRes.data.direct_permission_keys
+      : [];
+    const role = Array.isArray(userRes.data.role_permission_keys)
+      ? userRes.data.role_permission_keys
+      : [];
+
+    roleKeys.value = role.filter(
+      (k) => typeof k === "string" && editable.has(k),
+    );
+    // Direct draft only — role grants are shown separately as locked checks.
+    draftKeys.value = direct.filter(
+      (k) => typeof k === "string" && editable.has(k),
     );
   } catch (e) {
     const st = e.response?.status;
@@ -175,14 +216,21 @@ function toggleExpanded(modKey) {
   expanded.value[modKey] = !expanded.value[modKey];
 }
 
+function isRoleGranted(key) {
+  return !!(key && roleKeySet.value.has(key));
+}
+
 function hasKey(key) {
+  if (!key) return false;
   if (isAdminTarget.value) return true;
-  return draftKeys.value.includes(key);
+  return draftKeys.value.includes(key) || isRoleGranted(key);
 }
 
 function setKey(key, on) {
   if (!key) return;
   if (isAdminTarget.value) return;
+  // Role grants cannot be removed from this matrix (they come from the Staff role).
+  if (isRoleGranted(key) && !on) return;
   const next = new Set(draftKeys.value);
   if (on) {
     next.add(key);
@@ -192,15 +240,41 @@ function setKey(key, on) {
   draftKeys.value = [...next];
 }
 
+function keysForColumn(module, colIdx) {
+  return (module?.rows || []).map((r) => r.keys[colIdx]).filter(Boolean);
+}
+
+function toggleableKeysForColumn(module, colIdx) {
+  return keysForColumn(module, colIdx).filter((k) => !isRoleGranted(k));
+}
+
+function columnAllChecked(module, colIdx) {
+  const keys = keysForColumn(module, colIdx);
+  return keys.length > 0 && keys.every((k) => hasKey(k));
+}
+
+function columnSomeChecked(module, colIdx) {
+  const keys = keysForColumn(module, colIdx);
+  if (keys.length === 0) return false;
+  const some = keys.some((k) => hasKey(k));
+  return some && !columnAllChecked(module, colIdx);
+}
+
+function columnDisabled(module, colIdx) {
+  if (isAdminTarget.value) return true;
+  return toggleableKeysForColumn(module, colIdx).length === 0;
+}
+
 function onColToggle(module, colIdx, ev) {
+  if (columnDisabled(module, colIdx)) return;
   const on = ev.target.checked;
-  for (const row of module.rows) {
-    setKey(row.keys[colIdx], on);
+  for (const key of toggleableKeysForColumn(module, colIdx)) {
+    setKey(key, on);
   }
 }
 
 function onCellToggle(key, ev) {
-  if (!key) return;
+  if (!key || isRoleGranted(key)) return;
   setKey(key, ev.target.checked);
 }
 
@@ -211,10 +285,12 @@ async function save() {
   if (isAdminTarget.value || saving.value) return;
   saving.value = true;
   try {
+    // Persist direct grants only. Role grants stay on the Staff role.
+    const payloadKeys = draftKeys.value.filter((k) =>
+      editablePermissionKeys.value.has(k),
+    );
     await api.put(`/users/${props.userId}/permissions`, {
-      permission_keys: draftKeys.value.filter((k) =>
-        editablePermissionKeys.value.has(k),
-      ),
+      permission_keys: payloadKeys,
     });
     toast.success("Permissions Saved.");
     await load();
@@ -285,6 +361,13 @@ function normalizePermissionDefs(items) {
       >
         This User Is An Administrator And Has Full Access. These Permissions
         Are Not Stored Per User.
+      </p>
+      <p
+        v-else-if="hasRoleGrants"
+        class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200"
+      >
+        Checked boxes that are disabled come from the Staff role and always stay
+        on. Your Save updates the additional permissions you toggle here.
       </p>
 
       <div
@@ -366,16 +449,9 @@ function normalizePermissionDefs(items) {
                         <input
                           type="checkbox"
                           :class="checkboxClass"
-                          :checked="
-                            mod.rows.length > 0 &&
-                            mod.rows.every((r) => hasKey(r.keys[colIdx]))
-                          "
-                          :indeterminate.prop="
-                            mod.rows.length > 0 &&
-                            !mod.rows.every((r) => hasKey(r.keys[colIdx])) &&
-                            mod.rows.some((r) => hasKey(r.keys[colIdx]))
-                          "
-                          :disabled="isAdminTarget"
+                          :checked="columnAllChecked(mod, colIdx)"
+                          :indeterminate.prop="columnSomeChecked(mod, colIdx)"
+                          :disabled="columnDisabled(mod, colIdx)"
                           :aria-label="`${mod.label} ${col}`"
                           @change="onColToggle(mod, colIdx, $event)"
                         />
@@ -413,7 +489,14 @@ function normalizePermissionDefs(items) {
                           type="checkbox"
                           :class="checkboxClass"
                           :checked="hasKey(colKey)"
-                          :disabled="isAdminTarget || !colKey"
+                          :disabled="
+                            isAdminTarget || !colKey || isRoleGranted(colKey)
+                          "
+                          :title="
+                            isRoleGranted(colKey)
+                              ? 'Granted by Staff role'
+                              : undefined
+                          "
                           :aria-label="`${row.rowLabel} ${ACTION_HEADERS[colIdx]}`"
                           @change="onCellToggle(colKey, $event)"
                         />

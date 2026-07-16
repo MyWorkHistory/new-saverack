@@ -304,8 +304,7 @@ class OrderDashboardSnapshotService
 
         $startedAt = microtime(true);
         $accounts = ClientAccount::query()
-            ->whereNotNull('shiphero_customer_account_id')
-            ->where('shiphero_customer_account_id', '!=', '')
+            ->operationalForOrderDashboards()
             ->orderBy('company_name')
             ->get(['id', 'company_name', 'status', 'shiphero_customer_account_id']);
 
@@ -1396,8 +1395,7 @@ class OrderDashboardSnapshotService
     private function shipHeroLinkedAccounts(): array
     {
         return ClientAccount::query()
-            ->whereNotNull('shiphero_customer_account_id')
-            ->where('shiphero_customer_account_id', '!=', '')
+            ->operationalForOrderDashboards()
             ->orderBy('company_name')
             ->get()
             ->all();
@@ -1516,10 +1514,28 @@ class OrderDashboardSnapshotService
 
         $payload = is_array($row->payload) ? $row->payload : [];
         $accounts = isset($payload['accounts']) && is_array($payload['accounts']) ? $payload['accounts'] : [];
+        $hasAccountBreakdown = false;
+        foreach ($accounts as $entry) {
+            if (is_array($entry) && (int) ($entry['account_id'] ?? 0) > 0) {
+                $hasAccountBreakdown = true;
+                break;
+            }
+        }
+
+        if ($hasAccountBreakdown) {
+            $accounts = $this->filterOperationalDashboardAccounts($accounts);
+            $totalCount = 0;
+            foreach ($accounts as $entry) {
+                $totalCount += (int) ($entry['orders_count'] ?? 0);
+            }
+        } else {
+            $accounts = [];
+            $totalCount = (int) $row->total_count;
+        }
 
         return [
             'section_key' => (string) $row->section_key,
-            'total_count' => (int) $row->total_count,
+            'total_count' => $totalCount,
             'status' => (string) $row->status,
             'refreshed_at' => $row->refreshed_at !== null ? $row->refreshed_at->toIso8601String() : null,
             'refresh_started_at' => $row->refresh_started_at !== null ? $row->refresh_started_at->toIso8601String() : null,
@@ -1528,6 +1544,64 @@ class OrderDashboardSnapshotService
             'accounts' => $accounts,
             'truncated' => (bool) ($payload['truncated'] ?? false),
         ];
+    }
+
+    /**
+     * Drop inactive/deleted/stale account cards from stored snapshots and refresh names/status.
+     *
+     * @param  list<mixed>  $accounts
+     * @return list<array<string, mixed>>
+     */
+    private function filterOperationalDashboardAccounts(array $accounts): array
+    {
+        $ids = [];
+        foreach ($accounts as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+            $id = (int) ($entry['account_id'] ?? 0);
+            if ($id > 0) {
+                $ids[$id] = true;
+            }
+        }
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $live = ClientAccount::query()
+            ->operationalForOrderDashboards()
+            ->whereIn('id', array_keys($ids))
+            ->get(['id', 'company_name', 'status'])
+            ->keyBy('id');
+
+        $out = [];
+        foreach ($accounts as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+            $id = (int) ($entry['account_id'] ?? 0);
+            if ($id <= 0 || ! $live->has($id)) {
+                continue;
+            }
+            $account = $live->get($id);
+            $count = (int) ($entry['orders_count'] ?? 0);
+            if ($count <= 0) {
+                continue;
+            }
+            $out[] = [
+                'account_id' => $id,
+                'account_name' => (string) $account->company_name,
+                'account_status' => (string) $account->status,
+                'orders_count' => $count,
+            ];
+        }
+
+        usort($out, static function (array $a, array $b) {
+            return ($b['orders_count'] ?? 0) <=> ($a['orders_count'] ?? 0);
+        });
+
+        return $out;
     }
 
     private function validateSectionKey(string $sectionKey): void

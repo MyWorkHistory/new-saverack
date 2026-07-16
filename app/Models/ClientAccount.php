@@ -144,6 +144,71 @@ class ClientAccount extends Model
         'order_queue_sync_started_at' => 'datetime',
     ];
 
+    /**
+     * Accounts linked to a ShipHero customer id (any CRM status).
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeWithShipHeroCustomerLink($query)
+    {
+        return $query
+            ->whereNotNull('shiphero_customer_account_id')
+            ->where('shiphero_customer_account_id', '!=', '');
+    }
+
+    /**
+     * Active accounts used for home / fulfillment / on-hold order dashboards.
+     * Inactive, paused, and pending accounts are excluded so cards match list pages
+     * and ShipHero "hide orders from app" for non-active statuses.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeOperationalForOrderDashboards($query)
+    {
+        return $query
+            ->withShipHeroCustomerLink()
+            ->where('status', self::STATUS_ACTIVE);
+    }
+
+    /**
+     * Resolve CRM account for a ShipHero customer id.
+     * Prefers active, then paused, then any exact match. No fuzzy substring matching.
+     */
+    public static function resolveByShipHeroCustomerId(string $customerId): ?self
+    {
+        $customerId = trim($customerId);
+        if ($customerId === '') {
+            return null;
+        }
+
+        $matches = static::query()
+            ->where('shiphero_customer_account_id', $customerId)
+            ->orderBy('id')
+            ->get();
+
+        if ($matches->isEmpty()) {
+            return null;
+        }
+
+        $active = $matches->first(static function (self $account) {
+            return $account->status === self::STATUS_ACTIVE;
+        });
+        if ($active instanceof self) {
+            return $active;
+        }
+
+        $paused = $matches->first(static function (self $account) {
+            return $account->status === self::STATUS_PAUSED;
+        });
+        if ($paused instanceof self) {
+            return $paused;
+        }
+
+        return $matches->first();
+    }
+
     protected static function booted(): void
     {
         static::created(static function (ClientAccount $account) {

@@ -489,8 +489,7 @@ class ShipHeroOrderQueueIndexService
     public function syncAllLinkedAccounts(?string $tab = null): void
     {
         $accounts = ClientAccount::query()
-            ->whereNotNull('shiphero_customer_account_id')
-            ->where('shiphero_customer_account_id', '!=', '')
+            ->operationalForOrderDashboards()
             ->orderBy('id')
             ->get();
 
@@ -817,8 +816,7 @@ class ShipHeroOrderQueueIndexService
         }
 
         $accounts = ClientAccount::query()
-            ->whereNotNull('shiphero_customer_account_id')
-            ->where('shiphero_customer_account_id', '!=', '')
+            ->operationalForOrderDashboards()
             ->orderBy('company_name')
             ->get(['id', 'company_name', 'status', 'shiphero_customer_account_id']);
 
@@ -883,8 +881,7 @@ class ShipHeroOrderQueueIndexService
     public function aggregateDistinctOnHoldTotal(): int
     {
         $accounts = ClientAccount::query()
-            ->whereNotNull('shiphero_customer_account_id')
-            ->where('shiphero_customer_account_id', '!=', '')
+            ->operationalForOrderDashboards()
             ->get(['id']);
 
         $total = 0;
@@ -987,8 +984,7 @@ class ShipHeroOrderQueueIndexService
 
         $tab = $mapping['queue_kind'];
         $linkedCount = ClientAccount::query()
-            ->whereNotNull('shiphero_customer_account_id')
-            ->where('shiphero_customer_account_id', '!=', '')
+            ->operationalForOrderDashboards()
             ->count();
 
         if ($linkedCount <= 0) {

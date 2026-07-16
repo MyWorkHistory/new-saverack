@@ -360,6 +360,32 @@ class User extends Authenticatable
     }
 
     /**
+     * Permission keys granted via roles (not direct user pivot), limited to CRM matrix keys.
+     *
+     * @return list<string>
+     */
+    public function roleCrmPermissionKeys(): array
+    {
+        $this->loadMissing('roles.permissions');
+        $allowed = array_flip(self::editableCrmPermissionKeys());
+        $out = [];
+        foreach ($this->roles as $role) {
+            foreach ($role->permissions as $permission) {
+                $raw = $permission->getAttribute('key');
+                if (! is_string($raw)) {
+                    continue;
+                }
+                $k = trim($raw);
+                if ($k !== '' && isset($allowed[$k])) {
+                    $out[] = $k;
+                }
+            }
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    /**
      * API shape for auth and user detail (exposes merged permission_keys, hides raw permissions pivot list).
      *
      * @return array<string, mixed>
@@ -394,6 +420,7 @@ class User extends Authenticatable
         return array_merge($arr, [
             'permission_keys' => $this->allPermissionKeys(),
             'direct_permission_keys' => $this->directCrmPermissionKeys(),
+            'role_permission_keys' => $this->roleCrmPermissionKeys(),
             'is_admin' => $this->isAdministrator(),
             'is_crm_owner' => $this->isCrmOwner(),
             'client_account_id' => $this->client_account_id,

@@ -648,7 +648,6 @@ onUnmounted(() => {
             >
               <span
                 class="wholesale-header-info-btn__icon"
-                style="background: #fef3c7; color: #b45309"
                 aria-hidden="true"
               >
                 <CrmMaterialIcon name="inventoryBox" :size="18" />
@@ -662,7 +661,6 @@ onUnmounted(() => {
             >
               <span
                 class="wholesale-header-info-btn__icon"
-                style="background: #e0e7ff; color: #3730a3"
                 aria-hidden="true"
               >
                 <CrmMaterialIcon name="package" :size="18" />
@@ -672,14 +670,17 @@ onUnmounted(() => {
             <RouterLink
               v-if="showPickListLink"
               :to="pickListRoute"
-              class="btn btn-primary staff-page-primary fw-semibold"
+              class="wholesale-header-info-btn"
             >
-              Pick List
+              <span class="wholesale-header-info-btn__icon" aria-hidden="true">
+                <CrmMaterialIcon name="taskAlt" :size="18" />
+              </span>
+              <span class="wholesale-header-info-btn__label">Pick List</span>
             </RouterLink>
             <button
               v-if="showReadyToShipButton"
               type="button"
-              class="btn btn-primary staff-page-primary"
+              class="btn wholesale-ready-to-ship-btn"
               :disabled="!canReadyToShip || readyToShipBusy"
               :title="!canReadyToShip ? readyToShipDisabledReason : undefined"
               @click="submitReadyToShip"
@@ -1408,10 +1409,14 @@ onUnmounted(() => {
   font-size: 0.8125rem;
   font-weight: 600;
   line-height: 1.2;
+  text-decoration: none;
 }
 
-.wholesale-header-info-btn:hover {
-  background: var(--bs-tertiary-bg);
+.wholesale-header-info-btn:hover,
+.wholesale-header-info-btn:focus-visible {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .wholesale-header-info-btn__icon {
@@ -1422,9 +1427,31 @@ onUnmounted(() => {
   height: 1.875rem;
   border-radius: 0.4375rem;
   flex-shrink: 0;
+  background: #dbeafe;
+  color: #2563eb;
 }
 
 .wholesale-header-info-btn__label {
   white-space: nowrap;
+}
+
+.wholesale-ready-to-ship-btn {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 600;
+}
+
+.wholesale-ready-to-ship-btn:hover:not(:disabled),
+.wholesale-ready-to-ship-btn:focus-visible:not(:disabled) {
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.wholesale-ready-to-ship-btn:disabled {
+  border-color: #93c5fd;
+  background: #93c5fd;
+  color: #fff;
 }
 </style>

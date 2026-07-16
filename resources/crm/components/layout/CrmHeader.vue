@@ -38,8 +38,6 @@ const staffLookupAccountOptions = computed(() =>
 );
 const portalSearch = ref("");
 const portalSearchLoading = ref(false);
-const staffSearch = ref("");
-const staffSearchLoading = ref(false);
 const staffLookupAccountId = ref("");
 const staffLookupAccountsLoading = ref(false);
 const staffLookupAccounts = ref([]);
@@ -124,62 +122,15 @@ async function loadStaffLookupAccounts() {
   }
 }
 
-async function submitStaffSearch() {
-  const q = staffSearch.value.trim();
-  if (!q || staffSearchLoading.value) return;
-  staffSearchLoading.value = true;
-  try {
-    const params = { query: q };
-    if (Number(staffLookupAccountId.value || 0) > 0) {
-      params.client_account_id = Number(staffLookupAccountId.value);
-    }
-    const { data } = await api.get("/crm/lookup", { params });
-    const accountId = data?.client_account_id;
-    if (data?.type === "order") {
-      const query =
-        accountId != null && accountId !== ""
-          ? { client_account_id: String(accountId) }
-          : {};
-      const returnTo = buildOrderDetailReturnTo(route);
-      if (returnTo) {
-        query.return_to = returnTo;
-      }
-      await router.push({
-        name: "order-detail",
-        params: { shipheroOrderId: String(data.shiphero_order_id) },
-        query,
-      });
-      staffSearch.value = "";
-    } else if (data?.type === "sku") {
-      const query =
-        accountId != null && accountId !== ""
-          ? { client_account_id: String(accountId) }
-          : {};
-      await router.push({
-        name: "inventory-detail",
-        params: { sku: String(data.sku) },
-        query,
-      });
-      staffSearch.value = "";
-    }
-  } catch (e) {
-    const status = e?.response?.status;
-    const msg = e?.response?.data?.message;
-    if (status === 404 || status === 422) {
-      toast.error(typeof msg === "string" && msg ? msg : "Not found.");
-    } else {
-      toast.errorFrom(e, "Search failed.");
-    }
-  } finally {
-    staffSearchLoading.value = false;
-  }
-}
+function openStaffAccount(value) {
+  const accountId = Number(value || 0);
+  if (accountId <= 0) return;
 
-function onStaffSearchKeydown(e) {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    submitStaffSearch();
-  }
+  const href = router.resolve({
+    name: "client-account-detail",
+    params: { id: String(accountId) },
+  }).href;
+  window.open(href, "_blank", "noopener,noreferrer");
 }
 
 async function submitPortalSearch() {
@@ -445,63 +396,16 @@ onUnmounted(() => {
               v-model="staffLookupAccountId"
               class="staff-toolbar-search staff-toolbar-search--inline flex-shrink-0 crm-header-lookup-account"
               appearance="staff"
-              aria-label="Limit search to account"
+              aria-label="Open account"
               :options="staffLookupAccountOptions"
-              :disabled="staffLookupAccountsLoading || staffSearchLoading"
-              placeholder="All accounts"
+              :disabled="staffLookupAccountsLoading"
+              placeholder="Select Account"
               search-placeholder="Search accounts…"
               :allow-empty="true"
-              empty-label="All accounts"
+              empty-label="Select Account"
               button-id="crm-header-lookup-account-trigger"
+              @update:model-value="openStaffAccount"
             />
-            <div class="vx-search-merge flex-grow-1 min-w-0">
-              <div class="input-group">
-                <span class="input-group-text border-end-0">
-                  <svg
-                    width="20"
-                    height="20"
-                    class="text-secondary opacity-75 flex-shrink-0"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    aria-hidden="true"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
-                </span>
-                <input
-                  v-model="staffSearch"
-                  type="search"
-                  class="form-control border-start-0"
-                  :placeholder="staffSearchLoading ? 'Searching…' : 'Search Exact Order # or SKU'"
-                  autocomplete="off"
-                  aria-label="Search exact order number or SKU"
-                  :disabled="staffSearchLoading"
-                  :aria-busy="staffSearchLoading"
-                  @keydown="onStaffSearchKeydown"
-                />
-              </div>
-            </div>
-            <button
-              type="button"
-              class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn flex-shrink-0 d-inline-flex align-items-center"
-              :disabled="staffSearchLoading || !staffSearch.trim()"
-              :aria-busy="staffSearchLoading"
-              @click="submitStaffSearch"
-            >
-              <span
-                v-if="staffSearchLoading"
-                class="spinner-border spinner-border-sm me-1"
-                role="status"
-                aria-hidden="true"
-              />
-              {{ staffSearchLoading ? "Searching…" : "Search" }}
-            </button>
           </div>
 
           <div class="d-flex align-items-center flex-shrink-0 ms-auto gap-1">

@@ -64,6 +64,17 @@ class PutAwayRowBuilder
      */
     public static function pickLocationLabel(array $locations): ?string
     {
+        $parts = self::pickLocationLabels($locations);
+
+        return $parts !== [] ? implode(', ', $parts) : null;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $locations
+     * @return list<string>
+     */
+    public static function pickLocationLabels(array $locations): array
+    {
         $parts = [];
         foreach ($locations as $loc) {
             if (! is_array($loc)) {
@@ -86,7 +97,7 @@ class PutAwayRowBuilder
             $parts[] = $name.' ('.$qty.')';
         }
 
-        return $parts !== [] ? implode(', ', $parts) : null;
+        return $parts;
     }
 
     /**

@@ -101,6 +101,16 @@ function locationLabel(value) {
   return v || "—";
 }
 
+function pickLocationLabels(line) {
+  const values = Array.isArray(line?.pick_locations)
+    ? line.pick_locations.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+  if (values.length) return values;
+
+  const fallback = String(line?.pick_location || "").trim();
+  return fallback ? [fallback] : ["—"];
+}
+
 async function markAllPicked(order) {
   if (!order?.id || !order.is_fully_picked || markBusyId.value) return;
   markBusyId.value = order.id;
@@ -285,9 +295,15 @@ onMounted(() => {
 
             <div class="wholesale-pick-item-row__metric">
               <p class="wholesale-pick-item-row__metric-label">Pick Location</p>
-              <span class="wholesale-pick-location-pill wholesale-pick-location-pill--pick">
-                {{ locationLabel(line.pick_location) }}
-              </span>
+              <div class="wholesale-pick-location-list">
+                <span
+                  v-for="(location, locationIndex) in pickLocationLabels(line)"
+                  :key="`${line.id}-pick-location-${locationIndex}`"
+                  class="wholesale-pick-location-pill wholesale-pick-location-pill--pick"
+                >
+                  {{ location }}
+                </span>
+              </div>
             </div>
 
             <div class="wholesale-pick-item-row__action">

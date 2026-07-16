@@ -74,6 +74,7 @@ async function save() {
     });
     emit("saved", data);
     toast.success(`${title.value} saved.`);
+    emit("update:open", false);
   } catch (e) {
     toast.errorFrom(e, `Could not save ${title.value.toLowerCase()}.`);
   } finally {
@@ -162,6 +163,14 @@ async function sendToSlack() {
       >
         <CrmLoadingSpinner v-if="slackBusy" small class="me-1" />
         Send to Slack
+      </button>
+      <button
+        type="button"
+        class="btn btn-outline-secondary"
+        :disabled="busy || slackBusy"
+        @click="close"
+      >
+        Cancel
       </button>
       <button type="button" class="btn btn-primary staff-page-primary" :disabled="busy || slackBusy" @click="save">
         <CrmLoadingSpinner v-if="busy" small class="me-1" />

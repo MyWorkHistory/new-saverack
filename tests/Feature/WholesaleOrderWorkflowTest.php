@@ -888,6 +888,12 @@ class WholesaleOrderWorkflowTest extends TestCase
                                 'pickable' => true,
                             ],
                             [
+                                'location_id' => 'pick-2',
+                                'location_name' => 'A-02',
+                                'quantity' => 3,
+                                'pickable' => true,
+                            ],
+                            [
                                 'location_id' => 'back-1',
                                 'location_name' => 'OS-1',
                                 'quantity' => 25,
@@ -902,9 +908,12 @@ class WholesaleOrderWorkflowTest extends TestCase
 
         $this->getJson('/api/admin/wholesale-orders/pick-list?client_account_id='.$account->id)
             ->assertOk()
-            ->assertJsonPath('orders.0.lines.0.pick_location', 'A-01 (5)')
+            ->assertJsonPath('orders.0.lines.0.pick_location', 'A-01 (5), A-02 (3)')
+            ->assertJsonPath('orders.0.lines.0.pick_locations.0', 'A-01 (5)')
+            ->assertJsonPath('orders.0.lines.0.pick_locations.1', 'A-02 (3)')
             ->assertJsonPath('orders.0.lines.0.backstock_location', 'OS-1 (25)')
             ->assertJsonPath('orders.0.lines.1.pick_location', null)
+            ->assertJsonPath('orders.0.lines.1.pick_locations', [])
             ->assertJsonPath('orders.0.lines.1.backstock_location', null);
     }
 

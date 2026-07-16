@@ -1479,6 +1479,7 @@ class WholesaleOrderController extends Controller
                     $imageBySku[$key] ?? null,
                     is_array($loc) ? ($loc['pick_location'] ?? null) : null,
                     is_array($loc) ? ($loc['backstock_location'] ?? null) : null,
+                    is_array($loc) ? ($loc['pick_locations'] ?? []) : [],
                 );
             })->values()->all(),
         ];
@@ -1491,7 +1492,8 @@ class WholesaleOrderController extends Controller
         WholesaleOrderLine $line,
         ?string $resolvedImageUrl = null,
         ?string $pickLocation = null,
-        ?string $backstockLocation = null
+        ?string $backstockLocation = null,
+        array $pickLocations = []
     ): array {
         return [
             'id' => $line->id,
@@ -1504,11 +1506,12 @@ class WholesaleOrderController extends Controller
             'is_fully_picked' => $line->isFullyPicked(),
             'backstock_location' => $backstockLocation,
             'pick_location' => $pickLocation,
+            'pick_locations' => array_values($pickLocations),
         ];
     }
 
     /**
-     * @return array<string, array{pick_location: ?string, backstock_location: ?string}>
+     * @return array<string, array{pick_location: ?string, backstock_location: ?string, pick_locations: list<string>}>
      */
     private function resolvePickListLocationsBySku(WholesaleOrder $order): array
     {
@@ -1540,6 +1543,7 @@ class WholesaleOrderController extends Controller
                 $out[$key] = [
                     'pick_location' => null,
                     'backstock_location' => null,
+                    'pick_locations' => [],
                 ];
                 continue;
             }
@@ -1548,6 +1552,7 @@ class WholesaleOrderController extends Controller
             $out[$key] = [
                 'pick_location' => PutAwayRowBuilder::pickLocationLabel($locations),
                 'backstock_location' => PutAwayRowBuilder::backstockLocationLabel($locations),
+                'pick_locations' => PutAwayRowBuilder::pickLocationLabels($locations),
             ];
         }
 

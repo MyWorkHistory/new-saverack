@@ -73,13 +73,14 @@ class PutAwayRowBuilderTest extends TestCase
 
     public function test_pick_location_label_joins_multiple_pickable_bins(): void
     {
-        $label = PutAwayRowBuilder::pickLocationLabel([
+        $locations = [
             ['location_name' => 'A-01', 'quantity' => 1, 'pickable' => true],
             ['location_name' => 'A-02', 'quantity' => 2, 'pickable' => true],
             ['location_name' => 'OS-1', 'quantity' => 10, 'pickable' => false],
-        ]);
+        ];
 
-        $this->assertSame('A-01 (1), A-02 (2)', $label);
+        $this->assertSame('A-01 (1), A-02 (2)', PutAwayRowBuilder::pickLocationLabel($locations));
+        $this->assertSame(['A-01 (1)', 'A-02 (2)'], PutAwayRowBuilder::pickLocationLabels($locations));
     }
 
     public function test_backstock_location_excludes_receiving(): void

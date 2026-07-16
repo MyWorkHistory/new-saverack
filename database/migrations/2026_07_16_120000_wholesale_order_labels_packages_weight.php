@@ -18,7 +18,7 @@ return new class extends Migration
             $table->unsignedInteger('sort_order')->default(0);
             $table->timestamps();
 
-            $table->index(['wholesale_order_id', 'sort_order']);
+            $table->index(['wholesale_order_id', 'sort_order'], 'wo_ship_labels_order_sort_idx');
         });
 
         Schema::create('wholesale_order_packages', function (Blueprint $table) {
@@ -32,7 +32,7 @@ return new class extends Migration
             $table->unsignedInteger('sort_order')->default(0);
             $table->timestamps();
 
-            $table->index(['wholesale_order_id', 'package_type', 'sort_order']);
+            $table->index(['wholesale_order_id', 'package_type', 'sort_order'], 'wo_packages_order_type_sort_idx');
         });
 
         Schema::table('wholesale_orders', function (Blueprint $table) {

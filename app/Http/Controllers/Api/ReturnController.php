@@ -475,9 +475,7 @@ class ReturnController extends Controller
             $return->items_count = 0;
             $return->save();
 
-            if ($return->isAdminCreated()) {
-                app(ReturnFeeService::class)->seedReturnFees($return);
-            }
+            app(ReturnFeeService::class)->seedReturnFees($return);
 
             return $return;
         });
@@ -494,11 +492,6 @@ class ReturnController extends Controller
     public function show(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
     {
         $this->authorizeReturn($request, $clientAccountReturn);
-
-        if (! $clientAccountReturn->feesAreLocked()) {
-            app(ReturnFeeService::class)->seedReturnFees($clientAccountReturn);
-            $clientAccountReturn->refresh();
-        }
 
         return response()->json($this->serializeReturn($clientAccountReturn));
     }

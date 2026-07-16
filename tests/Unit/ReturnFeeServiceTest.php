@@ -14,12 +14,22 @@ class ReturnFeeServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_account_defaults_resolve_template_line_codes_by_label(): void
+    public function test_account_defaults_prefer_positive_template_fee_over_legacy_zero(): void
     {
         $account = ClientAccount::query()->create([
             'status' => ClientAccount::STATUS_ACTIVE,
             'company_name' => 'Return Fee Co',
             'email' => 'return-fee@example.test',
+        ]);
+
+        ClientAccountFee::query()->create([
+            'client_account_id' => $account->id,
+            'fee_group' => ClientAccountFee::GROUP_RETURNS,
+            'line_code' => ClientAccountFee::LINE_RETURNS_PROCESSING,
+            'label' => null,
+            'amount' => '0.0000',
+            'currency' => 'USD',
+            'sort_order' => 0,
         ]);
 
         $template = PricingFeeTemplate::query()->create([
@@ -51,15 +61,13 @@ class ReturnFeeServiceTest extends TestCase
             'sort_order' => 2,
         ]);
 
-        $defaults = app(ReturnFeeService::class)->accountDefaults(
-            $account->fresh(['feeItems.pricingTemplate'])
-        );
+        $defaults = app(ReturnFeeService::class)->accountDefaults($account);
 
         $this->assertSame(8.5, $defaults['first_item']);
         $this->assertSame(2.25, $defaults['additional_item']);
     }
 
-    public function test_seed_fills_null_fees_from_account_defaults(): void
+    public function test_serialize_replaces_placeholder_zero_with_account_fee(): void
     {
         $account = ClientAccount::query()->create([
             'status' => ClientAccount::STATUS_ACTIVE,
@@ -70,7 +78,8 @@ class ReturnFeeServiceTest extends TestCase
         ClientAccountFee::query()->create([
             'client_account_id' => $account->id,
             'fee_group' => ClientAccountFee::GROUP_RETURNS,
-            'line_code' => ClientAccountFee::LINE_RETURNS_PROCESSING,
+            'line_code' => 'template_42',
+            'label' => 'Returns Processing',
             'amount' => '6.0000',
             'currency' => 'USD',
             'sort_order' => 0,
@@ -86,10 +95,13 @@ class ReturnFeeServiceTest extends TestCase
             'customer_name' => 'Customer',
             'items_count' => 1,
             'created_source' => ClientAccountReturn::SOURCE_PORTAL,
+            'return_fee_first_item' => '0.0000',
+            'return_fee_additional_item' => null,
         ]);
 
-        app(ReturnFeeService::class)->seedReturnFees($return);
+        $fees = app(ReturnFeeService::class)->serializeReturnFees($return->fresh('clientAccount'));
 
+        $this->assertSame(6.0, $fees['first_item']);
         $this->assertSame('6.0000', (string) $return->fresh()->return_fee_first_item);
     }
 }

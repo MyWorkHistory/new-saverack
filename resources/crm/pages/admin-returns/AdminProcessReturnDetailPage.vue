@@ -97,6 +97,12 @@ function syncSelectionFromLines() {
   );
 }
 
+function feeAmountMissing(value) {
+  if (value === null || value === undefined || value === "") return true;
+  const n = Number(value);
+  return !Number.isFinite(n) || n === 0;
+}
+
 function applyReturnData(data) {
   ret.value = data;
   returnFees.value = data?.return_fees || {};
@@ -110,6 +116,70 @@ function applyReturnData(data) {
   }
   lineRestock.value = restockMap;
   syncSelectionFromLines();
+}
+
+/**
+ * Process detail can load older returns that never got account fees seeded.
+ * Create-from-order works because draft creation seeds fees; mirror that here
+ * using the same account id already on the return.
+ */
+async function ensureAccountReturnFees(returnData) {
+  const accountId = Number(returnData?.client_account_id || 0);
+  if (!accountId) return;
+  const locked = Boolean(returnData?.return_fees?.locked);
+  if (locked) return;
+
+  const current = returnFees.value || {};
+  const needsFirst = feeAmountMissing(current.first_item);
+  const needsAdditional = feeAmountMissing(current.additional_item);
+  const needsNonCompliant =
+    Boolean(returnData?.is_non_compliant) && feeAmountMissing(current.non_compliant);
+  if (!needsFirst && !needsAdditional && !needsNonCompliant) return;
+
+  try {
+    const { data: defaults } = await api.get("/admin/returns/fee-defaults", {
+      params: { client_account_id: accountId },
+    });
+    const next = { ...current };
+    let changed = false;
+    if (needsFirst && !feeAmountMissing(defaults?.first_item)) {
+      next.first_item = Number(defaults.first_item);
+      next.first_item_label = defaults.first_item_label || next.first_item_label;
+      changed = true;
+    }
+    if (needsAdditional && !feeAmountMissing(defaults?.additional_item)) {
+      next.additional_item = Number(defaults.additional_item);
+      next.additional_item_label =
+        defaults.additional_item_label || next.additional_item_label;
+      changed = true;
+    }
+    if (needsNonCompliant && !feeAmountMissing(defaults?.non_compliant)) {
+      next.non_compliant = Number(defaults.non_compliant);
+      next.non_compliant_label =
+        defaults.non_compliant_label || next.non_compliant_label;
+      changed = true;
+    }
+    if (!changed) return;
+
+    returnFees.value = next;
+
+    if (!returnData?.id) return;
+    const payload = {};
+    if (needsFirst && next.first_item != null) payload.first_item = next.first_item;
+    if (needsAdditional && next.additional_item != null) {
+      payload.additional_item = next.additional_item;
+    }
+    if (needsNonCompliant && next.non_compliant != null) {
+      payload.non_compliant = next.non_compliant;
+    }
+    if (Object.keys(payload).length === 0) return;
+    const { data } = await api.patch(`/admin/returns/${returnData.id}/fees`, payload);
+    if (data?.return_fees) {
+      returnFees.value = { ...returnFees.value, ...data.return_fees };
+    }
+  } catch {
+    /* keep whatever the return payload had */
+  }
 }
 
 function toggleAll() {
@@ -289,6 +359,7 @@ async function load() {
   try {
     const { data } = await api.get(`/returns/${returnId.value}`);
     applyReturnData(data);
+    await ensureAccountReturnFees(data);
     setCrmPageMeta({
       title: `Save Rack | ${formatRmaLabel(data.rma_number) || "Process Return"}`,
       description: "Process a pending return.",

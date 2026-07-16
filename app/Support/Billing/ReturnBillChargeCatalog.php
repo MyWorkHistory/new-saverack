@@ -107,20 +107,39 @@ class ReturnBillChargeCatalog
     self::assertValidLineType($lineType);
     $feeLineCode = self::DEFINITIONS[$lineType]['fee_line_code'];
     $displayName = self::DEFINITIONS[$lineType]['display_name'];
-    $account->loadMissing(['feeItems.pricingTemplate']);
+    $account->unsetRelation('feeItems');
+    $account->load(['feeItems.pricingTemplate']);
+
+    $candidates = [];
     foreach ($account->feeItems as $fee) {
       if (! $fee instanceof ClientAccountFee) {
         continue;
       }
-      if ($fee->fee_group !== ClientAccountFee::GROUP_RETURNS) {
+      if ($fee->fee_group !== ClientAccountFee::GROUP_RETURNS && ! self::looksLikeReturnsFee($fee)) {
         continue;
       }
-      if (self::feeMatchesLineCode($fee, $feeLineCode, $displayName)) {
-        return (int) round(((float) ($fee->amount ?? 0)) * 100);
+      if (! self::feeMatchesLineCode($fee, $feeLineCode, $displayName)) {
+        continue;
+      }
+      $candidates[] = (int) round(((float) ($fee->amount ?? 0)) * 100);
+    }
+
+    foreach ($candidates as $cents) {
+      if ($cents > 0) {
+        return $cents;
       }
     }
 
-    return 0;
+    return $candidates[0] ?? 0;
+  }
+
+  private static function looksLikeReturnsFee(ClientAccountFee $fee): bool
+  {
+    $haystack = self::normalizeFeeKey(trim(
+      (string) ($fee->label ?? '').' '.(string) (optional($fee->pricingTemplate)->name ?? '')
+    ));
+
+    return str_contains($haystack, 'return');
   }
 
   private static function feeMatchesLineCode(ClientAccountFee $fee, string $lineCode, string $displayName): bool
@@ -135,11 +154,34 @@ class ReturnBillChargeCatalog
       return true;
     }
 
+    $templateName = '';
     if ($fee->relationLoaded('pricingTemplate') && $fee->pricingTemplate !== null) {
       $templateName = self::normalizeFeeKey((string) ($fee->pricingTemplate->name ?? ''));
       if ($templateName !== '' && $templateName === $wanted) {
         return true;
       }
+    }
+
+    $haystack = trim($label.' '.$templateName.' '.self::normalizeFeeKey((string) ($fee->line_code ?? '')));
+    if ($haystack === '') {
+      return false;
+    }
+
+    if ($lineCode === ClientAccountFee::LINE_RETURNS_NON_COMPLIANT) {
+      return str_contains($haystack, 'non') && str_contains($haystack, 'compliant');
+    }
+    if ($lineCode === ClientAccountFee::LINE_RETURNS_ADDITIONAL_ITEMS) {
+      return str_contains($haystack, 'return') && str_contains($haystack, 'additional');
+    }
+    if ($lineCode === ClientAccountFee::LINE_RETURNS_PROCESSING) {
+      if (str_contains($haystack, 'additional') || str_contains($haystack, 'assembly')
+        || str_contains($haystack, 'repack') || str_contains($haystack, 'disposal')
+        || (str_contains($haystack, 'non') && str_contains($haystack, 'compliant'))) {
+        return false;
+      }
+
+      return str_contains($haystack, 'return')
+        && (str_contains($haystack, 'process') || str_contains($haystack, 'first'));
     }
 
     return false;

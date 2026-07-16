@@ -8,7 +8,6 @@ import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
 import {
   CRM_BTN_PRIMARY,
   CRM_BTN_SECONDARY,
-  CRM_DIALOG_FOOTER_CLASS,
 } from "../../constants/dialogFooter.js";
 
 const props = defineProps({
@@ -155,27 +154,26 @@ async function onEsignSubmit(payload) {
       </p>
     </div>
 
-    <footer :class="[CRM_DIALOG_FOOTER_CLASS, 'portal-fa-modal__footer']">
-      <div class="portal-fa-modal__footer-start d-flex flex-wrap align-items-center gap-2 me-auto">
-        <button
-          v-if="!accepted"
-          type="button"
-          class="btn btn-outline-primary fw-semibold px-3 rounded-3 d-inline-flex align-items-center gap-2"
-          :disabled="downloading || busy || !hasBody"
-          @click="downloadBlank"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path
-              d="M5 20h14v-2H5v2zm7-18v10.17l3.59-3.58L17 10l-5 5-5-5 1.41-1.41L11 12.17V2h1z"
-            />
-          </svg>
-          {{ downloading ? "Downloading…" : "Download" }}
-        </button>
+    <footer class="portal-fa-modal__footer">
+      <button
+        type="button"
+        class="portal-fa-download-btn"
+        :disabled="downloading || busy"
+        :aria-label="downloading ? 'Downloading…' : 'Download Agreement PDF'"
+        :title="downloading ? 'Downloading…' : 'Download Agreement PDF'"
+        @click="downloadBlank"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path
+            d="M5 20h14v-2H5v2zm7-18v10.17l3.59-3.58L17 10l-5 5-5-5 1.41-1.41L11 12.17V2h1z"
+          />
+        </svg>
+      </button>
+
+      <div class="portal-fa-modal__footer-actions">
         <button type="button" :class="CRM_BTN_SECONDARY" :disabled="busy" @click="close">
           {{ accepted ? "Close" : "Cancel" }}
         </button>
-      </div>
-      <div class="d-flex flex-wrap align-items-center gap-2">
         <template v-if="accepted">
           <button
             type="button"
@@ -249,11 +247,48 @@ async function onEsignSubmit(payload) {
   line-height: 1.3;
 }
 .portal-fa-modal__footer {
+  flex-shrink: 0;
+  display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  align-items: center;
   justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem 1.25rem;
+  border-top: 1px solid rgba(47, 43, 61, 0.08);
 }
-.portal-fa-modal__footer-start {
-  min-width: 0;
+.portal-fa-download-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 1px solid #d8d6de;
+  border-radius: 0.5rem;
+  background: #fff;
+  color: #1e3a8a;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+.portal-fa-download-btn:hover:not(:disabled) {
+  background: #eef2ff;
+  border-color: #1e3a8a;
+  color: #1e3a8a;
+}
+.portal-fa-download-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.portal-fa-modal__footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-left: auto;
 }
 </style>

@@ -163,7 +163,7 @@ async function onCounterSign(payload) {
     v-model:open="counterSignOpen"
     :saving="busy || verifying"
     title="Verify Fulfillment Agreement"
-    subtitle="Counter-sign for Save Rack LLC to verify this onboarding task."
+    subtitle="Counter-sign for Save Rack LLC. Prefills Audi Kowalski — choose a cursive style and Sign Here."
     :show-company="false"
     initial-rep-name="Audi Kowalski"
     :initial-signed-at="todayInputDate()"

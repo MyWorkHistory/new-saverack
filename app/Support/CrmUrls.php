@@ -26,6 +26,11 @@ class CrmUrls
         return self::frontendBase().'/admin/clients/accounts/'.$clientAccountId;
     }
 
+    public static function clientAccountOnboardingStaffUrl(int $clientAccountId): string
+    {
+        return self::clientAccountStaffUrl($clientAccountId).'?tab=onboarding';
+    }
+
     public static function invoiceStaffUrl(int $invoiceId): string
     {
         return self::frontendBase().'/admin/billing/invoices/'.$invoiceId;

@@ -87,4 +87,66 @@ class AdminFulfillmentAgreementVerifyApiTest extends TestCase
         $pdf = $this->get('/api/client-accounts/'.$account->id.'/onboarding/fulfillment-agreement/signed.pdf');
         $pdf->assertOk();
     }
+
+    public function test_staff_verify_upload_preserves_wet_ink_and_builds_composite_pdf(): void
+    {
+        Storage::fake('local');
+        TermsOfService::query()->create(['body' => '<p>Terms</p>']);
+
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_PENDING,
+            'company_name' => 'Upload Verify Co',
+            'email' => 'upload-verify@example.test',
+            'fulfillment_agreement_accepted_at' => now(),
+            'fulfillment_agreement_method' => 'upload',
+            'fulfillment_agreement_company' => 'Upload Verify Co',
+            'fulfillment_agreement_rep_name' => 'Sam Upload',
+            'fulfillment_agreement_client_signed_at' => now(),
+            'fulfillment_agreement_client_signature' => json_encode([
+                'style' => 'upload',
+                'text' => 'Manually signed (uploaded PDF)',
+                'upload_path' => 'fulfillment-agreements/1/upload-original.pdf',
+            ]),
+            'fulfillment_agreement_path' => 'fulfillment-agreements/1/upload-original.pdf',
+            'fulfillment_agreement_original_name' => 'signed-agreement.pdf',
+            'fulfillment_agreement_mime' => 'application/pdf',
+        ]);
+        Storage::disk('local')->put($account->fulfillment_agreement_path, '%PDF-1.4 wet-ink-upload');
+
+        $this->actingAsStaff();
+
+        $tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+        $response = $this->postJson(
+            '/api/client-accounts/'.$account->id.'/onboarding/fulfillment-agreement/verify',
+            [
+                'rep_name' => 'Audi Kowalski',
+                'signed_at' => '2026-07-16',
+                'signature_style' => 'great_vibes',
+                'signature_text' => 'Audi Kowalski',
+                'signature_image' => $tinyPng,
+            ]
+        );
+
+        $response->assertOk();
+        $account->refresh();
+
+        $this->assertNotNull($account->fulfillment_agreement_staff_signed_at);
+        $this->assertSame('Audi Kowalski', $account->fulfillment_agreement_staff_rep_name);
+        Storage::disk('local')->assertExists($account->fulfillment_agreement_path);
+        Storage::disk('local')->assertExists(
+            'fulfillment-agreements/'.$account->id.'/client-wet-ink.pdf'
+        );
+
+        $meta = json_decode((string) $account->fulfillment_agreement_client_signature, true);
+        $this->assertIsArray($meta);
+        $this->assertSame(
+            'fulfillment-agreements/'.$account->id.'/client-wet-ink.pdf',
+            $meta['upload_path'] ?? null
+        );
+
+        $pdf = $this->get('/api/client-accounts/'.$account->id.'/onboarding/fulfillment-agreement/signed.pdf');
+        $pdf->assertOk();
+        $this->assertStringContainsString('application/pdf', (string) $pdf->headers->get('content-type'));
+    }
 }

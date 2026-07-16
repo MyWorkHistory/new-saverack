@@ -77,7 +77,6 @@ class FulfillmentAgreementPdfService
             $safeName = 'fulfillment-agreement-upload.pdf';
         }
         $filename = uniqid('upload-', true).'-'.$safeName;
-        $path = $dir.'/'.$filename;
 
         if ($account->fulfillment_agreement_path && $disk->exists($account->fulfillment_agreement_path)) {
             $disk->delete($account->fulfillment_agreement_path);
@@ -89,9 +88,45 @@ class FulfillmentAgreementPdfService
         }
         $path = $stored;
 
+        $meta = $this->decodeSignatureMeta($account->fulfillment_agreement_client_signature);
+        $meta['style'] = 'upload';
+        $meta['text'] = 'Manually signed (uploaded PDF)';
+        $meta['upload_path'] = $path;
+
         $account->fulfillment_agreement_path = $path;
         $account->fulfillment_agreement_original_name = $file->getClientOriginalName() ?: $safeName;
         $account->fulfillment_agreement_mime = $file->getMimeType() ?: 'application/pdf';
+        $account->fulfillment_agreement_client_signature = json_encode($meta);
+        $account->save();
+
+        return $account->fresh();
+    }
+
+    /**
+     * Keep the client's wet-ink upload before regenerating a composite PDF on verify.
+     */
+    public function preserveWetInkUpload(ClientAccount $account): ClientAccount
+    {
+        $path = (string) $account->fulfillment_agreement_path;
+        $disk = Storage::disk(self::DISK);
+        if ($path === '' || ! $disk->exists($path)) {
+            return $account;
+        }
+
+        $dir = $this->directoryForAccount($account);
+        $wetPath = $dir.'/client-wet-ink.pdf';
+        if ($path !== $wetPath) {
+            $disk->put($wetPath, $disk->get($path));
+        }
+
+        $meta = $this->decodeSignatureMeta($account->fulfillment_agreement_client_signature);
+        $meta['style'] = isset($meta['style']) ? (string) $meta['style'] : 'upload';
+        $meta['text'] = ! empty($meta['text'])
+            ? (string) $meta['text']
+            : 'Manually signed (uploaded PDF)';
+        $meta['upload_path'] = $wetPath;
+
+        $account->fulfillment_agreement_client_signature = json_encode($meta);
         $account->save();
 
         return $account->fresh();
@@ -167,13 +202,18 @@ class FulfillmentAgreementPdfService
     private function clientBlock(ClientAccount $account): array
     {
         $meta = $this->decodeSignatureMeta($account->fulfillment_agreement_client_signature);
+        $signatureText = isset($meta['text']) ? (string) $meta['text'] : null;
+        // Upload flow has no rendered cursive image; keep a clear pen-signed note on the PDF.
+        if (($meta['style'] ?? null) === 'upload' && ($signatureText === null || $signatureText === '')) {
+            $signatureText = 'Manually signed (uploaded PDF)';
+        }
 
         return [
             'company' => $account->fulfillment_agreement_company,
             'rep_name' => $account->fulfillment_agreement_rep_name,
             'signed_at_label' => $this->formatSignedAt($account->fulfillment_agreement_client_signed_at),
             'signature_data_uri' => $this->signatureDataUriFromMeta($meta),
-            'signature_text' => isset($meta['text']) ? (string) $meta['text'] : null,
+            'signature_text' => $signatureText,
         ];
     }
 

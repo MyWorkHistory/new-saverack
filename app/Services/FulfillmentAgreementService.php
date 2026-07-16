@@ -86,7 +86,7 @@ class FulfillmentAgreementService
         $account->fulfillment_agreement_client_signed_at = $signedAt;
         $account->fulfillment_agreement_client_signature = json_encode([
             'style' => 'upload',
-            'text' => 'Signed via uploaded PDF',
+            'text' => 'Manually signed (uploaded PDF)',
         ]);
         $account->fulfillment_agreement_accepted_at = now();
         $account->save();
@@ -128,6 +128,11 @@ class FulfillmentAgreementService
         }
         $account->save();
 
+        // Wet-ink uploads must not be lost when we rebuild the composite PDF with both signatures.
+        if ($account->fulfillment_agreement_method === FulfillmentAgreementPdfService::METHOD_UPLOAD) {
+            $account = $this->pdf->preserveWetInkUpload($account);
+        }
+
         $account = $this->pdf->buildAndStoreSigned($account);
 
         /** @var PortalOnboardingService $onboarding */
@@ -147,9 +152,9 @@ class FulfillmentAgreementService
         $company = trim((string) $account->company_name) !== ''
             ? (string) $account->company_name
             : ('Account #'.$account->id);
-        $viewUrl = CrmUrls::clientAccountStaffUrl((int) $account->id);
+        $viewUrl = CrmUrls::clientAccountOnboardingStaffUrl((int) $account->id);
 
-        $text = "Agreement Signed\nAccount: {$company}\nView Agreement: {$viewUrl}";
+        $text = "Agreement Signed\nAccount: {$company}\nView Agreement - {$viewUrl}";
 
         try {
             $this->slack->post($channel, $text, 'Save Rack');

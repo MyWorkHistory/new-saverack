@@ -29,7 +29,7 @@ const previewStyle = computed(() => {
 
 const previewText = computed(() => {
   const t = String(props.signatureText || "").trim();
-  return t || "Your Signature";
+  return t || "Sign Here";
 });
 
 function selectStyle(id) {

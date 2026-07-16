@@ -18,7 +18,7 @@ const props = defineProps({
   title: { type: String, default: "E-Sign Agreement" },
   subtitle: {
     type: String,
-    default: "Enter your company details and apply a cursive signature.",
+    default: "Enter your company details, then choose a cursive style and Sign Here.",
   },
   showCompany: { type: Boolean, default: true },
   initialCompany: { type: String, default: "" },
@@ -126,11 +126,13 @@ async function submit() {
           />
         </div>
         <div class="col-12">
-          <label class="form-label">Signature</label>
-          <FulfillmentSignatureStylePicker
-            v-model="signatureStyle"
-            :signature-text="signaturePreviewText"
-          />
+          <div class="fa-esign-sign-here">
+            <p class="fa-esign-sign-here__label mb-2">Sign Here</p>
+            <FulfillmentSignatureStylePicker
+              v-model="signatureStyle"
+              :signature-text="signaturePreviewText"
+            />
+          </div>
         </div>
       </div>
       <p v-if="formError" class="text-danger small mt-3 mb-0">{{ formError }}</p>
@@ -146,3 +148,19 @@ async function submit() {
     </footer>
   </PortalOnboardingModalShell>
 </template>
+
+<style scoped>
+.fa-esign-sign-here {
+  padding: 0.85rem 1rem 1rem;
+  border: 1px dashed #c5c3ce;
+  border-radius: 0.5rem;
+  background: #fafafa;
+}
+.fa-esign-sign-here__label {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #1f2430;
+  text-transform: uppercase;
+}
+</style>

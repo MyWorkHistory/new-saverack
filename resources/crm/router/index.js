@@ -1036,15 +1036,50 @@ export function setBillingNavFromUser(user) {
       create: true,
       update: true,
       delete: true,
+      pages: {
+        summary: true,
+        invoices: true,
+        customBills: true,
+        asnBills: true,
+        returnBills: true,
+      },
     };
     return;
   }
   const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
+  const page = (key) => k.includes(key) || k.includes("billing.view");
   billingNavCache = {
-    view: k.includes("billing.view"),
-    create: k.includes("billing.create"),
-    update: k.includes("billing.update"),
-    delete: k.includes("billing.delete"),
+    view:
+      page("billing_summary.view") ||
+      page("billing_invoices.view") ||
+      page("billing_custom_bills.view") ||
+      page("billing_asn_bills.view") ||
+      page("billing_return_bills.view") ||
+      k.includes("billing.view"),
+    create:
+      k.includes("billing_invoices.create") ||
+      k.includes("billing_custom_bills.create") ||
+      k.includes("billing_asn_bills.create") ||
+      k.includes("billing.create"),
+    update:
+      k.includes("billing_invoices.update") ||
+      k.includes("billing_custom_bills.update") ||
+      k.includes("billing_asn_bills.update") ||
+      k.includes("billing_return_bills.update") ||
+      k.includes("billing.update"),
+    delete:
+      k.includes("billing_invoices.delete") ||
+      k.includes("billing_custom_bills.delete") ||
+      k.includes("billing_asn_bills.delete") ||
+      k.includes("billing_return_bills.delete") ||
+      k.includes("billing.delete"),
+    pages: {
+      summary: page("billing_summary.view"),
+      invoices: page("billing_invoices.view"),
+      customBills: page("billing_custom_bills.view"),
+      asnBills: page("billing_asn_bills.view"),
+      returnBills: page("billing_return_bills.view"),
+    },
   };
 }
 
@@ -1059,15 +1094,46 @@ export function setResourcesNavFromUser(user) {
       create: true,
       update: true,
       delete: true,
+      pages: {
+        tutorials: true,
+        photos: true,
+        calendar: true,
+        events: true,
+      },
     };
     return;
   }
   const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
+  const page = (key) => k.includes(key) || k.includes("resources.view");
   resourcesNavCache = {
-    view: k.includes("resources.view"),
-    create: k.includes("resources.create"),
-    update: k.includes("resources.update"),
-    delete: k.includes("resources.delete"),
+    view:
+      page("resources_tutorials.view") ||
+      page("resources_photos.view") ||
+      page("resources_calendar.view") ||
+      page("resources_events.view") ||
+      k.includes("resources.view"),
+    create:
+      k.includes("resources_tutorials.create") ||
+      k.includes("resources_photos.create") ||
+      k.includes("resources_calendar.create") ||
+      k.includes("resources_events.create") ||
+      k.includes("resources.create"),
+    update:
+      k.includes("resources_tutorials.update") ||
+      k.includes("resources_calendar.update") ||
+      k.includes("resources_events.update") ||
+      k.includes("resources.update"),
+    delete:
+      k.includes("resources_tutorials.delete") ||
+      k.includes("resources_photos.delete") ||
+      k.includes("resources_events.delete") ||
+      k.includes("resources.delete"),
+    pages: {
+      tutorials: page("resources_tutorials.view"),
+      photos: page("resources_photos.view"),
+      calendar: page("resources_calendar.view"),
+      events: page("resources_events.view"),
+    },
   };
 }
 
@@ -1077,17 +1143,72 @@ export function setOrdersNavFromUser(user) {
     return;
   }
   if (crmIsAdmin(user) || user.is_crm_owner) {
-    ordersNavCache = { view: true, update: true };
+    ordersNavCache = {
+      view: true,
+      update: true,
+      pages: {
+        search: true,
+        fulfillment: true,
+        awaiting: true,
+        onHold: true,
+        backorder: true,
+        shipped: true,
+        wholesale: true,
+        create: true,
+      },
+    };
     return;
   }
   if (crmIsPortalUser(user)) {
-    ordersNavCache = { view: true, update: false };
+    ordersNavCache = {
+      view: true,
+      update: false,
+      pages: {
+        search: true,
+        fulfillment: true,
+        awaiting: true,
+        onHold: true,
+        backorder: true,
+        shipped: true,
+        wholesale: true,
+        create: false,
+      },
+    };
     return;
   }
   const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
+  const page = (key) => k.includes(key) || k.includes("orders.view");
   ordersNavCache = {
-    view: k.includes("orders.view"),
-    update: k.includes("orders.update"),
+    view:
+      page("orders_search.view") ||
+      page("orders_fulfillment.view") ||
+      page("orders_awaiting.view") ||
+      page("orders_on_hold.view") ||
+      page("orders_backorder.view") ||
+      page("orders_shipped.view") ||
+      page("orders_wholesale.view") ||
+      page("orders_create.view") ||
+      k.includes("orders.view"),
+    update:
+      k.includes("orders_create.update") ||
+      k.includes("orders_search.update") ||
+      k.includes("orders_fulfillment.update") ||
+      k.includes("orders_awaiting.update") ||
+      k.includes("orders_on_hold.update") ||
+      k.includes("orders_backorder.update") ||
+      k.includes("orders_shipped.update") ||
+      k.includes("orders_wholesale.update") ||
+      k.includes("orders.update"),
+    pages: {
+      search: page("orders_search.view"),
+      fulfillment: page("orders_fulfillment.view"),
+      awaiting: page("orders_awaiting.view"),
+      onHold: page("orders_on_hold.view"),
+      backorder: page("orders_backorder.view"),
+      shipped: page("orders_shipped.view"),
+      wholesale: page("orders_wholesale.view"),
+      create: k.includes("orders_create.update") || k.includes("orders.update"),
+    },
   };
 }
 
@@ -1097,17 +1218,52 @@ export function setInventoryNavFromUser(user) {
     return;
   }
   if (crmIsAdmin(user) || user.is_crm_owner) {
-    inventoryNavCache = { view: true, update: true };
+    inventoryNavCache = {
+      view: true,
+      update: true,
+      pages: {
+        products: true,
+        outOfStock: true,
+        restock: true,
+        onDemand: true,
+      },
+    };
     return;
   }
   if (crmIsPortalUser(user)) {
-    inventoryNavCache = { view: true, update: true };
+    inventoryNavCache = {
+      view: true,
+      update: true,
+      pages: {
+        products: true,
+        outOfStock: true,
+        restock: false,
+        onDemand: false,
+      },
+    };
     return;
   }
   const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
+  const page = (key) => k.includes(key) || k.includes("inventory.view");
   inventoryNavCache = {
-    view: k.includes("inventory.view"),
-    update: k.includes("inventory.update"),
+    view:
+      page("inventory_products.view") ||
+      page("inventory_out_of_stock.view") ||
+      page("inventory_restock.view") ||
+      page("inventory_on_demand.view") ||
+      k.includes("inventory.view"),
+    update:
+      k.includes("inventory_products.update") ||
+      k.includes("inventory_out_of_stock.update") ||
+      k.includes("inventory_restock.update") ||
+      k.includes("inventory_on_demand.update") ||
+      k.includes("inventory.update"),
+    pages: {
+      products: page("inventory_products.view"),
+      outOfStock: page("inventory_out_of_stock.view"),
+      restock: page("inventory_restock.view"),
+      onDemand: page("inventory_on_demand.view"),
+    },
   };
 }
 
@@ -1117,17 +1273,33 @@ export function setReceivingNavFromUser(user) {
     return;
   }
   if (crmIsAdmin(user) || user.is_crm_owner) {
-    receivingNavCache = { view: true, update: true };
+    receivingNavCache = {
+      view: true,
+      update: true,
+      pages: { asn: true, putAway: true },
+    };
     return;
   }
   if (crmIsPortalUser(user)) {
-    receivingNavCache = { view: false, update: false };
+    receivingNavCache = {
+      view: false,
+      update: false,
+      pages: { asn: false, putAway: false },
+    };
     return;
   }
   const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
+  const asn =
+    k.includes("receiving_asn.view") || k.includes("receiving.view");
+  const putAway =
+    k.includes("receiving_put_away.view") || k.includes("receiving.view");
   receivingNavCache = {
-    view: k.includes("receiving.view"),
-    update: k.includes("receiving.update"),
+    view: asn || putAway,
+    update:
+      k.includes("receiving_asn.update") ||
+      k.includes("receiving_put_away.update") ||
+      k.includes("receiving.update"),
+    pages: { asn, putAway },
   };
 }
 
@@ -1137,17 +1309,52 @@ export function setReturnsNavFromUser(user) {
     return;
   }
   if (crmIsAdmin(user) || user.is_crm_owner) {
-    returnsNavCache = { view: true, update: true };
+    returnsNavCache = {
+      view: true,
+      update: true,
+      pages: {
+        process: true,
+        orders: true,
+        items: true,
+        bins: true,
+      },
+    };
     return;
   }
   if (crmIsPortalUser(user)) {
-    returnsNavCache = { view: true, update: false };
+    returnsNavCache = {
+      view: true,
+      update: false,
+      pages: {
+        process: true,
+        orders: true,
+        items: true,
+        bins: true,
+      },
+    };
     return;
   }
   const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
+  const page = (key) => k.includes(key) || k.includes("returns.view");
   returnsNavCache = {
-    view: k.includes("returns.view"),
-    update: k.includes("returns.update"),
+    view:
+      page("returns_process.view") ||
+      page("returns_orders.view") ||
+      page("returns_items.view") ||
+      page("returns_bins.view") ||
+      k.includes("returns.view"),
+    update:
+      k.includes("returns_process.update") ||
+      k.includes("returns_orders.update") ||
+      k.includes("returns_items.update") ||
+      k.includes("returns_bins.update") ||
+      k.includes("returns.update"),
+    pages: {
+      process: page("returns_process.view"),
+      orders: page("returns_orders.view"),
+      items: page("returns_items.view"),
+      bins: page("returns_bins.view"),
+    },
   };
 }
 
@@ -1354,6 +1561,12 @@ async function ensureBillingRouteAccess(path) {
     }
   }
   if (path === "/admin/billing" || path.startsWith("/admin/billing/")) {
+    const pages = billingNavCache.pages || {};
+    if (path.startsWith("/admin/billing/summary")) return pages.summary === true;
+    if (path.startsWith("/admin/billing/invoices")) return pages.invoices === true;
+    if (path.startsWith("/admin/billing/custom-bills")) return pages.customBills === true;
+    if (path.startsWith("/admin/billing/asn-bills")) return pages.asnBills === true;
+    if (path.startsWith("/admin/billing/return-bills")) return pages.returnBills === true;
     return billingNavCache.view === true;
   }
   return true;
@@ -1384,6 +1597,11 @@ async function ensureResourcesRouteAccess(path) {
     }
   }
   if (path === "/admin/resources" || path.startsWith("/admin/resources/")) {
+    const pages = resourcesNavCache.pages || {};
+    if (path.startsWith("/admin/resources/tutorials")) return pages.tutorials === true;
+    if (path.startsWith("/admin/resources/photos")) return pages.photos === true;
+    if (path.startsWith("/admin/resources/calendar/events")) return pages.events === true;
+    if (path.startsWith("/admin/resources/calendar")) return pages.calendar === true;
     return resourcesNavCache.view === true;
   }
   return true;
@@ -1426,6 +1644,16 @@ async function ensureInventoryRouteAccess(path) {
     path === "/users/dashboard" ||
     path.startsWith("/users/dashboard/")
   ) {
+    if (path.startsWith("/users/")) {
+      return inventoryNavCache.view === true;
+    }
+    const pages = inventoryNavCache.pages || {};
+    if (path.startsWith("/admin/inventory/out-of-stock")) return pages.outOfStock === true;
+    if (path.startsWith("/admin/inventory/restock")) return pages.restock === true;
+    if (path.startsWith("/admin/inventory/on-demand")) return pages.onDemand === true;
+    if (path === "/admin/inventory" || path.startsWith("/admin/inventory/")) {
+      return pages.products === true || inventoryNavCache.view === true;
+    }
     return inventoryNavCache.view === true;
   }
   return true;
@@ -1455,6 +1683,14 @@ async function ensureReturnsRouteAccess(path) {
     }
   }
   if (path.startsWith("/admin/returns") || path.startsWith("/users/returns")) {
+    if (path.startsWith("/users/returns")) {
+      return returnsNavCache.view === true;
+    }
+    const pages = returnsNavCache.pages || {};
+    if (path.startsWith("/admin/returns/process")) return pages.process === true;
+    if (path.startsWith("/admin/returns/orders")) return pages.orders === true;
+    if (path.startsWith("/admin/returns/items")) return pages.items === true;
+    if (path.startsWith("/admin/returns/bins")) return pages.bins === true;
     return returnsNavCache.view === true;
   }
   return true;
@@ -1483,7 +1719,11 @@ async function ensureReceivingRouteAccess(path) {
     }
   }
   if (path.startsWith("/admin/receiving")) {
-    return receivingNavCache.view === true;
+    if (path.startsWith("/admin/receiving/put-away")) {
+      return receivingNavCache.pages?.putAway === true;
+    }
+    // ASN hub and detail (default receiving section)
+    return receivingNavCache.pages?.asn === true;
   }
   return true;
 }
@@ -1511,9 +1751,20 @@ async function ensureOrdersRouteAccess(path) {
     }
   }
   if (path === "/admin/orders/create") {
-    return ordersNavCache.update === true;
+    return ordersNavCache.pages?.create === true || ordersNavCache.update === true;
   }
   if (path.startsWith("/admin/orders") || path.startsWith("/users/orders")) {
+    const pages = ordersNavCache.pages || {};
+    if (path.startsWith("/admin/orders/fulfillment")) return pages.fulfillment === true;
+    if (path.startsWith("/admin/orders/awaiting")) return pages.awaiting === true;
+    if (path.startsWith("/admin/orders/on-hold")) return pages.onHold === true;
+    if (path.startsWith("/admin/orders/backorder")) return pages.backorder === true;
+    if (path.startsWith("/admin/orders/shipped")) return pages.shipped === true;
+    if (path.startsWith("/admin/orders/wholesale")) return pages.wholesale === true;
+    if (path.startsWith("/admin/orders/search") || path === "/admin/orders") {
+      return pages.search === true;
+    }
+    // Order detail / other paths: any orders view
     return ordersNavCache.view === true;
   }
   return true;

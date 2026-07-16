@@ -9,21 +9,21 @@ class ResourcePhotoPolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->isCrmOwner() || $user->hasPermission('resources.view');
+        return $user->isCrmOwner() || $user->hasPermission('resources_photos.view');
     }
 
     public function view(User $user, ResourcePhoto $resourcePhoto): bool
     {
-        return $user->isCrmOwner() || $user->hasPermission('resources.view');
+        return $user->isCrmOwner() || $user->hasPermission('resources_photos.view');
     }
 
     public function create(User $user): bool
     {
-        return $user->isCrmOwner() || $user->hasPermission('resources.create');
+        return $user->isCrmOwner() || $user->hasPermission('resources_photos.create');
     }
 
     public function delete(User $user, ResourcePhoto $resourcePhoto): bool
     {
-        return $user->isCrmOwner() || $user->hasPermission('resources.delete');
+        return $user->isCrmOwner() || $user->hasPermission('resources_photos.delete');
     }
 }

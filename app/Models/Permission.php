@@ -49,42 +49,13 @@ class Permission extends Model
 
     public static function ensureRowsForKeys(array $keys): void
     {
-        $metaByKey = [
-            'users.view' => ['label' => 'View users', 'module' => 'users'],
-            'users.create' => ['label' => 'Create users', 'module' => 'users'],
-            'users.update' => ['label' => 'Update users', 'module' => 'users'],
-            'users.delete' => ['label' => 'Delete users', 'module' => 'users'],
-            'webmaster.view' => ['label' => 'View webmaster tasks', 'module' => 'webmaster'],
-            'webmaster.create' => ['label' => 'Create webmaster tasks', 'module' => 'webmaster'],
-            'webmaster.update' => ['label' => 'Update webmaster tasks', 'module' => 'webmaster'],
-            'webmaster.delete' => ['label' => 'Delete webmaster tasks', 'module' => 'webmaster'],
-            'clients.view' => ['label' => 'View client accounts', 'module' => 'clients'],
-            'clients.create' => ['label' => 'Create client accounts', 'module' => 'clients'],
-            'clients.update' => ['label' => 'Update client accounts', 'module' => 'clients'],
-            'clients.delete' => ['label' => 'Delete client accounts', 'module' => 'clients'],
-            'client_users.view' => ['label' => 'View client portal users', 'module' => 'client_users'],
-            'client_users.create' => ['label' => 'Create client portal users', 'module' => 'client_users'],
-            'client_users.update' => ['label' => 'Update client portal users', 'module' => 'client_users'],
-            'client_users.delete' => ['label' => 'Delete client portal users', 'module' => 'client_users'],
-            'projects.view' => ['label' => 'View projects', 'module' => 'projects'],
-            'projects.create' => ['label' => 'Create projects', 'module' => 'projects'],
-            'projects.update' => ['label' => 'Update projects', 'module' => 'projects'],
-            'projects.delete' => ['label' => 'Delete projects', 'module' => 'projects'],
-            'billing.view' => ['label' => 'View billing', 'module' => 'billing'],
-            'billing.create' => ['label' => 'Create invoices', 'module' => 'billing'],
-            'billing.update' => ['label' => 'Update invoices', 'module' => 'billing'],
-            'billing.delete' => ['label' => 'Delete draft invoices', 'module' => 'billing'],
-            'inventory.view' => ['label' => 'View inventory', 'module' => 'inventory'],
-            'inventory.update' => ['label' => 'Update inventory quantities', 'module' => 'inventory'],
-            'receiving.view' => ['label' => 'View receiving', 'module' => 'receiving'],
-            'receiving.update' => ['label' => 'Update receiving', 'module' => 'receiving'],
-            'returns.view' => ['label' => 'View returns', 'module' => 'returns'],
-            'returns.update' => ['label' => 'Update returns', 'module' => 'returns'],
-            'orders.view' => ['label' => 'View orders', 'module' => 'orders'],
-            'orders.update' => ['label' => 'Update orders', 'module' => 'orders'],
-            'settings.view' => ['label' => 'View settings', 'module' => 'settings'],
-            'settings.update' => ['label' => 'Update settings', 'module' => 'settings'],
-        ];
+        $metaByKey = [];
+        foreach (\App\Support\CrmStaffPermissionCatalog::definitions() as $def) {
+            $metaByKey[$def['key']] = [
+                'label' => $def['label'],
+                'module' => $def['module'],
+            ];
+        }
 
         foreach (array_unique($keys) as $key) {
             if (! is_string($key)) {

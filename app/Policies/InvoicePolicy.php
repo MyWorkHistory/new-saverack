@@ -26,7 +26,7 @@ class InvoicePolicy
 
     private function canViewBilling(User $user): bool
     {
-        return $this->canManageBilling($user) || $user->hasPermission('billing.view');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_invoices.view');
     }
 
     public function viewAny(User $user): bool
@@ -61,7 +61,7 @@ class InvoicePolicy
             return false;
         }
 
-        return $this->canManageBilling($user) || $user->hasPermission('billing.create');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_invoices.create');
     }
 
     public function update(User $user, Invoice $invoice): bool
@@ -74,7 +74,7 @@ class InvoicePolicy
             return false;
         }
 
-        return $this->canManageBilling($user) || $user->hasPermission('billing.update');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_invoices.update');
     }
 
     public function delete(User $user, Invoice $invoice): bool
@@ -95,7 +95,7 @@ class InvoicePolicy
             return false;
         }
 
-        return $this->canManageBilling($user) || $user->hasPermission('billing.delete');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_invoices.delete');
     }
 
     public function send(User $user, Invoice $invoice): bool
@@ -108,7 +108,7 @@ class InvoicePolicy
             return false;
         }
 
-        return $this->canManageBilling($user) || $user->hasPermission('billing.update');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_invoices.update');
     }
 
     public function recordPayment(User $user, Invoice $invoice): bool
@@ -125,7 +125,7 @@ class InvoicePolicy
             return false;
         }
 
-        return $this->canManageBilling($user) || $user->hasPermission('billing.update');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_invoices.update');
     }
 
     public function viewPaymentContext(User $user, Invoice $invoice): bool
@@ -151,7 +151,7 @@ class InvoicePolicy
             return false;
         }
 
-        return $this->canManageBilling($user) || $user->hasPermission('billing.update');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_invoices.update');
     }
 
     public function addCharge(User $user, Invoice $invoice): bool
@@ -164,7 +164,7 @@ class InvoicePolicy
             return false;
         }
 
-        return $this->canManageBilling($user) || $user->hasPermission('billing.update');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_invoices.update');
     }
 
     public function updateStatus(User $user, Invoice $invoice): bool
@@ -173,6 +173,6 @@ class InvoicePolicy
             return false;
         }
 
-        return $this->canManageBilling($user) || $user->hasPermission('billing.update');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_invoices.update');
     }
 }

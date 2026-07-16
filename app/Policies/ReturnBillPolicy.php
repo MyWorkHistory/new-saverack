@@ -14,7 +14,7 @@ class ReturnBillPolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->canManageBilling($user) || $user->hasPermission('billing.view');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_return_bills.view');
     }
 
     public function view(User $user, ReturnBill $returnBill): bool
@@ -24,7 +24,7 @@ class ReturnBillPolicy
 
     public function update(User $user, ReturnBill $returnBill): bool
     {
-        return $this->canManageBilling($user) || $user->hasPermission('billing.update');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_return_bills.update');
     }
 
     public function delete(User $user, ReturnBill $returnBill): bool
@@ -33,6 +33,6 @@ class ReturnBillPolicy
             return false;
         }
 
-        return $this->canManageBilling($user) || $user->hasPermission('billing.delete');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_return_bills.delete');
     }
 }

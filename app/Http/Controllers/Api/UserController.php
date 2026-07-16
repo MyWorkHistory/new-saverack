@@ -17,7 +17,6 @@ use App\Services\StaffPermissionMatrixService;
 use App\Services\UserAvatarService;
 use App\Services\UserService;
 use App\Support\CsvExporter;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
@@ -227,13 +226,26 @@ class UserController extends Controller
             $editableKeys
         );
 
+        // Legacy coarse keys are replaced by subpage rows — drop them on save so they
+        // cannot re-expand and undo unchecked boxes.
+        $legacyKeys = [];
+        foreach (\App\Support\CrmStaffPermissionCatalog::legacyMatrixModules() as $mod) {
+            foreach (['view', 'create', 'update', 'delete'] as $action) {
+                $legacyKeys[] = $mod.'.'.$action;
+            }
+        }
+
         Permission::ensureRowsForKeys(array_values(array_unique(array_merge(
             $editableKeys,
             $keys,
+            $legacyKeys,
         ))));
 
         try {
-            $whitelistIds = Permission::idsForKeys($editableKeys);
+            $managedIds = Permission::idsForKeys(array_values(array_unique(array_merge(
+                $editableKeys,
+                $legacyKeys,
+            ))));
             $desiredIds = Permission::idsForKeys($keys);
         } catch (\RuntimeException $e) {
             return response()->json([
@@ -243,15 +255,15 @@ class UserController extends Controller
 
         $user->loadMissing('permissions');
 
-        $whitelistIdSet = [];
-        foreach ($whitelistIds as $wid) {
-            $whitelistIdSet[(int) $wid] = true;
+        $managedIdSet = [];
+        foreach ($managedIds as $wid) {
+            $managedIdSet[(int) $wid] = true;
         }
 
         $currentIds = $user->permissions->pluck('id')->map(static fn ($id) => (int) $id)->all();
         $keepIds = array_values(array_filter(
             $currentIds,
-            static fn (int $id): bool => ! isset($whitelistIdSet[$id]),
+            static fn (int $id): bool => ! isset($managedIdSet[$id]),
         ));
 
         $newPivotIds = array_values(array_unique(array_merge($keepIds, array_map('intval', $desiredIds))));
@@ -276,22 +288,18 @@ class UserController extends Controller
 
         app(StaffPermissionMatrixService::class)->migrateRoleMatrixGrantsToDirect();
 
-        User::editableCrmPermissionKeys();
-
-        $adminOnlyModules = ['users', 'webmaster', 'settings'];
+        $editableKeys = User::editableCrmPermissionKeys();
+        $allowed = array_flip($editableKeys);
 
         $permissions = Permission::query()
             ->select(['key', 'label', 'module'])
-            ->where(function (Builder $q) {
-                $q->where('key', 'like', '%.view')
-                    ->orWhere('key', 'like', '%.create')
-                    ->orWhere('key', 'like', '%.update')
-                    ->orWhere('key', 'like', '%.delete');
-            })
-            ->whereNotIn('module', $adminOnlyModules)
+            ->whereIn('key', $editableKeys)
             ->orderBy('module')
             ->orderBy('key')
             ->get()
+            ->filter(static function (Permission $p) use ($allowed) {
+                return isset($allowed[(string) $p->key]);
+            })
             ->map(static fn (Permission $p) => [
                 'key' => (string) $p->key,
                 'label' => (string) $p->label,

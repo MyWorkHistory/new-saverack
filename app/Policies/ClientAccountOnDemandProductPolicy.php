@@ -14,7 +14,7 @@ class ClientAccountOnDemandProductPolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->canManageInventory($user) || $user->hasPermission('inventory.view');
+        return $this->canManageInventory($user) || $user->hasPermission('inventory_on_demand.view');
     }
 
     public function view(User $user, ClientAccountOnDemandProduct $product): bool
@@ -24,16 +24,16 @@ class ClientAccountOnDemandProductPolicy
 
     public function create(User $user): bool
     {
-        return $this->canManageInventory($user) || $user->hasPermission('inventory.update');
+        return $this->canManageInventory($user) || $user->hasPermission('inventory_on_demand.update');
     }
 
     public function update(User $user, ClientAccountOnDemandProduct $product): bool
     {
-        return $this->canManageInventory($user) || $user->hasPermission('inventory.update');
+        return $this->canManageInventory($user) || $user->hasPermission('inventory_on_demand.update');
     }
 
     public function delete(User $user, ClientAccountOnDemandProduct $product): bool
     {
-        return $this->canManageInventory($user) || $user->hasPermission('inventory.update');
+        return $this->canManageInventory($user) || $user->hasPermission('inventory_on_demand.update');
     }
 }

@@ -16,6 +16,23 @@ const isCrmAdmin = computed(
   () => crmIsAdmin(props.user) || !!props.user?.is_crm_owner,
 );
 
+function permKeys() {
+  const k = props.user?.permission_keys;
+  return Array.isArray(k) ? k : [];
+}
+
+function hasPerm(...keys) {
+  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
+  const set = permKeys();
+  return keys.some((key) => set.includes(key));
+}
+
+function hasAnyView(prefixes) {
+  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
+  const set = permKeys();
+  return prefixes.some((p) => set.includes(`${p}.view`));
+}
+
 const canViewUsers = computed(() => !isPortal.value && isCrmAdmin.value);
 
 const canViewSettings = computed(() => !isPortal.value && isCrmAdmin.value);
@@ -28,73 +45,166 @@ const showAdminNavSection = computed(
 
 const canViewClients = computed(() => {
   if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
-  const k = props.user?.permission_keys;
-  if (!Array.isArray(k)) return false;
-  return (
-    k.includes("clients.view") ||
-    k.includes("client_users.view") ||
-    k.includes("projects.view")
-  );
+  return hasPerm("clients.view", "client_users.view", "projects.view", "stores.view");
 });
 
-const canViewProjects = computed(() => {
-  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
-  const k = props.user?.permission_keys;
-  if (!Array.isArray(k)) return false;
-  return k.includes("projects.view");
-});
+const canViewClientAccounts = computed(() => hasPerm("clients.view"));
+const canViewClientUsers = computed(() => hasPerm("client_users.view"));
+
+const canViewProjects = computed(() => hasPerm("projects.view"));
 
 const canViewBilling = computed(() => {
-  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
-  const k = props.user?.permission_keys;
-  if (!Array.isArray(k)) return false;
-  return k.includes("billing.view");
+  if (isPortal.value) return false;
+  return hasAnyView([
+    "billing_summary",
+    "billing_invoices",
+    "billing_custom_bills",
+    "billing_asn_bills",
+    "billing_return_bills",
+    "billing",
+  ]);
 });
 
+const canViewBillingSummary = computed(() =>
+  hasPerm("billing_summary.view", "billing.view"),
+);
+const canViewBillingInvoices = computed(() =>
+  hasPerm("billing_invoices.view", "billing.view"),
+);
+const canViewBillingCustomBills = computed(() =>
+  hasPerm("billing_custom_bills.view", "billing.view"),
+);
+const canViewBillingAsnBills = computed(() =>
+  hasPerm("billing_asn_bills.view", "billing.view"),
+);
+const canViewBillingReturnBills = computed(() =>
+  hasPerm("billing_return_bills.view", "billing.view"),
+);
+
 const canViewResources = computed(() => {
-  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
-  const k = props.user?.permission_keys;
-  if (!Array.isArray(k)) return false;
-  return k.includes("resources.view");
+  if (isPortal.value) return false;
+  return hasAnyView([
+    "resources_tutorials",
+    "resources_photos",
+    "resources_calendar",
+    "resources_events",
+    "resources",
+  ]);
 });
+
+const canViewResourcesTutorials = computed(() =>
+  hasPerm("resources_tutorials.view", "resources.view"),
+);
+const canViewResourcesPhotos = computed(() =>
+  hasPerm("resources_photos.view", "resources.view"),
+);
+const canViewResourcesCalendar = computed(() =>
+  hasPerm("resources_calendar.view", "resources.view"),
+);
+const canViewResourcesEvents = computed(() =>
+  hasPerm("resources_events.view", "resources.view"),
+);
 
 const canViewReturns = computed(() => {
   if (isPortal.value) return true;
-  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
-  const k = props.user?.permission_keys;
-  if (!Array.isArray(k)) return false;
-  return k.includes("returns.view");
+  return hasAnyView([
+    "returns_process",
+    "returns_orders",
+    "returns_items",
+    "returns_bins",
+    "returns",
+  ]);
 });
+
+const canViewReturnsProcess = computed(() =>
+  hasPerm("returns_process.view", "returns.view"),
+);
+const canViewReturnsOrders = computed(() =>
+  hasPerm("returns_orders.view", "returns.view"),
+);
+const canViewReturnsItems = computed(() =>
+  hasPerm("returns_items.view", "returns.view"),
+);
+const canViewReturnsBins = computed(() =>
+  hasPerm("returns_bins.view", "returns.view"),
+);
 
 const canViewInventory = computed(() => {
   if (isPortal.value) return true;
-  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
-  const k = props.user?.permission_keys;
-  if (!Array.isArray(k)) return false;
-  return k.includes("inventory.view");
+  return hasAnyView([
+    "inventory_products",
+    "inventory_out_of_stock",
+    "inventory_restock",
+    "inventory_on_demand",
+    "inventory",
+  ]);
 });
+
+const canViewInventoryProducts = computed(() =>
+  hasPerm("inventory_products.view", "inventory.view"),
+);
+const canViewInventoryOutOfStock = computed(() =>
+  hasPerm("inventory_out_of_stock.view", "inventory.view"),
+);
+const canViewInventoryRestock = computed(() =>
+  hasPerm("inventory_restock.view", "inventory.view"),
+);
+const canViewInventoryOnDemand = computed(() =>
+  hasPerm("inventory_on_demand.view", "inventory.view"),
+);
 
 const canViewReceiving = computed(() => {
   if (isPortal.value) return false;
-  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
-  const k = props.user?.permission_keys;
-  if (!Array.isArray(k)) return false;
-  return k.includes("receiving.view");
+  return hasAnyView(["receiving_asn", "receiving_put_away", "receiving"]);
 });
+
+const canViewReceivingAsn = computed(() =>
+  hasPerm("receiving_asn.view", "receiving.view"),
+);
+const canViewReceivingPutAway = computed(() =>
+  hasPerm("receiving_put_away.view", "receiving.view"),
+);
 
 const canViewOrders = computed(() => {
   if (isPortal.value) return true;
-  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
-  const k = props.user?.permission_keys;
-  if (!Array.isArray(k)) return false;
-  return k.includes("orders.view");
+  return hasAnyView([
+    "orders_search",
+    "orders_fulfillment",
+    "orders_awaiting",
+    "orders_on_hold",
+    "orders_backorder",
+    "orders_shipped",
+    "orders_wholesale",
+    "orders_create",
+    "orders",
+  ]);
 });
+
+const canViewOrdersSearch = computed(() =>
+  hasPerm("orders_search.view", "orders.view"),
+);
+const canViewOrdersFulfillment = computed(() =>
+  hasPerm("orders_fulfillment.view", "orders.view"),
+);
+const canViewOrdersAwaiting = computed(() =>
+  hasPerm("orders_awaiting.view", "orders.view"),
+);
+const canViewOrdersOnHold = computed(() =>
+  hasPerm("orders_on_hold.view", "orders.view"),
+);
+const canViewOrdersBackorder = computed(() =>
+  hasPerm("orders_backorder.view", "orders.view"),
+);
+const canViewOrdersShipped = computed(() =>
+  hasPerm("orders_shipped.view", "orders.view"),
+);
+const canViewOrdersWholesale = computed(() =>
+  hasPerm("orders_wholesale.view", "orders.view"),
+);
 
 const canWriteOrders = computed(() => {
   if (isPortal.value) return false;
-  if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
-  const k = props.user?.permission_keys;
-  return Array.isArray(k) && k.includes("orders.update");
+  return hasPerm("orders_create.update", "orders.update");
 });
 
 const clientsGroupOpen = ref(route.path.startsWith("/admin/clients"));
@@ -329,7 +439,7 @@ function collapseNav() {
                 </svg>
               </button>
               <ul v-show="ordersGroupOpen" class="list-unstyled mb-0 mt-1">
-                <li>
+                <li v-if="canViewOrdersSearch">
                   <RouterLink
                     to="/admin/orders/search"
                     class="vx-nav-link vx-nav-sublink"
@@ -339,7 +449,7 @@ function collapseNav() {
                     Search
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewOrdersFulfillment">
                   <RouterLink
                     to="/admin/orders/fulfillment"
                     class="vx-nav-link vx-nav-sublink"
@@ -349,7 +459,7 @@ function collapseNav() {
                     Fulfillment
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewOrdersAwaiting">
                   <RouterLink
                     to="/admin/orders/awaiting"
                     class="vx-nav-link vx-nav-sublink"
@@ -359,7 +469,7 @@ function collapseNav() {
                     Ready To Ship
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewOrdersOnHold">
                   <RouterLink
                     to="/admin/orders/on-hold"
                     class="vx-nav-link vx-nav-sublink"
@@ -369,7 +479,7 @@ function collapseNav() {
                     On-Hold
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewOrdersBackorder">
                   <RouterLink
                     to="/admin/orders/backorder"
                     class="vx-nav-link vx-nav-sublink"
@@ -379,7 +489,7 @@ function collapseNav() {
                     Backorder
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewOrdersShipped">
                   <RouterLink
                     to="/admin/orders/shipped"
                     class="vx-nav-link vx-nav-sublink"
@@ -389,7 +499,7 @@ function collapseNav() {
                     Shipped
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewOrdersWholesale">
                   <RouterLink
                     to="/admin/orders/wholesale"
                     class="vx-nav-link vx-nav-sublink"
@@ -474,7 +584,7 @@ function collapseNav() {
                 </svg>
               </button>
               <ul v-show="receivingGroupOpen" class="list-unstyled mb-0 mt-1">
-                <li>
+                <li v-if="canViewReceivingAsn">
                   <RouterLink
                     to="/admin/receiving/asn"
                     class="vx-nav-link vx-nav-sublink"
@@ -484,7 +594,7 @@ function collapseNav() {
                     ASN
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewReceivingPutAway">
                   <RouterLink
                     to="/admin/receiving/put-away"
                     class="vx-nav-link vx-nav-sublink"
@@ -559,7 +669,7 @@ function collapseNav() {
                 </svg>
               </button>
               <ul v-show="returnsGroupOpen" class="list-unstyled mb-0 mt-1">
-                <li>
+                <li v-if="canViewReturnsProcess">
                   <RouterLink
                     to="/admin/returns/process"
                     class="vx-nav-link vx-nav-sublink"
@@ -569,7 +679,7 @@ function collapseNav() {
                     Process Returns
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewReturnsOrders">
                   <RouterLink
                     to="/admin/returns/orders"
                     class="vx-nav-link vx-nav-sublink"
@@ -579,7 +689,7 @@ function collapseNav() {
                     Returned Orders
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewReturnsItems">
                   <RouterLink
                     to="/admin/returns/items"
                     class="vx-nav-link vx-nav-sublink"
@@ -589,7 +699,7 @@ function collapseNav() {
                     Returned Items
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewReturnsBins">
                   <RouterLink
                     to="/admin/returns/bins"
                     class="vx-nav-link vx-nav-sublink"
@@ -664,7 +774,7 @@ function collapseNav() {
                 </svg>
               </button>
               <ul v-show="inventoryGroupOpen" class="list-unstyled mb-0 mt-1">
-                <li>
+                <li v-if="canViewInventoryProducts">
                   <RouterLink
                     to="/admin/inventory"
                     class="vx-nav-link vx-nav-sublink"
@@ -674,7 +784,7 @@ function collapseNav() {
                     Products
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewInventoryOutOfStock">
                   <RouterLink
                     to="/admin/inventory/out-of-stock"
                     class="vx-nav-link vx-nav-sublink"
@@ -684,7 +794,7 @@ function collapseNav() {
                     Out of Stock
                   </RouterLink>
                 </li>
-                <li v-if="!isPortal">
+                <li v-if="!isPortal && canViewInventoryRestock">
                   <RouterLink
                     to="/admin/inventory/restock"
                     class="vx-nav-link vx-nav-sublink"
@@ -694,7 +804,7 @@ function collapseNav() {
                     Restock
                   </RouterLink>
                 </li>
-                <li v-if="!isPortal">
+                <li v-if="!isPortal && canViewInventoryOnDemand">
                   <RouterLink
                     to="/admin/inventory/on-demand"
                     class="vx-nav-link vx-nav-sublink"
@@ -768,7 +878,7 @@ function collapseNav() {
                 </svg>
               </button>
               <ul v-show="clientsGroupOpen" class="list-unstyled mb-0 mt-1">
-                <li>
+                <li v-if="canViewClientAccounts">
                   <RouterLink
                     to="/admin/clients/accounts"
                     class="vx-nav-link vx-nav-sublink"
@@ -778,7 +888,7 @@ function collapseNav() {
                     Accounts
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewClientUsers">
                   <RouterLink
                     to="/admin/clients/users"
                     class="vx-nav-link vx-nav-sublink"
@@ -862,7 +972,7 @@ function collapseNav() {
                 </svg>
               </button>
               <ul v-show="billingGroupOpen" class="list-unstyled mb-0 mt-1">
-                <li>
+                <li v-if="canViewBillingSummary">
                   <RouterLink
                     to="/admin/billing/summary"
                     class="vx-nav-link vx-nav-sublink"
@@ -872,7 +982,7 @@ function collapseNav() {
                     Summary
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewBillingInvoices">
                   <RouterLink
                     to="/admin/billing/invoices"
                     class="vx-nav-link vx-nav-sublink"
@@ -882,7 +992,7 @@ function collapseNav() {
                     Invoices
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewBillingCustomBills">
                   <RouterLink
                     to="/admin/billing/custom-bills"
                     class="vx-nav-link vx-nav-sublink"
@@ -892,7 +1002,7 @@ function collapseNav() {
                     Custom Bills
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewBillingAsnBills">
                   <RouterLink
                     to="/admin/billing/asn-bills"
                     class="vx-nav-link vx-nav-sublink"
@@ -902,7 +1012,7 @@ function collapseNav() {
                     ASN Bills
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewBillingReturnBills">
                   <RouterLink
                     to="/admin/billing/return-bills"
                     class="vx-nav-link vx-nav-sublink"
@@ -976,7 +1086,7 @@ function collapseNav() {
                 </svg>
               </button>
               <ul v-show="resourcesGroupOpen" class="list-unstyled mb-0 mt-1">
-                <li>
+                <li v-if="canViewResourcesTutorials">
                   <RouterLink
                     to="/admin/resources/tutorials"
                     class="vx-nav-link vx-nav-sublink"
@@ -986,7 +1096,7 @@ function collapseNav() {
                     Tutorials
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewResourcesPhotos">
                   <RouterLink
                     to="/admin/resources/photos"
                     class="vx-nav-link vx-nav-sublink"
@@ -996,7 +1106,7 @@ function collapseNav() {
                     Photos
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewResourcesCalendar">
                   <RouterLink
                     to="/admin/resources/calendar"
                     class="vx-nav-link vx-nav-sublink"
@@ -1006,7 +1116,7 @@ function collapseNav() {
                     Calendar
                   </RouterLink>
                 </li>
-                <li>
+                <li v-if="canViewResourcesEvents">
                   <RouterLink
                     to="/admin/resources/calendar/events"
                     class="vx-nav-link vx-nav-sublink"

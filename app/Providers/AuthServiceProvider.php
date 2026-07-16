@@ -92,7 +92,7 @@ class AuthServiceProvider extends ServiceProvider
                 return true;
             }
 
-            return in_array('inventory.view', $user->allPermissionKeys(), true);
+            return $user->hasPermission('inventory.view');
         });
 
         Gate::define('inventory.update', function ($user) {
@@ -103,7 +103,7 @@ class AuthServiceProvider extends ServiceProvider
                 return true;
             }
 
-            return in_array('inventory.update', $user->allPermissionKeys(), true);
+            return $user->hasPermission('inventory.update');
         });
 
         Gate::define('orders.view', function ($user) {
@@ -117,7 +117,7 @@ class AuthServiceProvider extends ServiceProvider
                 return true;
             }
 
-            return in_array('orders.view', $user->allPermissionKeys(), true);
+            return $user->hasPermission('orders.view');
         });
 
         Gate::define('orders.update', function ($user) {
@@ -128,7 +128,7 @@ class AuthServiceProvider extends ServiceProvider
                 return true;
             }
 
-            return in_array('orders.update', $user->allPermissionKeys(), true);
+            return $user->hasPermission('orders.update');
         });
 
         Gate::define('receiving.view', function ($user) {
@@ -139,7 +139,7 @@ class AuthServiceProvider extends ServiceProvider
                 return true;
             }
 
-            return in_array('receiving.view', $user->allPermissionKeys(), true);
+            return $user->hasPermission('receiving.view');
         });
 
         Gate::define('receiving.update', function ($user) {
@@ -150,7 +150,51 @@ class AuthServiceProvider extends ServiceProvider
                 return true;
             }
 
-            return in_array('receiving.update', $user->allPermissionKeys(), true);
+            return $user->hasPermission('receiving.update');
+        });
+
+        Gate::define('receiving_asn.view', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return $user->hasPermission('receiving_asn.view');
+        });
+
+        Gate::define('receiving_asn.update', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return $user->hasPermission('receiving_asn.update');
+        });
+
+        Gate::define('receiving_put_away.view', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return $user->hasPermission('receiving_put_away.view');
+        });
+
+        Gate::define('receiving_put_away.update', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return $user->hasPermission('receiving_put_away.update');
         });
 
         Gate::define('returns.view', function ($user) {
@@ -164,7 +208,7 @@ class AuthServiceProvider extends ServiceProvider
                 return true;
             }
 
-            return in_array('returns.view', $user->allPermissionKeys(), true);
+            return $user->hasPermission('returns.view');
         });
 
         Gate::define('returns.update', function ($user) {
@@ -175,7 +219,7 @@ class AuthServiceProvider extends ServiceProvider
                 return true;
             }
 
-            return in_array('returns.update', $user->allPermissionKeys(), true);
+            return $user->hasPermission('returns.update');
         });
 
         Gate::define('crm.client-account-options', function ($user) {
@@ -189,9 +233,8 @@ class AuthServiceProvider extends ServiceProvider
                 return true;
             }
 
-            $keys = $user->allPermissionKeys();
             foreach (['inventory.view', 'orders.view', 'receiving.view', 'returns.view', 'clients.view', 'billing.view', 'projects.view'] as $perm) {
-                if (in_array($perm, $keys, true)) {
+                if ($user->hasPermission($perm)) {
                     return true;
                 }
             }

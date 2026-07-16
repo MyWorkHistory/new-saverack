@@ -14,7 +14,7 @@ class AsnBillPolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->canManageBilling($user) || $user->hasPermission('billing.view');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_asn_bills.view');
     }
 
     public function view(User $user, AsnBill $asnBill): bool
@@ -24,12 +24,12 @@ class AsnBillPolicy
 
     public function create(User $user): bool
     {
-        return $this->canManageBilling($user) || $user->hasPermission('billing.create');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_asn_bills.create');
     }
 
     public function update(User $user, AsnBill $asnBill): bool
     {
-        return $this->canManageBilling($user) || $user->hasPermission('billing.update');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_asn_bills.update');
     }
 
     public function delete(User $user, AsnBill $asnBill): bool
@@ -38,6 +38,6 @@ class AsnBillPolicy
             return false;
         }
 
-        return $this->canManageBilling($user) || $user->hasPermission('billing.delete');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_asn_bills.delete');
     }
 }

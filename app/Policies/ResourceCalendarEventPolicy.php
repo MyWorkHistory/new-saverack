@@ -9,12 +9,18 @@ class ResourceCalendarEventPolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->isCrmOwner() || $user->hasPermission('resources.view');
+        return $user->isCrmOwner()
+            || $user->hasPermission('resources_calendar.view')
+            || $user->hasPermission('resources_events.view');
     }
 
     public function view(User $user, ResourceCalendarEvent $event): bool
     {
-        if (! $user->isCrmOwner() && ! $user->hasPermission('resources.view')) {
+        if (
+            ! $user->isCrmOwner()
+            && ! $user->hasPermission('resources_calendar.view')
+            && ! $user->hasPermission('resources_events.view')
+        ) {
             return false;
         }
 
@@ -27,7 +33,9 @@ class ResourceCalendarEventPolicy
 
     public function create(User $user): bool
     {
-        return $user->isCrmOwner() || $user->hasPermission('resources.create');
+        return $user->isCrmOwner()
+            || $user->hasPermission('resources_calendar.create')
+            || $user->hasPermission('resources_events.create');
     }
 
   public function update(User $user, ResourceCalendarEvent $event): bool

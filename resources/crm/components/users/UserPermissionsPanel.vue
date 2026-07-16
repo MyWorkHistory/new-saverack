@@ -14,72 +14,231 @@ const PAGE_META = {
     moduleLabel: "Dashboard",
     rowLabel: "Dashboard",
     order: 10,
+    rowOrder: 1,
   },
   tickets: {
     moduleKey: "tickets",
     moduleLabel: "Tickets",
     rowLabel: "Tickets",
     order: 20,
+    rowOrder: 1,
   },
-  resources: {
+  resources_tutorials: {
     moduleKey: "resources",
     moduleLabel: "Resources",
-    rowLabel: "Resources",
+    rowLabel: "Tutorials",
     order: 25,
+    rowOrder: 1,
+  },
+  resources_photos: {
+    moduleKey: "resources",
+    moduleLabel: "Resources",
+    rowLabel: "Photos",
+    order: 25,
+    rowOrder: 2,
+  },
+  resources_calendar: {
+    moduleKey: "resources",
+    moduleLabel: "Resources",
+    rowLabel: "Calendar",
+    order: 25,
+    rowOrder: 3,
+  },
+  resources_events: {
+    moduleKey: "resources",
+    moduleLabel: "Resources",
+    rowLabel: "Events",
+    order: 25,
+    rowOrder: 4,
   },
   clients: {
     moduleKey: "clients",
     moduleLabel: "Clients",
     rowLabel: "Accounts",
     order: 30,
+    rowOrder: 1,
   },
   client_users: {
     moduleKey: "clients",
     moduleLabel: "Clients",
-    rowLabel: "Account Users",
-    order: 31,
+    rowLabel: "Users",
+    order: 30,
+    rowOrder: 2,
   },
   stores: {
     moduleKey: "clients",
     moduleLabel: "Clients",
     rowLabel: "Stores",
-    order: 32,
+    order: 30,
+    rowOrder: 3,
   },
   projects: {
-    moduleKey: "projects",
-    moduleLabel: "Projects",
+    moduleKey: "clients",
+    moduleLabel: "Clients",
     rowLabel: "Projects",
-    order: 35,
+    order: 30,
+    rowOrder: 4,
   },
-  billing: {
+  billing_summary: {
     moduleKey: "billing",
     moduleLabel: "Billing",
-    rowLabel: "Billing",
+    rowLabel: "Summary",
     order: 40,
+    rowOrder: 1,
   },
-  orders: {
+  billing_invoices: {
+    moduleKey: "billing",
+    moduleLabel: "Billing",
+    rowLabel: "Invoices",
+    order: 40,
+    rowOrder: 2,
+  },
+  billing_custom_bills: {
+    moduleKey: "billing",
+    moduleLabel: "Billing",
+    rowLabel: "Custom Bills",
+    order: 40,
+    rowOrder: 3,
+  },
+  billing_asn_bills: {
+    moduleKey: "billing",
+    moduleLabel: "Billing",
+    rowLabel: "ASN Bills",
+    order: 40,
+    rowOrder: 4,
+  },
+  billing_return_bills: {
+    moduleKey: "billing",
+    moduleLabel: "Billing",
+    rowLabel: "Returns Bills",
+    order: 40,
+    rowOrder: 5,
+  },
+  orders_search: {
     moduleKey: "orders",
     moduleLabel: "Orders",
-    rowLabel: "Orders",
+    rowLabel: "Search",
     order: 50,
+    rowOrder: 1,
   },
-  inventory: {
+  orders_fulfillment: {
+    moduleKey: "orders",
+    moduleLabel: "Orders",
+    rowLabel: "Fulfillment",
+    order: 50,
+    rowOrder: 2,
+  },
+  orders_awaiting: {
+    moduleKey: "orders",
+    moduleLabel: "Orders",
+    rowLabel: "Ready To Ship",
+    order: 50,
+    rowOrder: 3,
+  },
+  orders_on_hold: {
+    moduleKey: "orders",
+    moduleLabel: "Orders",
+    rowLabel: "On-Hold",
+    order: 50,
+    rowOrder: 4,
+  },
+  orders_backorder: {
+    moduleKey: "orders",
+    moduleLabel: "Orders",
+    rowLabel: "Backorder",
+    order: 50,
+    rowOrder: 5,
+  },
+  orders_shipped: {
+    moduleKey: "orders",
+    moduleLabel: "Orders",
+    rowLabel: "Shipped",
+    order: 50,
+    rowOrder: 6,
+  },
+  orders_wholesale: {
+    moduleKey: "orders",
+    moduleLabel: "Orders",
+    rowLabel: "Wholesale",
+    order: 50,
+    rowOrder: 7,
+  },
+  orders_create: {
+    moduleKey: "orders",
+    moduleLabel: "Orders",
+    rowLabel: "Create Order",
+    order: 50,
+    rowOrder: 8,
+  },
+  inventory_products: {
     moduleKey: "inventory",
     moduleLabel: "Inventory",
-    rowLabel: "Inventory",
+    rowLabel: "Products",
     order: 60,
+    rowOrder: 1,
   },
-  receiving: {
+  inventory_out_of_stock: {
+    moduleKey: "inventory",
+    moduleLabel: "Inventory",
+    rowLabel: "Out of Stock",
+    order: 60,
+    rowOrder: 2,
+  },
+  inventory_restock: {
+    moduleKey: "inventory",
+    moduleLabel: "Inventory",
+    rowLabel: "Restock",
+    order: 60,
+    rowOrder: 3,
+  },
+  inventory_on_demand: {
+    moduleKey: "inventory",
+    moduleLabel: "Inventory",
+    rowLabel: "On-Demand",
+    order: 60,
+    rowOrder: 4,
+  },
+  receiving_asn: {
     moduleKey: "receiving",
     moduleLabel: "Receiving",
-    rowLabel: "Receiving",
+    rowLabel: "ASN",
     order: 65,
+    rowOrder: 1,
   },
-  returns: {
+  receiving_put_away: {
+    moduleKey: "receiving",
+    moduleLabel: "Receiving",
+    rowLabel: "Put Away",
+    order: 65,
+    rowOrder: 2,
+  },
+  returns_process: {
     moduleKey: "returns",
     moduleLabel: "Returns",
-    rowLabel: "Returns",
+    rowLabel: "Process Returns",
     order: 67,
+    rowOrder: 1,
+  },
+  returns_orders: {
+    moduleKey: "returns",
+    moduleLabel: "Returns",
+    rowLabel: "Returned Orders",
+    order: 67,
+    rowOrder: 2,
+  },
+  returns_items: {
+    moduleKey: "returns",
+    moduleLabel: "Returns",
+    rowLabel: "Returned Items",
+    order: 67,
+    rowOrder: 3,
+  },
+  returns_bins: {
+    moduleKey: "returns",
+    moduleLabel: "Returns",
+    rowLabel: "Return Bins",
+    order: 67,
+    rowOrder: 4,
   },
 };
 
@@ -113,6 +272,7 @@ const modules = computed(() => {
       known?.moduleLabel ?? def.moduleLabel ?? pageKey.replace(/_/g, " ");
     const rowLabel = known?.rowLabel ?? def.pageLabel ?? pageKey.replace(/_/g, " ");
     const order = known?.order ?? 9999;
+    const rowOrder = known?.rowOrder ?? 9999;
     if (!byModule.has(moduleKey)) {
       byModule.set(moduleKey, {
         key: moduleKey,
@@ -126,6 +286,7 @@ const modules = computed(() => {
       mod.rowsByPage.set(pageKey, {
         key: pageKey,
         rowLabel,
+        rowOrder,
         keys: [null, null, null, null],
       });
     }
@@ -141,8 +302,10 @@ const modules = computed(() => {
     .map((mod) => ({
       key: mod.key,
       label: mod.label,
-      rows: [...mod.rowsByPage.values()].sort((a, b) =>
-        a.rowLabel.localeCompare(b.rowLabel),
+      rows: [...mod.rowsByPage.values()].sort(
+        (a, b) =>
+          (a.rowOrder ?? 9999) - (b.rowOrder ?? 9999) ||
+          a.rowLabel.localeCompare(b.rowLabel),
       ),
     }));
 });

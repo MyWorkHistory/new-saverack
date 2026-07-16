@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\CrmStaffPermissionCatalog;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -23,32 +24,8 @@ class User extends Authenticatable
     /** CRM modules gated to administrators only — not assignable to staff. */
     private const ADMIN_ONLY_CRM_MODULES = ['users', 'webmaster', 'settings'];
 
-    private const DEFAULT_EDITABLE_PERMISSION_KEYS = [
-        'clients.view',
-        'clients.create',
-        'clients.update',
-        'clients.delete',
-        'client_users.view',
-        'client_users.create',
-        'client_users.update',
-        'client_users.delete',
-        'projects.view',
-        'projects.create',
-        'projects.update',
-        'projects.delete',
-        'billing.view',
-        'billing.create',
-        'billing.update',
-        'billing.delete',
-        'inventory.view',
-        'inventory.update',
-        'receiving.view',
-        'receiving.update',
-        'returns.view',
-        'returns.update',
-        'orders.view',
-        'orders.update',
-    ];
+    /** @deprecated Prefer CrmStaffPermissionCatalog::matrixEditableKeys(); kept for ensureRows bootstrap. */
+    private const DEFAULT_EDITABLE_PERMISSION_KEYS = [];
 
     /**
      * Flatten mixed request shapes and keep only allowed CRM permission key strings.
@@ -90,38 +67,17 @@ class User extends Authenticatable
     }
 
     /**
-     * Direct user grants that can be toggled in CRM permissions UI.
+     * Direct user grants that can be toggled in CRM permissions UI (nav subpages).
      *
      * @return list<string>
      */
     public static function editableCrmPermissionKeys(): array
     {
-        Permission::ensureRowsForKeys(self::DEFAULT_EDITABLE_PERMISSION_KEYS);
+        $keys = CrmStaffPermissionCatalog::matrixEditableKeys();
+        Permission::ensureRowsForKeys($keys);
+        Permission::ensureRowsForKeys(CrmStaffPermissionCatalog::allDefinitionKeys());
 
-        $keys = Permission::query()->pluck('key')->all();
-        $out = [];
-        foreach ($keys as $raw) {
-            if (! is_string($raw)) {
-                continue;
-            }
-            $key = trim($raw);
-            if ($key === '') {
-                continue;
-            }
-            if (! preg_match('/^[a-z0-9_]+\.(view|create|update|delete)$/i', $key)) {
-                continue;
-            }
-            $action = strtolower((string) substr($key, strrpos($key, '.') + 1));
-            if (! in_array($action, self::EDITABLE_PERMISSION_ACTIONS, true)) {
-                continue;
-            }
-            if (! self::isAssignableCrmPermissionKey($key)) {
-                continue;
-            }
-            $out[] = $key;
-        }
-
-        return array_values(array_unique($out));
+        return $keys;
     }
 
     private static function isAssignableCrmPermissionKey(string $key): bool
@@ -131,8 +87,15 @@ class User extends Authenticatable
             return false;
         }
         $module = strtolower(substr($key, 0, $dot));
+        if (in_array($module, self::ADMIN_ONLY_CRM_MODULES, true)) {
+            return false;
+        }
+        // Coarse legacy modules are not assignable in the matrix (replaced by subpages).
+        if (in_array($module, CrmStaffPermissionCatalog::legacyMatrixModules(), true)) {
+            return false;
+        }
 
-        return ! in_array($module, self::ADMIN_ONLY_CRM_MODULES, true);
+        return true;
     }
 
     /**
@@ -268,25 +231,26 @@ class User extends Authenticatable
             return true;
         }
 
-        $this->loadMissing('roles.permissions', 'permissions');
+        return CrmStaffPermissionCatalog::grants($this->allPermissionKeys(), $key);
+    }
 
-        foreach ($this->permissions as $permission) {
-            $pKey = $permission->getAttribute('key');
-            if (is_string($pKey) && $pKey === $key) {
-                return true;
+    /**
+     * Effective CRM keys for the client (expands legacy module grants into subpage keys).
+     *
+     * @return list<string>
+     */
+    public function effectiveCrmPermissionKeys(): array
+    {
+        $raw = $this->allPermissionKeys();
+        $out = [];
+        foreach ($raw as $key) {
+            $out[] = $key;
+            foreach (CrmStaffPermissionCatalog::expandLegacyKey($key) as $child) {
+                $out[] = $child;
             }
         }
 
-        foreach ($this->roles as $role) {
-            foreach ($role->permissions as $permission) {
-                $pKey = $permission->getAttribute('key');
-                if (is_string($pKey) && $pKey === $key) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        return array_values(array_unique($out));
     }
 
     /**
@@ -360,6 +324,39 @@ class User extends Authenticatable
     }
 
     /**
+     * Direct grants for the permissions matrix UI (expands legacy module keys into subpages).
+     *
+     * @return list<string>
+     */
+    public function directCrmPermissionKeysForMatrix(): array
+    {
+        $this->loadMissing('permissions');
+        $allowed = array_flip(self::editableCrmPermissionKeys());
+        $out = [];
+        foreach ($this->permissions as $permission) {
+            $raw = $permission->getAttribute('key');
+            if (! is_string($raw)) {
+                continue;
+            }
+            $k = trim($raw);
+            if ($k === '') {
+                continue;
+            }
+            if (isset($allowed[$k])) {
+                $out[] = $k;
+                continue;
+            }
+            foreach (CrmStaffPermissionCatalog::expandLegacyKey($k) as $child) {
+                if (isset($allowed[$child])) {
+                    $out[] = $child;
+                }
+            }
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    /**
      * Permission keys granted via roles (not direct user pivot), limited to CRM matrix keys.
      *
      * @return list<string>
@@ -418,8 +415,8 @@ class User extends Authenticatable
         }
 
         return array_merge($arr, [
-            'permission_keys' => $this->allPermissionKeys(),
-            'direct_permission_keys' => $this->directCrmPermissionKeys(),
+            'permission_keys' => $this->effectiveCrmPermissionKeys(),
+            'direct_permission_keys' => $this->directCrmPermissionKeysForMatrix(),
             'role_permission_keys' => $this->roleCrmPermissionKeys(),
             'is_admin' => $this->isAdministrator(),
             'is_crm_owner' => $this->isCrmOwner(),

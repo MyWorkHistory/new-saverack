@@ -14,7 +14,7 @@ class CustomBillPolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->canManageBilling($user) || $user->hasPermission('billing.view');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_custom_bills.view');
     }
 
     public function view(User $user, CustomBill $customBill): bool
@@ -24,12 +24,12 @@ class CustomBillPolicy
 
     public function create(User $user): bool
     {
-        return $this->canManageBilling($user) || $user->hasPermission('billing.create');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_custom_bills.create');
     }
 
     public function update(User $user, CustomBill $customBill): bool
     {
-        return $this->canManageBilling($user) || $user->hasPermission('billing.update');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_custom_bills.update');
     }
 
     public function delete(User $user, CustomBill $customBill): bool
@@ -38,6 +38,6 @@ class CustomBillPolicy
             return false;
         }
 
-        return $this->canManageBilling($user) || $user->hasPermission('billing.delete');
+        return $this->canManageBilling($user) || $user->hasPermission('billing_custom_bills.delete');
     }
 }

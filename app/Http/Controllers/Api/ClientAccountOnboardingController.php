@@ -276,6 +276,55 @@ class ClientAccountOnboardingController extends Controller
         return response()->json($this->onboarding->buildAdminOnboardingPayload($client_account));
     }
 
+    public function downloadFulfillmentAgreementPdf(ClientAccount $client_account): Response
+    {
+        Gate::authorize('view', $client_account);
+
+        return $this->agreementPdfs->downloadBlank($client_account);
+    }
+
+    public function uploadFulfillmentAgreement(Request $request, ClientAccount $client_account): JsonResponse
+    {
+        Gate::authorize('update', $client_account);
+
+        $validated = $request->validate([
+            'file' => ['required', 'file', 'mimes:pdf', 'max:20480'],
+            'company' => ['nullable', 'string', 'max:255'],
+            'rep_name' => ['nullable', 'string', 'max:255'],
+            'signed_at' => ['nullable', 'date'],
+        ]);
+
+        $client_account = $this->agreements->completeUpload(
+            $client_account,
+            $request->file('file'),
+            [
+                'company' => $validated['company'] ?? null,
+                'rep_name' => $validated['rep_name'] ?? null,
+                'signed_at' => $validated['signed_at'] ?? null,
+            ]
+        );
+
+        return response()->json($this->onboarding->buildAdminOnboardingPayload($client_account));
+    }
+
+    public function esignFulfillmentAgreement(Request $request, ClientAccount $client_account): JsonResponse
+    {
+        Gate::authorize('update', $client_account);
+
+        $validated = $request->validate([
+            'company' => ['required', 'string', 'max:255'],
+            'rep_name' => ['required', 'string', 'max:255'],
+            'signed_at' => ['nullable', 'date'],
+            'signature_style' => ['required', 'string', 'max:64'],
+            'signature_text' => ['required', 'string', 'max:255'],
+            'signature_image' => ['required', 'string'],
+        ]);
+
+        $client_account = $this->agreements->completeEsign($client_account, $validated);
+
+        return response()->json($this->onboarding->buildAdminOnboardingPayload($client_account));
+    }
+
     public function verifyFulfillmentAgreement(Request $request, ClientAccount $client_account): JsonResponse
     {
         Gate::authorize('update', $client_account);

@@ -599,6 +599,12 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.onboarding.tasks.verification');
     Route::patch('client-accounts/{client_account}/onboarding/tasks/{task}/verification/fields/{field}', [ClientAccountOnboardingController::class, 'updateTaskFieldVerification'])
         ->name('client-accounts.onboarding.tasks.verification.fields');
+    Route::get('client-accounts/{client_account}/onboarding/fulfillment-agreement.pdf', [ClientAccountOnboardingController::class, 'downloadFulfillmentAgreementPdf'])
+        ->name('client-accounts.onboarding.fulfillment-agreement.pdf');
+    Route::post('client-accounts/{client_account}/onboarding/fulfillment-agreement/upload', [ClientAccountOnboardingController::class, 'uploadFulfillmentAgreement'])
+        ->name('client-accounts.onboarding.fulfillment-agreement.upload');
+    Route::post('client-accounts/{client_account}/onboarding/fulfillment-agreement/esign', [ClientAccountOnboardingController::class, 'esignFulfillmentAgreement'])
+        ->name('client-accounts.onboarding.fulfillment-agreement.esign');
     Route::post('client-accounts/{client_account}/onboarding/fulfillment-agreement/verify', [ClientAccountOnboardingController::class, 'verifyFulfillmentAgreement'])
         ->name('client-accounts.onboarding.fulfillment-agreement.verify');
     Route::get('client-accounts/{client_account}/onboarding/fulfillment-agreement/signed.pdf', [ClientAccountOnboardingController::class, 'downloadSignedFulfillmentAgreement'])

@@ -39,6 +39,12 @@ const brandLogoUrl = computed(() => onboarding.value?.brand_logo_url || "");
 const fulfillmentAgreement = computed(() => onboarding.value?.fulfillment_agreement || null);
 const manualInstructions = computed(() => onboarding.value?.manual_payment_instructions || null);
 const activeSectionId = computed(() => activeTask.value?.id || "");
+const agreementDefaultCompany = computed(() => profile.value?.company_name || "");
+const agreementDefaultRepName = computed(() => {
+  const contact = String(profile.value?.contact_full_name || "").trim();
+  if (contact) return contact;
+  return String(profile.value?.name || "").trim();
+});
 
 const activeTaskVerified = computed(() => !!activeTask.value?.verified);
 const activeTaskVerificationFields = computed(() => activeTask.value?.verification_fields || {});
@@ -321,6 +327,8 @@ loadOnboarding();
       :agreement="fulfillmentAgreement"
       :task="activeTask"
       :verifying="verifyingTaskId === 'fulfillment_agreement'"
+      :default-company="agreementDefaultCompany"
+      :default-rep-name="agreementDefaultRepName"
       @saved="onSaved"
       @unverify="unverifyActiveTask"
     />

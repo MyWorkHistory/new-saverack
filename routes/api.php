@@ -155,6 +155,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/{project}/notes/{note}', [ProjectController::class, 'destroyNote']);
             Route::post('/{project}/quote-items', [ProjectController::class, 'storeQuoteItem']);
             Route::delete('/{project}/quote-items/{item}', [ProjectController::class, 'destroyQuoteItem']);
+            Route::post('/{project}/create-bill', [ProjectController::class, 'createBill']);
         });
 
     Route::prefix('inventory')->group(function () {

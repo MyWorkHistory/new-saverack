@@ -57,6 +57,11 @@ class Project extends Model
         return $this->hasMany(ProjectNote::class)->orderByDesc('id');
     }
 
+    public function quoteItems(): HasMany
+    {
+        return $this->hasMany(ProjectQuoteItem::class)->orderBy('sort_order')->orderBy('id');
+    }
+
     public function isCompleted(): bool
     {
         return $this->status === self::STATUS_COMPLETED;

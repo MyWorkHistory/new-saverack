@@ -146,6 +146,15 @@ class ProjectController extends Controller
         return response()->json($this->projects->toDetailArray($project));
     }
 
+    public function createBill(Project $project): JsonResponse
+    {
+        Gate::authorize('update', $project);
+
+        $project = $this->projects->createBill($project, request()->user());
+
+        return response()->json($this->projects->toDetailArray($project), 201);
+    }
+
     private function assertNoteBelongs(Project $project, ProjectNote $note): void
     {
         if ((int) $note->project_id !== (int) $project->id) {

@@ -7,7 +7,9 @@ use App\Models\CustomBill;
 use App\Models\CustomBillItem;
 use App\Models\Project;
 use App\Models\ProjectNote;
+use App\Models\ProjectQuoteItem;
 use App\Models\User;
+use App\Support\Billing\CustomBillLineType;
 use App\Support\Billing\InvoiceLineCategory;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -105,16 +107,6 @@ class ProjectService
         return DB::transaction(function () use ($data, $actor, $accountId) {
             $pid = $this->nextPid();
 
-            $bill = $this->customBills->create(
-                [
-                    'client_account_id' => $accountId,
-                    'bill_date' => now()->toDateString(),
-                    'name' => $pid,
-                ],
-                [],
-                $actor
-            );
-
             $project = Project::query()->create([
                 'pid' => $pid,
                 'client_account_id' => $accountId,
@@ -123,12 +115,12 @@ class ProjectService
                     ? (trim((string) $data['description']) ?: null)
                     : null,
                 'status' => Project::STATUS_PENDING,
-                'custom_bill_id' => $bill->id,
+                'custom_bill_id' => null,
                 'created_by_user_id' => $actor ? $actor->id : null,
                 'completed_at' => null,
             ]);
 
-            return $project->fresh(['clientAccount', 'customBill', 'notes.user', 'createdBy']);
+            return $project->fresh(['clientAccount', 'customBill', 'notes.user', 'createdBy', 'quoteItems']);
         });
     }
 
@@ -140,6 +132,7 @@ class ProjectService
                 'customBill.items',
                 'notes.user',
                 'createdBy:id,name',
+                'quoteItems',
             ])
             ->findOrFail($id);
     }
@@ -160,13 +153,14 @@ class ProjectService
         }
         $project->save();
 
-        return $project->fresh(['clientAccount', 'customBill.items', 'notes.user', 'createdBy']);
+        return $this->findOrFail((int) $project->id);
     }
 
     public function delete(Project $project): void
     {
         DB::transaction(function () use ($project) {
             $project->notes()->delete();
+            $project->quoteItems()->delete();
             $project->custom_bill_id = null;
             $project->save();
             $project->delete();
@@ -214,22 +208,87 @@ class ProjectService
      */
     public function addQuoteItem(Project $project, array $row, ?User $actor): Project
     {
-        $bill = $this->requireLinkedOpenBill($project);
-        $this->customBills->addItem($bill, $row, $actor);
+        if ($project->custom_bill_id) {
+            $bill = $this->requireLinkedOpenBill($project);
+            $this->customBills->addItem($bill, $row, $actor);
+
+            return $this->findOrFail((int) $project->id);
+        }
+
+        $normalized = $this->normalizeQuoteRow($row);
+        $order = (int) $project->quoteItems()->max('sort_order') + 1;
+        ProjectQuoteItem::query()->create([
+            'project_id' => $project->id,
+            'line_type' => $normalized['line_type'],
+            'name' => $normalized['name'],
+            'quantity' => $normalized['quantity'],
+            'unit_price_cents' => $normalized['unit_price_cents'],
+            'line_total_cents' => $normalized['line_total_cents'],
+            'sku' => $normalized['sku'],
+            'sort_order' => $order,
+        ]);
 
         return $this->findOrFail((int) $project->id);
     }
 
     public function removeQuoteItem(Project $project, int $itemId, ?User $actor): Project
     {
-        $bill = $this->requireLinkedOpenBill($project);
-        $item = CustomBillItem::query()
-            ->where('custom_bill_id', $bill->id)
+        if ($project->custom_bill_id) {
+            $bill = $this->requireLinkedOpenBill($project);
+            $item = CustomBillItem::query()
+                ->where('custom_bill_id', $bill->id)
+                ->whereKey($itemId)
+                ->firstOrFail();
+            $this->customBills->deleteItem($bill, $item, $actor);
+
+            return $this->findOrFail((int) $project->id);
+        }
+
+        $item = ProjectQuoteItem::query()
+            ->where('project_id', $project->id)
             ->whereKey($itemId)
             ->firstOrFail();
-        $this->customBills->deleteItem($bill, $item, $actor);
+        $item->delete();
 
         return $this->findOrFail((int) $project->id);
+    }
+
+    public function createBill(Project $project, ?User $actor): Project
+    {
+        if ($project->custom_bill_id) {
+            throw ValidationException::withMessages([
+                'custom_bill_id' => ['This project already has a custom bill.'],
+            ]);
+        }
+
+        return DB::transaction(function () use ($project, $actor) {
+            $project->loadMissing('quoteItems');
+            $items = $project->quoteItems->map(function (ProjectQuoteItem $item) {
+                return [
+                    'line_type' => $item->line_type,
+                    'name' => $item->name,
+                    'quantity' => (float) $item->quantity,
+                    'unit_price_cents' => (int) $item->unit_price_cents,
+                    'sku' => $item->sku,
+                ];
+            })->values()->all();
+
+            $bill = $this->customBills->create(
+                [
+                    'client_account_id' => (int) $project->client_account_id,
+                    'bill_date' => now()->toDateString(),
+                    'name' => trim((string) $project->name) ?: null,
+                ],
+                $items,
+                $actor
+            );
+
+            $project->custom_bill_id = $bill->id;
+            $project->save();
+            $project->quoteItems()->delete();
+
+            return $this->findOrFail((int) $project->id);
+        });
     }
 
     /**
@@ -264,25 +323,45 @@ class ProjectService
             'customBill.items',
             'notes.user',
             'createdBy',
+            'quoteItems',
         ]);
 
         $bill = $project->customBill;
         $items = [];
+        $quoteTotal = 0;
+
         if ($bill instanceof CustomBill) {
             $bill->loadMissing('items');
             $items = $bill->items->map(function (CustomBillItem $item) {
-                return [
-                    'id' => $item->id,
-                    'line_type' => $item->line_type,
-                    'name' => $item->name,
-                    'quantity' => (float) $item->quantity,
-                    'unit_price_cents' => (int) $item->unit_price_cents,
-                    'line_total_cents' => (int) $item->line_total_cents,
-                    'sku' => $item->sku,
-                    'sort_order' => (int) $item->sort_order,
-                ];
+                return $this->quoteItemArray(
+                    (int) $item->id,
+                    (string) $item->line_type,
+                    (string) $item->name,
+                    (float) $item->quantity,
+                    (int) $item->unit_price_cents,
+                    (int) $item->line_total_cents,
+                    $item->sku,
+                    (int) $item->sort_order
+                );
             })->values()->all();
+            $quoteTotal = (int) $bill->total_cents;
+        } else {
+            $items = $project->quoteItems->map(function (ProjectQuoteItem $item) {
+                return $this->quoteItemArray(
+                    (int) $item->id,
+                    (string) $item->line_type,
+                    (string) $item->name,
+                    (float) $item->quantity,
+                    (int) $item->unit_price_cents,
+                    (int) $item->line_total_cents,
+                    $item->sku,
+                    (int) $item->sort_order
+                );
+            })->values()->all();
+            $quoteTotal = (int) $project->quoteItems->sum('line_total_cents');
         }
+
+        $quoteOpen = ! ($bill instanceof CustomBill) || $bill->isOpen();
 
         return [
             'id' => $project->id,
@@ -299,9 +378,9 @@ class ProjectService
             'custom_bill_number' => $bill ? $bill->bill_number : null,
             'custom_bill_name' => $bill ? $bill->name : null,
             'custom_bill_status' => $bill ? $bill->status : null,
-            'quote_total_cents' => $bill ? (int) $bill->total_cents : 0,
+            'quote_total_cents' => $quoteTotal,
             'quote_items' => $items,
-            'quote_open' => $bill instanceof CustomBill && $bill->isOpen(),
+            'quote_open' => $quoteOpen,
             'category_options' => collect(InvoiceLineCategory::staffUiValues())->map(function (string $value) {
                 return [
                     'value' => $value,
@@ -332,6 +411,70 @@ class ProjectService
             'user_name' => $note->user ? $note->user->name : 'Staff',
             'created_at' => $note->created_at ? $note->created_at->toIso8601String() : null,
             'updated_at' => $note->updated_at ? $note->updated_at->toIso8601String() : null,
+        ];
+    }
+
+    /**
+     * @return array{id: int, line_type: string, name: string, quantity: float, unit_price_cents: int, line_total_cents: int, sku: string|null, sort_order: int}
+     */
+    private function quoteItemArray(
+        int $id,
+        string $lineType,
+        string $name,
+        float $quantity,
+        int $unitPriceCents,
+        int $lineTotalCents,
+        $sku,
+        int $sortOrder
+    ): array {
+        return [
+            'id' => $id,
+            'line_type' => $lineType,
+            'name' => $name,
+            'quantity' => $quantity,
+            'unit_price_cents' => $unitPriceCents,
+            'line_total_cents' => $lineTotalCents,
+            'sku' => $sku,
+            'sort_order' => $sortOrder,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array{line_type: string, name: string, quantity: float, unit_price_cents: int, line_total_cents: int, sku: string|null}
+     */
+    private function normalizeQuoteRow(array $row): array
+    {
+        $lineType = trim((string) ($row['line_type'] ?? ''));
+        if (! CustomBillLineType::isAcceptedLineType($lineType)) {
+            throw ValidationException::withMessages(['line_type' => ['Invalid category.']]);
+        }
+        $name = trim((string) ($row['name'] ?? ''));
+        if ($name === '') {
+            throw ValidationException::withMessages(['name' => ['Name is required.']]);
+        }
+        $qty = (float) ($row['quantity'] ?? 1);
+        if ($qty <= 0) {
+            throw ValidationException::withMessages(['quantity' => ['Quantity must be greater than zero.']]);
+        }
+        if (isset($row['unit_price_cents'])) {
+            $unitCents = (int) $row['unit_price_cents'];
+        } else {
+            $unitCents = (int) round((float) ($row['unit_price'] ?? 0) * 100);
+        }
+        $lineTotal = (int) round($qty * $unitCents);
+        if ($lineType === CustomBillLineType::CREDIT || $lineType === InvoiceLineCategory::CREDITS) {
+            $unitCents = -abs($unitCents);
+            $lineTotal = -abs($lineTotal);
+        }
+
+        return [
+            'line_type' => $lineType,
+            'name' => $name,
+            'quantity' => $qty,
+            'unit_price_cents' => $unitCents,
+            'line_total_cents' => $lineTotal,
+            'sku' => isset($row['sku']) && trim((string) $row['sku']) !== '' ? trim((string) $row['sku']) : null,
         ];
     }
 

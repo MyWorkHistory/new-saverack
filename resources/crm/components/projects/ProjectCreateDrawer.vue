@@ -88,7 +88,7 @@ function submit() {
             </button>
           </header>
 
-          <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4 d-flex flex-column">
             <p v-if="errorMsg" class="small text-danger">{{ errorMsg }}</p>
             <label class="form-label">Account Name</label>
             <CrmSearchableSelect
@@ -114,8 +114,8 @@ function submit() {
             <textarea
               id="add-project-desc"
               v-model="description"
-              class="form-control"
-              rows="4"
+              class="form-control add-project-desc flex-grow-1"
+              rows="10"
               :disabled="busy"
             />
           </div>
@@ -155,5 +155,9 @@ function submit() {
 .drawer-fade-enter-from,
 .drawer-fade-leave-to {
   opacity: 0;
+}
+.add-project-desc {
+  min-height: 14rem;
+  resize: vertical;
 }
 </style>

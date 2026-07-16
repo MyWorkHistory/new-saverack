@@ -311,6 +311,7 @@ onUnmounted(() => {
               <th class="staff-table-head__th text-center" scope="col">Status</th>
               <th class="staff-table-head__th text-center" scope="col">PID</th>
               <th class="staff-table-head__th" scope="col">Project Name</th>
+              <th class="staff-table-head__th" scope="col">Account</th>
               <th class="staff-table-head__th text-center" scope="col">Date Created</th>
               <th class="staff-table-head__th text-center" scope="col">Date Completed</th>
               <th class="staff-table-head__th staff-actions-col text-center" scope="col">Action</th>
@@ -318,7 +319,7 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr v-if="rows.length === 0">
-              <td colspan="6" class="text-center text-secondary py-5">No projects found.</td>
+              <td colspan="7" class="text-center text-secondary py-5">No projects found.</td>
             </tr>
             <tr v-for="row in rows" :key="row.id">
               <td class="text-center">
@@ -343,10 +344,8 @@ onUnmounted(() => {
                 >
                   {{ row.name }}
                 </RouterLink>
-                <div v-if="row.client_account_name" class="small text-secondary">
-                  {{ row.client_account_name }}
-                </div>
               </td>
+              <td class="text-secondary">{{ row.client_account_name || "—" }}</td>
               <td class="text-center">{{ formatDateUs(row.created_at) || "—" }}</td>
               <td class="text-center">{{ formatDateUs(row.completed_at) || "—" }}</td>
               <td class="staff-actions-cell text-center" @click.stop>
@@ -447,7 +446,7 @@ onUnmounted(() => {
       title="Delete Project"
       :message="
         deleteTarget
-          ? `Delete project ${deleteTarget.pid}? The linked custom bill will be kept.`
+          ? `Delete project ${deleteTarget.pid}? Any linked custom bill will be kept.`
           : ''
       "
       confirm-label="Delete"

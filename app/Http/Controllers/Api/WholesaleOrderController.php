@@ -1229,7 +1229,7 @@ class WholesaleOrderController extends Controller
         $title = $type === WholesaleOrderPackage::TYPE_BOX ? 'Box Info' : 'Pallet Info';
         $lines = [
             '*'.$title.'* — Order #'.$wholesaleOrder->order_number,
-            'Account: '.($wholesaleOrder->clientAccount?->company_name ?: '—'),
+            'Account: '.(($wholesaleOrder->clientAccount !== null ? $wholesaleOrder->clientAccount->company_name : null) ?: '—'),
             '',
         ];
         $i = 1;

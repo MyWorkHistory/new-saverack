@@ -475,87 +475,6 @@ onUnmounted(() => {
             </ul>
           </div>
         </div>
-
-        <div class="staff-table-card overflow-hidden">
-          <div class="p-4 p-md-5 border-bottom">
-            <div class="d-flex align-items-center justify-content-between gap-2">
-              <h3 class="h6 fw-semibold text-body mb-0">Project Quote</h3>
-              <button
-                v-if="canUpdate"
-                type="button"
-                class="btn btn-primary staff-page-primary btn-sm"
-                :disabled="!project.quote_open"
-                @click="openAddQuote"
-              >
-                Add to Quote
-              </button>
-            </div>
-          </div>
-          <div class="p-4 p-md-5">
-            <p v-if="hasBill && !project.quote_open" class="small text-secondary">
-              Quote is locked because the custom bill is invoiced.
-            </p>
-            <div v-if="!quoteItems.length" class="text-secondary small py-2">
-              No quote lines yet.
-            </div>
-            <div v-else class="table-responsive">
-              <table class="table table-sm staff-data-table mb-0 align-middle">
-                <thead>
-                  <tr>
-                    <th scope="col">Item</th>
-                    <th scope="col" class="text-end">Qty</th>
-                    <th scope="col" class="text-end">Price</th>
-                    <th scope="col" class="text-end"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="item in quoteItems" :key="item.id">
-                    <td>
-                      <div class="fw-semibold">{{ item.name }}</div>
-                      <div class="small text-secondary">
-                        {{ invoiceCategoryLabel(item.line_type) }}
-                        <span v-if="item.sku"> · {{ item.sku }}</span>
-                      </div>
-                    </td>
-                    <td class="text-end">{{ item.quantity }}</td>
-                    <td class="text-end">{{ cents(item.line_total_cents) }}</td>
-                    <td class="text-end">
-                      <button
-                        v-if="canUpdate && project.quote_open"
-                        type="button"
-                        class="btn btn-link btn-sm text-danger p-0"
-                        @click="askDeleteItem(item)"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <th colspan="2" class="text-end">Total</th>
-                    <th class="text-end">{{ cents(project.quote_total_cents) }}</th>
-                    <th></th>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-            <div
-              v-if="canUpdate && !hasBill"
-              class="d-flex justify-content-end mt-3 pt-3 border-top"
-            >
-              <button
-                type="button"
-                class="btn btn-primary staff-page-primary"
-                :disabled="createBillBusy"
-                @click="createBill"
-              >
-                <CrmLoadingSpinner v-if="createBillBusy" small class="me-1" />
-                Create Bill
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
 
       <aside class="col-12 col-lg-4 d-flex flex-column gap-4">
@@ -591,6 +510,87 @@ onUnmounted(() => {
               <dd class="mb-0 text-body">{{ project.created_by_name || "—" }}</dd>
             </div>
           </dl>
+        </div>
+
+        <div class="staff-table-card overflow-hidden">
+          <div class="p-4 border-bottom">
+            <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+              <h3 class="small fw-semibold text-secondary text-uppercase mb-0">Quote</h3>
+              <button
+                v-if="canUpdate"
+                type="button"
+                class="btn btn-primary staff-page-primary btn-sm"
+                :disabled="!project.quote_open"
+                @click="openAddQuote"
+              >
+                Add To Quote
+              </button>
+            </div>
+          </div>
+          <div class="p-4">
+            <p v-if="hasBill && !project.quote_open" class="small text-secondary mb-3">
+              Quote is locked because the custom bill is invoiced.
+            </p>
+            <div v-if="!quoteItems.length" class="text-secondary small py-2">
+              No quote lines yet. Use Add To Quote to enter lines here.
+            </div>
+            <div v-else class="table-responsive">
+              <table class="table table-sm staff-data-table mb-0 align-middle">
+                <thead>
+                  <tr>
+                    <th scope="col">Item</th>
+                    <th scope="col" class="text-end">Qty</th>
+                    <th scope="col" class="text-end">Price</th>
+                    <th scope="col" class="text-end"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in quoteItems" :key="item.id">
+                    <td>
+                      <div class="fw-semibold small">{{ item.name }}</div>
+                      <div class="small text-secondary">
+                        {{ invoiceCategoryLabel(item.line_type) }}
+                        <span v-if="item.sku"> · {{ item.sku }}</span>
+                      </div>
+                    </td>
+                    <td class="text-end small">{{ item.quantity }}</td>
+                    <td class="text-end small">{{ cents(item.line_total_cents) }}</td>
+                    <td class="text-end">
+                      <button
+                        v-if="canUpdate && project.quote_open"
+                        type="button"
+                        class="btn btn-link btn-sm text-danger p-0"
+                        @click="askDeleteItem(item)"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th colspan="2" class="text-end small">Total</th>
+                    <th class="text-end small">{{ cents(project.quote_total_cents) }}</th>
+                    <th></th>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <div
+              v-if="canUpdate && !hasBill"
+              class="d-flex justify-content-end mt-3 pt-3 border-top"
+            >
+              <button
+                type="button"
+                class="btn btn-primary staff-page-primary btn-sm"
+                :disabled="createBillBusy || !quoteItems.length"
+                @click="createBill"
+              >
+                <CrmLoadingSpinner v-if="createBillBusy" small class="me-1" />
+                Create Bill
+              </button>
+            </div>
+          </div>
         </div>
 
         <div
@@ -659,8 +659,8 @@ onUnmounted(() => {
 
     <BillingCustomBillLineModal
       v-model:open="quoteOpen"
-      title="Add to Quote"
-      submit-label="Add to Quote"
+      title="Add To Quote"
+      submit-label="Add To Quote"
       :busy="quoteBusy"
       :error-msg="quoteError"
       :category-options="categoryOptions"

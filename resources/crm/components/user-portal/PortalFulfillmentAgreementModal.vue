@@ -5,10 +5,6 @@ import PortalOnboardingModalShell from "./PortalOnboardingModalShell.vue";
 import FulfillmentAgreementSignLightbox from "./FulfillmentAgreementSignLightbox.vue";
 import { useToast } from "../../composables/useToast";
 import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
-import {
-  CRM_BTN_PRIMARY,
-  CRM_BTN_SECONDARY,
-} from "../../constants/dialogFooter.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -154,30 +150,34 @@ async function onEsignSubmit(payload) {
       </p>
     </div>
 
-    <footer class="portal-fa-modal__footer">
+    <footer class="crm-vx-modal__footer portal-fa-modal__footer">
       <button
         type="button"
-        class="portal-fa-download-btn"
+        class="crm-vx-modal-btn crm-vx-modal-btn--secondary portal-fa-download-btn"
         :disabled="downloading || busy"
-        :aria-label="downloading ? 'Downloading…' : 'Download Agreement PDF'"
-        :title="downloading ? 'Downloading…' : 'Download Agreement PDF'"
         @click="downloadBlank"
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path
             d="M5 20h14v-2H5v2zm7-18v10.17l3.59-3.58L17 10l-5 5-5-5 1.41-1.41L11 12.17V2h1z"
           />
         </svg>
+        <span>{{ downloading ? "Downloading…" : "Download" }}</span>
       </button>
 
       <div class="portal-fa-modal__footer-actions">
-        <button type="button" :class="CRM_BTN_SECONDARY" :disabled="busy" @click="close">
+        <button
+          type="button"
+          class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+          :disabled="busy"
+          @click="close"
+        >
           {{ accepted ? "Close" : "Cancel" }}
         </button>
         <template v-if="accepted">
           <button
             type="button"
-            :class="CRM_BTN_PRIMARY"
+            class="crm-vx-modal-btn crm-vx-modal-btn--primary"
             :disabled="downloading"
             @click="viewSigned"
           >
@@ -187,7 +187,7 @@ async function onEsignSubmit(payload) {
         <template v-else>
           <button
             type="button"
-            :class="CRM_BTN_SECONDARY"
+            class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
             :disabled="busy || !hasBody"
             @click="triggerUpload"
           >
@@ -195,7 +195,7 @@ async function onEsignSubmit(payload) {
           </button>
           <button
             type="button"
-            :class="CRM_BTN_PRIMARY"
+            class="crm-vx-modal-btn crm-vx-modal-btn--primary"
             :disabled="busy || !hasBody"
             @click="esignOpen = true"
           >
@@ -228,8 +228,6 @@ async function onEsignSubmit(payload) {
 .portal-fulfillment-agreement-modal__body {
   font-size: 0.925rem;
   line-height: 1.55;
-  max-height: min(55vh, 420px);
-  overflow-y: auto;
 }
 .portal-fulfillment-agreement-modal__body :deep(p) {
   margin: 0 0 0.65rem;
@@ -247,41 +245,15 @@ async function onEsignSubmit(payload) {
   line-height: 1.3;
 }
 .portal-fa-modal__footer {
-  flex-shrink: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
+  justify-content: space-between !important;
   gap: 0.75rem;
-  padding: 1rem 1.5rem 1.25rem;
-  border-top: 1px solid rgba(47, 43, 61, 0.08);
 }
 .portal-fa-download-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  padding: 0;
-  border: 1px solid #d8d6de;
-  border-radius: 0.5rem;
-  background: #fff;
-  color: #1e3a8a;
-  flex-shrink: 0;
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease;
-}
-.portal-fa-download-btn:hover:not(:disabled) {
-  background: #eef2ff;
-  border-color: #1e3a8a;
-  color: #1e3a8a;
-}
-.portal-fa-download-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+  gap: 0.45rem;
+  min-width: 0;
+  margin-right: auto;
 }
 .portal-fa-modal__footer-actions {
   display: flex;
@@ -289,6 +261,5 @@ async function onEsignSubmit(payload) {
   align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
-  margin-left: auto;
 }
 </style>

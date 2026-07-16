@@ -31,6 +31,10 @@ const isSaveRackProvides = computed(
   () => String(props.order?.shipping_labels_provider || "") === "save_rack_provides",
 );
 
+const shippingLabels = computed(() =>
+  Array.isArray(props.order?.shipping_labels) ? props.order.shipping_labels : [],
+);
+
 function openDrawer() {
   if (!props.editable) return;
   drawerOpen.value = true;
@@ -46,27 +50,32 @@ async function onSaved(data) {
   }
 }
 
-async function downloadLabel() {
+async function downloadLabel(label) {
   const id = props.order?.id;
   if (!id) return;
+  const qs = label?.id && !label.legacy ? `?label_id=${label.id}` : "";
   try {
-    const { data } = await api.get(`/admin/wholesale-orders/${id}/shipping-label.pdf`, {
+    const { data } = await api.get(`/admin/wholesale-orders/${id}/shipping-label.pdf${qs}`, {
       responseType: "blob",
     });
     const url = URL.createObjectURL(data);
     const a = document.createElement("a");
     a.href = url;
-    a.download = props.order?.shipping_label_original_name || "shipping-label.pdf";
+    a.download = label?.original_name || "shipping-label.pdf";
     a.click();
     URL.revokeObjectURL(url);
   } catch {
-    window.open(`/api/admin/wholesale-orders/${id}/shipping-label.pdf`, "_blank");
+    window.open(`/api/admin/wholesale-orders/${id}/shipping-label.pdf${qs}`, "_blank");
   }
 }
 </script>
 
 <template>
   <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
+    <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+      <h3 class="h6 fw-semibold mb-0">Shipping &amp; Handling</h3>
+    </div>
+
     <div class="wholesale-req-row wholesale-req-row--card-head">
       <div
         class="wholesale-req-row__icon"
@@ -81,6 +90,7 @@ async function downloadLabel() {
           <span class="wholesale-req-row__value">{{ providerLabel || "—" }}</span>
         </div>
         <p v-if="comment" class="wholesale-req-row__comment mb-0">{{ comment }}</p>
+
         <template v-if="isSaveRackProvides && formattedAddress">
           <p class="wholesale-req-row__comment mb-0 mt-2" style="white-space: pre-line">
             {{ formattedAddress }}
@@ -92,14 +102,26 @@ async function downloadLabel() {
             Carrier: {{ order.shipping_carrier || "—" }} · Method: {{ order.shipping_method || "—" }}
           </p>
         </template>
-        <button
-          v-if="isClientProvides && order.has_shipping_label_file"
-          type="button"
-          class="btn btn-link btn-sm p-0 text-decoration-none mt-1"
-          @click="downloadLabel"
+
+        <ul
+          v-if="isClientProvides && shippingLabels.length"
+          class="list-unstyled mb-0 mt-2"
         >
-          {{ order.shipping_label_original_name || "Download shipping label" }}
-        </button>
+          <li
+            v-for="label in shippingLabels"
+            :key="label.id"
+            class="d-flex align-items-center gap-2 py-1"
+          >
+            <CrmMaterialIcon name="description" :size="18" class="text-primary flex-shrink-0" />
+            <button
+              type="button"
+              class="btn btn-link btn-sm p-0 text-decoration-none text-truncate"
+              @click="downloadLabel(label)"
+            >
+              {{ label.original_name || "Shipping label" }}
+            </button>
+          </li>
+        </ul>
       </div>
       <button
         v-if="editable"
@@ -120,8 +142,7 @@ async function downloadLabel() {
       :shipping-address="order.shipping_address"
       :shipping-carrier="order.shipping_carrier"
       :shipping-method="order.shipping_method"
-      :has-shipping-label-file="order.has_shipping_label_file"
-      :shipping-label-original-name="order.shipping_label_original_name"
+      :shipping-labels="shippingLabels"
       @saved="onSaved"
     />
   </div>

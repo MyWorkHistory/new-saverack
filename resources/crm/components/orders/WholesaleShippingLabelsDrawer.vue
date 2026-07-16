@@ -10,10 +10,7 @@ import {
   CRM_DIALOG_FOOTER_CLASS_DRAWER,
 } from "../../constants/dialogFooter.js";
 import { CARRIER_PRESETS } from "../../utils/carrierPresets.js";
-import {
-  WHOLESALE_SHIPPING_LABELS_PROVIDER_OPTIONS,
-  wholesaleShippingLabelsProviderLabel,
-} from "../../utils/formatWholesaleOrderDisplay.js";
+import { WHOLESALE_SHIPPING_LABELS_PROVIDER_OPTIONS } from "../../utils/formatWholesaleOrderDisplay.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -24,8 +21,7 @@ const props = defineProps({
   shippingAddress: { type: Object, default: () => ({}) },
   shippingCarrier: { type: String, default: "" },
   shippingMethod: { type: String, default: "" },
-  hasShippingLabelFile: { type: Boolean, default: false },
-  shippingLabelOriginalName: { type: String, default: "" },
+  shippingLabels: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits(["update:open", "saved", "close"]);
@@ -33,9 +29,10 @@ const emit = defineEmits(["update:open", "saved", "close"]);
 const toast = useToast();
 
 const CARRIER_LIST = CARRIER_PRESETS;
-const METHOD_PRESETS = ["Select", "Ground", "Priority", "Express", "Standard", "A124"];
+const METHOD_PRESETS = ["Select", "Ground", "Priority", "Express", "Standard", "A124", "generic"];
 const METHOD_OPTIONS_BY_CARRIER = {
   cheapest: ["Select", "Ground", "Priority", "Express", "Standard", "A124"],
+  generic: ["generic", "Ground", "Priority", "Express", "Standard"],
   ups: ["Ground", "3 Day Select", "2nd Day Air", "Next Day Air Saver", "Next Day Air", "Standard", "Priority", "Express"],
   fedex: [
     "Ground",
@@ -59,9 +56,11 @@ const commentDraft = ref("");
 const addressDraft = ref(emptyAddress());
 const carrierDraft = ref("");
 const methodDraft = ref("");
-const labelFile = ref(null);
+const pendingFiles = ref([]);
+const existingLabels = ref([]);
 const fileInput = ref(null);
 const uploadBusy = ref(false);
+const deleteBusyId = ref(null);
 
 function emptyAddress() {
   return {
@@ -95,7 +94,7 @@ function resolveCarrierPreset(carrier) {
 
 const carrierSelectOptions = computed(() => {
   const labels = new Map();
-  for (const p of CARRIER_LIST) {
+  for (const p of [...CARRIER_LIST, "generic"]) {
     labels.set(carrierPresetKey(p), p);
   }
   const cur = String(carrierDraft.value || "").trim();
@@ -124,7 +123,9 @@ const isSaveRackProvides = computed(
   () => String(providerDraft.value || "") === "save_rack_provides",
 );
 
-const drawerBusy = computed(() => props.busy || uploadBusy.value);
+const drawerBusy = computed(
+  () => props.busy || uploadBusy.value || deleteBusyId.value !== null,
+);
 
 watch(
   () => props.open,
@@ -151,7 +152,10 @@ watch(
     };
     carrierDraft.value = resolveCarrierPreset(props.shippingCarrier);
     methodDraft.value = String(props.shippingMethod || "");
-    labelFile.value = null;
+    pendingFiles.value = [];
+    existingLabels.value = Array.isArray(props.shippingLabels)
+      ? props.shippingLabels.map((l) => ({ ...l }))
+      : [];
     if (fileInput.value) fileInput.value.value = "";
   },
 );
@@ -173,18 +177,49 @@ function close() {
   emit("close");
 }
 
+function addFiles(fileList) {
+  const next = [...pendingFiles.value];
+  for (const file of fileList || []) {
+    if (file) next.push(file);
+  }
+  pendingFiles.value = next;
+}
+
 function onFileChange(event) {
-  labelFile.value = event.target.files?.[0] || null;
+  addFiles(event.target.files);
+  if (fileInput.value) fileInput.value.value = "";
 }
 
 function onDrop(event) {
   event.preventDefault();
-  const file = event.dataTransfer?.files?.[0];
-  if (file) labelFile.value = file;
+  addFiles(event.dataTransfer?.files);
 }
 
 function onDragOver(event) {
   event.preventDefault();
+}
+
+function removePending(index) {
+  pendingFiles.value = pendingFiles.value.filter((_, i) => i !== index);
+}
+
+async function removeExisting(label) {
+  if (!label?.id || label.legacy) {
+    toast.error("This legacy label cannot be removed here. Re-upload after saving.");
+    return;
+  }
+  deleteBusyId.value = label.id;
+  try {
+    const { data } = await api.delete(
+      `/admin/wholesale-orders/${props.orderId}/shipping-labels/${label.id}`,
+    );
+    existingLabels.value = Array.isArray(data.shipping_labels) ? data.shipping_labels : [];
+    emit("saved", data);
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete label.");
+  } finally {
+    deleteBusyId.value = null;
+  }
 }
 
 function addressRequiredFieldsFilled() {
@@ -196,9 +231,7 @@ function addressRequiredFieldsFilled() {
 
 function canSubmit() {
   if (!String(providerDraft.value || "").trim()) return false;
-  if (isClientProvides.value) {
-    return Boolean(labelFile.value) || props.hasShippingLabelFile;
-  }
+  if (isClientProvides.value) return true;
   if (isSaveRackProvides.value) {
     const carrier = String(carrierDraft.value || "").trim();
     const method = String(methodDraft.value || "").trim();
@@ -225,19 +258,20 @@ async function submit() {
       payload.shipping_carrier = carrierDraft.value || null;
       payload.shipping_method = methodDraft.value || null;
     }
-    const { data } = await api.patch(`/admin/wholesale-orders/${props.orderId}`, payload);
-    let result = data;
-    if (isClientProvides.value && labelFile.value) {
+    let { data } = await api.patch(`/admin/wholesale-orders/${props.orderId}`, payload);
+    if (isClientProvides.value && pendingFiles.value.length) {
       const fd = new FormData();
-      fd.append("shipping_label", labelFile.value);
+      pendingFiles.value.forEach((file, index) => {
+        fd.append(`shipping_labels[${index}]`, file);
+      });
       const uploadRes = await api.post(
         `/admin/wholesale-orders/${props.orderId}/shipping-label`,
         fd,
         { headers: { "Content-Type": "multipart/form-data" } },
       );
-      result = uploadRes.data;
+      data = uploadRes.data;
     }
-    emit("saved", result);
+    emit("saved", data);
     emit("update:open", false);
   } catch (e) {
     toast.errorFrom(e, "Could not save shipping labels.");
@@ -305,7 +339,7 @@ async function submit() {
           >
             <CrmMaterialIcon name="description" :size="28" class="text-secondary mb-2" />
             <p class="small mb-2 text-secondary">
-              Drag and drop a PDF or image here, or click to browse.
+              Drag and drop PDFs or images here, or click to browse.
             </p>
             <button
               type="button"
@@ -313,24 +347,58 @@ async function submit() {
               :disabled="drawerBusy"
               @click="fileInput?.click()"
             >
-              Choose File
+              Choose Files
             </button>
             <input
               ref="fileInput"
               type="file"
               class="d-none"
+              multiple
               accept="application/pdf,image/jpeg,image/png,image/gif,image/webp"
               :disabled="drawerBusy"
               @change="onFileChange"
             />
           </div>
-          <p v-if="labelFile" class="small text-body mb-0 mt-2">
-            Selected: {{ labelFile.name }}
-          </p>
-          <p v-else-if="hasShippingLabelFile && shippingLabelOriginalName" class="small text-body mb-0 mt-2">
-            Current file: {{ shippingLabelOriginalName }}
-          </p>
-          <p class="form-text mb-0">Upload a PDF or image shipping label.</p>
+          <p class="form-text mb-2">Uploads are optional. You can add more after saving.</p>
+
+          <ul v-if="existingLabels.length || pendingFiles.length" class="list-unstyled mb-0">
+            <li
+              v-for="label in existingLabels"
+              :key="'ex-' + label.id"
+              class="wholesale-shipping-label-file d-flex align-items-center gap-2 py-2"
+            >
+              <CrmMaterialIcon name="description" :size="20" class="text-primary flex-shrink-0" />
+              <span class="small text-body text-truncate flex-grow-1">{{
+                label.original_name || "Shipping label"
+              }}</span>
+              <button
+                type="button"
+                class="btn btn-link btn-sm text-danger p-0"
+                :disabled="drawerBusy"
+                aria-label="Delete label"
+                @click="removeExisting(label)"
+              >
+                ×
+              </button>
+            </li>
+            <li
+              v-for="(file, idx) in pendingFiles"
+              :key="'pend-' + idx + file.name"
+              class="wholesale-shipping-label-file d-flex align-items-center gap-2 py-2"
+            >
+              <CrmMaterialIcon name="description" :size="20" class="text-primary flex-shrink-0" />
+              <span class="small text-body text-truncate flex-grow-1">{{ file.name }}</span>
+              <button
+                type="button"
+                class="btn btn-link btn-sm text-danger p-0"
+                :disabled="drawerBusy"
+                aria-label="Remove file"
+                @click="removePending(idx)"
+              >
+                ×
+              </button>
+            </li>
+          </ul>
         </div>
       </template>
 
@@ -433,5 +501,8 @@ async function submit() {
   border-radius: 0.5rem;
   background: var(--bs-body-bg);
   text-align: center;
+}
+.wholesale-shipping-label-file + .wholesale-shipping-label-file {
+  border-top: 1px solid var(--bs-border-color);
 }
 </style>

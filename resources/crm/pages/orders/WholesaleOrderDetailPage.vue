@@ -7,9 +7,11 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import Modal from "../../components/Modal.vue";
 import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
 import WholesaleBarcodeUploadModal from "../../components/orders/WholesaleBarcodeUploadModal.vue";
-import WholesaleRequirementEditDrawer from "../../components/orders/WholesaleRequirementEditDrawer.vue";
+import WholesalePackageInfoModal from "../../components/orders/WholesalePackageInfoModal.vue";
 import WholesaleRequirementRow from "../../components/orders/WholesaleRequirementRow.vue";
+import WholesaleRequirementsEditDrawer from "../../components/orders/WholesaleRequirementsEditDrawer.vue";
 import WholesaleShippingLabelsCard from "../../components/orders/WholesaleShippingLabelsCard.vue";
+import CrmMaterialIcon from "../../components/common/CrmMaterialIcon.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateUs, formatDateTimeUs } from "../../utils/formatUserDates.js";
@@ -45,8 +47,10 @@ const statusDraft = ref("pending");
 const readyToShipBusy = ref(false);
 
 const requirementEditOpen = ref(false);
-const requirementEditSection = ref(null);
 const requirementEditBusy = ref(false);
+
+const boxInfoOpen = ref(false);
+const palletInfoOpen = ref(false);
 
 const manualStatusOptions = WHOLESALE_MANUAL_STATUS_OPTIONS;
 
@@ -147,46 +151,33 @@ const lineMenuOpenLine = computed(() => {
   return lines.value.find((l) => l.id === id) ?? null;
 });
 
-const requirementEditValue = computed(() => {
-  const section = requirementEditSection.value;
-  if (!section || !order.value) return "";
-  return String(order.value[section.valueKey] || "");
-});
-
-const requirementEditComment = computed(() => {
-  const section = requirementEditSection.value;
-  if (!section || !order.value) return "";
-  return String(order.value[section.commentKey] || "");
-});
-
 function requirementValueLabel(section) {
   if (!order.value || !section) return null;
   return wholesaleOptionLabel(section.options, order.value[section.valueKey]);
 }
 
-function openRequirementEdit(section) {
+function openRequirementsEdit() {
   if (!isEditable.value) return;
-  requirementEditSection.value = section;
   requirementEditOpen.value = true;
 }
 
-async function saveRequirementFromDrawer({ value, comment }) {
-  const section = requirementEditSection.value;
-  if (!section || !order.value?.id || requirementEditBusy.value) return;
+async function saveRequirementsFromDrawer(payload) {
+  if (!order.value?.id || requirementEditBusy.value) return;
   requirementEditBusy.value = true;
   try {
-    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, {
-      [section.valueKey]: value || null,
-      [section.commentKey]: comment || null,
-    });
+    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, payload);
     applyOrderData(data);
     requirementEditOpen.value = false;
-    toast.success("Requirement saved.");
+    toast.success("Requirements saved.");
   } catch (e) {
-    toast.errorFrom(e, "Could not save requirement.");
+    toast.errorFrom(e, "Could not save requirements.");
   } finally {
     requirementEditBusy.value = false;
   }
+}
+
+function onPackageInfoSaved(data) {
+  applyOrderData(data);
 }
 
 function syncDraftsFromOrder(data) {
@@ -648,9 +639,36 @@ onUnmounted(() => {
             </p>
           </div>
           <div
-            v-if="showPickListLink || showReadyToShipButton"
             class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0 align-self-start wholesale-order-detail-page__header-actions"
           >
+            <button
+              type="button"
+              class="wholesale-header-info-btn"
+              @click="boxInfoOpen = true"
+            >
+              <span
+                class="wholesale-header-info-btn__icon"
+                style="background: #fef3c7; color: #b45309"
+                aria-hidden="true"
+              >
+                <CrmMaterialIcon name="inventoryBox" :size="18" />
+              </span>
+              <span class="wholesale-header-info-btn__label">Box Info</span>
+            </button>
+            <button
+              type="button"
+              class="wholesale-header-info-btn"
+              @click="palletInfoOpen = true"
+            >
+              <span
+                class="wholesale-header-info-btn__icon"
+                style="background: #e0e7ff; color: #3730a3"
+                aria-hidden="true"
+              >
+                <CrmMaterialIcon name="package" :size="18" />
+              </span>
+              <span class="wholesale-header-info-btn__label">Pallet Info</span>
+            </button>
             <RouterLink
               v-if="showPickListLink"
               :to="pickListRoute"
@@ -990,9 +1008,22 @@ onUnmounted(() => {
 
       <div class="col-lg-4 d-flex flex-column gap-4 order-detail-page__side-column">
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel wholesale-requirements-card">
-          <h3 class="h6 fw-semibold mb-1">Product &amp; Fulfillment Requirements</h3>
+          <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-1">
+            <h3 class="h6 fw-semibold mb-0">Product &amp; Fulfillment Requirements</h3>
+            <button
+              v-if="isEditable"
+              type="button"
+              class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1"
+              @click="openRequirementsEdit"
+            >
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              Edit
+            </button>
+          </div>
           <p class="small text-secondary mb-3 wholesale-requirements-card__subtitle">
-            Use Edit on each row to set options and optional comments.
+            Review packing requirements. Use Edit to update all options at once.
           </p>
 
           <WholesaleRequirementRow
@@ -1003,8 +1034,8 @@ onUnmounted(() => {
             :label="section.label"
             :value-label="requirementValueLabel(section)"
             :comment="order[section.commentKey]"
-            :editable="isEditable"
-            @edit="openRequirementEdit(section)"
+            :editable="false"
+            :show-edit="false"
           />
         </div>
 
@@ -1041,6 +1072,20 @@ onUnmounted(() => {
             <div class="order-detail-page__detail-row">
               <span class="order-detail-page__detail-label">Created By</span>
               <span class="order-detail-page__detail-value">{{ order.created_by_name || "—" }}</span>
+            </div>
+            <div class="order-detail-page__detail-row">
+              <span class="order-detail-page__detail-label">Total Items</span>
+              <span class="order-detail-page__detail-value">{{
+                order.total_items != null ? order.total_items : itemsSummary.totalQuantity
+              }}</span>
+            </div>
+            <div class="order-detail-page__detail-row">
+              <span class="order-detail-page__detail-label">Total Weight</span>
+              <span class="order-detail-page__detail-value">{{
+                order.total_weight != null
+                  ? `${order.total_weight} ${order.total_weight_unit || "lbs"}`
+                  : "—"
+              }}</span>
             </div>
             <div v-if="shipheroAdminUrl" class="order-detail-page__detail-row">
               <span class="order-detail-page__detail-label">ShipHero Order</span>
@@ -1089,14 +1134,31 @@ onUnmounted(() => {
       </div>
     </Modal>
 
-    <WholesaleRequirementEditDrawer
+    <WholesaleRequirementsEditDrawer
       v-model:open="requirementEditOpen"
-      :title="requirementEditSection?.label || 'Requirement'"
-      :options="requirementEditSection?.options || []"
-      :value="requirementEditValue"
-      :comment="requirementEditComment"
+      :order="order"
       :busy="requirementEditBusy"
-      @save="saveRequirementFromDrawer"
+      @save="saveRequirementsFromDrawer"
+    />
+
+    <WholesalePackageInfoModal
+      v-if="order"
+      v-model:open="boxInfoOpen"
+      :order-id="order.id"
+      package-type="box"
+      :packages="order.boxes || []"
+      :saved-at="order.boxes_saved_at"
+      @saved="onPackageInfoSaved"
+    />
+
+    <WholesalePackageInfoModal
+      v-if="order"
+      v-model:open="palletInfoOpen"
+      :order-id="order.id"
+      package-type="pallet"
+      :packages="order.pallets || []"
+      :saved-at="order.pallets_saved_at"
+      @saved="onPackageInfoSaved"
     />
 
     <WholesaleBarcodeUploadModal
@@ -1332,5 +1394,37 @@ onUnmounted(() => {
 .wholesale-order-detail-page .order-detail-page__shopify-header-link:hover,
 .wholesale-order-detail-page .order-detail-page__shopify-header-link:focus-visible {
   text-decoration: underline !important;
+}
+
+.wholesale-header-info-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.5rem;
+  background: var(--bs-body-bg);
+  color: var(--bs-body-color);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.wholesale-header-info-btn:hover {
+  background: var(--bs-tertiary-bg);
+}
+
+.wholesale-header-info-btn__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: 0.4375rem;
+  flex-shrink: 0;
+}
+
+.wholesale-header-info-btn__label {
+  white-space: nowrap;
 }
 </style>

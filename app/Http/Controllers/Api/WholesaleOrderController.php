@@ -10,9 +10,12 @@ use App\Models\User;
 use App\Models\WholesaleOrder;
 use App\Models\WholesaleOrderComment;
 use App\Models\WholesaleOrderLine;
+use App\Models\WholesaleOrderPackage;
+use App\Models\WholesaleOrderShippingLabel;
 use App\Services\InventoryProductDetailCacheService;
 use App\Services\ShipHeroInventoryService;
 use App\Services\ShipHeroOrderService;
+use App\Services\SlackDeliveryService;
 use App\Services\WholesaleOrderShipHeroService;
 use App\Support\PutAwayRowBuilder;
 use Illuminate\Http\JsonResponse;
@@ -167,6 +170,7 @@ class WholesaleOrderController extends Controller
             'image_url' => $imageUrl,
             'quantity' => $line->quantity,
             'quantity_picked' => (int) ($line->quantity_picked ?? 0),
+            'weight' => $line->weight !== null ? (float) $line->weight : null,
             'is_fully_picked' => $line->isFullyPicked(),
             'status' => $line->status,
             'status_label' => $this->lineStatusLabel($line->status),
@@ -176,6 +180,142 @@ class WholesaleOrderController extends Controller
             'barcode_mime' => $line->barcode_mime,
             'sort_order' => $line->sort_order,
         ];
+    }
+
+    /**
+     * @return array{id: int, original_name: string|null, mime: string|null}
+     */
+    private function serializeShippingLabel(WholesaleOrderShippingLabel $label): array
+    {
+        return [
+            'id' => $label->id,
+            'original_name' => $label->original_name,
+            'mime' => $label->mime,
+        ];
+    }
+
+    /**
+     * @return array{id: int, width: float|null, length: float|null, height: float|null, weight: float|null, sort_order: int}
+     */
+    private function serializePackage(WholesaleOrderPackage $package): array
+    {
+        return [
+            'id' => $package->id,
+            'width' => $package->width,
+            'length' => $package->length,
+            'height' => $package->height,
+            'weight' => $package->weight,
+            'sort_order' => (int) $package->sort_order,
+        ];
+    }
+
+    private function totalItemsCount(WholesaleOrder $order): int
+    {
+        $order->loadMissing('lines');
+
+        return (int) $order->lines->sum(fn (WholesaleOrderLine $line) => (int) $line->quantity);
+    }
+
+    private function totalWeightLbs(WholesaleOrder $order): ?float
+    {
+        $order->loadMissing(['lines', 'clientAccount']);
+        $this->hydrateMissingLineWeights($order);
+
+        $total = 0.0;
+        $hasAny = false;
+        foreach ($order->lines as $line) {
+            if ($line->weight === null) {
+                continue;
+            }
+            $hasAny = true;
+            $total += (float) $line->weight * (int) $line->quantity;
+        }
+
+        return $hasAny ? round($total, 4) : null;
+    }
+
+    private function hydrateMissingLineWeights(WholesaleOrder $order): void
+    {
+        $clientAccountId = (int) $order->client_account_id;
+        $customerId = $order->clientAccount
+            ? trim((string) ($order->clientAccount->shiphero_customer_account_id ?? ''))
+            : '';
+
+        foreach ($order->lines as $line) {
+            if ($line->weight !== null) {
+                continue;
+            }
+            $weight = $this->resolveSkuWeight($clientAccountId, $customerId, (string) $line->sku);
+            if ($weight === null) {
+                continue;
+            }
+            $line->weight = $weight;
+            $line->saveQuietly();
+        }
+    }
+
+    private function resolveSkuWeight(int $clientAccountId, string $customerId, string $sku): ?float
+    {
+        $sku = trim($sku);
+        if ($sku === '' || $clientAccountId <= 0) {
+            return null;
+        }
+
+        $product = $this->detailCache->getCachedProduct($clientAccountId, $sku);
+        if (! is_array($product) && $customerId !== '') {
+            try {
+                $product = $this->inventory->getProductDetailBySku($sku, null, $customerId, false);
+                if (is_array($product)) {
+                    $this->detailCache->putProduct($clientAccountId, $sku, $product);
+                }
+            } catch (Throwable $e) {
+                $product = null;
+            }
+        }
+        if (! is_array($product)) {
+            return null;
+        }
+        $raw = $product['dimensions']['weight'] ?? null;
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+        if (! is_numeric($raw)) {
+            return null;
+        }
+
+        return (float) $raw;
+    }
+
+    /**
+     * @return array{first_name: string, last_name: string, company: string, address1: string, address2: string, city: string, state: string, zip: string, country: string, email: string, phone: string}
+     */
+    private function clientProvidesWarehouseAddress(): array
+    {
+        return [
+            'first_name' => 'Wholesale',
+            'last_name' => 'Order',
+            'company' => 'Wholesale Order',
+            'address1' => '3135 Drane Field Rd',
+            'address2' => '',
+            'city' => 'Lakeland',
+            'state' => 'FL',
+            'zip' => '33811',
+            'country' => 'US',
+            'email' => '',
+            'phone' => '',
+        ];
+    }
+
+    private function applyClientProvidesReadyToShipAddress(WholesaleOrder $order): void
+    {
+        if (trim((string) ($order->shipping_labels_provider ?? '')) !== WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES) {
+            return;
+        }
+
+        $order->shipping_address = $this->clientProvidesWarehouseAddress();
+        $order->shipping_carrier = 'generic';
+        $order->shipping_method = 'generic';
+        $order->save();
     }
 
     /**
@@ -253,8 +393,49 @@ class WholesaleOrderController extends Controller
      */
     private function serializeDetail(WholesaleOrder $order): array
     {
-        $order->loadMissing(['clientAccount', 'createdBy', 'lines', 'comments.user']);
+        $order->loadMissing([
+            'clientAccount',
+            'createdBy',
+            'lines',
+            'comments.user',
+            'shippingLabels',
+            'packages',
+        ]);
         $imageBySku = $this->resolveLineImageUrls($order);
+        $this->hydrateMissingLineWeights($order);
+        $order->unsetRelation('lines');
+        $order->load('lines');
+
+        $totalWeight = null;
+        $weightSum = 0.0;
+        $hasWeight = false;
+        foreach ($order->lines as $line) {
+            if ($line->weight === null) {
+                continue;
+            }
+            $hasWeight = true;
+            $weightSum += (float) $line->weight * (int) $line->quantity;
+        }
+        if ($hasWeight) {
+            $totalWeight = round($weightSum, 4);
+        }
+
+        $labels = $order->shippingLabels;
+        if ($labels->isEmpty() && $order->hasUploadedShippingLabel() && trim((string) ($order->shipping_label_path ?? '')) !== '') {
+            // Legacy single-column label still on the order.
+            $labels = collect([(object) [
+                'id' => 0,
+                'original_name' => $order->shipping_label_original_name,
+                'mime' => $order->shipping_label_mime,
+            ]]);
+        }
+
+        $boxes = $order->packages
+            ->where('package_type', WholesaleOrderPackage::TYPE_BOX)
+            ->values();
+        $pallets = $order->packages
+            ->where('package_type', WholesaleOrderPackage::TYPE_PALLET)
+            ->values();
 
         return array_merge($this->serializeListRow($order), [
             'instructions' => $order->instructions,
@@ -268,6 +449,20 @@ class WholesaleOrderController extends Controller
             'has_shipping_label_file' => $order->hasUploadedShippingLabel(),
             'shipping_label_original_name' => $order->shipping_label_original_name,
             'shipping_label_mime' => $order->shipping_label_mime,
+            'shipping_labels' => $labels instanceof \Illuminate\Support\Collection
+                ? $labels->map(function ($label) {
+                    if ($label instanceof WholesaleOrderShippingLabel) {
+                        return $this->serializeShippingLabel($label);
+                    }
+
+                    return [
+                        'id' => (int) ($label->id ?? 0),
+                        'original_name' => $label->original_name ?? null,
+                        'mime' => $label->mime ?? null,
+                        'legacy' => true,
+                    ];
+                })->values()->all()
+                : [],
             'sku_barcode_labels' => $order->sku_barcode_labels,
             'sku_barcode_labels_comment' => $order->sku_barcode_labels_comment,
             'cover_existing_barcodes' => $order->cover_existing_barcodes,
@@ -287,6 +482,13 @@ class WholesaleOrderController extends Controller
             'has_shipping_labels_resolved' => $order->hasShippingLabelsResolved(),
             'has_requirements_filled' => $order->hasRequirementsFilled(),
             'has_all_lines_barcode_resolved' => $order->hasAllLinesBarcodeResolved(),
+            'total_items' => $this->totalItemsCount($order),
+            'total_weight' => $totalWeight,
+            'total_weight_unit' => 'lbs',
+            'boxes' => $boxes->map(fn (WholesaleOrderPackage $p) => $this->serializePackage($p))->values()->all(),
+            'pallets' => $pallets->map(fn (WholesaleOrderPackage $p) => $this->serializePackage($p))->values()->all(),
+            'boxes_saved_at' => optional($order->boxes_saved_at)->toIso8601String(),
+            'pallets_saved_at' => optional($order->pallets_saved_at)->toIso8601String(),
             'lines' => $order->lines->map(function (WholesaleOrderLine $line) use ($imageBySku) {
                 $key = mb_strtolower(trim((string) $line->sku));
                 $resolved = $imageBySku[$key] ?? null;
@@ -677,11 +879,21 @@ class WholesaleOrderController extends Controller
         $line->barcode_mode = WholesaleOrderLine::BARCODE_SHIP_AS_IS;
         $line->syncStatusFromBarcodeMode();
         $line->sort_order = $maxSort + 1;
+
+        $wholesaleOrder->loadMissing('clientAccount');
+        $customerId = $wholesaleOrder->clientAccount
+            ? trim((string) ($wholesaleOrder->clientAccount->shiphero_customer_account_id ?? ''))
+            : '';
+        $line->weight = $this->resolveSkuWeight(
+            (int) $wholesaleOrder->client_account_id,
+            $customerId,
+            $line->sku
+        );
         $line->save();
 
         $this->recalculateItemsCount($wholesaleOrder);
 
-        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user'])));
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user', 'shippingLabels', 'packages'])));
     }
 
     public function updateLine(Request $request, WholesaleOrder $wholesaleOrder, WholesaleOrderLine $line): JsonResponse
@@ -791,28 +1003,87 @@ class WholesaleOrderController extends Controller
 
         $validated = $request->validate([
             'shipping_label' => [
-                'required',
+                'nullable',
+                'file',
+                'max:10240',
+                'mimetypes:application/pdf,image/jpeg,image/png,image/gif,image/webp',
+            ],
+            'shipping_labels' => ['sometimes', 'array', 'max:20'],
+            'shipping_labels.*' => [
                 'file',
                 'max:10240',
                 'mimetypes:application/pdf,image/jpeg,image/png,image/gif,image/webp',
             ],
         ]);
 
-        $file = $request->file('shipping_label');
-        if ($wholesaleOrder->shipping_label_path) {
-            Storage::disk('local')->delete($wholesaleOrder->shipping_label_path);
+        $files = [];
+        if ($request->hasFile('shipping_labels')) {
+            $uploaded = $request->file('shipping_labels');
+            if (is_array($uploaded)) {
+                foreach ($uploaded as $file) {
+                    if ($file) {
+                        $files[] = $file;
+                    }
+                }
+            }
+        }
+        if ($request->hasFile('shipping_label')) {
+            $files[] = $request->file('shipping_label');
+        }
+        if ($files === []) {
+            throw ValidationException::withMessages([
+                'shipping_label' => ['Upload at least one shipping label file.'],
+            ]);
         }
 
-        $path = $file->store('wholesale-order-shipping-labels/'.$wholesaleOrder->id, 'local');
-        $wholesaleOrder->shipping_label_path = $path;
-        $wholesaleOrder->shipping_label_original_name = $file->getClientOriginalName();
-        $wholesaleOrder->shipping_label_mime = $file->getClientMimeType();
+        $maxSort = (int) WholesaleOrderShippingLabel::query()
+            ->where('wholesale_order_id', $wholesaleOrder->id)
+            ->max('sort_order');
+        $sort = $maxSort;
+
+        foreach ($files as $file) {
+            $sort++;
+            $path = $file->store('wholesale-order-shipping-labels/'.$wholesaleOrder->id, 'local');
+            WholesaleOrderShippingLabel::query()->create([
+                'wholesale_order_id' => $wholesaleOrder->id,
+                'path' => $path,
+                'original_name' => $file->getClientOriginalName(),
+                'mime' => $file->getClientMimeType(),
+                'sort_order' => $sort,
+            ]);
+        }
+
         if (trim((string) ($wholesaleOrder->shipping_labels_provider ?? '')) === '') {
             $wholesaleOrder->shipping_labels_provider = WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES;
+            $wholesaleOrder->save();
         }
-        $wholesaleOrder->save();
 
-        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user'])));
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh([
+            'clientAccount', 'createdBy', 'lines', 'comments.user', 'shippingLabels', 'packages',
+        ])));
+    }
+
+    public function destroyShippingLabel(
+        Request $request,
+        WholesaleOrder $wholesaleOrder,
+        WholesaleOrderShippingLabel $shippingLabel
+    ): JsonResponse {
+        $this->assertStaff($request);
+        Gate::authorize('update', $wholesaleOrder);
+        $this->assertLineEditable($wholesaleOrder);
+
+        if ((int) $shippingLabel->wholesale_order_id !== (int) $wholesaleOrder->id) {
+            abort(404);
+        }
+
+        if ($shippingLabel->path) {
+            Storage::disk('local')->delete($shippingLabel->path);
+        }
+        $shippingLabel->delete();
+
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh([
+            'clientAccount', 'createdBy', 'lines', 'comments.user', 'shippingLabels', 'packages',
+        ])));
     }
 
     public function shippingLabelDownload(Request $request, WholesaleOrder $wholesaleOrder)
@@ -820,7 +1091,43 @@ class WholesaleOrderController extends Controller
         $this->assertStaff($request);
         Gate::authorize('view', $wholesaleOrder);
 
-        if (! $wholesaleOrder->hasUploadedShippingLabel()) {
+        $labelId = (int) $request->query('label_id', 0);
+        if ($labelId > 0) {
+            $label = WholesaleOrderShippingLabel::query()
+                ->where('wholesale_order_id', $wholesaleOrder->id)
+                ->whereKey($labelId)
+                ->first();
+            if (! $label) {
+                return response()->json(['message' => 'Shipping label not found.'], 404);
+            }
+            $disk = Storage::disk('local');
+            if (! $disk->exists($label->path)) {
+                return response()->json(['message' => 'Shipping label file not found.'], 404);
+            }
+
+            return $disk->response(
+                $label->path,
+                $label->original_name ?: 'shipping-label.pdf',
+                ['Content-Type' => $label->mime ?: 'application/pdf']
+            );
+        }
+
+        $wholesaleOrder->loadMissing('shippingLabels');
+        $first = $wholesaleOrder->shippingLabels->first();
+        if ($first instanceof WholesaleOrderShippingLabel) {
+            $disk = Storage::disk('local');
+            if (! $disk->exists($first->path)) {
+                return response()->json(['message' => 'Shipping label file not found.'], 404);
+            }
+
+            return $disk->response(
+                $first->path,
+                $first->original_name ?: 'shipping-label.pdf',
+                ['Content-Type' => $first->mime ?: 'application/pdf']
+            );
+        }
+
+        if (! $wholesaleOrder->hasUploadedShippingLabel() || trim((string) ($wholesaleOrder->shipping_label_path ?? '')) === '') {
             return response()->json(['message' => 'No shipping label uploaded for this order.'], 422);
         }
 
@@ -834,6 +1141,150 @@ class WholesaleOrderController extends Controller
             $wholesaleOrder->shipping_label_original_name ?: 'shipping-label.pdf',
             ['Content-Type' => $wholesaleOrder->shipping_label_mime ?: 'application/pdf']
         );
+    }
+
+    public function syncPackages(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('update', $wholesaleOrder);
+
+        $validated = $request->validate([
+            'package_type' => ['required', 'string', Rule::in(WholesaleOrderPackage::TYPES)],
+            'packages' => ['present', 'array'],
+            'packages.*.width' => ['nullable', 'numeric', 'min:0'],
+            'packages.*.length' => ['nullable', 'numeric', 'min:0'],
+            'packages.*.height' => ['nullable', 'numeric', 'min:0'],
+            'packages.*.weight' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $type = (string) $validated['package_type'];
+        $rows = $validated['packages'];
+
+        WholesaleOrderPackage::query()
+            ->where('wholesale_order_id', $wholesaleOrder->id)
+            ->where('package_type', $type)
+            ->delete();
+
+        $sort = 0;
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $sort++;
+            WholesaleOrderPackage::query()->create([
+                'wholesale_order_id' => $wholesaleOrder->id,
+                'package_type' => $type,
+                'width' => isset($row['width']) && $row['width'] !== '' ? (float) $row['width'] : null,
+                'length' => isset($row['length']) && $row['length'] !== '' ? (float) $row['length'] : null,
+                'height' => isset($row['height']) && $row['height'] !== '' ? (float) $row['height'] : null,
+                'weight' => isset($row['weight']) && $row['weight'] !== '' ? (float) $row['weight'] : null,
+                'sort_order' => $sort,
+            ]);
+        }
+
+        if ($type === WholesaleOrderPackage::TYPE_BOX) {
+            $wholesaleOrder->boxes_saved_at = now();
+        } else {
+            $wholesaleOrder->pallets_saved_at = now();
+        }
+        $wholesaleOrder->save();
+
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh([
+            'clientAccount', 'createdBy', 'lines', 'comments.user', 'shippingLabels', 'packages',
+        ])));
+    }
+
+    public function sendPackagesSlack(
+        Request $request,
+        WholesaleOrder $wholesaleOrder,
+        SlackDeliveryService $slack
+    ): JsonResponse {
+        $this->assertStaff($request);
+        Gate::authorize('update', $wholesaleOrder);
+
+        $validated = $request->validate([
+            'package_type' => ['required', 'string', Rule::in(WholesaleOrderPackage::TYPES)],
+        ]);
+        $type = (string) $validated['package_type'];
+
+        $wholesaleOrder->loadMissing(['clientAccount', 'packages']);
+        $channel = $slack->channelFromInHouseSlack(
+            $wholesaleOrder->clientAccount ? $wholesaleOrder->clientAccount->in_house_slack : null
+        );
+        if ($channel === null || $channel === '') {
+            throw ValidationException::withMessages([
+                'slack' => ['This account has no In-House Slack channel configured.'],
+            ]);
+        }
+
+        $packages = $wholesaleOrder->packages
+            ->where('package_type', $type)
+            ->values();
+        if ($packages->isEmpty()) {
+            throw ValidationException::withMessages([
+                'packages' => ['Save at least one '.($type === 'box' ? 'box' : 'pallet').' before sending to Slack.'],
+            ]);
+        }
+
+        $title = $type === WholesaleOrderPackage::TYPE_BOX ? 'Box Info' : 'Pallet Info';
+        $lines = [
+            '*'.$title.'* — Order #'.$wholesaleOrder->order_number,
+            'Account: '.($wholesaleOrder->clientAccount?->company_name ?: '—'),
+            '',
+        ];
+        $i = 1;
+        foreach ($packages as $pkg) {
+            $label = $type === WholesaleOrderPackage::TYPE_BOX ? "Box {$i}" : "Pallet {$i}";
+            $dims = sprintf(
+                '%s × %s × %s in',
+                $this->fmtDim($pkg->width),
+                $this->fmtDim($pkg->length),
+                $this->fmtDim($pkg->height)
+            );
+            $wt = $this->fmtDim($pkg->weight).' lbs';
+            $lines[] = "• *{$label}:* {$dims} · {$wt}";
+            $i++;
+        }
+
+        $slack->post($channel, implode("\n", $lines), 'Wholesale '.$title);
+
+        return response()->json(['ok' => true]);
+    }
+
+    private function fmtDim($value): string
+    {
+        if ($value === null || $value === '') {
+            return '—';
+        }
+
+        return rtrim(rtrim(number_format((float) $value, 2, '.', ''), '0'), '.') ?: '0';
+    }
+
+    public function readyToShip(
+        Request $request,
+        WholesaleOrder $wholesaleOrder,
+        WholesaleOrderShipHeroService $shipHero
+    ): JsonResponse {
+        $this->assertStaff($request);
+        Gate::authorize('update', $wholesaleOrder);
+
+        $user = $request->user();
+        if (! $user instanceof User) {
+            abort(403);
+        }
+
+        $this->applyClientProvidesReadyToShipAddress($wholesaleOrder);
+        $wholesaleOrder->refresh();
+
+        $shipHero->submitToShipHero(
+            $wholesaleOrder,
+            app(ShipHeroOrderService::class),
+            $user
+        );
+
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh([
+            'clientAccount', 'createdBy', 'lines', 'comments.user', 'shippingLabels', 'packages',
+        ])));
     }
 
     public function storeComment(WholesaleOrderCommentStoreRequest $request, WholesaleOrder $wholesaleOrder): JsonResponse
@@ -897,28 +1348,6 @@ class WholesaleOrderController extends Controller
             $comment->attachment_original_name ?: 'attachment',
             ['Content-Type' => $comment->attachment_mime ?: 'application/octet-stream']
         );
-    }
-
-    public function readyToShip(
-        Request $request,
-        WholesaleOrder $wholesaleOrder,
-        WholesaleOrderShipHeroService $shipHero
-    ): JsonResponse {
-        $this->assertStaff($request);
-        Gate::authorize('update', $wholesaleOrder);
-
-        $user = $request->user();
-        if (! $user instanceof User) {
-            abort(403);
-        }
-
-        $shipHero->submitToShipHero(
-            $wholesaleOrder,
-            app(ShipHeroOrderService::class),
-            $user
-        );
-
-        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user'])));
     }
 
     public function pickList(Request $request): JsonResponse

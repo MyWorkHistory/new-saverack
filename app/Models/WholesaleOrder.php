@@ -81,12 +81,16 @@ class WholesaleOrder extends Model
         'master_cartons',
         'master_cartons_comment',
         'items_count',
+        'boxes_saved_at',
+        'pallets_saved_at',
         'created_by_user_id',
     ];
 
     protected $casts = [
         'items_count' => 'integer',
         'shipping_address' => 'array',
+        'boxes_saved_at' => 'datetime',
+        'pallets_saved_at' => 'datetime',
     ];
 
     public function clientAccount(): BelongsTo
@@ -110,6 +114,36 @@ class WholesaleOrder extends Model
     {
         return $this->hasMany(WholesaleOrderComment::class, 'wholesale_order_id')
             ->orderBy('created_at')
+            ->orderBy('id');
+    }
+
+    public function shippingLabels(): HasMany
+    {
+        return $this->hasMany(WholesaleOrderShippingLabel::class, 'wholesale_order_id')
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
+    public function packages(): HasMany
+    {
+        return $this->hasMany(WholesaleOrderPackage::class, 'wholesale_order_id')
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
+    public function boxes(): HasMany
+    {
+        return $this->hasMany(WholesaleOrderPackage::class, 'wholesale_order_id')
+            ->where('package_type', WholesaleOrderPackage::TYPE_BOX)
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
+    public function pallets(): HasMany
+    {
+        return $this->hasMany(WholesaleOrderPackage::class, 'wholesale_order_id')
+            ->where('package_type', WholesaleOrderPackage::TYPE_PALLET)
+            ->orderBy('sort_order')
             ->orderBy('id');
     }
 
@@ -141,6 +175,11 @@ class WholesaleOrder extends Model
 
     public function hasUploadedShippingLabel(): bool
     {
+        $this->loadMissing('shippingLabels');
+        if ($this->shippingLabels->isNotEmpty()) {
+            return true;
+        }
+
         return trim((string) ($this->shipping_label_path ?? '')) !== '';
     }
 
@@ -159,13 +198,14 @@ class WholesaleOrder extends Model
     {
         $provider = trim((string) ($this->shipping_labels_provider ?? ''));
         if ($provider === self::SHIPPING_LABELS_CLIENT_PROVIDES) {
-            return $this->hasUploadedShippingLabel();
+            // Provider selected is enough; uploaded files are optional.
+            return true;
         }
         if ($provider === self::SHIPPING_LABELS_SAVE_RACK_PROVIDES) {
             return $this->hasCompleteShippingAddress() && $this->hasShippingCarrierAndMethod();
         }
 
-        return $this->hasCompleteShippingAddress() && $this->hasShippingCarrierAndMethod();
+        return false;
     }
 
     public function hasShippingCarrierAndMethod(): bool

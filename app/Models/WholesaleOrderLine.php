@@ -30,6 +30,7 @@ class WholesaleOrderLine extends Model
         'image_url',
         'quantity',
         'quantity_picked',
+        'weight',
         'status',
         'barcode_mode',
         'barcode_path',
@@ -41,6 +42,7 @@ class WholesaleOrderLine extends Model
     protected $casts = [
         'quantity' => 'integer',
         'quantity_picked' => 'integer',
+        'weight' => 'float',
         'sort_order' => 'integer',
     ];
 

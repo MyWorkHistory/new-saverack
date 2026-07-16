@@ -8,6 +8,7 @@ defineProps({
   valueLabel: { type: String, default: "" },
   comment: { type: String, default: "" },
   editable: { type: Boolean, default: false },
+  showEdit: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["edit"]);
@@ -26,7 +27,7 @@ const emit = defineEmits(["edit"]);
       <p v-if="comment" class="wholesale-req-row__comment mb-0">{{ comment }}</p>
     </div>
     <button
-      v-if="editable"
+      v-if="editable && showEdit"
       type="button"
       class="btn btn-link btn-sm p-0 text-decoration-none flex-shrink-0 wholesale-req-row__edit"
       @click="emit('edit')"

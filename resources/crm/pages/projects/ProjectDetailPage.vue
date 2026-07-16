@@ -89,7 +89,9 @@ const quoteItems = computed(() =>
 
 const hasBill = computed(() => Boolean(project.value?.custom_bill_id));
 
-const canShowActionsMenu = computed(() => Boolean(project.value) && canDelete.value);
+const canShowActionsMenu = computed(
+  () => Boolean(project.value) && (canUpdate.value || canDelete.value),
+);
 
 function cents(n) {
   return money.format((Number(n) || 0) / 100);
@@ -345,8 +347,9 @@ onUnmounted(() => {
       class="staff-user-view__title-row d-flex flex-wrap align-items-start justify-content-between gap-2 mb-4"
     >
       <div class="min-w-0">
-        <h1 class="staff-user-view__title">{{ project?.pid || "Project" }}</h1>
-        <p class="text-secondary small mb-0">Project details and quote</p>
+        <h1 class="staff-user-view__title">
+          Project - {{ project?.pid || "…" }}
+        </h1>
       </div>
       <div
         v-if="canShowActionsMenu"
@@ -632,17 +635,21 @@ onUnmounted(() => {
     <Teleport to="body">
       <div
         v-if="actionsMenuOpen"
-        class="staff-manage-menu staff-manage-menu--fixed"
         data-project-actions
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
         :style="{
           top: `${actionsMenuRect.top}px`,
           left: `${actionsMenuRect.left}px`,
-          width: `${ACTIONS_MENU_W}px`,
+          minWidth: `${ACTIONS_MENU_W}px`,
         }"
+        @click.stop
       >
         <button
+          v-if="canDelete"
           type="button"
-          class="staff-manage-menu__item staff-manage-menu__item--danger"
+          class="staff-row-menu__item staff-row-menu__item--danger"
+          role="menuitem"
           @click="openDeleteFromMenu"
         >
           Delete Project

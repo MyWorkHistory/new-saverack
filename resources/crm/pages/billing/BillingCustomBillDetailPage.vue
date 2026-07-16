@@ -559,22 +559,22 @@ onUnmounted(() => {
           </button>
           <div
             v-if="canUpdate || canDelete || bill.invoice_id"
-            class="staff-detail-tab-bar-actions"
             data-cb-actions
+            class="position-relative"
           >
             <button
               type="button"
-              class="staff-detail-tab-btn"
-              :class="{ 'staff-detail-tab-btn--active': actionMenuOpen }"
-              :aria-expanded="actionMenuOpen"
+              class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn fw-semibold d-inline-flex align-items-center gap-2"
+              :class="{ 'is-open': actionMenuOpen }"
+              :aria-expanded="actionMenuOpen ? 'true' : 'false'"
               aria-haspopup="true"
               aria-label="Actions"
               @click.stop="toggleActionMenu"
             >
               <svg
-                class="staff-detail-tab-btn__icon"
-                width="26"
-                height="26"
+                class="flex-shrink-0"
+                width="16"
+                height="16"
                 fill="none"
                 stroke="currentColor"
                 stroke-width="1.75"
@@ -592,7 +592,7 @@ onUnmounted(() => {
                   d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
                 />
               </svg>
-              <span class="staff-detail-tab-btn__label">Actions</span>
+              Actions
             </button>
           </div>
         </div>
@@ -712,7 +712,7 @@ onUnmounted(() => {
         </div>
 
         <div class="col-lg-4">
-          <div class="staff-stat-card mb-4 billing-custom-bill-total-card">
+          <div class="staff-stat-card mb-4 billing-inv-summary-card billing-inv-summary-card--static">
             <p class="staff-stat-card__label">Bill Total</p>
             <p class="staff-stat-card__value">
               {{ formatCents(bill.total_cents) }}
@@ -969,15 +969,6 @@ onUnmounted(() => {
   width: 7rem;
   min-width: 7rem;
   max-width: 7rem;
-}
-
-.billing-custom-bill-total-card {
-  min-height: 7.5rem;
-}
-
-.billing-custom-bill-total-card .staff-stat-card__icon {
-  top: 50%;
-  transform: translateY(-50%);
 }
 
 .billing-custom-bill-history__item {

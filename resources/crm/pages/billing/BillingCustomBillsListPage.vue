@@ -25,9 +25,9 @@ function userHasPerm(key) {
   return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
 }
 
-const canCreate = computed(() => userHasPerm("billing.create"));
-const canUpdate = computed(() => userHasPerm("billing.update"));
-const canDelete = computed(() => userHasPerm("billing.delete"));
+const canCreate = computed(() => userHasPerm("billing_custom_bills.create") || userHasPerm("billing.create"));
+const canUpdate = computed(() => userHasPerm("billing_custom_bills.update") || userHasPerm("billing.update"));
+const canDelete = computed(() => userHasPerm("billing_custom_bills.delete") || userHasPerm("billing.delete"));
 const showCheckboxColumn = computed(() => canDelete.value || canUpdate.value);
 
 const loading = ref(true);

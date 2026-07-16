@@ -513,22 +513,22 @@ onUnmounted(() => {
           </button>
           <div
             v-if="canUpdate || canDelete || bill.invoice_id"
-            class="staff-detail-tab-bar-actions"
             data-rb-action
+            class="position-relative"
           >
             <button
               type="button"
-              class="staff-detail-tab-btn"
-              :class="{ 'staff-detail-tab-btn--active': actionMenuOpen }"
-              :aria-expanded="actionMenuOpen"
+              class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn fw-semibold d-inline-flex align-items-center gap-2"
+              :class="{ 'is-open': actionMenuOpen }"
               aria-haspopup="true"
+              :aria-expanded="actionMenuOpen ? 'true' : 'false'"
               aria-label="Actions"
               @click.stop="toggleActionMenu"
             >
               <svg
-                class="staff-detail-tab-btn__icon"
-                width="26"
-                height="26"
+                class="flex-shrink-0"
+                width="16"
+                height="16"
                 fill="none"
                 stroke="currentColor"
                 stroke-width="1.75"
@@ -546,7 +546,7 @@ onUnmounted(() => {
                   d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
                 />
               </svg>
-              <span class="staff-detail-tab-btn__label">Actions</span>
+              Actions
             </button>
           </div>
         </div>

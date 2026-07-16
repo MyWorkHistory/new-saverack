@@ -69,6 +69,20 @@ class ProjectController extends Controller
         return response()->json($this->projects->toDetailArray($project));
     }
 
+    public function update(Request $request, Project $project): JsonResponse
+    {
+        Gate::authorize('update', $project);
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:10000'],
+        ]);
+
+        $project = $this->projects->update($project, $validated);
+
+        return response()->json($this->projects->toDetailArray($project));
+    }
+
     public function updateStatus(Request $request, Project $project): JsonResponse
     {
         Gate::authorize('update', $project);
@@ -135,6 +149,15 @@ class ProjectController extends Controller
         $project = $this->projects->addQuoteItem($project, $request->validated(), $request->user());
 
         return response()->json($this->projects->toDetailArray($project), 201);
+    }
+
+    public function updateQuoteItem(CustomBillItemStoreRequest $request, Project $project, int $item): JsonResponse
+    {
+        Gate::authorize('update', $project);
+
+        $project = $this->projects->updateQuoteItem($project, $item, $request->validated(), $request->user());
+
+        return response()->json($this->projects->toDetailArray($project));
     }
 
     public function destroyQuoteItem(Project $project, int $item): JsonResponse

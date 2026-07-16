@@ -137,6 +137,27 @@ class ProjectService
             ->findOrFail($id);
     }
 
+    /**
+     * @param  array{name: string, description?: string|null}  $data
+     */
+    public function update(Project $project, array $data): Project
+    {
+        $name = trim((string) ($data['name'] ?? ''));
+        if ($name === '') {
+            throw ValidationException::withMessages([
+                'name' => ['Project name is required.'],
+            ]);
+        }
+
+        $project->name = $name;
+        $project->description = array_key_exists('description', $data)
+            ? (trim((string) $data['description']) ?: null)
+            : $project->description;
+        $project->save();
+
+        return $this->findOrFail((int) $project->id);
+    }
+
     public function updateStatus(Project $project, string $status): Project
     {
         if (! in_array($status, Project::STATUSES, true)) {
@@ -227,6 +248,39 @@ class ProjectService
             'sku' => $normalized['sku'],
             'sort_order' => $order,
         ]);
+
+        return $this->findOrFail((int) $project->id);
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    public function updateQuoteItem(Project $project, int $itemId, array $row, ?User $actor): Project
+    {
+        if ($project->custom_bill_id) {
+            $bill = $this->requireLinkedOpenBill($project);
+            $item = CustomBillItem::query()
+                ->where('custom_bill_id', $bill->id)
+                ->whereKey($itemId)
+                ->firstOrFail();
+            $this->customBills->updateItem($bill, $item, $row, $actor);
+
+            return $this->findOrFail((int) $project->id);
+        }
+
+        $item = ProjectQuoteItem::query()
+            ->where('project_id', $project->id)
+            ->whereKey($itemId)
+            ->firstOrFail();
+
+        $normalized = $this->normalizeQuoteRow($row);
+        $item->line_type = $normalized['line_type'];
+        $item->name = $normalized['name'];
+        $item->quantity = $normalized['quantity'];
+        $item->unit_price_cents = $normalized['unit_price_cents'];
+        $item->line_total_cents = $normalized['line_total_cents'];
+        $item->sku = $normalized['sku'];
+        $item->save();
 
         return $this->findOrFail((int) $project->id);
     }

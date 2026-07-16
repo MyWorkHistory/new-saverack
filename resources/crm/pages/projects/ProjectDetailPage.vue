@@ -11,8 +11,10 @@ import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import BillingCustomBillLineModal from "../../components/billing/BillingCustomBillLineModal.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLinkedText from "../../components/common/CrmLinkedText.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import ProjectEditModal from "../../components/projects/ProjectEditModal.vue";
 import ProjectStatusChip from "../../components/projects/ProjectStatusChip.vue";
 import {
   DEFAULT_INVOICE_CATEGORY,
@@ -52,6 +54,10 @@ const deleteNoteOpen = ref(false);
 const deleteNoteBusy = ref(false);
 const deleteNoteTarget = ref(null);
 
+const editOpen = ref(false);
+const editBusy = ref(false);
+const editError = ref("");
+
 const quoteOpen = ref(false);
 const quoteBusy = ref(false);
 const quoteError = ref("");
@@ -60,6 +66,12 @@ const quoteName = ref("");
 const quoteQty = ref("1");
 const quotePrice = ref("0.00");
 const quoteSku = ref("");
+const quoteEditId = ref(null);
+
+const quoteMenuOpenId = ref(null);
+const quoteMenuRect = ref({ top: 0, left: 0 });
+const QUOTE_MENU_W = 160;
+const QUOTE_MENU_H = 88;
 
 const deleteItemOpen = ref(false);
 const deleteItemBusy = ref(false);
@@ -73,7 +85,11 @@ const deleteProjectBusy = ref(false);
 const actionsMenuOpen = ref(false);
 const actionsMenuRect = ref({ top: 0, left: 0 });
 const ACTIONS_MENU_W = 180;
-const ACTIONS_MENU_H = 56;
+const ACTIONS_MENU_H = 104;
+
+const quoteModalTitle = computed(() =>
+  quoteEditId.value ? "Edit Quote Line" : "Add To Quote",
+);
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
@@ -95,6 +111,18 @@ const canShowActionsMenu = computed(
 
 function cents(n) {
   return money.format((Number(n) || 0) / 100);
+}
+
+const timeFmt = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+function timeUs(val) {
+  if (!val) return "";
+  const d = new Date(val);
+  if (Number.isNaN(d.getTime())) return "";
+  return timeFmt.format(d);
 }
 
 async function load() {
@@ -168,11 +196,25 @@ async function confirmDeleteNote() {
 }
 
 function openAddQuote() {
+  quoteEditId.value = null;
   quoteCategory.value = DEFAULT_INVOICE_CATEGORY;
   quoteName.value = "";
   quoteQty.value = "1";
   quotePrice.value = "0.00";
   quoteSku.value = "";
+  quoteError.value = "";
+  quoteOpen.value = true;
+}
+
+function openEditQuote(item) {
+  quoteMenuOpenId.value = null;
+  if (!item) return;
+  quoteEditId.value = item.id;
+  quoteCategory.value = item.line_type || DEFAULT_INVOICE_CATEGORY;
+  quoteName.value = item.name || "";
+  quoteQty.value = String(item.quantity ?? "1");
+  quotePrice.value = (Math.abs(Number(item.unit_price_cents) || 0) / 100).toFixed(2);
+  quoteSku.value = item.sku || "";
   quoteError.value = "";
   quoteOpen.value = true;
 }
@@ -186,23 +228,61 @@ async function submitQuote() {
   }
   quoteBusy.value = true;
   quoteError.value = "";
+  const payload = {
+    line_type: quoteCategory.value,
+    name,
+    quantity: Number(quoteQty.value) || 1,
+    unit_price: Number(quotePrice.value) || 0,
+    sku: String(quoteSku.value || "").trim() || null,
+  };
   try {
-    const { data } = await api.post(`/projects/${project.value.id}/quote-items`, {
-      line_type: quoteCategory.value,
-      name,
-      quantity: Number(quoteQty.value) || 1,
-      unit_price: Number(quotePrice.value) || 0,
-      sku: String(quoteSku.value || "").trim() || null,
-    });
+    const { data } = quoteEditId.value
+      ? await api.put(
+          `/projects/${project.value.id}/quote-items/${quoteEditId.value}`,
+          payload,
+        )
+      : await api.post(`/projects/${project.value.id}/quote-items`, payload);
     project.value = data;
     quoteOpen.value = false;
-    toast.success("Added to quote.");
+    toast.success(quoteEditId.value ? "Quote line updated." : "Added to quote.");
+    quoteEditId.value = null;
   } catch (e) {
-    quoteError.value = "Could not add quote line.";
-    toast.errorFrom(e, "Could not add quote line.");
+    quoteError.value = quoteEditId.value
+      ? "Could not update quote line."
+      : "Could not add quote line.";
+    toast.errorFrom(e, quoteError.value);
   } finally {
     quoteBusy.value = false;
   }
+}
+
+async function toggleQuoteMenu(itemId, event) {
+  event?.stopPropagation?.();
+  if (quoteMenuOpenId.value === itemId) {
+    quoteMenuOpenId.value = null;
+    return;
+  }
+  const btn = event?.currentTarget;
+  quoteMenuOpenId.value = itemId;
+  await nextTick();
+  requestAnimationFrame(() => placeQuoteMenu(btn));
+}
+
+function placeQuoteMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const rect = anchorEl.getBoundingClientRect();
+  let top = rect.bottom + 4;
+  let left = rect.right - QUOTE_MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - QUOTE_MENU_W - 8));
+  if (top + QUOTE_MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, rect.top - QUOTE_MENU_H - 4);
+  }
+  quoteMenuRect.value = { top, left };
+}
+
+function askDeleteItemFromMenu(item) {
+  quoteMenuOpenId.value = null;
+  askDeleteItem(item);
 }
 
 function askDeleteItem(item) {
@@ -272,6 +352,37 @@ function closeActionsMenu() {
   actionsMenuOpen.value = false;
 }
 
+function openEditFromMenu() {
+  closeActionsMenu();
+  editError.value = "";
+  editOpen.value = true;
+}
+
+async function submitEditProject(payload) {
+  if (!project.value?.id || editBusy.value || !canUpdate.value) return;
+  const name = String(payload?.name || "").trim();
+  if (!name) {
+    editError.value = "Project name is required.";
+    return;
+  }
+  editBusy.value = true;
+  editError.value = "";
+  try {
+    const { data } = await api.patch(`/projects/${project.value.id}`, {
+      name,
+      description: payload?.description ?? null,
+    });
+    project.value = data;
+    editOpen.value = false;
+    toast.success("Project updated.");
+  } catch (e) {
+    editError.value = "Could not update project.";
+    toast.errorFrom(e, "Could not update project.");
+  } finally {
+    editBusy.value = false;
+  }
+}
+
 function openDeleteFromMenu() {
   closeActionsMenu();
   deleteProjectOpen.value = true;
@@ -296,15 +407,20 @@ function onDocClick(e) {
   if (!e.target?.closest?.("[data-project-actions]")) {
     actionsMenuOpen.value = false;
   }
+  if (!e.target?.closest?.("[data-quote-actions]")) {
+    quoteMenuOpenId.value = null;
+  }
 }
 
 function onWindowScrollOrResize() {
   actionsMenuOpen.value = false;
+  quoteMenuOpenId.value = null;
 }
 
 function onDocKeydown(e) {
   if (e.key === "Escape") {
     actionsMenuOpen.value = false;
+    quoteMenuOpenId.value = null;
   }
 }
 
@@ -478,38 +594,89 @@ onUnmounted(() => {
       </div>
 
       <aside class="col-12 col-lg-4 d-flex flex-column gap-4">
-        <div class="staff-table-card overflow-hidden p-4 p-md-5">
-          <h3 class="small fw-semibold text-secondary text-uppercase mb-3">Details</h3>
-          <dl class="row small mb-0 gy-3">
-            <div class="col-12">
-              <dt class="text-secondary mb-1">Account</dt>
-              <dd class="mb-0 text-body">{{ project.client_account_name || "—" }}</dd>
+        <div class="staff-table-card overflow-hidden project-detail-card">
+          <div class="project-detail-card__head">
+            <span class="project-detail-card__head-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+            </span>
+            <div class="min-w-0">
+              <h3 class="project-detail-card__title mb-0">Details</h3>
+              <p class="project-detail-card__subtitle mb-0">Overview of this project</p>
             </div>
-            <div class="col-12">
-              <dt class="text-secondary mb-1">Status</dt>
-              <dd class="mb-0">
-                <ProjectStatusChip
-                  :status="project.status"
-                  :disabled="statusBusy || !canUpdate"
-                  @change="changeStatus"
-                />
-              </dd>
+          </div>
+          <div class="project-detail-grid">
+            <div class="project-detail-field">
+              <span class="project-detail-field__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4M9 9v.01M9 12v.01M9 15v.01M9 18v.01" />
+                </svg>
+              </span>
+              <div class="min-w-0">
+                <p class="project-detail-field__label">Account</p>
+                <p class="project-detail-field__value">{{ project.client_account_name || "—" }}</p>
+              </div>
             </div>
-            <div class="col-12">
-              <dt class="text-secondary mb-1">Date Created</dt>
-              <dd class="mb-0 text-body">{{ formatDateUs(project.created_at) || "—" }}</dd>
+
+            <div class="project-detail-field">
+              <span class="project-detail-field__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M3 6l6.5-3.5a2 2 0 011.9 0L21 8v10a1 1 0 01-1 1h-6v-4a2 2 0 10-4 0v4H4a1 1 0 01-1-1z" />
+                </svg>
+              </span>
+              <div class="min-w-0">
+                <p class="project-detail-field__label">Status</p>
+                <div class="project-detail-field__value">
+                  <ProjectStatusChip
+                    :status="project.status"
+                    :disabled="statusBusy || !canUpdate"
+                    @change="changeStatus"
+                  />
+                </div>
+              </div>
             </div>
-            <div class="col-12">
-              <dt class="text-secondary mb-1">Date Completed</dt>
-              <dd class="mb-0 text-body">
-                {{ formatDateUs(project.completed_at) || "—" }}
-              </dd>
+
+            <div class="project-detail-field">
+              <span class="project-detail-field__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z" />
+                </svg>
+              </span>
+              <div class="min-w-0">
+                <p class="project-detail-field__label">Date Created</p>
+                <p class="project-detail-field__value">{{ formatDateUs(project.created_at) || "—" }}</p>
+                <p v-if="timeUs(project.created_at)" class="project-detail-field__sub">
+                  {{ timeUs(project.created_at) }}
+                </p>
+              </div>
             </div>
-            <div class="col-12">
-              <dt class="text-secondary mb-1">Created By</dt>
-              <dd class="mb-0 text-body">{{ project.created_by_name || "—" }}</dd>
+
+            <div class="project-detail-field">
+              <span class="project-detail-field__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4M12 21a9 9 0 110-18 9 9 0 010 18z" />
+                </svg>
+              </span>
+              <div class="min-w-0">
+                <p class="project-detail-field__label">Date Completed</p>
+                <p class="project-detail-field__value">{{ formatDateUs(project.completed_at) || "—" }}</p>
+                <p v-if="!project.completed_at" class="project-detail-field__sub">Not completed</p>
+              </div>
             </div>
-          </dl>
+
+            <div class="project-detail-field">
+              <span class="project-detail-field__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </span>
+              <div class="min-w-0">
+                <p class="project-detail-field__label">Created By</p>
+                <p class="project-detail-field__value">{{ project.created_by_name || "—" }}</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="staff-table-card overflow-hidden">
@@ -555,15 +722,24 @@ onUnmounted(() => {
                     </td>
                     <td class="text-end small">{{ item.quantity }}</td>
                     <td class="text-end small">{{ cents(item.line_total_cents) }}</td>
-                    <td class="text-end">
-                      <button
+                    <td class="text-end" @click.stop>
+                      <div
                         v-if="canUpdate && project.quote_open"
-                        type="button"
-                        class="btn btn-link btn-sm text-danger p-0"
-                        @click="askDeleteItem(item)"
+                        data-quote-actions
+                        class="position-relative d-inline-block"
                       >
-                        Delete
-                      </button>
+                        <button
+                          type="button"
+                          class="staff-action-btn staff-action-btn--more"
+                          :class="{ 'is-open': quoteMenuOpenId === item.id }"
+                          :aria-expanded="quoteMenuOpenId === item.id ? 'true' : 'false'"
+                          aria-haspopup="true"
+                          aria-label="Quote line actions"
+                          @click.stop="toggleQuoteMenu(item.id, $event)"
+                        >
+                          <CrmIconRowActions variant="horizontal" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 </tbody>
@@ -595,39 +771,70 @@ onUnmounted(() => {
 
         <div
           v-if="hasBill"
-          class="staff-table-card overflow-hidden p-4 p-md-5"
+          class="staff-table-card overflow-hidden project-detail-card"
         >
-          <h3 class="small fw-semibold text-secondary text-uppercase mb-3">
-            Project Bill
-          </h3>
-          <dl class="row small mb-0 gy-3">
-            <div class="col-12">
-              <dt class="text-secondary mb-1">Custom Bill</dt>
-              <dd class="mb-0">
-                <RouterLink
-                  class="text-decoration-none"
-                  :to="`/admin/billing/custom-bills/${project.custom_bill_id}`"
-                >
-                  {{
-                    project.custom_bill_name ||
-                    (project.custom_bill_number
-                      ? `Bill #${project.custom_bill_number}`
-                      : "View Bill")
-                  }}
-                </RouterLink>
-              </dd>
+          <div class="project-detail-card__head">
+            <span class="project-detail-card__head-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 14h6m-6-4h6m-8 8V5a1 1 0 011-1h8a1 1 0 011 1v13l-2-1.5L14 18l-2-1.5L10 18l-2-1.5L6 18z" />
+              </svg>
+            </span>
+            <div class="min-w-0">
+              <h3 class="project-detail-card__title mb-0">Project Bill</h3>
+              <p class="project-detail-card__subtitle mb-0">Billing details for this project</p>
             </div>
-            <div class="col-12">
-              <dt class="text-secondary mb-1">Status</dt>
-              <dd class="mb-0 text-body text-capitalize">
-                {{ project.custom_bill_status || "—" }}
-              </dd>
+          </div>
+          <div class="project-detail-grid project-detail-grid--single">
+            <div class="project-detail-field">
+              <span class="project-detail-field__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v11a2 2 0 01-2 2zM14 3v5h5" />
+                </svg>
+              </span>
+              <div class="min-w-0">
+                <p class="project-detail-field__label">Custom Bill</p>
+                <p class="project-detail-field__value">
+                  <RouterLink
+                    class="text-decoration-none"
+                    :to="`/admin/billing/custom-bills/${project.custom_bill_id}`"
+                  >
+                    {{
+                      project.custom_bill_name ||
+                      (project.custom_bill_number
+                        ? `Bill #${project.custom_bill_number}`
+                        : "View Bill")
+                    }}
+                  </RouterLink>
+                </p>
+              </div>
             </div>
-            <div class="col-12">
-              <dt class="text-secondary mb-1">Total</dt>
-              <dd class="mb-0 text-body">{{ cents(project.quote_total_cents) }}</dd>
+
+            <div class="project-detail-field">
+              <span class="project-detail-field__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M3 6l6.5-3.5a2 2 0 011.9 0L21 8v10a1 1 0 01-1 1h-6v-4a2 2 0 10-4 0v4H4a1 1 0 01-1-1z" />
+                </svg>
+              </span>
+              <div class="min-w-0">
+                <p class="project-detail-field__label">Status</p>
+                <p class="project-detail-field__value text-capitalize">
+                  {{ project.custom_bill_status || "—" }}
+                </p>
+              </div>
             </div>
-          </dl>
+
+            <div class="project-detail-field">
+              <span class="project-detail-field__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18M8 8a3 3 0 013-3h2a3 3 0 010 6h-2a3 3 0 000 6h2a3 3 0 003-3" />
+                </svg>
+              </span>
+              <div class="min-w-0">
+                <p class="project-detail-field__label">Total</p>
+                <p class="project-detail-field__value">{{ cents(project.quote_total_cents) }}</p>
+              </div>
+            </div>
+          </div>
         </div>
       </aside>
     </div>
@@ -646,6 +853,15 @@ onUnmounted(() => {
         @click.stop
       >
         <button
+          v-if="canUpdate"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openEditFromMenu"
+        >
+          Edit Project
+        </button>
+        <button
           v-if="canDelete"
           type="button"
           class="staff-row-menu__item staff-row-menu__item--danger"
@@ -657,10 +873,51 @@ onUnmounted(() => {
       </div>
     </Teleport>
 
+    <Teleport to="body">
+      <div
+        v-if="quoteMenuOpenId !== null"
+        data-quote-actions
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
+        :style="{
+          top: `${quoteMenuRect.top}px`,
+          left: `${quoteMenuRect.left}px`,
+          minWidth: `${QUOTE_MENU_W}px`,
+        }"
+        @click.stop
+      >
+        <button
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openEditQuote(quoteItems.find((i) => i.id === quoteMenuOpenId))"
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          class="staff-row-menu__item staff-row-menu__item--danger"
+          role="menuitem"
+          @click="askDeleteItemFromMenu(quoteItems.find((i) => i.id === quoteMenuOpenId))"
+        >
+          Delete
+        </button>
+      </div>
+    </Teleport>
+
+    <ProjectEditModal
+      v-model:open="editOpen"
+      :busy="editBusy"
+      :error-msg="editError"
+      :name="project?.name || ''"
+      :description="project?.description || ''"
+      @submit="submitEditProject"
+    />
+
     <BillingCustomBillLineModal
       v-model:open="quoteOpen"
-      title="Add To Quote"
-      submit-label="Add To Quote"
+      :title="quoteModalTitle"
+      :submit-label="quoteModalTitle"
       :busy="quoteBusy"
       :error-msg="quoteError"
       :category-options="categoryOptions"
@@ -708,3 +965,105 @@ onUnmounted(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.project-detail-card__head {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 1.5rem 1.75rem;
+  border-bottom: 1px solid var(--bs-border-color);
+}
+
+.project-detail-card__head-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+.project-detail-card__head-icon svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.project-detail-card__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.project-detail-card__subtitle {
+  font-size: 0.85rem;
+  color: var(--bs-secondary-color);
+}
+
+.project-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem 1.25rem;
+  padding: 1.5rem 1.75rem;
+}
+
+.project-detail-grid--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.project-detail-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.project-detail-field__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.75rem;
+  background: #eef2ff;
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+.project-detail-field__icon svg {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+
+.project-detail-field__label {
+  margin: 0 0 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}
+
+.project-detail-field__value {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1e293b;
+  word-break: break-word;
+}
+
+.project-detail-field__sub {
+  margin: 0.1rem 0 0;
+  font-size: 0.8rem;
+  color: var(--bs-secondary-color);
+}
+
+@media (max-width: 575.98px) {
+  .project-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+</style>

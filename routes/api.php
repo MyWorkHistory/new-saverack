@@ -148,12 +148,14 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/summary', [ProjectController::class, 'summary']);
             Route::post('/', [ProjectController::class, 'store']);
             Route::get('/{project}', [ProjectController::class, 'show']);
+            Route::patch('/{project}', [ProjectController::class, 'update']);
             Route::patch('/{project}/status', [ProjectController::class, 'updateStatus']);
             Route::delete('/{project}', [ProjectController::class, 'destroy']);
             Route::post('/{project}/notes', [ProjectController::class, 'storeNote']);
             Route::patch('/{project}/notes/{note}', [ProjectController::class, 'updateNote']);
             Route::delete('/{project}/notes/{note}', [ProjectController::class, 'destroyNote']);
             Route::post('/{project}/quote-items', [ProjectController::class, 'storeQuoteItem']);
+            Route::put('/{project}/quote-items/{item}', [ProjectController::class, 'updateQuoteItem']);
             Route::delete('/{project}/quote-items/{item}', [ProjectController::class, 'destroyQuoteItem']);
             Route::post('/{project}/create-bill', [ProjectController::class, 'createBill']);
         });

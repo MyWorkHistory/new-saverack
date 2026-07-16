@@ -106,7 +106,7 @@ const readyToShipDisabledReason = computed(() => {
   if (!lines.value.length) missing.push("add line items");
   if (!o.has_requirements_filled) missing.push("complete requirements");
   if (!o.has_all_lines_barcode_resolved) missing.push("resolve line barcodes (Ship As Is or upload)");
-  if (!o.has_shipping_labels_resolved) missing.push("complete shipping labels");
+  if (!o.has_shipping_labels_resolved) missing.push("select shipping labels provider");
   return missing.length ? `Complete: ${missing.join(", ")}.` : "Not ready to ship.";
 });
 

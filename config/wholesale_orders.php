@@ -59,7 +59,7 @@ return [
     ],
 
     'shipping_labels_provider' => [
-        'client_provides' => 'Client provides shipping labels',
-        'save_rack_provides' => 'Save Rack provides shipping labels',
+        'client_provides' => 'Client Provides Shipping Labels',
+        'save_rack_provides' => 'Save Rack Provides Shipping Labels',
     ],
 ];

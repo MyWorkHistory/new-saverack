@@ -285,7 +285,7 @@ async function submit() {
   <CrmRightDrawer
     :open="open"
     title="Shipping Labels"
-    subtitle="Choose who provides shipping labels and complete the required details."
+    subtitle="Choose who provides shipping labels. Uploads are optional for client-provided labels; Save Rack requires address and carrier."
     :busy="drawerBusy"
     form-id="wholesale-shipping-labels-form"
     max-width="2xl"
@@ -331,7 +331,7 @@ async function submit() {
 
       <template v-if="isClientProvides">
         <div>
-          <label class="form-label small text-secondary">Upload shipping labels</label>
+          <label class="form-label small text-secondary">Upload Shipping Labels</label>
           <div
             class="wholesale-shipping-label-upload"
             @drop="onDrop"
@@ -347,7 +347,7 @@ async function submit() {
               :disabled="drawerBusy"
               @click="fileInput?.click()"
             >
-              Choose Files
+              {{ existingLabels.length || pendingFiles.length ? "Upload More" : "Choose Files" }}
             </button>
             <input
               ref="fileInput"
@@ -359,9 +359,11 @@ async function submit() {
               @change="onFileChange"
             />
           </div>
-          <p class="form-text mb-2">Uploads are optional. You can add more after saving.</p>
+          <p class="form-text mb-2">
+            Uploads are optional. Labels are not required for Ready To Ship.
+          </p>
 
-          <ul v-if="existingLabels.length || pendingFiles.length" class="list-unstyled mb-0">
+          <ul v-if="existingLabels.length || pendingFiles.length" class="list-unstyled mb-0 mt-2">
             <li
               v-for="label in existingLabels"
               :key="'ex-' + label.id"
@@ -369,13 +371,13 @@ async function submit() {
             >
               <CrmMaterialIcon name="description" :size="20" class="text-primary flex-shrink-0" />
               <span class="small text-body text-truncate flex-grow-1">{{
-                label.original_name || "Shipping label"
+                label.original_name || "Shipping Label"
               }}</span>
               <button
                 type="button"
-                class="btn btn-link btn-sm text-danger p-0"
+                class="btn btn-link btn-sm text-danger p-0 wholesale-shipping-label-file__x"
                 :disabled="drawerBusy"
-                aria-label="Delete label"
+                aria-label="Delete Label"
                 @click="removeExisting(label)"
               >
                 ×
@@ -390,9 +392,9 @@ async function submit() {
               <span class="small text-body text-truncate flex-grow-1">{{ file.name }}</span>
               <button
                 type="button"
-                class="btn btn-link btn-sm text-danger p-0"
+                class="btn btn-link btn-sm text-danger p-0 wholesale-shipping-label-file__x"
                 :disabled="drawerBusy"
-                aria-label="Remove file"
+                aria-label="Remove File"
                 @click="removePending(idx)"
               >
                 ×
@@ -504,5 +506,10 @@ async function submit() {
 }
 .wholesale-shipping-label-file + .wholesale-shipping-label-file {
   border-top: 1px solid var(--bs-border-color);
+}
+.wholesale-shipping-label-file__x {
+  font-size: 1.125rem;
+  line-height: 1;
+  min-width: 1.25rem;
 }
 </style>

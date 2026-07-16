@@ -31,7 +31,7 @@ class WholesaleOrderShipHeroService
 
         if (! $order->isReadyToShipEligible()) {
             throw ValidationException::withMessages([
-                'order' => ['Complete shipping labels, requirements, line barcodes, and add line items before ready to ship.'],
+                'order' => ['Select shipping labels provider (and address if Save Rack provides), complete requirements and line barcodes, and add line items before ready to ship.'],
             ]);
         }
 

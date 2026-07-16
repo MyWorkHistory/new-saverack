@@ -491,7 +491,7 @@ class WholesaleOrderWorkflowTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('shipping_labels_provider', WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES)
-            ->assertJsonPath('shipping_labels_provider_label', 'Client provides shipping labels')
+            ->assertJsonPath('shipping_labels_provider_label', 'Client Provides Shipping Labels')
             ->assertJsonPath('shipping_labels_comment', 'Use attached labels')
             ->assertJsonPath('has_shipping_labels_resolved', false)
             ->assertJsonPath('has_shipping_label_file', false);

@@ -94,8 +94,8 @@ export const WHOLESALE_MASTER_CARTON_OPTIONS = [
 ];
 
 export const WHOLESALE_SHIPPING_LABELS_PROVIDER_OPTIONS = [
-  { value: "client_provides", label: "Client provides shipping labels" },
-  { value: "save_rack_provides", label: "Save Rack provides shipping labels" },
+  { value: "client_provides", label: "Client Provides Shipping Labels" },
+  { value: "save_rack_provides", label: "Save Rack Provides Shipping Labels" },
 ];
 
 export function wholesaleOptionLabel(options, value) {

@@ -1411,6 +1411,7 @@ class WholesaleOrderController extends Controller
                 $imageBySku[$skuKey] ?? null,
                 $locationsBySku[$skuKey]['pick_location'] ?? null,
                 $locationsBySku[$skuKey]['backstock_location'] ?? null,
+                $locationsBySku[$skuKey]['pick_locations'] ?? [],
             )
         );
     }

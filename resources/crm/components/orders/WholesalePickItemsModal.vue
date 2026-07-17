@@ -14,12 +14,21 @@ const emit = defineEmits(["update:open", "saved"]);
 const toast = useToast();
 const saving = ref(false);
 const qtyPicked = ref(0);
+const selectedPickLocation = ref("");
 
 const qtyNeeded = computed(() => Math.max(0, Number(props.line?.quantity || 0)));
-const pickLocation = computed(() => {
-  const v = String(props.line?.pick_location || "").trim();
-  return v || "—";
+
+const pickLocationOptions = computed(() => {
+  const fromArray = Array.isArray(props.line?.pick_locations)
+    ? props.line.pick_locations.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+  if (fromArray.length) return fromArray;
+
+  const fallback = String(props.line?.pick_location || "").trim();
+  return fallback ? [fallback] : [];
 });
+
+const canSelectPickLocation = computed(() => pickLocationOptions.value.length > 0);
 
 const canSubmit = computed(() => {
   const picked = Number(qtyPicked.value);
@@ -29,15 +38,30 @@ const canSubmit = computed(() => {
     picked >= 0 &&
     picked <= qtyNeeded.value &&
     props.orderId &&
-    props.line?.id
+    props.line?.id &&
+    (!canSelectPickLocation.value || Boolean(selectedPickLocation.value))
   );
 });
+
+function resetForm() {
+  qtyPicked.value = Math.max(0, Number(props.line?.quantity_picked || 0));
+  const options = pickLocationOptions.value;
+  selectedPickLocation.value = options[0] || "";
+}
 
 watch(
   () => props.open,
   (isOpen) => {
     if (!isOpen) return;
-    qtyPicked.value = Math.max(0, Number(props.line?.quantity_picked || 0));
+    resetForm();
+  },
+);
+
+watch(
+  () => props.line,
+  () => {
+    if (!props.open) return;
+    resetForm();
   },
 );
 
@@ -146,8 +170,15 @@ async function submit() {
 
             <div class="wholesale-pick-modal__field">
               <p class="wholesale-pick-modal__field-label">Pick Location</p>
-              <select class="form-select form-select-sm wholesale-pick-modal__field-select" disabled>
-                <option :value="pickLocation">{{ pickLocation }}</option>
+              <select
+                v-model="selectedPickLocation"
+                class="form-select form-select-sm wholesale-pick-modal__field-select"
+                :disabled="saving || !canSelectPickLocation"
+              >
+                <option v-if="!pickLocationOptions.length" value="">—</option>
+                <option v-for="location in pickLocationOptions" :key="location" :value="location">
+                  {{ location }}
+                </option>
               </select>
             </div>
 

@@ -643,39 +643,33 @@ onUnmounted(() => {
           >
             <button
               type="button"
-              class="wholesale-header-info-btn"
+              class="staff-detail-tab-btn"
               @click="boxInfoOpen = true"
             >
-              <span
-                class="wholesale-header-info-btn__icon"
-                aria-hidden="true"
-              >
+              <span class="staff-detail-tab-btn__icon" aria-hidden="true">
                 <CrmMaterialIcon name="inventoryBox" :size="18" />
               </span>
-              <span class="wholesale-header-info-btn__label">Box Info</span>
+              <span class="staff-detail-tab-btn__label">Box Info</span>
             </button>
             <button
               type="button"
-              class="wholesale-header-info-btn"
+              class="staff-detail-tab-btn"
               @click="palletInfoOpen = true"
             >
-              <span
-                class="wholesale-header-info-btn__icon"
-                aria-hidden="true"
-              >
+              <span class="staff-detail-tab-btn__icon" aria-hidden="true">
                 <CrmMaterialIcon name="package" :size="18" />
               </span>
-              <span class="wholesale-header-info-btn__label">Pallet Info</span>
+              <span class="staff-detail-tab-btn__label">Pallet Info</span>
             </button>
             <RouterLink
               v-if="showPickListLink"
               :to="pickListRoute"
-              class="wholesale-header-info-btn"
+              class="staff-detail-tab-btn text-decoration-none"
             >
-              <span class="wholesale-header-info-btn__icon" aria-hidden="true">
+              <span class="staff-detail-tab-btn__icon" aria-hidden="true">
                 <CrmMaterialIcon name="taskAlt" :size="18" />
               </span>
-              <span class="wholesale-header-info-btn__label">Pick List</span>
+              <span class="staff-detail-tab-btn__label">Pick List</span>
             </RouterLink>
             <button
               v-if="showReadyToShipButton"
@@ -1397,42 +1391,15 @@ onUnmounted(() => {
   text-decoration: underline !important;
 }
 
-.wholesale-header-info-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0.65rem;
-  border: 1px solid var(--bs-border-color);
-  border-radius: 0.5rem;
-  background: var(--bs-body-bg);
-  color: var(--bs-body-color);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  line-height: 1.2;
-  text-decoration: none;
-}
-
-.wholesale-header-info-btn:hover,
-.wholesale-header-info-btn:focus-visible {
-  border-color: #2563eb;
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-
-.wholesale-header-info-btn__icon {
+.wholesale-order-detail-page__header-actions .staff-detail-tab-btn__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.875rem;
-  height: 1.875rem;
-  border-radius: 0.4375rem;
-  flex-shrink: 0;
-  background: #dbeafe;
-  color: #2563eb;
+  color: var(--bs-secondary-color);
 }
 
-.wholesale-header-info-btn__label {
-  white-space: nowrap;
+.wholesale-order-detail-page__header-actions a.staff-detail-tab-btn {
+  color: inherit;
 }
 
 .wholesale-ready-to-ship-btn {

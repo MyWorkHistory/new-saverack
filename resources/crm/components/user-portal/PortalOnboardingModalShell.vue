@@ -2,6 +2,7 @@
 defineProps({
   open: { type: Boolean, default: false },
   lg: { type: Boolean, default: true },
+  xl: { type: Boolean, default: false },
   scrollable: { type: Boolean, default: false },
 });
 
@@ -26,7 +27,8 @@ function close() {
         <div
           class="crm-vx-modal portal-onboard-modal__panel"
           :class="{
-            'portal-onboard-modal__panel--lg': lg,
+            'portal-onboard-modal__panel--lg': lg && !xl,
+            'portal-onboard-modal__panel--xl': xl,
             'portal-onboard-modal__panel--scroll': scrollable,
           }"
           @click.stop
@@ -41,6 +43,10 @@ function close() {
 <style scoped>
 .portal-onboard-modal__panel--lg {
   max-width: min(52rem, 100%);
+}
+
+.portal-onboard-modal__panel--xl {
+  max-width: min(64rem, 100%);
 }
 
 .portal-onboard-modal__panel--scroll {

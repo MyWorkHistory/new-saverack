@@ -165,7 +165,7 @@ async function clearAgreement() {
 </script>
 
 <template>
-  <PortalOnboardingModalShell :open="open" lg scrollable @update:open="close">
+  <PortalOnboardingModalShell :open="open" xl scrollable @update:open="close">
     <header class="crm-vx-modal__head">
       <h2 class="crm-vx-modal__title">Fulfillment Agreement</h2>
       <p class="crm-vx-modal__subtitle mb-0">
@@ -337,6 +337,9 @@ async function clearAgreement() {
   line-height: 1.3;
 }
 .admin-fa-modal__footer {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
   justify-content: space-between !important;
   gap: 0.75rem;
 }
@@ -344,14 +347,25 @@ async function clearAgreement() {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  min-width: 0;
+  min-width: 0 !important;
+  flex: 0 0 auto;
   margin-right: auto;
+  white-space: nowrap;
 }
 .admin-fa-modal__footer-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.admin-fa-modal__footer-actions :deep(.crm-vx-modal-btn),
+.admin-fa-modal__footer .crm-vx-modal-btn {
+  min-width: 0;
+  padding-inline: 1rem;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 </style>

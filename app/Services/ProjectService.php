@@ -456,13 +456,20 @@ class ProjectService
      */
     public function noteToArray(ProjectNote $note): array
     {
-        $note->loadMissing('user');
+        $note->loadMissing([
+            'user:id,name,email',
+            'user.profile:id,user_id,avatar_path',
+        ]);
+
+        $user = $note->user;
 
         return [
             'id' => $note->id,
             'body' => $note->body,
             'user_id' => $note->user_id,
-            'user_name' => $note->user ? $note->user->name : 'Staff',
+            'user_name' => $user ? $user->name : 'Staff',
+            'user_email' => $user?->email,
+            'user_avatar_url' => $user?->profile?->avatar_url,
             'created_at' => $note->created_at ? $note->created_at->toIso8601String() : null,
             'updated_at' => $note->updated_at ? $note->updated_at->toIso8601String() : null,
         ];

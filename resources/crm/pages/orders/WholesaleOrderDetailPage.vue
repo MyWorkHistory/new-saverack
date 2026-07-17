@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmNoteAuthorAvatar from "../../components/common/CrmNoteAuthorAvatar.vue";
 import Modal from "../../components/Modal.vue";
 import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
 import WholesaleBarcodeUploadModal from "../../components/orders/WholesaleBarcodeUploadModal.vue";
@@ -15,6 +16,7 @@ import CrmMaterialIcon from "../../components/common/CrmMaterialIcon.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateUs, formatDateTimeUs } from "../../utils/formatUserDates.js";
+import { noteAuthorFromRecord } from "../../utils/noteAuthor.js";
 import {
   wholesaleLineStatusBadgeClass,
   wholesaleLineStatusLabel,
@@ -74,6 +76,24 @@ const isEditable = computed(() => Boolean(order.value?.is_editable));
 const canEditLines = computed(() => Boolean(order.value?.is_lines_editable));
 const lines = computed(() => (Array.isArray(order.value?.lines) ? order.value.lines : []));
 const comments = computed(() => (Array.isArray(order.value?.comments) ? order.value.comments : []));
+const commentsExpanded = ref(false);
+const NOTES_PREVIEW_LIMIT = 3;
+
+const visibleComments = computed(() => {
+  const list = comments.value;
+  if (commentsExpanded.value || list.length <= NOTES_PREVIEW_LIMIT) {
+    return list;
+  }
+  return list.slice(0, NOTES_PREVIEW_LIMIT);
+});
+
+const showSeeAllNotes = computed(
+  () => !commentsExpanded.value && comments.value.length > NOTES_PREVIEW_LIMIT,
+);
+
+function commentAuthor(comment) {
+  return noteAuthorFromRecord(comment);
+}
 
 const canReadyToShip = computed(() => Boolean(order.value?.can_ready_to_ship));
 const showReadyToShipButton = computed(() => {
@@ -930,15 +950,24 @@ onUnmounted(() => {
         </div>
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-          <h2 class="h6 fw-semibold mb-3">Comments</h2>
+          <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+            <h2 class="h6 fw-semibold mb-0">Comments</h2>
+            <button
+              v-if="showSeeAllNotes"
+              type="button"
+              class="btn btn-link btn-sm p-0 text-decoration-none"
+              @click="commentsExpanded = true"
+            >
+              See All Notes
+            </button>
+          </div>
           <ul v-if="comments.length" class="list-unstyled mb-0 pb-4 border-bottom">
-            <li v-for="c in comments" :key="c.id" class="d-flex gap-3 mb-4">
-              <span
-                class="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0 small fw-semibold bg-primary-subtle text-primary-emphasis"
-                style="width: 2rem; height: 2rem"
-              >
-                {{ initials(c.user?.name) }}
-              </span>
+            <li v-for="c in visibleComments" :key="c.id" class="d-flex gap-3 mb-4">
+              <CrmNoteAuthorAvatar
+                :name="commentAuthor(c).name"
+                :email="commentAuthor(c).email"
+                :avatar-url="commentAuthor(c).avatarUrl"
+              />
               <div class="min-w-0 flex-grow-1">
                 <div class="d-flex flex-wrap align-items-baseline gap-2">
                   <span class="small fw-medium">{{ c.user?.name || "User" }}</span>

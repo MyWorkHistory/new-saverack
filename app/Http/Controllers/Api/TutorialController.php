@@ -9,6 +9,7 @@ use App\Http\Requests\TutorialUpdateRequest;
 use App\Models\ResourcePhoto;
 use App\Models\Tutorial;
 use App\Models\TutorialComment;
+use App\Support\CrmCommentUserSerializer;
 use App\Services\TutorialService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -71,7 +72,10 @@ class TutorialController extends Controller
         $tutorial->load([
             'creator:id,name,email',
             'photos' => fn ($q) => $q->with('creator:id,name,email')->orderByDesc('sort_order')->orderByDesc('id'),
-            'comments' => fn ($q) => $q->with('user:id,name,email')->orderBy('created_at'),
+            'comments' => fn ($q) => $q->with([
+                'user:id,name,email',
+                'user.profile:id,user_id,avatar_path',
+            ])->orderBy('created_at'),
         ]);
 
         return response()->json($this->transformTutorial($tutorial));
@@ -217,7 +221,9 @@ class TutorialController extends Controller
             'id' => $comment->id,
             'body' => $comment->body,
             'created_at' => optional($comment->created_at)->toIso8601String(),
-            'user' => $comment->relationLoaded('user') ? $comment->user : null,
+            'user' => $comment->relationLoaded('user')
+                ? CrmCommentUserSerializer::fromUser($comment->user)
+                : null,
             'attachment' => $attachment,
         ];
     }

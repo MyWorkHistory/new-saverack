@@ -6,7 +6,9 @@ import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.v
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import ClientAccountUserEditModal from "../../components/clients/ClientAccountUserEditModal.vue";
+import CrmNoteAuthorAvatar from "../../components/common/CrmNoteAuthorAvatar.vue";
 import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates";
+import { noteAuthorFromRecord } from "../../utils/noteAuthor.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 import { crmIsAdmin } from "../../utils/crmUser";
@@ -22,6 +24,8 @@ const errorMsg = ref("");
 const row = ref(null);
 const historyItems = ref([]);
 const notes = ref([]);
+const notesExpanded = ref(false);
+const NOTES_PREVIEW_LIMIT = 3;
 const noteBody = ref("");
 const noteSubmitting = ref(false);
 const crmUser = inject("crmUser", ref(null));
@@ -45,6 +49,22 @@ function userHasPerm(key) {
 }
 
 const canUpdate = computed(() => userHasPerm("client_users.update"));
+
+const visibleNotes = computed(() => {
+  const list = notes.value;
+  if (notesExpanded.value || list.length <= NOTES_PREVIEW_LIMIT) {
+    return list;
+  }
+  return list.slice(0, NOTES_PREVIEW_LIMIT);
+});
+
+const showSeeAllNotes = computed(
+  () => !notesExpanded.value && notes.value.length > NOTES_PREVIEW_LIMIT,
+);
+
+function noteAuthor(note) {
+  return noteAuthorFromRecord(note);
+}
 
 const avatarPalettes = [
   "bg-primary-subtle text-primary-emphasis",
@@ -620,36 +640,51 @@ watch(
               class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3"
             >
               <h3 class="staff-user-section-title mb-0">Notes</h3>
+              <button
+                v-if="showSeeAllNotes"
+                type="button"
+                class="btn btn-link btn-sm p-0 text-decoration-none"
+                @click="notesExpanded = true"
+              >
+                See All Notes
+              </button>
             </div>
 
             <ul v-if="notes.length" class="list-unstyled mb-0">
               <li
-                v-for="note in notes"
+                v-for="note in visibleNotes"
                 :key="note.id"
-                class="border-bottom py-3"
+                class="d-flex gap-3 border-bottom py-3"
               >
-                <div class="d-flex flex-wrap align-items-start justify-content-between gap-2">
-                  <div class="min-w-0 flex-grow-1">
-                    <div class="d-flex flex-wrap align-items-center gap-2 small text-secondary mb-1">
-                      <span class="fw-semibold text-body">{{
-                        note.author_name || "Staff"
-                      }}</span>
-                      <time v-if="note.created_at" :datetime="note.created_at">{{
-                        formatDateTimeUs(note.created_at)
-                      }}</time>
+                <CrmNoteAuthorAvatar
+                  :name="noteAuthor(note).name"
+                  :email="noteAuthor(note).email"
+                  :avatar-url="noteAuthor(note).avatarUrl"
+                />
+                <div class="min-w-0 flex-grow-1">
+                  <div class="d-flex flex-wrap align-items-start justify-content-between gap-2">
+                    <div class="min-w-0">
+                      <div class="d-flex flex-wrap align-items-center gap-2 small text-secondary mb-1">
+                        <span class="fw-semibold text-body">{{
+                          noteAuthor(note).name
+                        }}</span>
+                        <time v-if="note.created_at" :datetime="note.created_at">{{
+                          formatDateTimeUs(note.created_at)
+                        }}</time>
+                      </div>
+                      <p class="mb-0 small text-body" style="white-space: pre-wrap">
+                        {{ note.body }}
+                      </p>
                     </div>
-                    <p class="mb-0 small text-body" style="white-space: pre-wrap">
-                      {{ note.body }}
-                    </p>
+                    <button
+                      v-if="canUpdate"
+                      type="button"
+                      class="btn btn-link btn-sm text-danger text-decoration-none p-0 flex-shrink-0"
+                      @click="deleteNote(note)"
+                    >
+                      Delete
+                    </button>
                   </div>
-                  <button
-                    v-if="canUpdate"
-                    type="button"
-                    class="btn btn-link btn-sm text-danger text-decoration-none p-0 flex-shrink-0"
-                    @click="deleteNote(note)"
-                  >
-                    Delete
-                  </button>
                 </div>
               </li>
             </ul>

@@ -11,11 +11,13 @@ import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmLinkedText from "../../components/common/CrmLinkedText.vue";
+import CrmNoteAuthorAvatar from "../../components/common/CrmNoteAuthorAvatar.vue";
 import WebmasterTaskModal from "../../components/webmaster/WebmasterTaskModal.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { errorMessage } from "../../utils/apiError";
 import { formatUsdPriceOrDash } from "../../utils/formatPrice";
 import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates";
+import { noteAuthorFromRecord } from "../../utils/noteAuthor.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 
 const props = defineProps({
@@ -45,6 +47,24 @@ const comments = computed(() => {
   const c = task.value?.comments;
   return Array.isArray(c) ? c : [];
 });
+const commentsExpanded = ref(false);
+const NOTES_PREVIEW_LIMIT = 3;
+
+const visibleComments = computed(() => {
+  const list = comments.value;
+  if (commentsExpanded.value || list.length <= NOTES_PREVIEW_LIMIT) {
+    return list;
+  }
+  return list.slice(0, NOTES_PREVIEW_LIMIT);
+});
+
+const showSeeAllNotes = computed(
+  () => !commentsExpanded.value && comments.value.length > NOTES_PREVIEW_LIMIT,
+);
+
+function commentAuthor(comment) {
+  return noteAuthorFromRecord(comment);
+}
 
 function display(val) {
   if (val == null || val === "") return "—";
@@ -336,7 +356,17 @@ onUnmounted(() => {
 
         <div class="staff-table-card overflow-hidden">
           <div class="p-4 p-md-5 border-bottom">
-            <h3 class="h6 fw-semibold text-body mb-0">Activity</h3>
+            <div class="d-flex align-items-center justify-content-between gap-2">
+              <h3 class="h6 fw-semibold text-body mb-0">Activity</h3>
+              <button
+                v-if="showSeeAllNotes"
+                type="button"
+                class="btn btn-link btn-sm p-0 text-decoration-none"
+                @click="commentsExpanded = true"
+              >
+                See All Notes
+              </button>
+            </div>
           </div>
           <div class="p-4 p-md-5">
             <ul
@@ -344,16 +374,15 @@ onUnmounted(() => {
               class="list-unstyled mb-0 pb-4 border-bottom"
             >
               <li
-                v-for="c in comments"
+                v-for="c in visibleComments"
                 :key="c.id"
                 class="d-flex gap-3 mb-4"
               >
-                <span
-                  class="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0 small fw-semibold wm-task-detail-avatar"
-                  :class="avatarClassForUser(c.user?.email)"
-                >
-                  {{ initials(c.user?.name) }}
-                </span>
+                <CrmNoteAuthorAvatar
+                  :name="commentAuthor(c).name"
+                  :email="commentAuthor(c).email"
+                  :avatar-url="commentAuthor(c).avatarUrl"
+                />
                 <div class="min-w-0 flex-grow-1">
                   <div class="d-flex flex-wrap align-items-baseline gap-2">
                     <span class="small fw-medium text-body">{{

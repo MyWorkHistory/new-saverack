@@ -388,13 +388,21 @@ class ClientAccountUserService
      */
     public function noteToArray(UserNote $note): array
     {
-        $note->loadMissing('author:id,name');
+        $note->loadMissing([
+            'author:id,name,email',
+            'author.profile:id,user_id,avatar_path',
+        ]);
+
+        $author = $note->author;
+        $avatarUrl = $author?->profile?->avatar_url;
 
         return [
             'id' => $note->id,
             'body' => $note->body,
             'author_id' => $note->author_id,
-            'author_name' => $note->author ? $note->author->name : 'Staff',
+            'author_name' => $author ? $author->name : 'Staff',
+            'author_email' => $author?->email,
+            'author_avatar_url' => $avatarUrl,
             'created_at' => $note->created_at ? $note->created_at->toIso8601String() : null,
             'updated_at' => $note->updated_at ? $note->updated_at->toIso8601String() : null,
         ];

@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\WholesaleOrder;
 use App\Models\WholesaleOrderComment;
 use App\Models\WholesaleOrderLine;
+use App\Support\CrmCommentUserSerializer;
 use App\Models\WholesaleOrderPackage;
 use App\Models\WholesaleOrderShippingLabel;
 use App\Services\InventoryProductDetailCacheService;
@@ -137,17 +138,16 @@ class WholesaleOrderController extends Controller
      */
     private function serializeComment(WholesaleOrderComment $comment): array
     {
-        $comment->loadMissing('user');
+        $comment->loadMissing([
+            'user:id,name,email',
+            'user.profile:id,user_id,avatar_path',
+        ]);
 
         return [
             'id' => $comment->id,
             'body' => $comment->body,
             'created_at' => optional($comment->created_at)->toIso8601String(),
-            'user' => $comment->user !== null ? [
-                'id' => $comment->user->id,
-                'name' => $comment->user->name,
-                'email' => $comment->user->email,
-            ] : null,
+            'user' => CrmCommentUserSerializer::fromUser($comment->user),
             'attachment' => $comment->hasAttachment() ? [
                 'original_name' => $comment->attachment_original_name,
                 'mime' => $comment->attachment_mime,
@@ -397,7 +397,7 @@ class WholesaleOrderController extends Controller
             'clientAccount',
             'createdBy',
             'lines',
-            'comments.user',
+            'comments.user.profile',
             'shippingLabels',
             'packages',
         ]);
@@ -629,7 +629,7 @@ class WholesaleOrderController extends Controller
             'created_by_user_id' => $request->user() instanceof User ? $request->user()->id : null,
         ]);
 
-        return response()->json($this->serializeDetail($order->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user'])), 201);
+        return response()->json($this->serializeDetail($order->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user.profile'])), 201);
     }
 
     public function show(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
@@ -850,7 +850,7 @@ class WholesaleOrderController extends Controller
         }
         $wholesaleOrder->save();
 
-        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user'])));
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user.profile'])));
     }
 
     public function storeLine(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
@@ -893,7 +893,7 @@ class WholesaleOrderController extends Controller
 
         $this->recalculateItemsCount($wholesaleOrder);
 
-        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user', 'shippingLabels', 'packages'])));
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user.profile', 'shippingLabels', 'packages'])));
     }
 
     public function updateLine(Request $request, WholesaleOrder $wholesaleOrder, WholesaleOrderLine $line): JsonResponse
@@ -922,7 +922,7 @@ class WholesaleOrderController extends Controller
 
         $this->recalculateItemsCount($wholesaleOrder);
 
-        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user'])));
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user.profile'])));
     }
 
     public function destroyLine(Request $request, WholesaleOrder $wholesaleOrder, WholesaleOrderLine $line): JsonResponse
@@ -938,7 +938,7 @@ class WholesaleOrderController extends Controller
         $line->delete();
         $this->recalculateItemsCount($wholesaleOrder);
 
-        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user'])));
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user.profile'])));
     }
 
     public function uploadLineBarcode(Request $request, WholesaleOrder $wholesaleOrder, WholesaleOrderLine $line): JsonResponse
@@ -970,7 +970,7 @@ class WholesaleOrderController extends Controller
         $line->barcode_mime = $file->getClientMimeType();
         $line->save();
 
-        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user'])));
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user.profile'])));
     }
 
     public function lineBarcodePdf(Request $request, WholesaleOrder $wholesaleOrder, WholesaleOrderLine $line)
@@ -1059,7 +1059,7 @@ class WholesaleOrderController extends Controller
         }
 
         return response()->json($this->serializeDetail($wholesaleOrder->fresh([
-            'clientAccount', 'createdBy', 'lines', 'comments.user', 'shippingLabels', 'packages',
+            'clientAccount', 'createdBy', 'lines', 'comments.user.profile', 'shippingLabels', 'packages',
         ])));
     }
 
@@ -1082,7 +1082,7 @@ class WholesaleOrderController extends Controller
         $shippingLabel->delete();
 
         return response()->json($this->serializeDetail($wholesaleOrder->fresh([
-            'clientAccount', 'createdBy', 'lines', 'comments.user', 'shippingLabels', 'packages',
+            'clientAccount', 'createdBy', 'lines', 'comments.user.profile', 'shippingLabels', 'packages',
         ])));
     }
 
@@ -1190,7 +1190,7 @@ class WholesaleOrderController extends Controller
         $wholesaleOrder->save();
 
         return response()->json($this->serializeDetail($wholesaleOrder->fresh([
-            'clientAccount', 'createdBy', 'lines', 'comments.user', 'shippingLabels', 'packages',
+            'clientAccount', 'createdBy', 'lines', 'comments.user.profile', 'shippingLabels', 'packages',
         ])));
     }
 
@@ -1283,7 +1283,7 @@ class WholesaleOrderController extends Controller
         );
 
         return response()->json($this->serializeDetail($wholesaleOrder->fresh([
-            'clientAccount', 'createdBy', 'lines', 'comments.user', 'shippingLabels', 'packages',
+            'clientAccount', 'createdBy', 'lines', 'comments.user.profile', 'shippingLabels', 'packages',
         ])));
     }
 
@@ -1432,7 +1432,7 @@ class WholesaleOrderController extends Controller
         $wholesaleOrder->status = WholesaleOrder::STATUS_COMPLETED;
         $wholesaleOrder->save();
 
-        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user'])));
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user.profile'])));
     }
 
     private function assertPickableOrder(WholesaleOrder $order): void

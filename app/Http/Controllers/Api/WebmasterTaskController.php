@@ -10,6 +10,7 @@ use App\Http\Requests\TaskStoreRequest;
 use App\Http\Requests\TaskUpdateRequest;
 use App\Models\Task;
 use App\Models\TaskComment;
+use App\Support\CrmCommentUserSerializer;
 use App\Services\TaskService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -93,7 +94,10 @@ class WebmasterTaskController extends Controller
         $task->load([
             'creator:id,name,email',
             'assignee:id,name,email',
-            'comments' => fn ($q) => $q->with('user:id,name,email')->orderBy('created_at'),
+            'comments' => fn ($q) => $q->with([
+                'user:id,name,email',
+                'user.profile:id,user_id,avatar_path',
+            ])->orderBy('created_at'),
         ]);
 
         return response()->json($this->transformTask($task));
@@ -257,7 +261,9 @@ class WebmasterTaskController extends Controller
             'id' => $comment->id,
             'body' => $comment->body,
             'created_at' => optional($comment->created_at)->toIso8601String(),
-            'user' => $comment->relationLoaded('user') ? $comment->user : null,
+            'user' => $comment->relationLoaded('user')
+                ? CrmCommentUserSerializer::fromUser($comment->user)
+                : null,
             'attachment' => $comment->hasAttachment()
                 ? [
                     'original_name' => $comment->attachment_original_name,

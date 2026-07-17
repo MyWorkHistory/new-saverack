@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -15,12 +15,14 @@ import ClientAccountInventoryPanel from "../../components/clients/ClientAccountI
 import ClientAccountAsnPanel from "../../components/clients/ClientAccountAsnPanel.vue";
 import AccountDetailSectionHead from "../../components/clients/AccountDetailSectionHead.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
+import CrmNoteAuthorAvatar from "../../components/common/CrmNoteAuthorAvatar.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 import { errorMessage } from "../../utils/apiError";
 import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
+import { noteAuthorFromRecord } from "../../utils/noteAuthor.js";
 import {
   ONBOARDING_ACTIVATION_BLOCKED_MESSAGE,
   checkOnboardingReadyForActivation,
@@ -224,6 +226,50 @@ const accountComments = computed(() => {
   return Array.isArray(c) ? c : [];
 });
 
+const notesExpanded = ref(false);
+const NOTES_PREVIEW_LIMIT = 3;
+
+const sortedAccountComments = computed(() =>
+  [...accountComments.value].sort((a, b) =>
+    String(a.created_at || "").localeCompare(String(b.created_at || "")),
+  ),
+);
+
+const latestAccountNote = computed(() => {
+  const list = sortedAccountComments.value;
+  return list.length ? list[list.length - 1] : null;
+});
+
+const visibleAccountComments = computed(() => {
+  const list = sortedAccountComments.value;
+  if (notesExpanded.value || list.length <= NOTES_PREVIEW_LIMIT) {
+    return list;
+  }
+  return list.slice(-NOTES_PREVIEW_LIMIT);
+});
+
+const showSeeAllNotes = computed(
+  () =>
+    !notesExpanded.value &&
+    sortedAccountComments.value.length > NOTES_PREVIEW_LIMIT,
+);
+
+function noteAuthor(comment) {
+  return noteAuthorFromRecord(comment);
+}
+
+function scrollToAllNotes() {
+  if (activeTab.value !== TAB_ACCOUNT_INFO) {
+    setActiveTab(TAB_ACCOUNT_INFO);
+  }
+  nextTick(() => {
+    notesExpanded.value = true;
+    document
+      .getElementById("client-account-notes")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
 const imagePreviewUrls = ref({});
 
 const noteDeleteModalOpen = computed(() => noteDeleteTarget.value !== null);
@@ -303,19 +349,6 @@ const usersCountDisplay = computed(() => {
   if (a && a.account_users_count != null) return Number(a.account_users_count);
   return 0;
 });
-
-const avatarPalettesWm = [
-  "bg-sky-100 text-sky-800",
-  "bg-violet-100 text-violet-800",
-  "bg-amber-100 text-amber-900",
-];
-
-function avatarClassForCommentUser(email) {
-  let h = 0;
-  const s = email || "";
-  for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i)) % 997;
-  return avatarPalettesWm[h % avatarPalettesWm.length];
-}
 
 const timelineAvatarPalettes = [
   "bg-info-subtle text-info-emphasis",
@@ -1365,6 +1398,59 @@ onUnmounted(() => {
                 No activity logged yet.
               </p>
             </section>
+
+            <section
+              class="staff-user-profile__activity"
+              aria-labelledby="sidebar-notes-heading"
+            >
+              <AccountDetailSectionHead
+                title="Notes"
+                icon="notes"
+                title-class="staff-user-profile__details-title mb-0"
+                head-class="mb-2"
+                heading-id="sidebar-notes-heading"
+              >
+                <template #actions>
+                  <button
+                    v-if="sortedAccountComments.length"
+                    type="button"
+                    class="btn btn-link btn-sm p-0 text-decoration-none"
+                    @click="scrollToAllNotes"
+                  >
+                    See All Notes
+                  </button>
+                </template>
+              </AccountDetailSectionHead>
+              <div
+                v-if="latestAccountNote"
+                class="d-flex gap-2 align-items-start"
+              >
+                <CrmNoteAuthorAvatar
+                  size="sm"
+                  :name="noteAuthor(latestAccountNote).name"
+                  :email="noteAuthor(latestAccountNote).email"
+                  :avatar-url="noteAuthor(latestAccountNote).avatarUrl"
+                />
+                <div class="min-w-0 flex-grow-1">
+                  <div class="d-flex flex-wrap align-items-baseline gap-2">
+                    <span class="small fw-medium text-body">{{
+                      noteAuthor(latestAccountNote).name
+                    }}</span>
+                    <time
+                      class="small text-secondary"
+                      :datetime="latestAccountNote.created_at"
+                      >{{ formatDateTimeUs(latestAccountNote.created_at) }}</time
+                    >
+                  </div>
+                  <p class="small text-body mb-0 text-truncate-2">
+                    {{ latestAccountNote.body }}
+                  </p>
+                </div>
+              </div>
+              <p v-else class="staff-user-timeline__empty small mb-0">
+                No notes yet.
+              </p>
+            </section>
           </aside>
         </div>
 
@@ -1507,33 +1593,39 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <div class="staff-table-card staff-datatable-card overflow-hidden mb-4">
+            <div
+              id="client-account-notes"
+              class="staff-table-card staff-datatable-card overflow-hidden mb-4"
+            >
               <div class="px-4 py-3 px-md-5 py-md-3 border-bottom">
-                <AccountDetailSectionHead title="Notes" icon="notes" />
+                <AccountDetailSectionHead title="Notes" icon="notes">
+                  <template #actions>
+                    <button
+                      v-if="showSeeAllNotes"
+                      type="button"
+                      class="btn btn-link btn-sm p-0 text-decoration-none"
+                      @click="notesExpanded = true"
+                    >
+                      See All Notes
+                    </button>
+                  </template>
+                </AccountDetailSectionHead>
               </div>
               <div class="p-4 p-md-5">
                 <ul
-                  v-if="accountComments.length"
+                  v-if="sortedAccountComments.length"
                   class="list-unstyled mb-0 pb-4 border-bottom"
                 >
                   <li
-                    v-for="c in accountComments"
+                    v-for="c in visibleAccountComments"
                     :key="c.id"
                     class="d-flex gap-3 mb-4"
                   >
-                    <img
-                      v-if="c.user?.avatar_url"
-                      :src="resolvePublicUrl(c.user.avatar_url) || c.user.avatar_url"
-                      alt=""
-                      class="account-note-avatar rounded-circle flex-shrink-0 object-fit-cover"
+                    <CrmNoteAuthorAvatar
+                      :name="noteAuthor(c).name"
+                      :email="noteAuthor(c).email"
+                      :avatar-url="noteAuthor(c).avatarUrl"
                     />
-                    <span
-                      v-else
-                      class="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0 small fw-semibold account-note-avatar"
-                      :class="avatarClassForCommentUser(c.user?.email)"
-                    >
-                      {{ initials(c.user?.name) }}
-                    </span>
                     <div class="min-w-0 flex-grow-1">
                       <div
                         class="d-flex align-items-start justify-content-between gap-2"
@@ -1542,7 +1634,7 @@ onUnmounted(() => {
                           class="d-flex flex-wrap align-items-baseline gap-2 min-w-0"
                         >
                           <span class="small fw-medium text-body">{{
-                            c.user?.name || "User"
+                            noteAuthor(c).name
                           }}</span>
                           <span class="small text-secondary">{{
                             formatDateTimeUs(c.created_at)
@@ -2019,14 +2111,15 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.account-note-avatar {
-  width: 2.25rem;
-  height: 2.25rem;
-  font-size: 0.6875rem;
-}
-
 .notes-pre-wrap {
   white-space: pre-wrap;
+}
+
+.text-truncate-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .object-fit-cover {
   object-fit: cover;

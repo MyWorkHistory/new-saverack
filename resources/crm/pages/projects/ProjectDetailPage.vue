@@ -14,6 +14,7 @@ import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLinkedText from "../../components/common/CrmLinkedText.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmNoteAuthorAvatar from "../../components/common/CrmNoteAuthorAvatar.vue";
 import ProjectEditModal from "../../components/projects/ProjectEditModal.vue";
 import ProjectStatusChip from "../../components/projects/ProjectStatusChip.vue";
 import {
@@ -25,6 +26,7 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
+import { noteAuthorFromRecord } from "../../utils/noteAuthor.js";
 
 const props = defineProps({
   id: { type: [String, Number], required: true },
@@ -50,6 +52,28 @@ const statusBusy = ref(false);
 
 const noteBody = ref("");
 const noteBusy = ref(false);
+const notesExpanded = ref(false);
+const NOTES_PREVIEW_LIMIT = 3;
+
+const projectNotes = computed(() =>
+  Array.isArray(project.value?.notes) ? project.value.notes : [],
+);
+
+const visibleProjectNotes = computed(() => {
+  const list = projectNotes.value;
+  if (notesExpanded.value || list.length <= NOTES_PREVIEW_LIMIT) {
+    return list;
+  }
+  return list.slice(0, NOTES_PREVIEW_LIMIT);
+});
+
+const showSeeAllNotes = computed(
+  () => !notesExpanded.value && projectNotes.value.length > NOTES_PREVIEW_LIMIT,
+);
+
+function noteAuthor(note) {
+  return noteAuthorFromRecord(note);
+}
 const deleteNoteOpen = ref(false);
 const deleteNoteBusy = ref(false);
 const deleteNoteTarget = ref(null);
@@ -540,7 +564,17 @@ onUnmounted(() => {
           <div class="p-4 p-md-5 border-bottom">
             <div class="d-flex align-items-center justify-content-between gap-2">
               <h3 class="h6 fw-semibold text-body mb-0">Notes</h3>
-              <span class="small text-secondary">Internal only</span>
+              <div class="d-flex align-items-center gap-3">
+                <button
+                  v-if="showSeeAllNotes"
+                  type="button"
+                  class="btn btn-link btn-sm p-0 text-decoration-none"
+                  @click="notesExpanded = true"
+                >
+                  See All Notes
+                </button>
+                <span class="small text-secondary">Internal only</span>
+              </div>
             </div>
           </div>
           <div class="p-4 p-md-5">
@@ -562,31 +596,38 @@ onUnmounted(() => {
                 Add Note
               </button>
             </div>
-            <div v-if="!(project.notes || []).length" class="text-secondary small">
+            <div v-if="!projectNotes.length" class="text-secondary small">
               No notes yet.
             </div>
             <ul class="list-unstyled mb-0">
               <li
-                v-for="note in project.notes || []"
+                v-for="note in visibleProjectNotes"
                 :key="note.id"
-                class="border rounded p-3 mb-2"
+                class="d-flex gap-3 border rounded p-3 mb-2"
               >
-                <div class="d-flex justify-content-between gap-2">
-                  <div class="small text-secondary">
-                    {{ note.user_name || "Staff" }}
-                    ·
-                    {{ formatDateUs(note.created_at) }}
+                <CrmNoteAuthorAvatar
+                  :name="noteAuthor(note).name"
+                  :email="noteAuthor(note).email"
+                  :avatar-url="noteAuthor(note).avatarUrl"
+                />
+                <div class="min-w-0 flex-grow-1">
+                  <div class="d-flex justify-content-between gap-2">
+                    <div class="small text-secondary">
+                      {{ noteAuthor(note).name }}
+                      ·
+                      {{ formatDateUs(note.created_at) }}
+                    </div>
+                    <button
+                      v-if="canUpdate"
+                      type="button"
+                      class="btn btn-link btn-sm text-danger p-0"
+                      @click="askDeleteNote(note)"
+                    >
+                      Delete
+                    </button>
                   </div>
-                  <button
-                    v-if="canUpdate"
-                    type="button"
-                    class="btn btn-link btn-sm text-danger p-0"
-                    @click="askDeleteNote(note)"
-                  >
-                    Delete
-                  </button>
+                  <div class="mt-1" style="white-space: pre-wrap">{{ note.body }}</div>
                 </div>
-                <div class="mt-1" style="white-space: pre-wrap">{{ note.body }}</div>
               </li>
             </ul>
           </div>

@@ -613,8 +613,12 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.onboarding.fulfillment-agreement.esign');
     Route::post('client-accounts/{client_account}/onboarding/fulfillment-agreement/verify', [ClientAccountOnboardingController::class, 'verifyFulfillmentAgreement'])
         ->name('client-accounts.onboarding.fulfillment-agreement.verify');
+    Route::delete('client-accounts/{client_account}/onboarding/fulfillment-agreement/verify', [ClientAccountOnboardingController::class, 'removeFulfillmentVerification'])
+        ->name('client-accounts.onboarding.fulfillment-agreement.verify.destroy');
     Route::get('client-accounts/{client_account}/onboarding/fulfillment-agreement/signed.pdf', [ClientAccountOnboardingController::class, 'downloadSignedFulfillmentAgreement'])
         ->name('client-accounts.onboarding.fulfillment-agreement.signed');
+    Route::delete('client-accounts/{client_account}/onboarding/fulfillment-agreement', [ClientAccountOnboardingController::class, 'clearFulfillmentAgreement'])
+        ->name('client-accounts.onboarding.fulfillment-agreement.destroy');
     Route::post('client-accounts/{client_account}/comments', [ClientAccountController::class, 'storeComment'])
         ->name('client-accounts.comments.store');
     Route::patch('client-accounts/{client_account}/comments/{comment}', [ClientAccountController::class, 'updateComment'])

@@ -185,12 +185,19 @@ async function unverifyActiveTask() {
   if (!task?.id || verifyingTaskId.value) return;
   verifyingTaskId.value = task.id;
   try {
-    const { data } = await api.patch(
-      `${adminOnboardingBase()}/tasks/${task.id}/verification`,
-      { verified: false },
-    );
+    const { data } =
+      task.id === "fulfillment_agreement"
+        ? await api.delete(`${adminOnboardingBase()}/fulfillment-agreement/verify`)
+        : await api.patch(
+            `${adminOnboardingBase()}/tasks/${task.id}/verification`,
+            { verified: false },
+          );
     applyOnboardingPayload(data);
-    toast.success("Verification removed.");
+    toast.success(
+      task.id === "fulfillment_agreement"
+        ? "Verification and Save Rack signature removed."
+        : "Verification removed.",
+    );
   } catch (e) {
     toast.errorFrom(e, "Could not update verification.");
   } finally {

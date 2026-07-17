@@ -146,6 +146,60 @@ class FulfillmentAgreementService
         );
     }
 
+    public function clearAgreement(ClientAccount $account): ClientAccount
+    {
+        $this->pdf->deleteStoredFiles($account);
+
+        $account->fulfillment_agreement_method = null;
+        $account->fulfillment_agreement_company = null;
+        $account->fulfillment_agreement_rep_name = null;
+        $account->fulfillment_agreement_client_signed_at = null;
+        $account->fulfillment_agreement_client_signature = null;
+        $account->fulfillment_agreement_accepted_at = null;
+        $account->fulfillment_agreement_path = null;
+        $account->fulfillment_agreement_original_name = null;
+        $account->fulfillment_agreement_mime = null;
+        $account->fulfillment_agreement_staff_rep_name = null;
+        $account->fulfillment_agreement_staff_signed_at = null;
+        $account->fulfillment_agreement_staff_signature = null;
+        $account->save();
+
+        /** @var PortalOnboardingService $onboarding */
+        $onboarding = app(PortalOnboardingService::class);
+
+        return $onboarding->setTaskVerified(
+            $account,
+            'fulfillment_agreement',
+            false
+        );
+    }
+
+    public function removeCounterSignature(ClientAccount $account): ClientAccount
+    {
+        if ($account->fulfillment_agreement_accepted_at === null) {
+            throw ValidationException::withMessages([
+                'agreement' => ['The client has not completed the fulfillment agreement yet.'],
+            ]);
+        }
+
+        $this->pdf->deleteSignatureImage($account, 'staff');
+
+        $account->fulfillment_agreement_staff_rep_name = null;
+        $account->fulfillment_agreement_staff_signed_at = null;
+        $account->fulfillment_agreement_staff_signature = null;
+        $account->save();
+
+        /** @var PortalOnboardingService $onboarding */
+        $onboarding = app(PortalOnboardingService::class);
+        $account = $onboarding->setTaskVerified(
+            $account,
+            'fulfillment_agreement',
+            false
+        );
+
+        return $this->pdf->buildAndStoreSigned($account);
+    }
+
     public function notifySlackAgreementSigned(ClientAccount $account): void
     {
         $channel = trim((string) (config('billing.slack.alerts_channel') ?: '#alerts'));

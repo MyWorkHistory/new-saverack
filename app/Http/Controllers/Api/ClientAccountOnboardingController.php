@@ -353,6 +353,24 @@ class ClientAccountOnboardingController extends Controller
         return response()->json($this->onboarding->buildAdminOnboardingPayload($client_account));
     }
 
+    public function clearFulfillmentAgreement(ClientAccount $client_account): JsonResponse
+    {
+        Gate::authorize('update', $client_account);
+
+        $client_account = $this->agreements->clearAgreement($client_account);
+
+        return response()->json($this->onboarding->buildAdminOnboardingPayload($client_account));
+    }
+
+    public function removeFulfillmentVerification(ClientAccount $client_account): JsonResponse
+    {
+        Gate::authorize('update', $client_account);
+
+        $client_account = $this->agreements->removeCounterSignature($client_account);
+
+        return response()->json($this->onboarding->buildAdminOnboardingPayload($client_account));
+    }
+
     public function downloadSignedFulfillmentAgreement(ClientAccount $client_account): Response
     {
         Gate::authorize('view', $client_account);

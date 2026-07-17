@@ -17,6 +17,12 @@
             margin: 0 0 14px;
             color: #1f2430;
         }
+        .agreement-preamble {
+            margin-bottom: 20px;
+        }
+        .agreement-preamble p {
+            margin: 0 0 9px;
+        }
         .agreement-body {
             margin-bottom: 28px;
         }
@@ -73,6 +79,10 @@
 </head>
 <body>
     <h1>Fulfillment Agreement</h1>
+
+    <div class="agreement-preamble">
+        {!! $preambleHtml !!}
+    </div>
 
     <div class="agreement-body">
         {!! $bodyHtml !!}

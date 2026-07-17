@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\ClientAccount;
+use App\Support\FulfillmentAgreementPreamble;
 use App\Support\HtmlSanitizer;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
@@ -132,6 +133,19 @@ class FulfillmentAgreementPdfService
         return $account->fresh();
     }
 
+    public function deleteStoredFiles(ClientAccount $account): void
+    {
+        Storage::disk(self::DISK)->deleteDirectory($this->directoryForAccount($account));
+    }
+
+    public function deleteSignatureImage(ClientAccount $account, string $role): void
+    {
+        $role = $role === 'staff' ? 'staff' : 'client';
+        Storage::disk(self::DISK)->delete(
+            $this->directoryForAccount($account).'/'.$role.'-signature.png'
+        );
+    }
+
     public function storeSignatureImage(ClientAccount $account, string $role, string $dataUriOrBase64): ?string
     {
         $role = $role === 'staff' ? 'staff' : 'client';
@@ -172,13 +186,14 @@ class FulfillmentAgreementPdfService
     }
 
     /**
-     * @return array{bodyHtml: string, client: array<string, mixed>, staff: array<string, mixed>}
+     * @return array{preambleHtml: string, bodyHtml: string, client: array<string, mixed>, staff: array<string, mixed>}
      */
     public function viewData(ClientAccount $account, bool $includeClient, bool $includeStaff): array
     {
         $body = HtmlSanitizer::sanitize($this->terms->effectiveBodyForAccount($account));
 
         return [
+            'preambleHtml' => FulfillmentAgreementPreamble::html($account),
             'bodyHtml' => $body !== '' ? $body : '<p>Fulfillment agreement terms are not available.</p>',
             'client' => $includeClient ? $this->clientBlock($account) : [
                 'company' => null,

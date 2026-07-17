@@ -149,4 +149,128 @@ class AdminFulfillmentAgreementVerifyApiTest extends TestCase
         $pdf->assertOk();
         $this->assertStringContainsString('application/pdf', (string) $pdf->headers->get('content-type'));
     }
+
+    public function test_removing_verification_clears_staff_signature_and_keeps_client_completion(): void
+    {
+        Storage::fake('local');
+        TermsOfService::query()->create(['body' => '<p>Terms</p>']);
+
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_PENDING,
+            'company_name' => 'Remove Verification Co',
+            'email' => 'remove-verification@example.test',
+            'fulfillment_agreement_accepted_at' => now(),
+            'fulfillment_agreement_method' => 'esign',
+            'fulfillment_agreement_company' => 'Remove Verification Co',
+            'fulfillment_agreement_rep_name' => 'Client Rep',
+            'fulfillment_agreement_client_signed_at' => now(),
+            'fulfillment_agreement_client_signature' => json_encode([
+                'style' => 'dancing_script',
+                'text' => 'Client Rep',
+            ]),
+            'fulfillment_agreement_staff_rep_name' => 'Audi Kowalski',
+            'fulfillment_agreement_staff_signed_at' => now(),
+            'fulfillment_agreement_staff_signature' => json_encode([
+                'style' => 'great_vibes',
+                'text' => 'Audi Kowalski',
+                'image_path' => 'fulfillment-agreements/1/staff-signature.png',
+            ]),
+            'fulfillment_agreement_path' => 'fulfillment-agreements/1/fulfillment-agreement-signed.pdf',
+            'fulfillment_agreement_original_name' => 'fulfillment-agreement-signed.pdf',
+            'fulfillment_agreement_mime' => 'application/pdf',
+            'onboarding_verifications' => [
+                'fulfillment_agreement' => [
+                    'verified_at' => now()->toIso8601String(),
+                    'verified_by' => 1,
+                ],
+            ],
+        ]);
+        Storage::disk('local')->put(
+            'fulfillment-agreements/'.$account->id.'/staff-signature.png',
+            'image'
+        );
+
+        $this->actingAsStaff();
+
+        $response = $this->deleteJson(
+            '/api/client-accounts/'.$account->id.'/onboarding/fulfillment-agreement/verify'
+        );
+
+        $response->assertOk();
+        $response->assertJsonPath('fulfillment_agreement.status', 'completed');
+        $response->assertJsonPath('fulfillment_agreement.staff_counter_signed', false);
+        $task = collect($response->json('tasks'))->firstWhere('id', 'fulfillment_agreement');
+        $this->assertFalse($task['verified'] ?? true);
+
+        $account->refresh();
+        $this->assertNotNull($account->fulfillment_agreement_client_signed_at);
+        $this->assertNull($account->fulfillment_agreement_staff_signed_at);
+        $this->assertNull($account->fulfillment_agreement_staff_signature);
+        Storage::disk('local')->assertMissing(
+            'fulfillment-agreements/'.$account->id.'/staff-signature.png'
+        );
+        Storage::disk('local')->assertExists($account->fulfillment_agreement_path);
+    }
+
+    public function test_staff_can_clear_agreement_back_to_not_completed(): void
+    {
+        Storage::fake('local');
+        TermsOfService::query()->create(['body' => '<p>Terms</p>']);
+
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_PENDING,
+            'company_name' => 'Clear Agreement Co',
+            'email' => 'clear-agreement@example.test',
+            'fulfillment_agreement_accepted_at' => now(),
+            'fulfillment_agreement_method' => 'esign',
+            'fulfillment_agreement_company' => 'Clear Agreement Co',
+            'fulfillment_agreement_rep_name' => 'Client Rep',
+            'fulfillment_agreement_client_signed_at' => now(),
+            'fulfillment_agreement_client_signature' => json_encode([
+                'style' => 'dancing_script',
+                'text' => 'Client Rep',
+            ]),
+            'fulfillment_agreement_staff_rep_name' => 'Audi Kowalski',
+            'fulfillment_agreement_staff_signed_at' => now(),
+            'fulfillment_agreement_staff_signature' => json_encode([
+                'style' => 'great_vibes',
+                'text' => 'Audi Kowalski',
+            ]),
+            'fulfillment_agreement_path' => 'fulfillment-agreements/1/fulfillment-agreement-signed.pdf',
+            'fulfillment_agreement_original_name' => 'fulfillment-agreement-signed.pdf',
+            'fulfillment_agreement_mime' => 'application/pdf',
+            'onboarding_verifications' => [
+                'fulfillment_agreement' => [
+                    'verified_at' => now()->toIso8601String(),
+                    'verified_by' => 1,
+                ],
+            ],
+        ]);
+        $directory = 'fulfillment-agreements/'.$account->id;
+        Storage::disk('local')->put($directory.'/fulfillment-agreement-signed.pdf', 'pdf');
+        Storage::disk('local')->put($directory.'/client-signature.png', 'image');
+        Storage::disk('local')->put($directory.'/staff-signature.png', 'image');
+
+        $this->actingAsStaff();
+
+        $response = $this->deleteJson(
+            '/api/client-accounts/'.$account->id.'/onboarding/fulfillment-agreement'
+        );
+
+        $response->assertOk();
+        $response->assertJsonPath('fulfillment_agreement.status', 'not_completed');
+        $response->assertJsonPath('fulfillment_agreement.has_signed_pdf', false);
+        $task = collect($response->json('tasks'))->firstWhere('id', 'fulfillment_agreement');
+        $this->assertSame('not_completed', $task['status'] ?? null);
+        $this->assertFalse($task['verified'] ?? true);
+
+        $account->refresh();
+        $this->assertNull($account->fulfillment_agreement_accepted_at);
+        $this->assertNull($account->fulfillment_agreement_client_signed_at);
+        $this->assertNull($account->fulfillment_agreement_client_signature);
+        $this->assertNull($account->fulfillment_agreement_staff_signed_at);
+        $this->assertNull($account->fulfillment_agreement_staff_signature);
+        $this->assertNull($account->fulfillment_agreement_path);
+        Storage::disk('local')->assertMissing($directory);
+    }
 }

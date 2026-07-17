@@ -6,6 +6,7 @@ use App\Models\ClientAccount;
 use App\Models\User;
 use App\Support\ClientAccountBillingPreferences;
 use App\Support\CrmUrls;
+use App\Support\FulfillmentAgreementPreamble;
 use App\Support\HtmlSanitizer;
 use App\Support\PortalOnboardingSectionRegistry;
 use Illuminate\Validation\ValidationException;
@@ -129,7 +130,8 @@ class PortalOnboardingService
         return [
             'status' => $accepted ? 'completed' : 'not_completed',
             'accepted_at' => $accepted ? optional($acceptedAt)->toIso8601String() : null,
-            'body' => HtmlSanitizer::sanitize($terms->effectiveBodyForAccount($account)),
+            'body' => FulfillmentAgreementPreamble::html($account)
+                .HtmlSanitizer::sanitize($terms->effectiveBodyForAccount($account)),
             'public_url' => url('/terms/accounts/'.$account->id),
             'method' => $account->fulfillment_agreement_method,
             'has_signed_pdf' => $hasSignedPdf,

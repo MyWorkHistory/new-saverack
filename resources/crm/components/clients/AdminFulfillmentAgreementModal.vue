@@ -4,6 +4,7 @@ import api from "../../services/api";
 import PortalOnboardingModalShell from "../user-portal/PortalOnboardingModalShell.vue";
 import FulfillmentAgreementSignLightbox from "../user-portal/FulfillmentAgreementSignLightbox.vue";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
+import ConfirmModal from "../common/ConfirmModal.vue";
 import { useToast } from "../../composables/useToast";
 import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
 import { todayInputDate } from "../../constants/fulfillmentAgreementSignatures.js";
@@ -26,6 +27,7 @@ const downloading = ref(false);
 const counterSignOpen = ref(false);
 const esignOpen = ref(false);
 const viewing = ref(false);
+const clearConfirmOpen = ref(false);
 const fileInput = ref(null);
 
 const accepted = computed(() => props.agreement?.status === "completed");
@@ -145,6 +147,21 @@ async function onCounterSign(payload) {
     busy.value = false;
   }
 }
+
+async function clearAgreement() {
+  if (busy.value || props.verifying) return;
+  busy.value = true;
+  try {
+    const { data } = await api.delete(basePath.value);
+    clearConfirmOpen.value = false;
+    emit("saved", data);
+    toast.success("Client signature cleared. The agreement is Not Completed.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not clear the fulfillment agreement.");
+  } finally {
+    busy.value = false;
+  }
+}
 </script>
 
 <template>
@@ -219,6 +236,14 @@ async function onCounterSign(payload) {
 
         <template v-else>
           <button
+            type="button"
+            class="crm-vx-modal-btn crm-vx-modal-btn--danger"
+            :disabled="busy || verifying"
+            @click="clearConfirmOpen = true"
+          >
+            Clear Signature
+          </button>
+          <button
             v-if="hasSignedPdf"
             type="button"
             class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
@@ -278,6 +303,16 @@ async function onCounterSign(payload) {
     initial-rep-name="Audi Kowalski"
     :initial-signed-at="todayInputDate()"
     @submit="onCounterSign"
+  />
+
+  <ConfirmModal
+    :open="clearConfirmOpen"
+    title="Clear Client Signature"
+    message="Clear this agreement? This removes the client and Save Rack signatures and returns the task to Not Completed."
+    confirm-label="Clear Signature"
+    :busy="busy"
+    @close="clearConfirmOpen = false"
+    @confirm="clearAgreement"
   />
 </template>
 

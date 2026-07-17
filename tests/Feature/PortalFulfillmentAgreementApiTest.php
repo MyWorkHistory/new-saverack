@@ -7,6 +7,8 @@ use App\Models\Permission;
 use App\Models\TermsOfService;
 use App\Models\User;
 use App\Services\SlackDeliveryService;
+use App\Support\FulfillmentAgreementPreamble;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -56,11 +58,38 @@ class PortalFulfillmentAgreementApiTest extends TestCase
         $show = $this->getJson('/api/portal/onboarding');
         $show->assertOk();
         $show->assertJsonPath('fulfillment_agreement.status', 'not_completed');
-        $show->assertJsonPath('fulfillment_agreement.body', '<p>Fulfillment terms body</p>');
+        $body = (string) $show->json('fulfillment_agreement.body');
+        $this->assertStringContainsString('This Fulfillment Services Agreement', $body);
+        $this->assertStringContainsString('Agreement Portal Co', $body);
+        $this->assertStringContainsString('<p>Fulfillment terms body</p>', $body);
         $show->assertJsonPath('fulfillment_agreement.has_signed_pdf', false);
         $this->assertNull($show->json('fulfillment_agreement.accepted_at'));
         $show->assertJsonPath('tasks.9.id', 'fulfillment_agreement');
         $show->assertJsonPath('progress.total', 10);
+    }
+
+    public function test_agreement_preamble_uses_account_profile_and_signed_date(): void
+    {
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_PENDING,
+            'company_name' => 'Preamble Client Co',
+            'email' => 'preamble@example.test',
+            'street' => '390 Stovall St SE Unit 2411',
+            'city' => 'Atlanta',
+            'state' => 'GA',
+            'zip' => '30316',
+            'fulfillment_agreement_client_signed_at' => Carbon::parse('2026-07-16'),
+        ]);
+
+        $html = FulfillmentAgreementPreamble::html($account);
+
+        $this->assertStringContainsString('July 16, 2026', $html);
+        $this->assertStringContainsString('Preamble Client Co', $html);
+        $this->assertStringContainsString('a <strong>GA</strong> entity', $html);
+        $this->assertStringContainsString(
+            '390 Stovall St SE Unit 2411 Atlanta, GA 30316',
+            $html
+        );
     }
 
     public function test_accept_endpoint_is_rejected_in_favor_of_upload_or_esign(): void

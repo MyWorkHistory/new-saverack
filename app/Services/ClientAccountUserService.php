@@ -394,14 +394,14 @@ class ClientAccountUserService
         ]);
 
         $author = $note->author;
-        $avatarUrl = $author?->profile?->avatar_url;
+        $avatarUrl = ($author && $author->profile) ? $author->profile->avatar_url : null;
 
         return [
             'id' => $note->id,
             'body' => $note->body,
             'author_id' => $note->author_id,
             'author_name' => $author ? $author->name : 'Staff',
-            'author_email' => $author?->email,
+            'author_email' => $author ? $author->email : null,
             'author_avatar_url' => $avatarUrl,
             'created_at' => $note->created_at ? $note->created_at->toIso8601String() : null,
             'updated_at' => $note->updated_at ? $note->updated_at->toIso8601String() : null,

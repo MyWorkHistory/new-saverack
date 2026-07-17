@@ -468,8 +468,8 @@ class ProjectService
             'body' => $note->body,
             'user_id' => $note->user_id,
             'user_name' => $user ? $user->name : 'Staff',
-            'user_email' => $user?->email,
-            'user_avatar_url' => $user?->profile?->avatar_url,
+            'user_email' => $user ? $user->email : null,
+            'user_avatar_url' => ($user && $user->profile) ? $user->profile->avatar_url : null,
             'created_at' => $note->created_at ? $note->created_at->toIso8601String() : null,
             'updated_at' => $note->updated_at ? $note->updated_at->toIso8601String() : null,
         ];

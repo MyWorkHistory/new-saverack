@@ -28,6 +28,7 @@ const props = defineProps({
   taskVerificationFields: { type: Object, default: () => ({}) },
   verificationFieldsComplete: { type: Boolean, default: true },
   fieldVerifyingKey: { type: String, default: "" },
+  pageMode: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["update:open", "saved", "verify", "unverify", "toggle-field-verification"]);
@@ -89,7 +90,7 @@ function fieldVisible(field) {
 }
 
 function close() {
-  emit("update:open", false);
+  if (!props.pageMode) emit("update:open", false);
 }
 
 function onEsc(e) {
@@ -116,16 +117,17 @@ function fillForm() {
 }
 
 watch(
-  () => [props.open, props.sectionId, props.preferences, props.brandLogoUrl, props.profile],
-  ([open]) => {
-    if (open) {
-      document.addEventListener("keydown", onEsc);
+  () => [props.open, props.pageMode, props.sectionId, props.preferences, props.brandLogoUrl, props.profile],
+  ([open, pageMode]) => {
+    if (open || pageMode) {
+      if (!pageMode) document.addEventListener("keydown", onEsc);
       fillForm();
       errorMsg.value = "";
     } else {
       document.removeEventListener("keydown", onEsc);
     }
   },
+  { immediate: true },
 );
 
 onUnmounted(() => document.removeEventListener("keydown", onEsc));
@@ -235,7 +237,7 @@ async function save() {
 
     toast.success("Saved.");
     emit("saved", resultPayload);
-    close();
+    if (!props.pageMode) close();
   } catch (e) {
     errorMsg.value = "Could not save. Check required fields.";
     toast.errorFrom(e, "Could not save preferences.");
@@ -283,13 +285,14 @@ function toggleFieldVerification(fieldKey, checked) {
 </script>
 
 <template>
-  <PortalOnboardingModalShell
-    :open="open && !!section"
-    scrollable
+  <component
+    :is="pageMode ? 'div' : PortalOnboardingModalShell"
+    v-bind="pageMode ? { class: 'portal-section-page-panel' } : { open: open && !!section, scrollable: true }"
     @update:open="emit('update:open', $event)"
   >
     <template v-if="section">
       <button
+        v-if="!pageMode"
         type="button"
         class="crm-vx-modal__close"
         aria-label="Close"
@@ -300,10 +303,13 @@ function toggleFieldVerification(fieldKey, checked) {
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
         </svg>
       </button>
-      <header class="crm-vx-modal__head">
+      <header v-if="!pageMode" class="crm-vx-modal__head">
         <h2 class="crm-vx-modal__title">{{ section.modalTitle }}</h2>
       </header>
-      <div class="crm-vx-modal__body portal-onboard-modal__body">
+      <div
+        class="crm-vx-modal__body portal-onboard-modal__body"
+        :class="{ 'portal-section-page-panel__body': pageMode }"
+      >
             <p v-if="errorMsg" class="text-danger small">{{ errorMsg }}</p>
 
             <template v-if="isCommunicationSection">
@@ -517,7 +523,10 @@ function toggleFieldVerification(fieldKey, checked) {
               </div>
             </template>
       </div>
-      <footer class="crm-vx-modal__footer flex-wrap gap-2">
+      <footer
+        class="crm-vx-modal__footer flex-wrap gap-2"
+        :class="{ 'portal-section-page-panel__footer': pageMode }"
+      >
         <p
           v-if="adminMode && usesFieldVerification && !verificationFieldsComplete"
           class="small text-secondary mb-0 me-auto align-self-center"
@@ -547,6 +556,7 @@ function toggleFieldVerification(fieldKey, checked) {
           Verify
         </button>
         <button
+          v-if="!pageMode"
           type="button"
           class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
           :disabled="saving || logoUploading || verifying"
@@ -557,6 +567,7 @@ function toggleFieldVerification(fieldKey, checked) {
         <button
           type="button"
           class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+          :class="{ 'ms-auto': pageMode }"
           :disabled="saving || logoUploading || verifying"
           @click="save"
         >
@@ -568,7 +579,7 @@ function toggleFieldVerification(fieldKey, checked) {
         </button>
       </footer>
     </template>
-  </PortalOnboardingModalShell>
+  </component>
 </template>
 
 <style scoped>
@@ -598,5 +609,22 @@ function toggleFieldVerification(fieldKey, checked) {
 .portal-billing-option:has(input:checked) {
   border-color: var(--bs-primary) !important;
   background: rgba(var(--bs-primary-rgb), 0.04);
+}
+
+.portal-section-page-panel__body,
+.portal-section-page-panel__footer {
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+}
+
+.portal-section-page-panel__body {
+  padding-top: 1.25rem;
+  padding-bottom: 1rem;
+}
+
+.portal-section-page-panel__footer {
+  padding-top: 0.75rem;
+  padding-bottom: 1.25rem;
+  border-top: 1px solid var(--bs-border-color, #e5e7eb);
 }
 </style>

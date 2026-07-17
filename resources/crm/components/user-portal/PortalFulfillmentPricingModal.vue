@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import api from "../../services/api";
 import PortalOnboardingModalShell from "./PortalOnboardingModalShell.vue";
 import PricingFeeList from "../settings/PricingFeeList.vue";
@@ -14,6 +14,7 @@ const props = defineProps({
   /** When set, downloads from admin onboarding PDF route */
   clientAccountId: { type: [String, Number], default: null },
   adminMode: { type: Boolean, default: false },
+  pageMode: { type: Boolean, default: false },
   taskVerified: { type: Boolean, default: false },
   verifying: { type: Boolean, default: false },
 });
@@ -46,14 +47,14 @@ const showAgree = computed(
 watch(
   () => props.open,
   (isOpen) => {
-    if (!isOpen) {
+    if (!props.pageMode && !isOpen) {
       agreed.value = false;
     }
   },
 );
 
 function close() {
-  if (!busy.value && !props.verifying) emit("update:open", false);
+  if (!busy.value && !props.verifying && !props.pageMode) emit("update:open", false);
 }
 
 async function downloadPdf() {
@@ -75,7 +76,7 @@ async function onAgree() {
     const { data } = await api.post("/portal/onboarding/fulfillment-pricing/accept");
     emit("accepted", data);
     toast.success("Fulfillment Pricing accepted.");
-    emit("update:open", false);
+    if (!props.pageMode) emit("update:open", false);
   } catch (e) {
     toast.errorFrom(e, "Could not accept pricing.");
   } finally {
@@ -85,10 +86,26 @@ async function onAgree() {
 </script>
 
 <template>
-  <PortalOnboardingModalShell :open="open" lg scrollable @update:open="close">
-    <header class="crm-vx-modal__head d-flex align-items-start justify-content-between gap-3">
+  <component
+    :is="pageMode ? 'div' : PortalOnboardingModalShell"
+    v-bind="pageMode ? { class: 'portal-pricing-page-panel' } : { open, lg: true, scrollable: true }"
+    @update:open="close"
+  >
+    <header
+      class="crm-vx-modal__head d-flex align-items-start justify-content-between gap-3"
+      :class="{ 'portal-pricing-page-panel__head': pageMode }"
+    >
       <div class="min-w-0">
-        <h2 class="crm-vx-modal__title mb-0">Fulfillment Pricing</h2>
+        <h2 v-if="!pageMode" class="crm-vx-modal__title mb-0">Fulfillment Pricing</h2>
+        <p v-if="pageMode && accepted" class="text-secondary small mb-0">
+          You have accepted this account's fulfillment pricing schedule.
+        </p>
+        <p v-else-if="pageMode && approved" class="text-secondary small mb-0">
+          Review your quoted fulfillment rates below. Download a PDF copy or accept the schedule.
+        </p>
+        <p v-else-if="pageMode" class="text-secondary small mb-0">
+          Quoted pricing has not been set for this account yet.
+        </p>
       </div>
       <button
         type="button"
@@ -106,15 +123,16 @@ async function onAgree() {
           fill="currentColor"
           aria-hidden="true"
         >
-          <path
-            d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z"
-          />
+          <path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z" />
         </svg>
         <span>Download</span>
       </button>
     </header>
 
-    <div class="crm-vx-modal__body portal-onboard-modal__body">
+    <div
+      class="crm-vx-modal__body portal-onboard-modal__body"
+      :class="{ 'portal-pricing-page-panel__body': pageMode }"
+    >
       <div
         v-if="!approved"
         class="portal-fulfillment-pricing-modal__empty text-center text-secondary py-5 px-3"
@@ -128,7 +146,10 @@ async function onAgree() {
       />
     </div>
 
-    <footer class="crm-vx-modal__footer flex-wrap gap-2">
+    <footer
+      class="crm-vx-modal__footer flex-wrap gap-2"
+      :class="{ 'portal-pricing-page-panel__footer': pageMode }"
+    >
       <button
         v-if="adminMode && taskVerified"
         type="button"
@@ -177,6 +198,7 @@ async function onAgree() {
       </template>
 
       <button
+        v-if="!pageMode"
         type="button"
         class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
         :disabled="busy || verifying"
@@ -185,7 +207,7 @@ async function onAgree() {
         Close
       </button>
     </footer>
-  </PortalOnboardingModalShell>
+  </component>
 </template>
 
 <style scoped>
@@ -196,5 +218,28 @@ async function onAgree() {
 
 .portal-fulfillment-pricing-modal__empty {
   font-size: 0.95rem;
+}
+
+.portal-pricing-page-panel__head,
+.portal-pricing-page-panel__body,
+.portal-pricing-page-panel__footer {
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+}
+
+.portal-pricing-page-panel__head {
+  padding-top: 1.25rem;
+  padding-bottom: 0.75rem;
+}
+
+.portal-pricing-page-panel__body {
+  padding-top: 0.5rem;
+  padding-bottom: 1rem;
+}
+
+.portal-pricing-page-panel__footer {
+  padding-top: 0.75rem;
+  padding-bottom: 1.25rem;
+  border-top: 1px solid var(--bs-border-color, #e5e7eb);
 }
 </style>

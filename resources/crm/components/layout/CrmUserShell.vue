@@ -24,7 +24,8 @@ const useWideCrmContent = computed(
     route.path === "/users/account-settings" ||
     route.path === "/users/support" ||
     route.path === "/users/welcome" ||
-    route.path.startsWith("/users/billing"),
+    route.path.startsWith("/users/billing") ||
+    route.path.startsWith("/users/my-account"),
 );
 
 const crmContentClass = computed(() =>

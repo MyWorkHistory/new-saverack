@@ -4,7 +4,7 @@ import { RouterLink, useRoute } from "vue-router";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
 
-defineProps({
+const props = defineProps({
   user: { type: Object, required: true },
 });
 
@@ -15,6 +15,14 @@ const inventoryGroupOpen = ref(
   route.path.startsWith("/users/inventory") ||
     route.path.startsWith("/users/asn"),
 );
+const myAccountGroupOpen = ref(route.path.startsWith("/users/my-account"));
+
+const accountNavLabel = computed(() => {
+  const name = String(props.user?.client_account_company_name || "").trim();
+  if (name) return name;
+  const id = Number(props.user?.client_account_id || 0);
+  return id > 0 ? `Account #${id}` : "";
+});
 
 watch(
   () => route.path,
@@ -24,6 +32,7 @@ watch(
     if (p.startsWith("/users/inventory") || p.startsWith("/users/asn")) {
       inventoryGroupOpen.value = true;
     }
+    if (p.startsWith("/users/my-account")) myAccountGroupOpen.value = true;
   },
 );
 
@@ -59,6 +68,10 @@ function navActive(mode) {
   if (mode === "returns-items") return p === "/users/returns/items";
   if (mode === "returns-create") return p.startsWith("/users/returns/create");
   if (mode === "billing") return p.startsWith("/users/billing");
+  if (mode === "my-account") return p.startsWith("/users/my-account");
+  if (mode === "my-account-pricing") return p === "/users/my-account/pricing";
+  if (mode === "my-account-agreement") return p === "/users/my-account/fulfillment-agreement";
+  if (mode === "my-account-shipping") return p === "/users/my-account/shipping-instructions";
   return false;
 }
 
@@ -396,6 +409,104 @@ function collapseNav() {
             <span v-if="isExpanded">Billing</span>
           </RouterLink>
         </li>
+        <li>
+          <div v-if="isExpanded">
+            <button
+              type="button"
+              class="vx-nav-link"
+              :class="{ 'vx-nav-link--active': navActive('my-account') }"
+              :aria-expanded="myAccountGroupOpen"
+              @click="myAccountGroupOpen = !myAccountGroupOpen"
+            >
+              <svg
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"
+                />
+              </svg>
+              <span class="text-truncate">My Account</span>
+              <svg
+                class="ms-auto flex-shrink-0 transition"
+                :class="myAccountGroupOpen ? 'rotate-180' : ''"
+                style="width: 1rem; height: 1rem"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <p
+              v-if="accountNavLabel"
+              class="vx-nav-account-label small text-secondary text-truncate mb-0 px-3 mt-1"
+            >
+              {{ accountNavLabel }}
+            </p>
+            <ul v-show="myAccountGroupOpen" class="list-unstyled mb-0 mt-1">
+              <li>
+                <RouterLink
+                  to="/users/my-account/pricing"
+                  class="vx-nav-link vx-nav-sublink"
+                  :class="{ 'vx-nav-link--active': navActive('my-account-pricing') }"
+                  @click="closeMobile"
+                >
+                  Pricing
+                </RouterLink>
+              </li>
+              <li>
+                <RouterLink
+                  to="/users/my-account/fulfillment-agreement"
+                  class="vx-nav-link vx-nav-sublink"
+                  :class="{ 'vx-nav-link--active': navActive('my-account-agreement') }"
+                  @click="closeMobile"
+                >
+                  Fulfillment Agreement
+                </RouterLink>
+              </li>
+              <li>
+                <RouterLink
+                  to="/users/my-account/shipping-instructions"
+                  class="vx-nav-link vx-nav-sublink"
+                  :class="{ 'vx-nav-link--active': navActive('my-account-shipping') }"
+                  @click="closeMobile"
+                >
+                  Shipping Instructions
+                </RouterLink>
+              </li>
+            </ul>
+          </div>
+          <RouterLink
+            v-else
+            to="/users/my-account/pricing"
+            class="vx-nav-link"
+            :class="{ 'vx-nav-link--active': navActive('my-account') }"
+            title="My Account"
+            @click="closeMobile"
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"
+              />
+            </svg>
+          </RouterLink>
+        </li>
       </ul>
     </nav>
   </aside>
@@ -404,5 +515,10 @@ function collapseNav() {
 <style scoped>
 .rotate-180 {
   transform: rotate(180deg);
+}
+
+.vx-nav-account-label {
+  max-width: 100%;
+  padding-left: calc(0.75rem + 1.5rem);
 }
 </style>

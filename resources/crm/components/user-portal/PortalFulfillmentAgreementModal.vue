@@ -12,6 +12,7 @@ const props = defineProps({
   /** Prefill company for e-sign when available from profile */
   defaultCompany: { type: String, default: "" },
   defaultRepName: { type: String, default: "" },
+  pageMode: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["update:open", "accepted"]);
@@ -29,16 +30,17 @@ const hasBody = computed(
 );
 
 function close() {
-  if (!busy.value) emit("update:open", false);
+  if (!busy.value && !props.pageMode) emit("update:open", false);
 }
 
 function onEsc(e) {
-  if (e.key === "Escape" && !esignOpen.value) close();
+  if (e.key === "Escape" && !esignOpen.value && !props.pageMode) close();
 }
 
 watch(
   () => props.open,
   (isOpen) => {
+    if (props.pageMode) return;
     if (isOpen) {
       window.addEventListener("keydown", onEsc);
     } else {
@@ -51,6 +53,11 @@ watch(
 onUnmounted(() => {
   window.removeEventListener("keydown", onEsc);
 });
+
+function finishAccepted(data) {
+  emit("accepted", data);
+  if (!props.pageMode) emit("update:open", false);
+}
 
 async function downloadBlank() {
   if (downloading.value) return;
@@ -98,9 +105,8 @@ async function onFileSelected(event) {
     if (props.defaultCompany) form.append("company", props.defaultCompany);
     if (props.defaultRepName) form.append("rep_name", props.defaultRepName);
     const { data } = await api.post("/portal/onboarding/fulfillment-agreement/upload", form);
-    emit("accepted", data);
+    finishAccepted(data);
     toast.success("Fulfillment Agreement uploaded.");
-    emit("update:open", false);
   } catch (e) {
     toast.errorFrom(e, "Could not upload agreement.");
   } finally {
@@ -114,9 +120,8 @@ async function onEsignSubmit(payload) {
   try {
     const { data } = await api.post("/portal/onboarding/fulfillment-agreement/esign", payload);
     esignOpen.value = false;
-    emit("accepted", data);
+    finishAccepted(data);
     toast.success("Fulfillment Agreement signed.");
-    emit("update:open", false);
   } catch (e) {
     toast.errorFrom(e, "Could not e-sign agreement.");
   } finally {
@@ -126,9 +131,13 @@ async function onEsignSubmit(payload) {
 </script>
 
 <template>
-  <PortalOnboardingModalShell :open="open" lg scrollable @update:open="close">
-    <header class="crm-vx-modal__head">
-      <h2 class="crm-vx-modal__title">Fulfillment Agreement</h2>
+  <component
+    :is="pageMode ? 'div' : PortalOnboardingModalShell"
+    v-bind="pageMode ? { class: 'portal-agreement-page-panel' } : { open, lg: true, scrollable: true }"
+    @update:open="close"
+  >
+    <header class="crm-vx-modal__head" :class="{ 'portal-agreement-page-panel__head': pageMode }">
+      <h2 v-if="!pageMode" class="crm-vx-modal__title">Fulfillment Agreement</h2>
       <p class="crm-vx-modal__subtitle mb-0">
         <template v-if="accepted">
           This agreement is complete. You can view the signed PDF below.
@@ -139,7 +148,10 @@ async function onEsignSubmit(payload) {
       </p>
     </header>
 
-    <div class="crm-vx-modal__body portal-onboard-modal__body">
+    <div
+      class="crm-vx-modal__body portal-onboard-modal__body"
+      :class="{ 'portal-agreement-page-panel__body': pageMode }"
+    >
       <div
         v-if="hasBody"
         class="portal-fulfillment-agreement-modal__body"
@@ -150,7 +162,10 @@ async function onEsignSubmit(payload) {
       </p>
     </div>
 
-    <footer class="crm-vx-modal__footer portal-fa-modal__footer">
+    <footer
+      class="crm-vx-modal__footer portal-fa-modal__footer"
+      :class="{ 'portal-agreement-page-panel__footer': pageMode }"
+    >
       <button
         type="button"
         class="crm-vx-modal-btn crm-vx-modal-btn--secondary portal-fa-download-btn"
@@ -167,6 +182,7 @@ async function onEsignSubmit(payload) {
 
       <div class="portal-fa-modal__footer-actions">
         <button
+          v-if="!pageMode"
           type="button"
           class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
           :disabled="busy"
@@ -212,7 +228,7 @@ async function onEsignSubmit(payload) {
       accept="application/pdf,.pdf"
       @change="onFileSelected"
     />
-  </PortalOnboardingModalShell>
+  </component>
 
   <FulfillmentAgreementSignLightbox
     v-model:open="esignOpen"
@@ -261,5 +277,28 @@ async function onEsignSubmit(payload) {
   align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+
+.portal-agreement-page-panel__head,
+.portal-agreement-page-panel__body,
+.portal-agreement-page-panel__footer {
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+}
+
+.portal-agreement-page-panel__head {
+  padding-top: 1.25rem;
+  padding-bottom: 0.75rem;
+}
+
+.portal-agreement-page-panel__body {
+  padding-top: 0.5rem;
+  padding-bottom: 1rem;
+}
+
+.portal-agreement-page-panel__footer {
+  padding-top: 0.75rem;
+  padding-bottom: 1.25rem;
+  border-top: 1px solid var(--bs-border-color, #e5e7eb);
 }
 </style>

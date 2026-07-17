@@ -84,7 +84,6 @@ class InventoryRestockSlackService
         $viewUrl = CrmUrls::frontendBase().'/admin/inventory/restock';
 
         $lines = [
-            'Restocks Needed',
             $skuCount.' SKUs Need Restocking',
             $allocatedOrders.' Allocated Orders',
             '<'.$viewUrl.'|View Restocks>',

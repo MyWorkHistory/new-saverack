@@ -1,5 +1,5 @@
 <script setup>
-import { Transition, computed, inject, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
+import { Transition, computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -44,7 +44,7 @@ const transferBusy = ref(false);
 const transferLoading = ref(false);
 const transferRow = ref(null);
 const transferProduct = ref(null);
-const transferFromLocation = ref(null);
+const transferFromLocationId = ref("");
 const transferForm = reactive({
   transfer_type: "current",
   to_location_id: "",
@@ -105,14 +105,45 @@ const lineMenuRow = computed(
   () => rows.value.find((r) => String(r.sku) === String(lineMenuSku.value)) ?? null,
 );
 
+const transferFromOptions = computed(() => {
+  const whId = preferredWarehouseId(transferProduct.value, transferRow.value);
+  return flattenProductLocations(transferProduct.value, { includeEmpty: false }).filter(
+    (loc) =>
+      loc.pickable === false &&
+      (!whId || String(loc.warehouse_id || "") === whId),
+  );
+});
+
+const transferFromLocation = computed(() => {
+  const id = String(transferFromLocationId.value || "");
+  if (!id) return null;
+  return (
+    transferFromOptions.value.find((loc) => String(loc.location_id || "") === id) || null
+  );
+});
+
 const transferDestinationOptions = computed(() => {
   const source = transferFromLocation.value;
   if (!source) return [];
   const whId = String(source.warehouse_id || "");
   const fromId = String(source.location_id || "");
-  return flattenProductLocations(transferProduct.value).filter(
-    (loc) => String(loc.warehouse_id || "") === whId && String(loc.location_id || "") !== fromId,
+  return flattenProductLocations(transferProduct.value, { includeEmpty: true }).filter(
+    (loc) =>
+      loc.pickable === true &&
+      String(loc.warehouse_id || "") === whId &&
+      String(loc.location_id || "") !== fromId,
   );
+});
+
+watch(transferFromLocationId, (id, prev) => {
+  if (String(id || "") === String(prev || "")) return;
+  const loc = transferFromLocation.value;
+  if (loc) {
+    transferForm.quantity = String(loc.quantity ?? 0);
+  } else {
+    transferForm.quantity = "";
+  }
+  transferForm.to_location_id = "";
 });
 
 const filteredRows = computed(() => {
@@ -135,13 +166,23 @@ function isEnrichmentActive(status) {
   return s === "pending" || s === "running";
 }
 
-function splitBackstockLocations(text) {
+function splitLocationText(text) {
   const raw = String(text || "").trim();
-  if (!raw) return [];
+  if (!raw || raw === "—") return [];
   return raw
-    .split(/\s*,\s*/)
+    .split(/\s*[,;|]\s*|\n+/)
     .map((part) => part.trim())
-    .filter(Boolean);
+    .filter((part) => part && part !== "—");
+}
+
+function pickLocationText(row) {
+  if (!row || typeof row !== "object") return "";
+  const primary = String(row.pick_location || "").trim();
+  if (primary && primary !== "—") return primary;
+  if (Array.isArray(row.pick_locations) && row.pick_locations.length) {
+    return row.pick_locations.map((p) => String(p || "").trim()).filter(Boolean).join(", ");
+  }
+  return String(row.pickable_locations || "").trim();
 }
 
 function parseBackstockLocationName(text) {
@@ -158,6 +199,12 @@ function formatQty(value) {
   return n.toLocaleString();
 }
 
+function formatLocationWithQty(loc) {
+  const name = loc?.location_name || loc?.location_id || "—";
+  const qty = Number(loc?.quantity ?? 0);
+  return `${name} (QTY: ${qty.toLocaleString()})`;
+}
+
 function inventoryDetailHref(row) {
   const sku = String(row?.sku || "").trim();
   if (!sku) return "#";
@@ -172,14 +219,23 @@ function accountDetailTo(accountId) {
   return { name: "client-account-detail", params: { id: String(id) } };
 }
 
-function flattenProductLocations(product) {
+function preferredWarehouseId(product, row) {
+  const fromRow = String(row?.warehouse_id || "").trim();
+  if (fromRow) return fromRow;
+  const warehouses = Array.isArray(product?.warehouses) ? product.warehouses : [];
+  return String(warehouses[0]?.warehouse_id || "").trim();
+}
+
+function flattenProductLocations(product, { includeEmpty = false } = {}) {
   const out = [];
   const warehouses = Array.isArray(product?.warehouses) ? product.warehouses : [];
   warehouses.forEach((wh) => {
     (wh.locations || []).forEach((loc) => {
-      if (Number(loc?.quantity || 0) <= 0) return;
+      const qty = Number(loc?.quantity || 0);
+      if (!includeEmpty && qty <= 0) return;
       out.push({
         ...loc,
+        quantity: qty,
         warehouse_id: wh.warehouse_id,
         warehouse_name: wh.warehouse_name,
       });
@@ -188,9 +244,20 @@ function flattenProductLocations(product) {
   return out;
 }
 
-function findFromLocationForRow(product, row) {
-  const locs = flattenProductLocations(product).filter((loc) => loc.pickable === false);
-  const names = splitBackstockLocations(row?.backstock_locations).map(parseBackstockLocationName);
+function pickLocationsFromProduct(product, row = null) {
+  const whId = preferredWarehouseId(product, row);
+  return flattenProductLocations(product, { includeEmpty: true }).filter(
+    (loc) =>
+      loc.pickable === true &&
+      (!whId || String(loc.warehouse_id || "") === whId),
+  );
+}
+
+function defaultBackstockLocationId(product, row) {
+  const locs = flattenProductLocations(product, { includeEmpty: false }).filter(
+    (loc) => loc.pickable === false,
+  );
+  const names = splitLocationText(row?.backstock_locations).map(parseBackstockLocationName);
   for (const name of names) {
     const lower = name.toLowerCase();
     if (!lower) continue;
@@ -198,9 +265,48 @@ function findFromLocationForRow(product, row) {
       const locName = String(loc.location_name || loc.location_id || "").toLowerCase();
       return locName === lower || locName.includes(lower) || lower.includes(locName);
     });
-    if (match) return match;
+    if (match) return String(match.location_id || "");
   }
-  return locs[0] ?? null;
+  return locs[0] ? String(locs[0].location_id || "") : "";
+}
+
+async function enrichMissingPickLocations(list) {
+  const targets = (Array.isArray(list) ? list : []).filter((row) => {
+    if (splitLocationText(pickLocationText(row)).length) return false;
+    return Boolean(row?.sku) && Number(row?.client_account_id || 0) > 0;
+  });
+  if (!targets.length) return;
+
+  const concurrency = 4;
+  let index = 0;
+  async function worker() {
+    while (index < targets.length) {
+      const current = index;
+      index += 1;
+      const row = targets[current];
+      try {
+        const { data } = await api.get(`/inventory/products/${encodeURIComponent(row.sku)}`, {
+          params: { client_account_id: Number(row.client_account_id) },
+        });
+        const picks = pickLocationsFromProduct(data?.product, row);
+        if (!picks.length) continue;
+        const label = picks.map(formatLocationWithQty).join(", ");
+        const match = rows.value.find(
+          (r) =>
+            String(r.sku) === String(row.sku) &&
+            Number(r.client_account_id || 0) === Number(row.client_account_id || 0),
+        );
+        if (match && !splitLocationText(pickLocationText(match)).length) {
+          match.pick_location = label;
+        }
+      } catch {
+        /* ignore per-SKU enrichment failures */
+      }
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, targets.length) }, () => worker()),
+  );
 }
 
 function applySnapshot(data, { silent = false } = {}) {
@@ -217,6 +323,11 @@ function applySnapshot(data, { silent = false } = {}) {
   scheduleEnrichmentPoll();
   if (!silent && meta.value.enrichment_status === "failed" && meta.value.enrichment_error) {
     toast.error(meta.value.enrichment_error);
+  }
+  if (!isEnrichmentActive(meta.value.enrichment_status)) {
+    nextTick(() => {
+      enrichMissingPickLocations(rows.value);
+    });
   }
 }
 
@@ -369,7 +480,7 @@ async function openTransferFromMenu(row) {
   }
   transferRow.value = row;
   transferProduct.value = null;
-  transferFromLocation.value = null;
+  transferFromLocationId.value = "";
   transferForm.transfer_type = "current";
   transferForm.to_location_id = "";
   transferForm.to_location = "";
@@ -383,13 +494,21 @@ async function openTransferFromMenu(row) {
       params: { client_account_id: accountId },
     });
     transferProduct.value = data?.product ?? null;
-    const fromLoc = findFromLocationForRow(transferProduct.value, row);
-    if (!fromLoc) {
+    const fromId = defaultBackstockLocationId(transferProduct.value, row);
+    if (!fromId) {
       transferModalOpen.value = false;
       toast.error("No backstock location found for this SKU in ShipHero.");
       return;
     }
-    transferFromLocation.value = fromLoc;
+    transferFromLocationId.value = fromId;
+    const fromLoc = transferFromOptions.value.find(
+      (loc) => String(loc.location_id || "") === fromId,
+    );
+    transferForm.quantity = String(fromLoc?.quantity ?? 0);
+    const picks = pickLocationsFromProduct(transferProduct.value, row);
+    if (picks.length && !splitLocationText(pickLocationText(row)).length) {
+      row.pick_location = picks.map(formatLocationWithQty).join(", ");
+    }
   } catch (e) {
     transferModalOpen.value = false;
     toast.errorFrom(e, "Could not load product for transfer.");
@@ -613,9 +732,9 @@ onUnmounted(() => {
               <td class="text-center">{{ formatQty(row.pickable_qty) }}</td>
               <td class="text-center">{{ formatQty(row.backstock_qty) }}</td>
               <td class="restock-locations-col">
-                <template v-if="splitBackstockLocations(row.backstock_locations).length">
+                <template v-if="splitLocationText(row.backstock_locations).length">
                   <div
-                    v-for="(location, index) in splitBackstockLocations(row.backstock_locations)"
+                    v-for="(location, index) in splitLocationText(row.backstock_locations)"
                     :key="`${row.sku}-backstock-${index}`"
                     class="restock-loc-row small text-secondary"
                   >
@@ -625,9 +744,9 @@ onUnmounted(() => {
                 <span v-else class="text-secondary">—</span>
               </td>
               <td class="restock-locations-col">
-                <template v-if="splitBackstockLocations(row.pick_location).length">
+                <template v-if="splitLocationText(pickLocationText(row)).length">
                   <div
-                    v-for="(location, index) in splitBackstockLocations(row.pick_location)"
+                    v-for="(location, index) in splitLocationText(pickLocationText(row))"
                     :key="`${row.sku}-pick-${index}`"
                     class="restock-loc-row small text-secondary"
                   >
@@ -702,7 +821,8 @@ onUnmounted(() => {
       :open="transferModalOpen"
       :busy="transferBusy"
       :loading="transferLoading"
-      :from-location="transferFromLocation"
+      :from-options="transferFromOptions"
+      v-model:from-location-id="transferFromLocationId"
       v-model:transfer-type="transferForm.transfer_type"
       v-model:to-location-id="transferForm.to_location_id"
       v-model:to-location="transferForm.to_location"
@@ -710,6 +830,7 @@ onUnmounted(() => {
       v-model:reason="transferForm.reason"
       :destination-options="transferDestinationOptions"
       :reason-options="inventoryReasons"
+      pick-destinations
       @close="transferModalOpen = false"
       @submit="submitTransfer"
       @transfer-all="fillTransferAllQty"

@@ -42,7 +42,7 @@ final class InventoryRestockSlackServiceTest extends TestCase
 
         $this->assertSame('Restock Needed', $payload['username']);
         $this->assertSame(
-            "Restocks Needed\n2 SKUs Need Restocking\n40 Allocated Orders\n<https://app.saverack.com/admin/inventory/restock|View Restocks>",
+            "2 SKUs Need Restocking\n40 Allocated Orders\n<https://app.saverack.com/admin/inventory/restock|View Restocks>",
             $payload['text']
         );
         $this->assertSame(2, $payload['sku_count']);

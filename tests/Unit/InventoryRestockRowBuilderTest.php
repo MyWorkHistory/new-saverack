@@ -42,8 +42,8 @@ class InventoryRestockRowBuilderTest extends TestCase
         ], 2);
 
         $this->assertNotNull($row);
+        $this->assertSame('A-01', $row['pick_location']);
         $this->assertSame(0, $row['pick_qty']);
-        $this->assertSame('—', $row['pick_location']);
         $this->assertSame(50, $row['backstock_qty']);
     }
 

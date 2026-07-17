@@ -30,9 +30,13 @@ final class RestockBetaCsvParser
             'top 3 pickable bins',
             'top 3 pickable bin',
             'top pickable bins',
+            'top pickable bin',
             'pick location',
             'pick locations',
             'pickable locations',
+            'pickable location',
+            'pickable bins',
+            'pickable bin',
         ],
     ];
 

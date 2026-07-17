@@ -37,11 +37,11 @@ class InventoryRestockRowBuilder
 
             if ($pickable === true) {
                 $hasPickableLocation = true;
-                if ($qty <= 0) {
-                    continue;
+                if ($qty > 0) {
+                    $pickQty += $qty;
                 }
-                $pickQty += $qty;
-                if (! in_array($locName, $pickNames, true)) {
+                // Include pick bins even at 0 qty so restock UI knows transfer destinations.
+                if ($locName !== '—' && ! in_array($locName, $pickNames, true)) {
                     $pickNames[] = $locName;
                 }
             } elseif ($pickable === false) {

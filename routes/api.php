@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\BillingBillsController;
 use App\Http\Controllers\Api\CustomBillController;
 use App\Http\Controllers\Api\ClientAccountController;
 use App\Http\Controllers\Api\ClientAccountOnboardingController;
+use App\Http\Controllers\Api\ClientAccountTermsOfServiceController;
 use App\Http\Controllers\Api\ClientAccountUserController;
 use App\Http\Controllers\Api\ClientAccountShipHeroStoreController;
 use App\Http\Controllers\Api\DashboardController;

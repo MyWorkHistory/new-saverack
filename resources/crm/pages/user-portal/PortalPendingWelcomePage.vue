@@ -8,6 +8,7 @@ import PortalOnboardingAccountModal from "../../components/user-portal/PortalOnb
 import PortalOnboardingBillingModal from "../../components/user-portal/PortalOnboardingBillingModal.vue";
 import PortalOnboardingSectionModal from "../../components/user-portal/PortalOnboardingSectionModal.vue";
 import PortalFulfillmentAgreementModal from "../../components/user-portal/PortalFulfillmentAgreementModal.vue";
+import PortalFulfillmentPricingModal from "../../components/user-portal/PortalFulfillmentPricingModal.vue";
 import { useToast } from "../../composables/useToast";
 import { PORTAL_MATERIAL_ICON } from "../../constants/portalMaterialIcons.js";
 import {
@@ -28,14 +29,16 @@ const accountModalOpen = ref(false);
 const billingModalOpen = ref(false);
 const sectionModalOpen = ref(false);
 const agreementModalOpen = ref(false);
+const pricingModalOpen = ref(false);
 const activeSectionId = ref("");
 
 const profile = computed(() => onboarding.value?.profile || null);
 const tasks = computed(() => onboarding.value?.tasks || []);
 const preferences = computed(() => onboarding.value?.preferences || {});
 const brandLogoUrl = computed(() => onboarding.value?.brand_logo_url || "");
-const progress = computed(() => onboarding.value?.progress || { total: 10, completed: 0, remaining: 10 });
+const progress = computed(() => onboarding.value?.progress || { total: 11, completed: 0, remaining: 11 });
 const fulfillmentAgreement = computed(() => onboarding.value?.fulfillment_agreement || null);
+const fulfillmentPricing = computed(() => onboarding.value?.fulfillment_pricing || null);
 const agreementCompleted = computed(
   () => fulfillmentAgreement.value?.status === "completed",
 );
@@ -99,6 +102,10 @@ function openTask(task) {
     agreementModalOpen.value = true;
     return;
   }
+  if (task.id === "fulfillment_pricing") {
+    pricingModalOpen.value = true;
+    return;
+  }
   if (PORTAL_ONBOARDING_SECTION_IDS.includes(task.id)) {
     activeSectionId.value = task.id;
     sectionModalOpen.value = true;
@@ -149,6 +156,10 @@ function onBillingSaved(data) {
 }
 
 function onAgreementAccepted(data) {
+  applyOnboardingPayload(data);
+}
+
+function onPricingAccepted(data) {
   applyOnboardingPayload(data);
 }
 
@@ -472,6 +483,11 @@ onUnmounted(() => {
       :default-company="agreementDefaultCompany"
       :default-rep-name="agreementDefaultRepName"
       @accepted="onAgreementAccepted"
+    />
+    <PortalFulfillmentPricingModal
+      v-model:open="pricingModalOpen"
+      :pricing="fulfillmentPricing"
+      @accepted="onPricingAccepted"
     />
   </div>
 </template>

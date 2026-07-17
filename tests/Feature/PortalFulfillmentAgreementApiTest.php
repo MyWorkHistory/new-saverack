@@ -64,8 +64,8 @@ class PortalFulfillmentAgreementApiTest extends TestCase
         $this->assertStringContainsString('<p>Fulfillment terms body</p>', $body);
         $show->assertJsonPath('fulfillment_agreement.has_signed_pdf', false);
         $this->assertNull($show->json('fulfillment_agreement.accepted_at'));
-        $show->assertJsonPath('tasks.9.id', 'fulfillment_agreement');
-        $show->assertJsonPath('progress.total', 10);
+        $show->assertJsonPath('tasks.10.id', 'fulfillment_agreement');
+        $show->assertJsonPath('progress.total', 11);
     }
 
     public function test_agreement_preamble_uses_account_profile_and_signed_date(): void
@@ -142,7 +142,7 @@ class PortalFulfillmentAgreementApiTest extends TestCase
         $esign->assertJsonPath('fulfillment_agreement.status', 'completed');
         $esign->assertJsonPath('fulfillment_agreement.method', 'esign');
         $esign->assertJsonPath('fulfillment_agreement.has_signed_pdf', true);
-        $esign->assertJsonPath('tasks.9.status', 'completed');
+        $esign->assertJsonPath('tasks.10.status', 'completed');
 
         $account->refresh();
         $this->assertNotNull($account->fulfillment_agreement_accepted_at);

@@ -770,6 +770,52 @@ class ClientAccountService
                 ? $account->updated_at->toIso8601String()
                 : null,
             'fees' => $this->feesPayloadForApi($account),
+            'fulfillment_pricing_status' => $this->normalizeFulfillmentPricingStatus(
+                $account->fulfillment_pricing_status
+            ),
+            'fulfillment_pricing_approved_at' => $account->fulfillment_pricing_approved_at !== null
+                ? $account->fulfillment_pricing_approved_at->toIso8601String()
+                : null,
+            'fulfillment_pricing_accepted_at' => $account->fulfillment_pricing_accepted_at !== null
+                ? $account->fulfillment_pricing_accepted_at->toIso8601String()
+                : null,
         ];
+    }
+
+    public function normalizeFulfillmentPricingStatus(?string $status): string
+    {
+        $normalized = strtolower(trim((string) $status));
+
+        return in_array($normalized, ClientAccount::FULFILLMENT_PRICING_STATUSES, true)
+            ? $normalized
+            : ClientAccount::FULFILLMENT_PRICING_STATUS_PENDING;
+    }
+
+    public function setFulfillmentPricingStatus(
+        ClientAccount $account,
+        string $status,
+        ?User $actor = null
+    ): ClientAccount {
+        $status = $this->normalizeFulfillmentPricingStatus($status);
+
+        $account->fulfillment_pricing_status = $status;
+        if ($status === ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED) {
+            $account->fulfillment_pricing_approved_at = $account->fulfillment_pricing_approved_at ?? now();
+        } else {
+            $account->fulfillment_pricing_approved_at = null;
+            $account->fulfillment_pricing_accepted_at = null;
+        }
+        $account->save();
+
+        if ($actor !== null) {
+            $this->activityLog->log($actor, 'client_account.updated', $account, null, [
+                'fields' => ['fulfillment_pricing_status'],
+                'fulfillment_pricing_status' => $status,
+            ]);
+        }
+
+        $fresh = $account->fresh(['feeItems', 'accountManager', 'primaryAccountUser']);
+
+        return $fresh !== null ? $fresh : $account;
     }
 }

@@ -6,6 +6,7 @@ import PortalOnboardingAccountModal from "../user-portal/PortalOnboardingAccount
 import PortalOnboardingBillingModal from "../user-portal/PortalOnboardingBillingModal.vue";
 import PortalOnboardingSectionModal from "../user-portal/PortalOnboardingSectionModal.vue";
 import AdminFulfillmentAgreementModal from "./AdminFulfillmentAgreementModal.vue";
+import PortalFulfillmentPricingModal from "../user-portal/PortalFulfillmentPricingModal.vue";
 import { useToast } from "../../composables/useToast";
 import { PORTAL_MATERIAL_ICON } from "../../constants/portalMaterialIcons.js";
 import {
@@ -30,6 +31,7 @@ const accountModalOpen = ref(false);
 const billingModalOpen = ref(false);
 const sectionModalOpen = ref(false);
 const agreementModalOpen = ref(false);
+const pricingModalOpen = ref(false);
 const activeTask = ref(null);
 
 const profile = computed(() => onboarding.value?.profile || null);
@@ -37,6 +39,7 @@ const tasks = computed(() => onboarding.value?.tasks || []);
 const preferences = computed(() => onboarding.value?.preferences || {});
 const brandLogoUrl = computed(() => onboarding.value?.brand_logo_url || "");
 const fulfillmentAgreement = computed(() => onboarding.value?.fulfillment_agreement || null);
+const fulfillmentPricing = computed(() => onboarding.value?.fulfillment_pricing || null);
 const manualInstructions = computed(() => onboarding.value?.manual_payment_instructions || null);
 const activeSectionId = computed(() => activeTask.value?.id || "");
 const agreementDefaultCompany = computed(() => profile.value?.company_name || "");
@@ -135,6 +138,10 @@ function openTask(task) {
   }
   if (task.id === "fulfillment_agreement") {
     agreementModalOpen.value = true;
+    return;
+  }
+  if (task.id === "fulfillment_pricing") {
+    pricingModalOpen.value = true;
     return;
   }
   if (PORTAL_ONBOARDING_SECTION_IDS.includes(task.id)) {
@@ -337,6 +344,17 @@ loadOnboarding();
       :default-company="agreementDefaultCompany"
       :default-rep-name="agreementDefaultRepName"
       @saved="onSaved"
+      @unverify="unverifyActiveTask"
+    />
+    <PortalFulfillmentPricingModal
+      v-model:open="pricingModalOpen"
+      :pricing="fulfillmentPricing"
+      :client-account-id="clientAccountId"
+      admin-mode
+      :task-verified="activeTaskVerified"
+      :verifying="verifyingTaskId === 'fulfillment_pricing'"
+      @accepted="onSaved"
+      @verify="verifyActiveTask"
       @unverify="unverifyActiveTask"
     />
   </div>

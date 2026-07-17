@@ -456,4 +456,5 @@ export const PORTAL_ONBOARDING_TASK_ICON_KEYS = {
   assignment_return: "assignmentReturn",
   sync: "sync",
   fulfillment_agreement: "description",
+  fulfillment_pricing: "payments",
 };

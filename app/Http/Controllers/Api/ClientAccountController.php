@@ -24,6 +24,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -364,6 +365,23 @@ class ClientAccountController extends Controller
         $fee->delete();
 
         return response()->json($this->clientAccounts->toApiArray($client_account->fresh()));
+    }
+
+    public function updateFulfillmentPricingStatus(Request $request, ClientAccount $client_account): JsonResponse
+    {
+        $this->authorize('update', $client_account);
+
+        $validated = $request->validate([
+            'status' => ['required', 'string', Rule::in(ClientAccount::FULFILLMENT_PRICING_STATUSES)],
+        ]);
+
+        $account = $this->clientAccounts->setFulfillmentPricingStatus(
+            $client_account,
+            (string) $validated['status'],
+            $request->user()
+        );
+
+        return response()->json($this->clientAccounts->toApiArray($account));
     }
 
     /**

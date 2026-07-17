@@ -264,6 +264,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/onboarding/fulfillment-agreement/upload', [PortalOnboardingController::class, 'uploadFulfillmentAgreement'])->middleware('can:inventory.view');
         Route::post('/onboarding/fulfillment-agreement/esign', [PortalOnboardingController::class, 'esignFulfillmentAgreement'])->middleware('can:inventory.view');
         Route::get('/onboarding/fulfillment-agreement/signed.pdf', [PortalOnboardingController::class, 'downloadSignedFulfillmentAgreement'])->middleware('can:inventory.view');
+        Route::get('/onboarding/fulfillment-pricing.pdf', [PortalOnboardingController::class, 'downloadFulfillmentPricingPdf'])->middleware('can:inventory.view');
+        Route::post('/onboarding/fulfillment-pricing/accept', [PortalOnboardingController::class, 'acceptFulfillmentPricing'])->middleware('can:inventory.view');
     });
 
     Route::prefix('returns')->group(function () {
@@ -619,6 +621,10 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.onboarding.fulfillment-agreement.signed');
     Route::delete('client-accounts/{client_account}/onboarding/fulfillment-agreement', [ClientAccountOnboardingController::class, 'clearFulfillmentAgreement'])
         ->name('client-accounts.onboarding.fulfillment-agreement.destroy');
+    Route::get('client-accounts/{client_account}/onboarding/fulfillment-pricing.pdf', [ClientAccountOnboardingController::class, 'downloadFulfillmentPricingPdf'])
+        ->name('client-accounts.onboarding.fulfillment-pricing.pdf');
+    Route::patch('client-accounts/{client_account}/fulfillment-pricing/status', [ClientAccountController::class, 'updateFulfillmentPricingStatus'])
+        ->name('client-accounts.fulfillment-pricing.status');
     Route::post('client-accounts/{client_account}/comments', [ClientAccountController::class, 'storeComment'])
         ->name('client-accounts.comments.store');
     Route::patch('client-accounts/{client_account}/comments/{comment}', [ClientAccountController::class, 'updateComment'])

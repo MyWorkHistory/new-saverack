@@ -73,6 +73,7 @@ class PortalOnboardingService
     public const ONBOARDING_TASK_IDS = [
         'account_information',
         'communication_preferences',
+        'fulfillment_pricing',
         'billing_information',
         'branding_information',
         'order_handling_preferences',
@@ -112,6 +113,7 @@ class PortalOnboardingService
             'manual_payment_instructions' => config('crm.portal_manual_payment_instructions'),
             'stripe_payment_link_url' => config('crm.stripe_onboarding_payment_link_url'),
             'fulfillment_agreement' => $this->serializeFulfillmentAgreement($account),
+            'fulfillment_pricing' => $this->serializeFulfillmentPricing($account),
         ];
     }
 
@@ -156,6 +158,60 @@ class PortalOnboardingService
         throw ValidationException::withMessages([
             'agreement' => ['Please upload or e-sign the fulfillment agreement.'],
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function serializeFulfillmentPricing(ClientAccount $account): array
+    {
+        $account->loadMissing('feeItems');
+        /** @var ClientAccountService $clientAccounts */
+        $clientAccounts = app(ClientAccountService::class);
+        $pricingStatus = $clientAccounts->normalizeFulfillmentPricingStatus(
+            $account->fulfillment_pricing_status
+        );
+        $approved = $pricingStatus === ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED;
+        $acceptedAt = $account->fulfillment_pricing_accepted_at;
+        $feesPayload = $clientAccounts->feesPayloadForApi($account);
+        $items = $approved && is_array($feesPayload['items'] ?? null)
+            ? $feesPayload['items']
+            : [];
+
+        return [
+            'status' => $acceptedAt !== null ? 'completed' : 'not_completed',
+            'pricing_status' => $pricingStatus,
+            'approved' => $approved,
+            'approved_at' => $account->fulfillment_pricing_approved_at
+                ? optional($account->fulfillment_pricing_approved_at)->toIso8601String()
+                : null,
+            'accepted_at' => $acceptedAt
+                ? optional($acceptedAt)->toIso8601String()
+                : null,
+            'fees' => $items,
+        ];
+    }
+
+    public function acceptFulfillmentPricing(ClientAccount $account): ClientAccount
+    {
+        /** @var ClientAccountService $clientAccounts */
+        $clientAccounts = app(ClientAccountService::class);
+        $pricingStatus = $clientAccounts->normalizeFulfillmentPricingStatus(
+            $account->fulfillment_pricing_status
+        );
+
+        if ($pricingStatus !== ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED) {
+            throw ValidationException::withMessages([
+                'pricing' => ['Quoted pricing has not been set for this account.'],
+            ]);
+        }
+
+        if ($account->fulfillment_pricing_accepted_at === null) {
+            $account->fulfillment_pricing_accepted_at = now();
+            $account->save();
+        }
+
+        return $account->fresh();
     }
 
     /**
@@ -483,6 +539,13 @@ class PortalOnboardingService
                 'icon' => 'chat',
             ],
             [
+                'id' => 'fulfillment_pricing',
+                'title' => 'Fulfillment Pricing',
+                'description' => 'Review and accept this account\'s quoted fulfillment rates.',
+                'status' => $account->fulfillment_pricing_accepted_at !== null ? 'completed' : 'not_completed',
+                'icon' => 'billing',
+            ],
+            [
                 'id' => 'billing_information',
                 'title' => 'Billing Information',
                 'description' => 'Add your payment method and billing details so invoices and fulfillment charges can be processed without delays.',
@@ -797,6 +860,10 @@ class PortalOnboardingService
     public function isOnboardingReadyForActivation(ClientAccount $account): bool
     {
         if ($account->fulfillment_agreement_accepted_at === null) {
+            return false;
+        }
+
+        if ($account->fulfillment_pricing_accepted_at === null) {
             return false;
         }
 

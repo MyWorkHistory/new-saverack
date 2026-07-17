@@ -183,6 +183,13 @@ class PortalOnboardingVerificationTest extends TestCase
                 $fresh->save();
                 $fresh = $account->fresh();
             }
+            if ($taskId === 'fulfillment_pricing') {
+                $fresh->fulfillment_pricing_status = ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED;
+                $fresh->fulfillment_pricing_approved_at = now();
+                $fresh->fulfillment_pricing_accepted_at = now();
+                $fresh->save();
+                $fresh = $account->fresh();
+            }
             if (PortalOnboardingSectionRegistry::taskUsesAdminFieldVerification($taskId)) {
                 $prefs = is_array($fresh->onboarding_preferences) ? $fresh->onboarding_preferences : [];
                 foreach (PortalOnboardingSectionRegistry::adminVerificationFieldKeysForPreferences($taskId, $prefs) as $fieldKey) {

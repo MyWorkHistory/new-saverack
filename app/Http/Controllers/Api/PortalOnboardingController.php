@@ -9,6 +9,7 @@ use App\Services\AccountPaymentMethodService;
 use App\Services\ClientBrandLogoService;
 use App\Services\FulfillmentAgreementPdfService;
 use App\Services\FulfillmentAgreementService;
+use App\Services\FulfillmentPricingPdfService;
 use App\Services\PortalOnboardingService;
 use App\Services\PortalOnboardingStripeService;
 use App\Support\PortalOnboardingSectionRegistry;
@@ -40,13 +41,17 @@ class PortalOnboardingController extends Controller
     /** @var FulfillmentAgreementPdfService */
     protected $agreementPdfs;
 
+    /** @var FulfillmentPricingPdfService */
+    protected $pricingPdfs;
+
     public function __construct(
         PortalOnboardingService $onboarding,
         PortalOnboardingStripeService $stripeOnboarding,
         ClientBrandLogoService $brandLogos,
         AccountPaymentMethodService $paymentMethods,
         FulfillmentAgreementService $agreements,
-        FulfillmentAgreementPdfService $agreementPdfs
+        FulfillmentAgreementPdfService $agreementPdfs,
+        FulfillmentPricingPdfService $pricingPdfs
     ) {
         $this->onboarding = $onboarding;
         $this->stripeOnboarding = $stripeOnboarding;
@@ -54,6 +59,7 @@ class PortalOnboardingController extends Controller
         $this->paymentMethods = $paymentMethods;
         $this->agreements = $agreements;
         $this->agreementPdfs = $agreementPdfs;
+        $this->pricingPdfs = $pricingPdfs;
     }
 
     public function show(Request $request): JsonResponse
@@ -244,6 +250,24 @@ class PortalOnboardingController extends Controller
         Gate::forUser($request->user())->authorize('view', $account);
 
         return $this->agreementPdfs->signedPdfResponse($account);
+    }
+
+    public function downloadFulfillmentPricingPdf(Request $request): Response
+    {
+        [$user, $account] = $this->resolvePortalUserAndAccount($request);
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        return $this->pricingPdfs->download($account);
+    }
+
+    public function acceptFulfillmentPricing(Request $request): JsonResponse
+    {
+        [$user, $account] = $this->resolvePortalUserAndAccount($request);
+        Gate::forUser($request->user())->authorize('view', $account);
+
+        $account = $this->onboarding->acceptFulfillmentPricing($account);
+
+        return response()->json($this->onboarding->buildOnboardingPayload($user, $account));
     }
 
     /**

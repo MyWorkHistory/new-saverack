@@ -37,6 +37,15 @@ class ClientAccount extends Model
         self::PAUSE_REASON_USER_REQUEST,
     ];
 
+    public const FULFILLMENT_PRICING_STATUS_PENDING = 'pending';
+
+    public const FULFILLMENT_PRICING_STATUS_APPROVED = 'approved';
+
+    public const FULFILLMENT_PRICING_STATUSES = [
+        self::FULFILLMENT_PRICING_STATUS_PENDING,
+        self::FULFILLMENT_PRICING_STATUS_APPROVED,
+    ];
+
     public const PAUSE_REASON_LABELS = [
         self::PAUSE_REASON_ACCOUNT_PAST_DUE => 'Account Past Due',
         self::PAUSE_REASON_ADMIN => 'Admin',
@@ -99,6 +108,9 @@ class ClientAccount extends Model
         'fulfillment_agreement_staff_rep_name',
         'fulfillment_agreement_staff_signed_at',
         'fulfillment_agreement_staff_signature',
+        'fulfillment_pricing_status',
+        'fulfillment_pricing_approved_at',
+        'fulfillment_pricing_accepted_at',
         'account_manager_id',
         'contract_date',
         'stripe_customer_id',
@@ -134,6 +146,8 @@ class ClientAccount extends Model
         'fulfillment_agreement_accepted_at' => 'datetime',
         'fulfillment_agreement_client_signed_at' => 'datetime',
         'fulfillment_agreement_staff_signed_at' => 'datetime',
+        'fulfillment_pricing_approved_at' => 'datetime',
+        'fulfillment_pricing_accepted_at' => 'datetime',
         'cc_fee_percent' => 'decimal:2',
         'billing_available_funds_cents' => 'integer',
         'payment_terms_days' => 'integer',

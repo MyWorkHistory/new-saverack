@@ -9,6 +9,7 @@ use App\Services\AccountPaymentMethodService;
 use App\Services\ClientBrandLogoService;
 use App\Services\FulfillmentAgreementPdfService;
 use App\Services\FulfillmentAgreementService;
+use App\Services\FulfillmentPricingPdfService;
 use App\Services\PortalOnboardingService;
 use App\Services\PortalOnboardingStripeService;
 use Illuminate\Http\JsonResponse;
@@ -40,13 +41,17 @@ class ClientAccountOnboardingController extends Controller
     /** @var FulfillmentAgreementPdfService */
     protected $agreementPdfs;
 
+    /** @var FulfillmentPricingPdfService */
+    protected $pricingPdfs;
+
     public function __construct(
         PortalOnboardingService $onboarding,
         PortalOnboardingStripeService $stripeOnboarding,
         ClientBrandLogoService $brandLogos,
         AccountPaymentMethodService $paymentMethods,
         FulfillmentAgreementService $agreements,
-        FulfillmentAgreementPdfService $agreementPdfs
+        FulfillmentAgreementPdfService $agreementPdfs,
+        FulfillmentPricingPdfService $pricingPdfs
     ) {
         $this->onboarding = $onboarding;
         $this->stripeOnboarding = $stripeOnboarding;
@@ -54,6 +59,7 @@ class ClientAccountOnboardingController extends Controller
         $this->paymentMethods = $paymentMethods;
         $this->agreements = $agreements;
         $this->agreementPdfs = $agreementPdfs;
+        $this->pricingPdfs = $pricingPdfs;
     }
 
     public function show(ClientAccount $client_account): JsonResponse
@@ -376,5 +382,12 @@ class ClientAccountOnboardingController extends Controller
         Gate::authorize('view', $client_account);
 
         return $this->agreementPdfs->signedPdfResponse($client_account);
+    }
+
+    public function downloadFulfillmentPricingPdf(ClientAccount $client_account): Response
+    {
+        Gate::authorize('view', $client_account);
+
+        return $this->pricingPdfs->download($client_account);
     }
 }

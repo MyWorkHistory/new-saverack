@@ -75,6 +75,7 @@ class ClientAccountStatusSlackApiTest extends TestCase
             $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
             $this->assertStringContainsString('/images/slack/shipping-status-paused-thumb.png', (string) ($payload['icon_url'] ?? ''));
             $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($payload['text'] ?? ''));
+            $this->assertStringContainsString('Reason: Admin', (string) ($payload['text'] ?? ''));
             $this->assertArrayNotHasKey('blocks', $payload);
 
             return true;
@@ -111,6 +112,7 @@ class ClientAccountStatusSlackApiTest extends TestCase
             $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
             $this->assertStringContainsString('/images/slack/shipping-status-paused-thumb.png', (string) ($payload['icon_url'] ?? ''));
             $this->assertStringContainsString('Slack Co is set to Paused.', (string) ($payload['text'] ?? ''));
+            $this->assertStringContainsString('Reason: Admin', (string) ($payload['text'] ?? ''));
             $this->assertArrayNotHasKey('blocks', $payload);
 
             return true;
@@ -151,6 +153,7 @@ class ClientAccountStatusSlackApiTest extends TestCase
             $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
             $this->assertStringContainsString('/images/slack/shipping-status-live-thumb.png', (string) ($payload['icon_url'] ?? ''));
             $this->assertStringContainsString('Slack Co is set to Live.', (string) ($payload['text'] ?? ''));
+            $this->assertStringNotContainsString('Reason:', (string) ($payload['text'] ?? ''));
             $this->assertArrayNotHasKey('blocks', $payload);
 
             return true;

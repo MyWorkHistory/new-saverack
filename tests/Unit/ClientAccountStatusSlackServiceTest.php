@@ -52,8 +52,11 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
 
     public function test_build_paused_message_body_only_once(): void
     {
+        $account = $this->sampleAccount();
+        $account->pause_reason = ClientAccount::PAUSE_REASON_ACCOUNT_PAST_DUE;
+
         $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
-            $this->sampleAccount(),
+            $account,
             ClientAccount::STATUS_ACTIVE,
             ClientAccount::STATUS_PAUSED,
             $this->sampleActor()
@@ -62,7 +65,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertNotNull($payload);
         $this->assertSame('Shipping Status Update', $payload['username']);
         $this->assertSame(
-            "Demo Company is set to Paused.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Pause in Shiphero>",
+            "Demo Company is set to Paused.\nReason: Account Past Due\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Pause in Shiphero>",
             $payload['text']
         );
         $this->assertStringContainsString('/shipping-status-paused-thumb.png', $payload['icon_url']);
@@ -71,10 +74,30 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertStringNotContainsString('Shipping Status Update', $payload['text']);
     }
 
-    public function test_build_live_message_body_only_once(): void
+    public function test_build_paused_message_omits_reason_when_missing(): void
     {
         $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
             $this->sampleAccount(),
+            ClientAccount::STATUS_ACTIVE,
+            ClientAccount::STATUS_PAUSED,
+            $this->sampleActor()
+        );
+
+        $this->assertNotNull($payload);
+        $this->assertSame(
+            "Demo Company is set to Paused.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Pause in Shiphero>",
+            $payload['text']
+        );
+        $this->assertStringNotContainsString('Reason:', $payload['text']);
+    }
+
+    public function test_build_live_message_body_only_once(): void
+    {
+        $account = $this->sampleAccount();
+        $account->pause_reason = ClientAccount::PAUSE_REASON_ADMIN;
+
+        $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
+            $account,
             ClientAccount::STATUS_PAUSED,
             ClientAccount::STATUS_ACTIVE,
             $this->sampleActor()
@@ -85,6 +108,7 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
             "Demo Company is set to Live.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Live in Shiphero>",
             $payload['text']
         );
+        $this->assertStringNotContainsString('Reason:', $payload['text']);
         $this->assertStringContainsString('/shipping-status-live-thumb.png', $payload['icon_url']);
         $this->assertStringContainsString('/shipping-status-live.png', $payload['icon_url_fallbacks'][0]);
         $this->assertStringNotContainsString('Shipping Status Update', $payload['text']);

@@ -88,6 +88,42 @@ CSV;
         $this->assertDatabaseCount('inventory_restock_beta_snapshots', 1);
     }
 
+    public function test_post_import_notifies_restock_slack_channel(): void
+    {
+        Config::set('services.shiphero.restock_dispatch_mode', 'after_response');
+        Config::set('billing.slack.webhook_url', 'https://hooks.slack.com/services/T/B/x');
+        Config::set('billing.slack.bot_token', null);
+        Config::set('billing.slack.restock_channel', '#restock');
+        Config::set('crm.frontend_url', 'https://app.saverack.com');
+        Config::set('billing.slack.public_asset_base_url', 'https://app.saverack.com');
+
+        Sanctum::actingAs($this->staffWithInventoryView());
+
+        \Illuminate\Support\Facades\Http::fake([
+            'hooks.slack.com/*' => \Illuminate\Support\Facades\Http::response('ok', 200),
+        ]);
+
+        $file = UploadedFile::fake()->createWithContent('restock.csv', $this->sampleCsv());
+
+        $this->postJson('/api/inventory/restock-beta/import', [
+            'file' => $file,
+        ])->assertCreated();
+
+        \Illuminate\Support\Facades\Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), 'hooks.slack.com')) {
+                return false;
+            }
+
+            $payload = $request->data();
+
+            return ($payload['username'] ?? '') === 'Restock Needed'
+                && ($payload['channel'] ?? '') === '#restock'
+                && str_contains((string) ($payload['text'] ?? ''), '1 SKUs Need Restocking')
+                && str_contains((string) ($payload['text'] ?? ''), '10 Allocated Orders')
+                && str_contains((string) ($payload['text'] ?? ''), 'View Restocks');
+        });
+    }
+
     public function test_get_inline_enriches_pending_snapshot(): void
     {
         Sanctum::actingAs($this->staffWithInventoryView());

@@ -14,6 +14,7 @@ use App\Services\InventoryProductCrmStatusService;
 use App\Services\InventoryProductDetailCacheService;
 use App\Services\InventoryRestockBetaService;
 use App\Services\InventoryRestockReportService;
+use App\Services\InventoryRestockSlackService;
 use App\Services\ShipHeroCredentialResolver;
 use App\Models\User;
 use App\Services\CrossAccountInventoryListService;
@@ -368,6 +369,8 @@ class InventoryController extends Controller
             ]);
 
             $snapshot = $restockBeta->importCsv($validated['file'], $request->user());
+
+            app(InventoryRestockSlackService::class)->notifyUpload($snapshot);
 
             return response()->json($snapshot, 201);
         } catch (ValidationException $e) {

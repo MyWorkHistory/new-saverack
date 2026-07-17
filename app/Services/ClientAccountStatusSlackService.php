@@ -209,6 +209,11 @@ class ClientAccountStatusSlackService
         $lines = [
             $this->companyLine($account).' is set to '.$statusLabel.'.',
         ];
+
+        if ($statusLabel === 'Paused') {
+            $this->appendPauseReasonLine($lines, $account);
+        }
+
         $this->appendActorLine($lines, $actor);
         $lines[] = '<'.self::SHIPHERO_3PL_URL.'|'.$shipheroLinkLabel.'>';
 
@@ -216,6 +221,19 @@ class ClientAccountStatusSlackService
             'text' => implode("\n", $lines),
             'username' => self::USERNAME,
         ];
+    }
+
+    /**
+     * @param  array<int, string>  $lines
+     */
+    private function appendPauseReasonLine(array &$lines, ClientAccount $account): void
+    {
+        $label = ClientAccount::pauseReasonLabel($account->pause_reason);
+        if ($label === null || trim($label) === '') {
+            return;
+        }
+
+        $lines[] = 'Reason: '.$label;
     }
 
     private function companyLine(ClientAccount $account): string

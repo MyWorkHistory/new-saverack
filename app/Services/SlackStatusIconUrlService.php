@@ -5,7 +5,7 @@ namespace App\Services;
 use Illuminate\Support\Facades\Http;
 
 /**
- * Public HTTPS URLs for Slack status truck icons (must be fetchable by Slack).
+ * Public HTTPS URLs for Slack bot icons (must be fetchable by Slack).
  *
  * Icons are served as static files under /images/slack/ (no storage:link required).
  */
@@ -18,6 +18,10 @@ class SlackStatusIconUrlService
     private const LIVE_THUMB_FILE = 'shipping-status-live-thumb.png';
 
     private const PAUSED_THUMB_FILE = 'shipping-status-paused-thumb.png';
+
+    private const RESTOCK_FILE = 'restock-needed.png';
+
+    private const RESTOCK_THUMB_FILE = 'restock-needed-thumb.png';
 
     /** @var string Relative to site root; nginx/Laravel serves public/images/slack/ directly. */
     private const PUBLIC_PATH = '/images/slack';
@@ -40,6 +44,16 @@ class SlackStatusIconUrlService
     public function pausedThumbUrl(): string
     {
         return $this->resolveUrl(self::PAUSED_THUMB_FILE, 'billing.slack.status_icon_paused_thumb_url');
+    }
+
+    public function restockUrl(): string
+    {
+        return $this->resolveUrl(self::RESTOCK_FILE, 'billing.slack.restock_icon_url');
+    }
+
+    public function restockThumbUrl(): string
+    {
+        return $this->resolveUrl(self::RESTOCK_THUMB_FILE, 'billing.slack.restock_icon_thumb_url');
     }
 
     public function isReachableImage(string $url): bool

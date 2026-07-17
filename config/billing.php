@@ -23,6 +23,7 @@ return [
     'slack' => [
         'accounting_channel' => env('BILLING_SLACK_ACCOUNTING_CHANNEL') ?: '#accounting',
         'alerts_channel' => env('SLACK_ALERTS_CHANNEL') ?: '#alerts',
+        'restock_channel' => env('SLACK_RESTOCK_CHANNEL') ?: '#restock',
         /** Bot User OAuth Token (xoxb-…) for chat.postMessage. */
         'bot_token' => env('SLACK_BOT_USER_OAUTH_TOKEN') ?: env('SLACK_BOT_TOKEN'),
         /**
@@ -42,6 +43,8 @@ return [
         'status_icon_paused_url' => env('SLACK_STATUS_ICON_PAUSED_URL'),
         'status_icon_live_thumb_url' => env('SLACK_STATUS_ICON_LIVE_THUMB_URL'),
         'status_icon_paused_thumb_url' => env('SLACK_STATUS_ICON_PAUSED_THUMB_URL'),
+        'restock_icon_url' => env('SLACK_RESTOCK_ICON_URL'),
+        'restock_icon_thumb_url' => env('SLACK_RESTOCK_ICON_THUMB_URL'),
     ],
 
 ];

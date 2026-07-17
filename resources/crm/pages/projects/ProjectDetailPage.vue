@@ -338,7 +338,7 @@ async function createBill() {
   try {
     const { data } = await api.post(`/projects/${project.value.id}/create-bill`);
     project.value = data;
-    toast.success("Custom bill created.");
+    toast.success("Bill created.");
   } catch (e) {
     toast.errorFrom(e, "Could not create bill.");
   } finally {
@@ -833,11 +833,11 @@ onUnmounted(() => {
                 </svg>
               </span>
               <div class="min-w-0">
-                <p class="project-detail-field__label">Custom Bill</p>
+                <p class="project-detail-field__label">Bill</p>
                 <p class="project-detail-field__value">
                   <RouterLink
                     class="text-decoration-none"
-                    :to="`/admin/billing/custom-bills/${project.custom_bill_id}`"
+                    :to="`/admin/billing/bills/${project.custom_bill_id}`"
                   >
                     {{
                       project.custom_bill_name ||

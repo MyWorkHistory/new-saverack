@@ -188,14 +188,8 @@ function statusBadgeClass(status) {
   return status === "invoiced" ? "bg-success-subtle text-success" : "bg-warning-subtle text-warning";
 }
 
-function kindBadgeClass(kind) {
-  if (kind === "asn") return "bg-info-subtle text-info";
-  if (kind === "return") return "bg-secondary-subtle text-secondary";
-  return "bg-primary-subtle text-primary";
-}
-
 function detailPath(row) {
-  return row.detail_path || `/admin/billing/custom-bills/${row.id}`;
+  return row.detail_path || `/admin/billing/bills/${row.id}`;
 }
 
 function refDisplay(row) {
@@ -260,13 +254,13 @@ async function confirmDelete() {
   deleteBusy.value = true;
   try {
     await api.delete(`/custom-bills/${deletedId}`);
-    toast.success("Custom bill deleted.");
+    toast.success("Bill deleted.");
     deleteModalOpen.value = false;
     deleteTarget.value = null;
     selectedIds.value = selectedIds.value.filter((id) => id !== deletedKey);
     await fetchRows();
   } catch (e) {
-    toast.errorFrom(e, "Could not delete custom bill.");
+    toast.errorFrom(e, "Could not delete bill.");
   } finally {
     deleteBusy.value = false;
   }
@@ -276,15 +270,15 @@ const bulkDeleteMessage = computed(() => {
   const total = selectedIds.value.length;
   const open = selectedOpenCount.value;
   if (open === total) {
-    return `Delete ${open} selected custom bill${open === 1 ? "" : "s"}? This cannot be undone.`;
+    return `Delete ${open} selected bill${open === 1 ? "" : "s"}? This cannot be undone.`;
   }
-  return `Delete ${open} open custom bill${open === 1 ? "" : "s"} from ${total} selected? ASN, Return, and invoiced bills will be skipped.`;
+  return `Delete ${open} open bill${open === 1 ? "" : "s"} from ${total} selected? ASN, Return, and invoiced bills will be skipped.`;
 });
 
 const bulkAddMessage = computed(() => {
   const total = selectedIds.value.length;
   const eligible = selectedOpenWithLinesCount.value;
-  return `Add ${eligible} open custom bill${eligible === 1 ? "" : "s"} to each account's newest draft invoice? Bills are processed one by one; line items are not combined. ${total - eligible > 0 ? `${total - eligible} selected bill${total - eligible === 1 ? "" : "s"} will be skipped (non-custom, invoiced, or no lines).` : ""}`;
+  return `Add ${eligible} open bill${eligible === 1 ? "" : "s"} to each account's newest draft invoice? Bills are processed one by one; line items are not combined. ${total - eligible > 0 ? `${total - eligible} selected bill${total - eligible === 1 ? "" : "s"} will be skipped (non-custom, invoiced, or no lines).` : ""}`;
 });
 
 async function confirmBulkDelete() {
@@ -363,7 +357,7 @@ async function confirmBulkAddToInvoices() {
 function onCreated(data) {
   createDrawerOpen.value = false;
   if (data?.id) {
-    router.push(`/admin/billing/custom-bills/${data.id}`);
+    router.push(`/admin/billing/bills/${data.id}`);
   } else {
     fetchRows();
   }
@@ -378,7 +372,7 @@ function goToPage(page) {
 onMounted(async () => {
   document.addEventListener("click", onDocClick);
   setCrmPageMeta({
-    title: "Save Rack | Custom Bills",
+    title: "Save Rack | Bills",
     description: "Custom, ASN, and Return bills for client accounts.",
   });
   try {
@@ -401,7 +395,7 @@ onUnmounted(() => {
       class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3 mb-4"
     >
       <div class="min-w-0 flex-grow-1">
-        <h1 class="h4 mb-1 fw-semibold text-body">Custom Bills</h1>
+        <h1 class="h4 mb-1 fw-semibold text-body">Bills</h1>
         <p class="text-secondary small mb-0">
           Custom, ASN, and Return bills — add lines to draft invoices when ready.
         </p>
@@ -591,9 +585,9 @@ onUnmounted(() => {
                 />
               </th>
               <th class="staff-table-head__th" scope="col">Status</th>
-              <th class="staff-table-head__th" scope="col">Type</th>
               <th class="staff-table-head__th" scope="col">Bill # / Name</th>
               <th class="staff-table-head__th" scope="col">Account</th>
+              <th class="staff-table-head__th" scope="col">Type</th>
               <th class="staff-table-head__th" scope="col">Ref</th>
               <th class="staff-table-head__th" scope="col">Date</th>
               <th class="staff-table-head__th text-end" scope="col">Price</th>
@@ -629,11 +623,6 @@ onUnmounted(() => {
                   {{ row.status_label }}
                 </span>
               </td>
-              <td>
-                <span class="badge rounded-pill fw-medium" :class="kindBadgeClass(row.bill_kind)">
-                  {{ row.bill_kind_label || "Custom" }}
-                </span>
-              </td>
               <td class="fw-medium text-body">
                 <RouterLink
                   :to="detailPath(row)"
@@ -644,6 +633,9 @@ onUnmounted(() => {
               </td>
               <td class="text-secondary staff-table-cell__meta">
                 {{ row.client_account_name || "—" }}
+              </td>
+              <td class="text-body staff-table-cell__meta">
+                {{ row.bill_kind_label || "Custom" }}
               </td>
               <td class="text-secondary staff-table-cell__meta text-nowrap">
                 {{ refDisplay(row) }}
@@ -755,7 +747,7 @@ onUnmounted(() => {
 
     <ConfirmModal
       v-model:open="deleteModalOpen"
-      title="Delete Custom Bill"
+      title="Delete Bill"
       :message="deleteTarget ? `Delete bill #${deleteTarget.bill_number}? This cannot be undone.` : ''"
       confirm-label="Delete"
       variant="danger"

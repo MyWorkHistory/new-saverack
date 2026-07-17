@@ -126,7 +126,7 @@ const query = reactive({
   search: "",
   per_page: DEFAULT_PER_PAGE,
   page: 1,
-  sort_by: "created_at",
+  sort_by: "contract_date",
   sort_dir: "desc",
   account_manager_id: "",
   status: "all",
@@ -294,6 +294,7 @@ const TABLE_SORT_COLUMNS = [
   "status",
   "company_name",
   "email",
+  "contract_date",
   "created_at",
 ];
 
@@ -451,7 +452,7 @@ function clearFilters() {
   query.search = "";
   query.account_manager_id = "";
   query.status = "all";
-  query.sort_by = "created_at";
+  query.sort_by = "contract_date";
   query.sort_dir = "desc";
   query.page = 1;
   selectedIds.value = [];
@@ -1235,19 +1236,19 @@ onUnmounted(() => {
               <th
                 class="staff-table-head__th staff-table-head__th--sort"
                 scope="col"
-                :aria-sort="thAriaSort('created_at')"
+                :aria-sort="thAriaSort('contract_date')"
               >
                 <button
                   type="button"
                   class="staff-sort-btn"
                   :disabled="loading"
-                  @click="toggleSort('created_at')"
+                  @click="toggleSort('contract_date')"
                 >
                   Start date
                   <span
-                    v-if="sortIndicator('created_at')"
+                    v-if="sortIndicator('contract_date')"
                     class="staff-sort-ind"
-                    >{{ sortIndicator("created_at") }}</span
+                    >{{ sortIndicator("contract_date") }}</span
                   >
                 </button>
               </th>

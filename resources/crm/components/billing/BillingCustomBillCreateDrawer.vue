@@ -129,7 +129,7 @@ async function submit() {
     emit("update:open", false);
     reset();
     if (data?.id) {
-      router.push(`/admin/billing/custom-bills/${data.id}`);
+      router.push(`/admin/billing/bills/${data.id}`);
     }
   } catch (e) {
     const d = e?.response?.data;
@@ -138,7 +138,7 @@ async function submit() {
       d?.errors?.client_account_id?.[0] ||
       d?.errors?.bill_date?.[0] ||
       d?.errors?.items?.[0] ||
-      "Could not create custom bill.";
+      "Could not create bill.";
   } finally {
     saving.value = false;
   }

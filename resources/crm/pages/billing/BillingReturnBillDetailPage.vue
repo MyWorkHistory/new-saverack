@@ -387,7 +387,7 @@ async function confirmDeleteBill() {
   try {
     await api.delete(`/return-bills/${props.id}`);
     toast.success("Return bill deleted.");
-    router.push("/admin/billing/custom-bills");
+    router.push("/admin/billing/bills");
   } catch (e) {
     toast.errorFrom(e, "Could not delete return bill.");
   } finally {
@@ -477,7 +477,7 @@ onUnmounted(() => {
     >
       <RouterLink to="/admin/billing/summary">Billing</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
-      <RouterLink to="/admin/billing/custom-bills">Custom Bills</RouterLink>
+      <RouterLink to="/admin/billing/bills">Bills</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
       <span class="text-body-secondary">{{ bill?.bill_number ? `#${bill.bill_number}` : "Bill" }}</span>
     </nav>

@@ -133,12 +133,12 @@ const meta = {
     description: "Invoice detail.",
   },
   billingCustomBills: {
-    title: "Save Rack | Custom Bills",
+    title: "Save Rack | Bills",
     description: "Custom, ASN, and Return bills for client accounts.",
   },
   billingCustomBillDetail: {
-    title: "Save Rack | Custom Bill",
-    description: "Custom bill detail.",
+    title: "Save Rack | Bill",
+    description: "Bill detail.",
   },
   billingReturnBills: {
     title: "Save Rack | Returns Bills",
@@ -506,21 +506,29 @@ const routes = [
     meta: meta.billingInvoiceDetail,
   },
   {
-    path: "/admin/billing/custom-bills",
+    path: "/admin/billing/bills",
     name: "billing-custom-bills",
     component: BillingCustomBillsListPage,
     meta: meta.billingCustomBills,
   },
   {
-    path: "/admin/billing/custom-bills/:id",
+    path: "/admin/billing/bills/:id",
     name: "billing-custom-bill-detail",
     component: BillingCustomBillDetailPage,
     props: true,
     meta: meta.billingCustomBillDetail,
   },
   {
+    path: "/admin/billing/custom-bills",
+    redirect: "/admin/billing/bills",
+  },
+  {
+    path: "/admin/billing/custom-bills/:id",
+    redirect: (to) => `/admin/billing/bills/${to.params.id}`,
+  },
+  {
     path: "/admin/billing/return-bills",
-    redirect: "/admin/billing/custom-bills",
+    redirect: "/admin/billing/bills",
   },
   {
     path: "/admin/billing/return-bills/:id",
@@ -531,7 +539,7 @@ const routes = [
   },
   {
     path: "/admin/billing/asn-bills",
-    redirect: "/admin/billing/custom-bills",
+    redirect: "/admin/billing/bills",
   },
   {
     path: "/admin/billing/asn-bills/:id",
@@ -1580,7 +1588,7 @@ async function ensureBillingRouteAccess(path) {
     const pages = billingNavCache.pages || {};
     if (path.startsWith("/admin/billing/summary")) return pages.summary === true;
     if (path.startsWith("/admin/billing/invoices")) return pages.invoices === true;
-    if (path.startsWith("/admin/billing/custom-bills")) return pages.customBills === true;
+    if (path.startsWith("/admin/billing/bills") || path.startsWith("/admin/billing/custom-bills")) return pages.customBills === true;
     if (path.startsWith("/admin/billing/asn-bills")) return pages.asnBills === true;
     if (path.startsWith("/admin/billing/return-bills")) return pages.returnBills === true;
     return billingNavCache.view === true;

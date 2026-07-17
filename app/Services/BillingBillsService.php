@@ -248,7 +248,7 @@ class BillingBillsService
         $kind = (string) $row->bill_kind;
         $id = (int) $row->id;
         $status = (string) $row->status;
-        $detailPath = '/admin/billing/custom-bills/'.$id;
+        $detailPath = '/admin/billing/bills/'.$id;
         if ($kind === 'asn') {
             $detailPath = '/admin/billing/asn-bills/'.$id;
         } elseif ($kind === 'return') {

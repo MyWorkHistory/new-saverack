@@ -62,17 +62,24 @@ class ClientAccountService
     public function paginate(array $filters): LengthAwarePaginator
     {
         $perPage = min(max((int) ($filters['per_page'] ?? 25), 1), 500);
-        $sortBy = (string) ($filters['sort_by'] ?? 'created_at');
+        $sortBy = (string) ($filters['sort_by'] ?? 'contract_date');
         $sortDir = strtolower((string) ($filters['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
 
         $allowedSort = [
             'id', 'company_name', 'email', 'status', 'created_at', 'updated_at', 'contract_date',
         ];
         if (! in_array($sortBy, $allowedSort, true)) {
-            $sortBy = 'created_at';
+            $sortBy = 'contract_date';
         }
 
-        $query = $this->filteredAccountsQuery($filters)->orderBy($sortBy, $sortDir);
+        $query = $this->filteredAccountsQuery($filters);
+        // Start date column uses contract_date, falling back to created_at when unset.
+        if ($sortBy === 'contract_date') {
+            $query->orderByRaw('COALESCE(contract_date, DATE(created_at)) '.$sortDir)
+                ->orderBy('id', $sortDir);
+        } else {
+            $query->orderBy($sortBy, $sortDir);
+        }
 
         return $query->paginate($perPage);
     }

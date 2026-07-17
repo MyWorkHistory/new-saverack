@@ -96,7 +96,7 @@ const PAGE_META = {
   billing_custom_bills: {
     moduleKey: "billing",
     moduleLabel: "Billing",
-    rowLabel: "Custom Bills",
+    rowLabel: "Bills",
     order: 40,
     rowOrder: 3,
   },

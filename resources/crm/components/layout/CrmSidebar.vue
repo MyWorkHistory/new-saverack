@@ -298,6 +298,7 @@ function navActive(mode) {
   if (mode === "billing-invoices") return p.startsWith("/admin/billing/invoices");
   if (mode === "billing-custom-bills") {
     return (
+      p.startsWith("/admin/billing/bills") ||
       p.startsWith("/admin/billing/custom-bills") ||
       p.startsWith("/admin/billing/asn-bills") ||
       p.startsWith("/admin/billing/return-bills")
@@ -1000,12 +1001,12 @@ function collapseNav() {
                 </li>
                 <li v-if="canViewBillingCustomBills">
                   <RouterLink
-                    to="/admin/billing/custom-bills"
+                    to="/admin/billing/bills"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('billing-custom-bills') }"
                     @click="closeMobile"
                   >
-                    Custom Bills
+                    Bills
                   </RouterLink>
                 </li>
               </ul>

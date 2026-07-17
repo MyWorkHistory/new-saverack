@@ -2031,7 +2031,7 @@ onUnmounted(() => {
             target="_blank"
             rel="noopener noreferrer"
           >
-            View Custom Bill
+            View Bill
           </RouterLink>
         </div>
       </div>

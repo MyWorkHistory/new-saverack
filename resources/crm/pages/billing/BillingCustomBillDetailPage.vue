@@ -112,7 +112,7 @@ const billDetailFields = computed(() => {
   const b = bill.value;
   if (!b) return [];
   const fields = [
-    { icon: "doc", label: "Bill Type", value: "Custom Bill" },
+    { icon: "doc", label: "Bill Type", value: "Custom" },
     { icon: "calendar", label: "Bill Date", value: formatIsoDate(b.bill_date) },
     {
       icon: "clock",
@@ -147,10 +147,10 @@ async function loadBill() {
     bill.value = data;
     setCrmPageMeta({
       title: `Save Rack | ${data?.name || (data?.bill_number ? `Bill #${data.bill_number}` : `Bill`)}`,
-      description: "Custom bill detail.",
+      description: "Bill detail.",
     });
   } catch (e) {
-    toast.errorFrom(e, "Could not load custom bill.");
+    toast.errorFrom(e, "Could not load bill.");
     bill.value = null;
   } finally {
     loading.value = false;
@@ -338,10 +338,10 @@ async function confirmDeleteBill() {
   deleteBillBusy.value = true;
   try {
     await api.delete(`/custom-bills/${props.id}`);
-    toast.success("Custom bill deleted.");
-    router.push("/admin/billing/custom-bills");
+    toast.success("Bill deleted.");
+    router.push("/admin/billing/bills");
   } catch (e) {
-    toast.errorFrom(e, "Could not delete custom bill.");
+    toast.errorFrom(e, "Could not delete bill.");
   } finally {
     deleteBillBusy.value = false;
   }
@@ -513,7 +513,7 @@ onUnmounted(() => {
     >
       <RouterLink to="/admin/billing/summary">Billing</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
-      <RouterLink to="/admin/billing/custom-bills">Custom Bills</RouterLink>
+      <RouterLink to="/admin/billing/bills">Bills</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
       <span class="text-body-secondary">{{ bill?.display_name || (bill?.bill_number ? `#${bill.bill_number}` : "Bill") }}</span>
     </nav>
@@ -931,7 +931,7 @@ onUnmounted(() => {
 
     <ConfirmModal
       v-model:open="deleteBillModalOpen"
-      title="Delete Custom Bill"
+      title="Delete Bill"
       :message="bill ? `Delete bill #${bill.bill_number}? This cannot be undone.` : ''"
       confirm-label="Delete"
       variant="danger"

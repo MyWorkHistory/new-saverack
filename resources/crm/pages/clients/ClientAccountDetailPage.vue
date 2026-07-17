@@ -23,6 +23,7 @@ import { errorMessage } from "../../utils/apiError";
 import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 import { noteAuthorFromRecord } from "../../utils/noteAuthor.js";
+import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
 import {
   ONBOARDING_ACTIVATION_BLOCKED_MESSAGE,
   checkOnboardingReadyForActivation,
@@ -256,6 +257,42 @@ const showSeeAllNotes = computed(
 
 function noteAuthor(comment) {
   return noteAuthorFromRecord(comment);
+}
+
+const agreementFullySigned = computed(() =>
+  Boolean(account.value?.fulfillment_agreement_fully_signed),
+);
+const agreementPdfBusy = ref(false);
+
+async function viewSignedAgreement() {
+  if (agreementPdfBusy.value) return;
+  agreementPdfBusy.value = true;
+  try {
+    await openApiPdfBlob(
+      api,
+      `/client-accounts/${props.id}/onboarding/fulfillment-agreement/signed.pdf`,
+    );
+  } catch (e) {
+    toast.errorFrom(e, "Could not open the signed agreement.");
+  } finally {
+    agreementPdfBusy.value = false;
+  }
+}
+
+async function downloadSignedAgreement() {
+  if (agreementPdfBusy.value) return;
+  agreementPdfBusy.value = true;
+  try {
+    await openApiPdfBlob(
+      api,
+      `/client-accounts/${props.id}/onboarding/fulfillment-agreement/signed.pdf`,
+      { download: "fulfillment-agreement-signed.pdf" },
+    );
+  } catch (e) {
+    toast.errorFrom(e, "Could not download the signed agreement.");
+  } finally {
+    agreementPdfBusy.value = false;
+  }
 }
 
 function scrollToAllNotes() {
@@ -2057,6 +2094,40 @@ onUnmounted(() => {
                       >
                         Terms and Conditions
                       </RouterLink>
+                    </dd>
+                  </dl>
+                </div>
+                <div v-if="agreementFullySigned" class="col-12">
+                  <dl class="mb-0 small">
+                    <dt
+                      class="text-secondary text-uppercase fw-semibold mb-1"
+                      style="font-size: 0.65rem"
+                    >
+                      Fulfillment Agreement
+                    </dt>
+                    <dd class="mb-0 d-flex flex-wrap align-items-center gap-3">
+                      <button
+                        type="button"
+                        class="btn btn-link link-primary text-decoration-none fw-semibold p-0"
+                        :disabled="agreementPdfBusy"
+                        @click="viewSignedAgreement"
+                      >
+                        View Signed Agreement
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-link link-primary text-decoration-none fw-semibold p-0"
+                        :disabled="agreementPdfBusy"
+                        @click="downloadSignedAgreement"
+                      >
+                        Download
+                      </button>
+                      <span class="text-secondary">
+                        Signed by client
+                        {{ formatDateUs(account.fulfillment_agreement_client_signed_at) }}
+                        · counter-signed
+                        {{ formatDateUs(account.fulfillment_agreement_staff_signed_at) }}
+                      </span>
                     </dd>
                   </dl>
                 </div>

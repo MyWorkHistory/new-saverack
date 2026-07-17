@@ -786,6 +786,14 @@ class ClientAccountService
             'fulfillment_pricing_accepted_at' => $account->fulfillment_pricing_accepted_at !== null
                 ? $account->fulfillment_pricing_accepted_at->toIso8601String()
                 : null,
+            'fulfillment_agreement_client_signed_at' => $account->fulfillment_agreement_client_signed_at !== null
+                ? $account->fulfillment_agreement_client_signed_at->toIso8601String()
+                : null,
+            'fulfillment_agreement_staff_signed_at' => $account->fulfillment_agreement_staff_signed_at !== null
+                ? $account->fulfillment_agreement_staff_signed_at->toIso8601String()
+                : null,
+            'fulfillment_agreement_fully_signed' => $account->fulfillment_agreement_client_signed_at !== null
+                && $account->fulfillment_agreement_staff_signed_at !== null,
         ];
     }
 

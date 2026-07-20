@@ -187,7 +187,8 @@ class OrderDashboardSnapshotService
     }
 
     /**
-     * Sum on-hold order counts for accounts currently marked paused in section payloads.
+     * Sum paused-account open order counts stored on the on-hold section payload.
+     * (Ready-to-ship + on-hold for CRM-paused accounts.)
      *
      * @param  array<string, mixed>  $sections
      */
@@ -210,6 +211,64 @@ class OrderDashboardSnapshotService
         }
 
         return $sum;
+    }
+
+    /**
+     * CRM-paused accounts: ready-to-ship + on-hold in ShipHero count as paused-account orders.
+     */
+    private function countOpenOrdersForPausedAccount(ClientAccount $account): int
+    {
+        $customerId = trim((string) $account->shiphero_customer_account_id);
+        if ($customerId === '') {
+            return 0;
+        }
+
+        $total = 0;
+
+        try {
+            $rtsContext = $this->queueCounts->contextForDashboardSection(
+                $account,
+                OrderDashboardSection::KEY_READY_TO_SHIP
+            );
+            $rts = ShipHeroCreditLimit::run(function () use ($rtsContext, $customerId) {
+                return $this->orders->countOrders([
+                    'customer_account_id' => $customerId,
+                    'tab' => 'awaiting',
+                    'order_date_from' => $rtsContext['awaiting_from'] ?? null,
+                    'order_date_to' => $rtsContext['awaiting_to'] ?? null,
+                    'timezone' => $rtsContext['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
+                    'max_pages' => 50,
+                ]);
+            });
+            $total += max(0, (int) ($rts['count'] ?? 0));
+        } catch (Throwable $e) {
+            Log::warning('order_dashboard.paused_rts_count_failed', [
+                'client_account_id' => (int) $account->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            $holdContext = $this->queueCounts->contextForOnHoldDashboardTotal($account);
+            $hold = ShipHeroCreditLimit::run(function () use ($holdContext, $customerId) {
+                return $this->orders->countOrders([
+                    'customer_account_id' => $customerId,
+                    'tab' => 'on_hold',
+                    'order_date_from' => $holdContext['open_from'] ?? null,
+                    'order_date_to' => $holdContext['open_to'] ?? null,
+                    'timezone' => $holdContext['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
+                    'max_pages' => 50,
+                ]);
+            });
+            $total += max(0, (int) ($hold['count'] ?? 0));
+        } catch (Throwable $e) {
+            Log::warning('order_dashboard.paused_on_hold_count_failed', [
+                'client_account_id' => (int) $account->id,
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        return $total;
     }
 
     /**
@@ -420,38 +479,23 @@ class OrderDashboardSnapshotService
             }
         }
 
-        // Paused accounts: on-hold counts only (shown on PAUSED card + on-hold paused section).
+        // Paused CRM accounts: count ready-to-ship + on-hold (CRM treats them as held).
         foreach ($pausedAccounts as $account) {
             if ($accountIndex > 0) {
                 usleep(ShipHeroCreditLimit::INTER_ACCOUNT_SLEEP_MICROS);
             }
             $accountIndex++;
 
-            $customerId = trim((string) $account->shiphero_customer_account_id);
-            if ($customerId === '') {
-                continue;
-            }
-
             try {
-                $holdContext = $this->queueCounts->contextForOnHoldDashboardTotal($account);
-                $hold = ShipHeroCreditLimit::run(function () use ($holdContext, $customerId) {
-                    return $this->orders->countOrders([
-                        'customer_account_id' => $customerId,
-                        'tab' => 'on_hold',
-                        'order_date_from' => $holdContext['open_from'] ?? null,
-                        'order_date_to' => $holdContext['open_to'] ?? null,
-                        'timezone' => $holdContext['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
-                        'max_pages' => 50,
-                    ]);
-                });
+                $pausedOpen = $this->countOpenOrdersForPausedAccount($account);
                 $this->mergeAccountIntoSection(
                     OrderDashboardSection::KEY_ON_HOLD,
                     $account,
-                    (int) ($hold['count'] ?? 0)
+                    $pausedOpen
                 );
             } catch (Throwable $e) {
                 $failures++;
-                Log::warning('order_dashboard.live_paused_on_hold_account_failed', [
+                Log::warning('order_dashboard.live_paused_open_orders_failed', [
                     'client_account_id' => (int) $account->id,
                     'message' => $e->getMessage(),
                 ]);
@@ -1263,9 +1307,15 @@ class OrderDashboardSnapshotService
         $truncated = false;
 
         foreach ($accounts as $account) {
-            $context = $this->queueCounts->contextForDashboardSection($account, $sectionKey);
+            $isPaused = strcasecmp((string) $account->status, ClientAccount::STATUS_PAUSED) === 0;
             try {
-                $countResult = $this->countForSection($sectionKey, $context);
+                if ($isPaused && $sectionKey === OrderDashboardSection::KEY_ON_HOLD) {
+                    $count = $this->countOpenOrdersForPausedAccount($account);
+                    $countResult = ['count' => $count, 'truncated' => false];
+                } else {
+                    $context = $this->queueCounts->contextForDashboardSection($account, $sectionKey);
+                    $countResult = $this->countForSection($sectionKey, $context);
+                }
             } catch (Throwable $e) {
                 Log::warning('order_dashboard.live_section_count_failed', [
                     'section_key' => $sectionKey,
@@ -1286,9 +1336,7 @@ class OrderDashboardSnapshotService
                 'account_status' => (string) $account->status,
                 'orders_count' => $count,
             ];
-            if ($sectionKey === OrderDashboardSection::KEY_ON_HOLD
-                && strcasecmp((string) $account->status, ClientAccount::STATUS_PAUSED) === 0
-            ) {
+            if ($sectionKey === OrderDashboardSection::KEY_ON_HOLD && $isPaused) {
                 // Keep paused rows in the payload for the PAUSED card; exclude from ON-HOLD total.
             } else {
                 $total += $count;

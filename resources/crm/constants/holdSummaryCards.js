@@ -69,7 +69,7 @@ export const ON_HOLD_PAUSED_CARD = {
   key: "paused",
   label: "Paused",
   titleUpper: "PAUSED",
-  sub: "On-hold orders for paused accounts",
+  sub: "Ready-to-ship & on-hold for paused accounts",
   icon: "pauseCircle",
   titleColor: "#6b7280",
   iconStyle: { background: "#f3f4f6", color: "#4b5563" },

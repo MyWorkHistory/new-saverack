@@ -830,10 +830,26 @@ class ShipHeroOrderQueueIndexService
         $total = 0;
         $truncated = false;
         foreach ($accounts as $account) {
-            $context = $this->queueCounts->contextForDashboardSection($account, $sectionKey);
-            $count = $this->countForDashboardSection((int) $account->id, $sectionKey, $context);
+            $isPaused = strcasecmp((string) $account->status, ClientAccount::STATUS_PAUSED) === 0;
+            if ($isPaused && $sectionKey === OrderDashboardSection::KEY_ON_HOLD) {
+                // CRM-paused: ready-to-ship + on-hold count as paused-account orders.
+                $rtsContext = $this->queueCounts->contextForDashboardSection(
+                    $account,
+                    OrderDashboardSection::KEY_READY_TO_SHIP
+                );
+                $holdContext = $this->queueCounts->contextForOnHoldDashboardTotal($account);
+                $count = $this->countForDashboardSection(
+                    (int) $account->id,
+                    OrderDashboardSection::KEY_READY_TO_SHIP,
+                    $rtsContext
+                ) + $this->countDistinctOnHoldForAccount((int) $account->id, $holdContext);
+            } else {
+                $context = $this->queueCounts->contextForDashboardSection($account, $sectionKey);
+                $count = $this->countForDashboardSection((int) $account->id, $sectionKey, $context);
+            }
 
             if ($hybridShippedFallback && $sectionKey === OrderDashboardSection::KEY_SHIPPED) {
+                $context = $this->queueCounts->contextForDashboardSection($account, $sectionKey);
                 $customerId = trim((string) ($context['customer_id'] ?? $account->shiphero_customer_account_id ?? ''));
                 if ($customerId !== '') {
                     try {
@@ -867,9 +883,7 @@ class ShipHeroOrderQueueIndexService
                 'account_status' => (string) $account->status,
                 'orders_count' => $count,
             ];
-            if ($sectionKey === OrderDashboardSection::KEY_ON_HOLD
-                && strcasecmp((string) $account->status, ClientAccount::STATUS_PAUSED) === 0
-            ) {
+            if ($sectionKey === OrderDashboardSection::KEY_ON_HOLD && $isPaused) {
                 // Include in accounts for PAUSED breakdown; exclude from ON-HOLD total.
                 continue;
             }

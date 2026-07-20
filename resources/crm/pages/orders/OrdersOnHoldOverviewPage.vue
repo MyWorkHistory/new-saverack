@@ -244,7 +244,7 @@ watch(
             :refreshing="isSectionRefreshing('on_hold')"
             :account-route="pausedAccountRoute"
             pill-variant="alert"
-            empty-message="No paused accounts with on-hold orders."
+            empty-message="No paused accounts with open orders."
             :preview-limit="5"
             :show-view-all-footer="true"
             anchor-prefix="hold"

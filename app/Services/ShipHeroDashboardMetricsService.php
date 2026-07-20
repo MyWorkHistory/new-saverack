@@ -142,10 +142,37 @@ class ShipHeroDashboardMetricsService
                 ? $this->queueCounts->contextForDashboardSection($account, $sectionKey)
                 : $this->queueCounts->contextForOnHoldDashboardTotal($account);
 
+            $isPaused = strcasecmp((string) $account->status, ClientAccount::STATUS_PAUSED) === 0;
+
             try {
-                $result = ShipHeroCreditLimit::run(function () use ($countForAccount, $account, $context) {
-                    return $countForAccount($account, $context);
-                });
+                if ($sectionKey === null && $isPaused) {
+                    // CRM-paused on-hold aggregate: ready-to-ship + on-hold.
+                    $rtsContext = $this->queueCounts->contextForDashboardSection(
+                        $account,
+                        OrderDashboardSection::KEY_READY_TO_SHIP
+                    );
+                    $rts = ShipHeroCreditLimit::run(function () use ($countForAccount, $account, $rtsContext) {
+                        return $this->orders->countOrders([
+                            'customer_account_id' => (string) ($rtsContext['customer_id'] ?? $account->shiphero_customer_account_id),
+                            'tab' => 'awaiting',
+                            'order_date_from' => $rtsContext['awaiting_from'] ?? null,
+                            'order_date_to' => $rtsContext['awaiting_to'] ?? null,
+                            'timezone' => $rtsContext['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
+                            'max_pages' => self::COUNT_MAX_PAGES,
+                        ]);
+                    });
+                    $hold = ShipHeroCreditLimit::run(function () use ($countForAccount, $account, $context) {
+                        return $countForAccount($account, $context);
+                    });
+                    $result = [
+                        'count' => max(0, (int) ($rts['count'] ?? 0)) + max(0, (int) ($hold['count'] ?? 0)),
+                        'truncated' => (bool) ($rts['truncated'] ?? false) || (bool) ($hold['truncated'] ?? false),
+                    ];
+                } else {
+                    $result = ShipHeroCreditLimit::run(function () use ($countForAccount, $account, $context) {
+                        return $countForAccount($account, $context);
+                    });
+                }
             } catch (Throwable $e) {
                 $failures++;
                 $isCredit = ShipHeroCreditLimit::isCreditLimitError($e->getMessage());
@@ -173,9 +200,7 @@ class ShipHeroDashboardMetricsService
                 'orders_count' => $count,
             ];
             // On-hold aggregate (sectionKey null): paused counts go to PAUSED card only.
-            if ($sectionKey === null
-                && strcasecmp((string) $account->status, ClientAccount::STATUS_PAUSED) === 0
-            ) {
+            if ($sectionKey === null && $isPaused) {
                 continue;
             }
             $total += $count;

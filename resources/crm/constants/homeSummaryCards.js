@@ -42,7 +42,7 @@ export const HOME_SUMMARY_CARDS = [
   {
     key: "paused",
     label: "PAUSED",
-    sub: "On-hold orders for paused accounts",
+    sub: "Ready-to-ship & on-hold for paused accounts",
     icon: "pauseCircle",
     titleColor: "#dc2626",
     iconStyle: { background: "#fee2e2", color: "#dc2626" },

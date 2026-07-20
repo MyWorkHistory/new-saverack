@@ -58,10 +58,24 @@ function userHasPerm(key) {
   return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
 }
 
-const canUpdate = computed(() => userHasPerm("resources.update"));
-const canDelete = computed(() => userHasPerm("resources.delete"));
-const canCreatePhoto = computed(() => userHasPerm("resources.create"));
-const canDeletePhoto = computed(() => userHasPerm("resources.delete"));
+const canUpdate = computed(
+  () => userHasPerm("resources_tutorials.update") || userHasPerm("resources.update"),
+);
+const canDelete = computed(
+  () => userHasPerm("resources_tutorials.delete") || userHasPerm("resources.delete"),
+);
+const canCreatePhoto = computed(
+  () =>
+    userHasPerm("resources_photos.create") ||
+    userHasPerm("resources_tutorials.update") ||
+    userHasPerm("resources.create"),
+);
+const canDeletePhoto = computed(
+  () =>
+    userHasPerm("resources_photos.delete") ||
+    userHasPerm("resources_tutorials.update") ||
+    userHasPerm("resources.delete"),
+);
 
 const photos = computed(() => {
   const p = tutorial.value?.photos;

@@ -127,10 +127,17 @@ const shipheroProductUrl = computed(() => {
 const canUploadProductImage = computed(() => {
   const u = crmUser.value;
   if (!u || !product.value?.sku) return false;
+  const keys = Array.isArray(u.permission_keys) ? u.permission_keys : [];
   if (isPortalView.value) {
-    return Array.isArray(u.permission_keys) && u.permission_keys.includes("inventory.view");
+    return (
+      keys.includes("inventory.view") ||
+      keys.includes("inventory_products.view")
+    );
   }
-  return Array.isArray(u.permission_keys) && u.permission_keys.includes("inventory.update");
+  return (
+    keys.includes("inventory_products.update") ||
+    keys.includes("inventory.update")
+  );
 });
 
 const detailClientAccountId = computed(() => {

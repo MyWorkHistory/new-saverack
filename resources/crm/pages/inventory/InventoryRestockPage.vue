@@ -4,7 +4,14 @@ import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
-import InventoryTransferQtyModal from "../../components/inventory/InventoryTransferQtyModal.vue";
+import InventoryRestockTransferModal from "../../components/inventory/InventoryRestockTransferModal.vue";
+import {
+  RESTOCK_STATUS_COMPLETE,
+  RESTOCK_STATUS_TRANSFER_CART,
+  isTransferCartLocationName,
+  restockStatusBadgeClass,
+  restockStatusLabel,
+} from "../../constants/restockTransferCart.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateTimeUs, formatIsoDate } from "../../utils/formatUserDates.js";
@@ -44,11 +51,13 @@ const transferBusy = ref(false);
 const transferLoading = ref(false);
 const transferRow = ref(null);
 const transferProduct = ref(null);
+const transferMode = ref("pending");
 const transferFromLocationId = ref("");
 const transferForm = reactive({
-  transfer_type: "current",
+  destination_mode: "current",
   to_location_id: "",
   to_location: "",
+  cart_location: "",
   quantity: "",
   reason: "Restock",
 });
@@ -67,7 +76,11 @@ let enrichPollTimer = null;
 const canTransfer = computed(() => {
   const u = crmUser.value;
   if (!u) return false;
-  return Array.isArray(u.permission_keys) && u.permission_keys.includes("inventory.update");
+  const keys = Array.isArray(u.permission_keys) ? u.permission_keys : [];
+  return (
+    keys.includes("inventory_restock.update") ||
+    keys.includes("inventory.update")
+  );
 });
 
 const accountOptions = computed(() =>
@@ -107,7 +120,14 @@ const lineMenuRow = computed(
 
 const transferFromOptions = computed(() => {
   const whId = preferredWarehouseId(transferProduct.value, transferRow.value);
-  return flattenProductLocations(transferProduct.value, { includeEmpty: false }).filter(
+  const all = flattenProductLocations(transferProduct.value, { includeEmpty: false });
+  if (transferMode.value === RESTOCK_STATUS_TRANSFER_CART) {
+    return all.filter((loc) => {
+      if (whId && String(loc.warehouse_id || "") !== whId) return false;
+      return isTransferCartLocationName(loc.location_name || loc.location_id);
+    });
+  }
+  return all.filter(
     (loc) =>
       loc.pickable === false &&
       (!whId || String(loc.warehouse_id || "") === whId),
@@ -122,15 +142,16 @@ const transferFromLocation = computed(() => {
   );
 });
 
-const transferDestinationOptions = computed(() => {
+const transferPickOptions = computed(() => {
   const source = transferFromLocation.value;
-  if (!source) return [];
-  const whId = String(source.warehouse_id || "");
-  const fromId = String(source.location_id || "");
+  const whId = source
+    ? String(source.warehouse_id || "")
+    : preferredWarehouseId(transferProduct.value, transferRow.value);
+  const fromId = String(source?.location_id || "");
   return flattenProductLocations(transferProduct.value, { includeEmpty: true }).filter(
     (loc) =>
       loc.pickable === true &&
-      String(loc.warehouse_id || "") === whId &&
+      (!whId || String(loc.warehouse_id || "") === whId) &&
       String(loc.location_id || "") !== fromId,
   );
 });
@@ -145,6 +166,15 @@ watch(transferFromLocationId, (id, prev) => {
   }
   transferForm.to_location_id = "";
 });
+
+watch(
+  () => transferForm.destination_mode,
+  () => {
+    transferForm.to_location_id = "";
+    transferForm.to_location = "";
+    transferForm.cart_location = "";
+  },
+);
 
 const filteredRows = computed(() => {
   const accountId = Number(selectedAccountId.value || 0);
@@ -268,6 +298,22 @@ function defaultBackstockLocationId(product, row) {
     if (match) return String(match.location_id || "");
   }
   return locs[0] ? String(locs[0].location_id || "") : "";
+}
+
+function defaultCartLocationId(product, row) {
+  const carts = flattenProductLocations(product, { includeEmpty: false }).filter((loc) =>
+    isTransferCartLocationName(loc.location_name || loc.location_id),
+  );
+  return carts[0] ? String(carts[0].location_id || "") : "";
+}
+
+function rowStatus(row) {
+  return String(row?.status || "pending").toLowerCase();
+}
+
+function canShowTransferAction(row) {
+  if (!canTransfer.value) return false;
+  return rowStatus(row) !== RESTOCK_STATUS_COMPLETE;
 }
 
 async function enrichMissingPickLocations(list) {
@@ -462,28 +508,41 @@ async function removeRowFromMenu(row) {
   if (!row?.sku) return;
   closeLineMenu();
   try {
-    const { data } = await api.post("/inventory/restock-beta/complete", { sku: row.sku });
+    const { data } = await api.post("/inventory/restock-beta/status", {
+      sku: row.sku,
+      status: RESTOCK_STATUS_COMPLETE,
+    });
     applySnapshot(data, { silent: true });
-    toast.success("Removed from restock list.");
+    toast.success("Marked complete.");
   } catch (e) {
-    toast.errorFrom(e, "Could not remove row.");
+    toast.errorFrom(e, "Could not update status.");
   }
 }
 
 async function openTransferFromMenu(row) {
   if (!row?.sku) return;
   closeLineMenu();
+  if (rowStatus(row) === RESTOCK_STATUS_COMPLETE) {
+    toast.error("This restock row is already complete.");
+    return;
+  }
   const accountId = Number(row.client_account_id || 0);
   if (accountId <= 0) {
     toast.error("Account not matched yet. Wait for product matching to finish.");
     return;
   }
+  const mode =
+    rowStatus(row) === RESTOCK_STATUS_TRANSFER_CART
+      ? RESTOCK_STATUS_TRANSFER_CART
+      : "pending";
   transferRow.value = row;
   transferProduct.value = null;
+  transferMode.value = mode;
   transferFromLocationId.value = "";
-  transferForm.transfer_type = "current";
+  transferForm.destination_mode = "current";
   transferForm.to_location_id = "";
   transferForm.to_location = "";
+  transferForm.cart_location = "";
   transferForm.quantity = "";
   transferForm.reason = "Restock";
   transferModalOpen.value = true;
@@ -494,10 +553,17 @@ async function openTransferFromMenu(row) {
       params: { client_account_id: accountId },
     });
     transferProduct.value = data?.product ?? null;
-    const fromId = defaultBackstockLocationId(transferProduct.value, row);
+    const fromId =
+      mode === RESTOCK_STATUS_TRANSFER_CART
+        ? defaultCartLocationId(transferProduct.value, row)
+        : defaultBackstockLocationId(transferProduct.value, row);
     if (!fromId) {
       transferModalOpen.value = false;
-      toast.error("No backstock location found for this SKU in ShipHero.");
+      toast.error(
+        mode === RESTOCK_STATUS_TRANSFER_CART
+          ? "No transfer cart location with quantity found for this SKU."
+          : "No backstock location found for this SKU in ShipHero.",
+      );
       return;
     }
     transferFromLocationId.value = fromId;
@@ -528,36 +594,54 @@ async function submitTransfer() {
     toast.error("Enter a valid transfer quantity.");
     return;
   }
-  if (transferForm.transfer_type === "current") {
-    if (!String(transferForm.to_location_id || "").trim()) {
-      toast.error("Select a destination location.");
+
+  const destMode = String(transferForm.destination_mode || "current");
+  const body = {
+    sku: transferRow.value.sku,
+    warehouse_id: transferFromLocation.value.warehouse_id,
+    from_location_id: transferFromLocation.value.location_id,
+    quantity: qty,
+    reason: transferForm.reason,
+    client_account_id: Number(transferRow.value.client_account_id || 0),
+  };
+
+  let nextStatus = RESTOCK_STATUS_COMPLETE;
+  if (transferMode.value === "pending" && destMode === "cart") {
+    const cartCode = String(transferForm.cart_location || "").trim();
+    if (!cartCode) {
+      toast.error("Select a transfer cart location.");
       return;
     }
-  } else if (!transferForm.to_location.trim()) {
-    toast.error("Enter destination location.");
-    return;
+    body.to_location = cartCode;
+    nextStatus = RESTOCK_STATUS_TRANSFER_CART;
+  } else if (destMode === "new") {
+    if (!String(transferForm.to_location || "").trim()) {
+      toast.error("Enter destination location.");
+      return;
+    }
+    body.to_location = String(transferForm.to_location).trim();
+  } else {
+    if (!String(transferForm.to_location_id || "").trim()) {
+      toast.error("Select a pick location.");
+      return;
+    }
+    body.to_location_id = String(transferForm.to_location_id).trim();
   }
+
   transferBusy.value = true;
   try {
-    const body = {
-      sku: transferRow.value.sku,
-      warehouse_id: transferFromLocation.value.warehouse_id,
-      from_location_id: transferFromLocation.value.location_id,
-      quantity: qty,
-      reason: transferForm.reason,
-      client_account_id: Number(transferRow.value.client_account_id || 0),
-    };
-    if (transferForm.transfer_type === "current") {
-      body.to_location_id = String(transferForm.to_location_id).trim();
-    } else {
-      body.to_location = transferForm.to_location.trim();
-    }
     await api.post("/inventory/transfer", body);
-    const sku = transferRow.value.sku;
     transferModalOpen.value = false;
-    const { data } = await api.post("/inventory/restock-beta/complete", { sku });
+    const { data } = await api.post("/inventory/restock-beta/status", {
+      sku: transferRow.value.sku,
+      status: nextStatus,
+    });
     applySnapshot(data, { silent: true });
-    toast.success("Transferred and removed from restock list.");
+    toast.success(
+      nextStatus === RESTOCK_STATUS_TRANSFER_CART
+        ? "Transferred to cart."
+        : "Transferred and marked complete.",
+    );
   } catch (e) {
     toast.errorFrom(e, "Could not transfer quantity.");
   } finally {
@@ -670,6 +754,7 @@ onUnmounted(() => {
               <th class="staff-table-head__th text-center" scope="col">Backstock</th>
               <th class="staff-table-head__th" scope="col">Backstock Locations</th>
               <th class="staff-table-head__th" scope="col">Pick Location</th>
+              <th class="staff-table-head__th text-center" scope="col">Status</th>
               <th class="staff-table-head__th staff-actions-col text-center restock-actions-col" scope="col">
                 Actions
               </th>
@@ -677,13 +762,13 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="9" class="py-5 text-center text-secondary">Loading restock data…</td>
+              <td colspan="10" class="py-5 text-center text-secondary">Loading restock data…</td>
             </tr>
             <tr v-else-if="!rows.length">
-              <td colspan="9" class="py-5 text-center text-secondary">Upload a restock CSV to get started.</td>
+              <td colspan="10" class="py-5 text-center text-secondary">Upload a restock CSV to get started.</td>
             </tr>
             <tr v-else-if="!filteredRows.length">
-              <td colspan="9" class="py-5 text-center text-secondary">No rows match your search.</td>
+              <td colspan="10" class="py-5 text-center text-secondary">No rows match your search.</td>
             </tr>
             <tr v-for="row in filteredRows" :key="row.sku" class="align-middle">
               <td class="user-inv-table__text-col">
@@ -755,8 +840,17 @@ onUnmounted(() => {
                 </template>
                 <span v-else class="text-secondary">—</span>
               </td>
+              <td class="text-center">
+                <span
+                  class="badge rounded-pill fw-normal"
+                  :class="restockStatusBadgeClass(row.status)"
+                >
+                  {{ row.status_label || restockStatusLabel(row.status) }}
+                </span>
+              </td>
               <td class="staff-actions-cell text-center restock-actions-cell" @click.stop>
                 <div
+                  v-if="rowStatus(row) !== RESTOCK_STATUS_COMPLETE"
                   data-restock-row-actions
                   class="staff-actions-inner staff-actions-inner--single restock-actions-inner justify-content-center"
                 >
@@ -772,6 +866,7 @@ onUnmounted(() => {
                     <CrmIconRowActions variant="horizontal" />
                   </button>
                 </div>
+                <span v-else class="text-secondary">—</span>
               </td>
             </tr>
           </tbody>
@@ -797,7 +892,7 @@ onUnmounted(() => {
           @click.stop
         >
           <button
-            v-if="canTransfer"
+            v-if="canShowTransferAction(lineMenuRow)"
             type="button"
             class="staff-row-menu__item"
             role="menuitem"
@@ -817,20 +912,21 @@ onUnmounted(() => {
       </Transition>
     </Teleport>
 
-    <InventoryTransferQtyModal
+    <InventoryRestockTransferModal
       :open="transferModalOpen"
       :busy="transferBusy"
       :loading="transferLoading"
+      :mode="transferMode"
       :from-options="transferFromOptions"
       v-model:from-location-id="transferFromLocationId"
-      v-model:transfer-type="transferForm.transfer_type"
+      v-model:destination-mode="transferForm.destination_mode"
       v-model:to-location-id="transferForm.to_location_id"
       v-model:to-location="transferForm.to_location"
+      v-model:cart-location="transferForm.cart_location"
       v-model:quantity="transferForm.quantity"
       v-model:reason="transferForm.reason"
-      :destination-options="transferDestinationOptions"
+      :pick-options="transferPickOptions"
       :reason-options="inventoryReasons"
-      pick-destinations
       @close="transferModalOpen = false"
       @submit="submitTransfer"
       @transfer-all="fillTransferAllQty"

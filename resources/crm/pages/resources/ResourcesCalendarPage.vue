@@ -24,7 +24,12 @@ function userHasPerm(key) {
   return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
 }
 
-const canCreate = computed(() => userHasPerm("resources.create"));
+const canCreate = computed(
+  () =>
+    userHasPerm("resources_calendar.create") ||
+    userHasPerm("resources_events.create") ||
+    userHasPerm("resources.create"),
+);
 
 const {
   loading,

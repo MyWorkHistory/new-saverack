@@ -361,6 +361,35 @@ class InventoryController extends Controller
         }
     }
 
+    public function updateRestockBetaStatus(Request $request, InventoryRestockBetaService $restockBeta): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'sku' => ['required', 'string', 'max:255'],
+                'status' => ['required', 'string', 'in:pending,transfer_cart,complete'],
+            ]);
+
+            $snapshot = $restockBeta->setSkuStatus(
+                trim((string) $validated['sku']),
+                (string) $validated['status']
+            );
+
+            return response()->json($snapshot);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not update restock status.',
+            ], 500);
+        }
+    }
+
     public function importRestockBetaCsv(Request $request, InventoryRestockBetaService $restockBeta): JsonResponse
     {
         try {

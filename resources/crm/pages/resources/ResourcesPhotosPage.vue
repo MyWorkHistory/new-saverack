@@ -19,8 +19,12 @@ function userHasPerm(key) {
   return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
 }
 
-const canCreate = computed(() => userHasPerm("resources.create"));
-const canDelete = computed(() => userHasPerm("resources.delete"));
+const canCreate = computed(
+  () => userHasPerm("resources_photos.create") || userHasPerm("resources.create"),
+);
+const canDelete = computed(
+  () => userHasPerm("resources_photos.delete") || userHasPerm("resources.delete"),
+);
 
 const loading = ref(true);
 const photos = ref([]);

@@ -272,7 +272,21 @@ CSV;
         ]);
     }
 
-    public function test_post_complete_hides_sku_from_get_rows(): void
+    public function test_post_import_defaults_rows_to_pending_status(): void
+    {
+        Config::set('services.shiphero.restock_dispatch_mode', 'after_response');
+        Sanctum::actingAs($this->staffWithInventoryView());
+
+        $file = UploadedFile::fake()->createWithContent('restock.csv', $this->sampleCsv());
+
+        $this->postJson('/api/inventory/restock-beta/import', ['file' => $file])
+            ->assertCreated()
+            ->assertJsonPath('rows.0.sku', 'ABC-123')
+            ->assertJsonPath('rows.0.status', InventoryRestockBetaService::STATUS_PENDING)
+            ->assertJsonPath('rows.0.status_label', 'Pending');
+    }
+
+    public function test_post_complete_keeps_sku_on_list_with_complete_status(): void
     {
         Sanctum::actingAs($this->staffWithInventoryView());
 
@@ -292,6 +306,10 @@ CSV;
                 ],
             ],
             'completed_skus' => [],
+            'sku_statuses' => [
+                'keep-1' => InventoryRestockBetaService::STATUS_PENDING,
+                'done-1' => InventoryRestockBetaService::STATUS_PENDING,
+            ],
             'enrichment_status' => InventoryRestockBetaService::ENRICHMENT_COMPLETED,
             'uploaded_at' => now(),
         ]);
@@ -300,12 +318,98 @@ CSV;
             ->assertOk()
             ->assertJsonPath('active_row_count', 1)
             ->assertJsonPath('restock_needed_total', 2)
-            ->assertJsonPath('rows.0.sku', 'KEEP-1');
+            ->assertJsonCount(2, 'rows');
+
+        $response = $this->getJson('/api/inventory/restock-beta');
+        $response->assertOk()
+            ->assertJsonCount(2, 'rows')
+            ->assertJsonPath('active_row_count', 1);
+
+        $rows = collect($response->json('rows'));
+        $done = $rows->firstWhere('sku', 'DONE-1');
+        $keep = $rows->firstWhere('sku', 'KEEP-1');
+
+        $this->assertNotNull($done);
+        $this->assertNotNull($keep);
+        $this->assertSame(InventoryRestockBetaService::STATUS_COMPLETE, $done['status']);
+        $this->assertSame('Complete', $done['status_label']);
+        $this->assertSame(InventoryRestockBetaService::STATUS_PENDING, $keep['status']);
+    }
+
+    public function test_post_status_supports_transfer_cart_and_complete_transitions(): void
+    {
+        Sanctum::actingAs($this->staffWithInventoryView());
+
+        InventoryRestockBetaSnapshot::query()->create([
+            'original_filename' => 'saved.csv',
+            'row_count' => 1,
+            'rows' => [
+                [
+                    'sku' => 'CART-1',
+                    'name' => 'Cart Row',
+                    'restock_needed' => 4,
+                ],
+            ],
+            'completed_skus' => [],
+            'sku_statuses' => [
+                'cart-1' => InventoryRestockBetaService::STATUS_PENDING,
+            ],
+            'enrichment_status' => InventoryRestockBetaService::ENRICHMENT_COMPLETED,
+            'uploaded_at' => now(),
+        ]);
+
+        $this->postJson('/api/inventory/restock-beta/status', [
+            'sku' => 'CART-1',
+            'status' => InventoryRestockBetaService::STATUS_TRANSFER_CART,
+        ])
+            ->assertOk()
+            ->assertJsonPath('rows.0.status', InventoryRestockBetaService::STATUS_TRANSFER_CART)
+            ->assertJsonPath('rows.0.status_label', 'Transfer Cart')
+            ->assertJsonPath('active_row_count', 1)
+            ->assertJsonPath('restock_needed_total', 4);
+
+        $this->postJson('/api/inventory/restock-beta/status', [
+            'sku' => 'CART-1',
+            'status' => InventoryRestockBetaService::STATUS_COMPLETE,
+        ])
+            ->assertOk()
+            ->assertJsonPath('rows.0.status', InventoryRestockBetaService::STATUS_COMPLETE)
+            ->assertJsonPath('rows.0.status_label', 'Complete')
+            ->assertJsonPath('active_row_count', 0)
+            ->assertJsonPath('restock_needed_total', 0)
+            ->assertJsonCount(1, 'rows');
+    }
+
+    public function test_get_includes_complete_and_transfer_cart_rows(): void
+    {
+        Sanctum::actingAs($this->staffWithInventoryView());
+
+        InventoryRestockBetaSnapshot::query()->create([
+            'original_filename' => 'saved.csv',
+            'row_count' => 3,
+            'rows' => [
+                ['sku' => 'P-1', 'name' => 'Pending', 'restock_needed' => 1],
+                ['sku' => 'T-1', 'name' => 'Cart', 'restock_needed' => 2],
+                ['sku' => 'C-1', 'name' => 'Done', 'restock_needed' => 3],
+            ],
+            'completed_skus' => ['c-1'],
+            'sku_statuses' => [
+                'p-1' => InventoryRestockBetaService::STATUS_PENDING,
+                't-1' => InventoryRestockBetaService::STATUS_TRANSFER_CART,
+                'c-1' => InventoryRestockBetaService::STATUS_COMPLETE,
+            ],
+            'enrichment_status' => InventoryRestockBetaService::ENRICHMENT_COMPLETED,
+            'uploaded_at' => now(),
+        ]);
 
         $this->getJson('/api/inventory/restock-beta')
             ->assertOk()
-            ->assertJsonCount(1, 'rows')
-            ->assertJsonPath('rows.0.sku', 'KEEP-1');
+            ->assertJsonCount(3, 'rows')
+            ->assertJsonPath('active_row_count', 2)
+            ->assertJsonPath('restock_needed_total', 3)
+            ->assertJsonPath('rows.0.status', InventoryRestockBetaService::STATUS_PENDING)
+            ->assertJsonPath('rows.1.status', InventoryRestockBetaService::STATUS_TRANSFER_CART)
+            ->assertJsonPath('rows.2.status', InventoryRestockBetaService::STATUS_COMPLETE);
     }
 
     public function test_import_enriches_account_from_inventory_index_when_sync(): void

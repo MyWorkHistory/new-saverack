@@ -20,6 +20,19 @@ final class InventoryRestockBetaService
 
     public const ENRICHMENT_FAILED = 'failed';
 
+    public const STATUS_PENDING = 'pending';
+
+    public const STATUS_TRANSFER_CART = 'transfer_cart';
+
+    public const STATUS_COMPLETE = 'complete';
+
+    /** @var list<string> */
+    public const ROW_STATUSES = [
+        self::STATUS_PENDING,
+        self::STATUS_TRANSFER_CART,
+        self::STATUS_COMPLETE,
+    ];
+
     /** @var RestockBetaCsvParser */
     private $parser;
 
@@ -41,6 +54,7 @@ final class InventoryRestockBetaService
         $rows = $this->parser->parseFile($path);
         $uploadedAt = now();
         $enrichedRows = $this->enrichRowsWithAccounts($rows);
+        $skuStatuses = $this->defaultPendingStatuses($enrichedRows);
 
         InventoryRestockBetaSnapshot::query()->delete();
 
@@ -50,6 +64,7 @@ final class InventoryRestockBetaService
             'row_count' => count($enrichedRows),
             'rows' => $enrichedRows,
             'completed_skus' => [],
+            'sku_statuses' => $skuStatuses,
             'enrichment_status' => self::ENRICHMENT_COMPLETED,
             'enrichment_error' => null,
             'uploaded_at' => $uploadedAt,
@@ -122,7 +137,7 @@ final class InventoryRestockBetaService
     }
 
     /**
-     * Active restock rows for dashboard preview (no inline enrichment).
+     * Open restock rows for dashboard preview (pending + transfer cart only).
      *
      * @return list<array<string, mixed>>
      */
@@ -137,8 +152,8 @@ final class InventoryRestockBetaService
             return [];
         }
 
-        $active = $this->activeRows($snapshot);
-        $slice = array_slice($active, 0, max(1, $limit));
+        $open = $this->openWorkRows($snapshot);
+        $slice = array_slice($open, 0, max(1, $limit));
 
         return array_map(static fn (array $row) => [
             'sku' => (string) ($row['sku'] ?? ''),
@@ -151,6 +166,7 @@ final class InventoryRestockBetaService
             'image_url' => is_string($row['image_url'] ?? null) && $row['image_url'] !== ''
                 ? (string) $row['image_url']
                 : null,
+            'status' => (string) ($row['status'] ?? self::STATUS_PENDING),
         ], $slice);
     }
 
@@ -165,7 +181,7 @@ final class InventoryRestockBetaService
             return 0;
         }
 
-        return count($this->activeRows($snapshot));
+        return count($this->openWorkRows($snapshot));
     }
 
     private function snapshotNeedsInlineEnrichment(InventoryRestockBetaSnapshot $snapshot): bool
@@ -193,13 +209,28 @@ final class InventoryRestockBetaService
     }
 
     /**
+     * Mark SKU complete (Remove action / legacy complete endpoint).
+     *
      * @return array<string, mixed>
      */
     public function completeSku(string $sku): array
     {
+        return $this->setSkuStatus($sku, self::STATUS_COMPLETE);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function setSkuStatus(string $sku, string $status): array
+    {
         $sku = trim($sku);
         if ($sku === '') {
             throw new RuntimeException('SKU is required.');
+        }
+
+        $status = strtolower(trim($status));
+        if (! in_array($status, self::ROW_STATUSES, true)) {
+            throw new RuntimeException('Invalid restock status.');
         }
 
         $snapshot = InventoryRestockBetaSnapshot::query()
@@ -211,19 +242,18 @@ final class InventoryRestockBetaService
             throw new RuntimeException('No restock snapshot to update.');
         }
 
-        $completed = is_array($snapshot->completed_skus) ? $snapshot->completed_skus : [];
-        $skuLower = mb_strtolower($sku);
-        $alreadyDone = false;
-        foreach ($completed as $completedSku) {
-            if (mb_strtolower(trim((string) $completedSku)) === $skuLower) {
-                $alreadyDone = true;
-                break;
+        $statuses = $this->normalizedSkuStatuses($snapshot);
+        $key = mb_strtolower($sku);
+        $statuses[$key] = $status;
+        $snapshot->sku_statuses = $statuses;
+
+        // Keep legacy completed_skus in sync for older readers.
+        $completed = [];
+        foreach ($statuses as $skuKey => $skuStatus) {
+            if ($skuStatus === self::STATUS_COMPLETE) {
+                $completed[] = $skuKey;
             }
         }
-        if (! $alreadyDone) {
-            $completed[] = $sku;
-        }
-
         $snapshot->completed_skus = $completed;
         $snapshot->save();
 
@@ -339,14 +369,78 @@ final class InventoryRestockBetaService
     }
 
     /**
+     * @param  list<array<string, mixed>>  $rows
+     * @return array<string, string>
+     */
+    private function defaultPendingStatuses(array $rows): array
+    {
+        $statuses = [];
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $key = mb_strtolower(trim((string) ($row['sku'] ?? '')));
+            if ($key !== '') {
+                $statuses[$key] = self::STATUS_PENDING;
+            }
+        }
+
+        return $statuses;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function normalizedSkuStatuses(InventoryRestockBetaSnapshot $snapshot): array
+    {
+        $raw = is_array($snapshot->sku_statuses) ? $snapshot->sku_statuses : [];
+        $statuses = [];
+        foreach ($raw as $sku => $status) {
+            $key = mb_strtolower(trim((string) $sku));
+            $normalized = strtolower(trim((string) $status));
+            if ($key === '' || ! in_array($normalized, self::ROW_STATUSES, true)) {
+                continue;
+            }
+            $statuses[$key] = $normalized;
+        }
+
+        // Legacy completed_skus → complete when sku_statuses missing entries.
+        $completed = is_array($snapshot->completed_skus) ? $snapshot->completed_skus : [];
+        foreach ($completed as $sku) {
+            $key = mb_strtolower(trim((string) $sku));
+            if ($key !== '' && ! isset($statuses[$key])) {
+                $statuses[$key] = self::STATUS_COMPLETE;
+            }
+        }
+
+        return $statuses;
+    }
+
+    public static function statusLabel(string $status): string
+    {
+        if ($status === self::STATUS_TRANSFER_CART) {
+            return 'Transfer Cart';
+        }
+        if ($status === self::STATUS_COMPLETE) {
+            return 'Complete';
+        }
+
+        return 'Pending';
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function toArray(InventoryRestockBetaSnapshot $snapshot): array
     {
         $uploadedAt = $snapshot->uploaded_at;
-        $activeRows = $this->activeRows($snapshot);
+        $allRows = $this->rowsWithStatus($snapshot);
+        $openRows = array_values(array_filter(
+            $allRows,
+            static fn (array $row): bool => ($row['status'] ?? self::STATUS_PENDING) !== self::STATUS_COMPLETE
+        ));
         $restockNeededTotal = 0;
-        foreach ($activeRows as $row) {
+        foreach ($openRows as $row) {
             if (isset($row['restock_needed']) && is_numeric($row['restock_needed'])) {
                 $restockNeededTotal += (int) $row['restock_needed'];
             }
@@ -355,51 +449,51 @@ final class InventoryRestockBetaService
         return [
             'original_filename' => $snapshot->original_filename,
             'row_count' => (int) $snapshot->row_count,
-            'active_row_count' => count($activeRows),
+            'active_row_count' => count($openRows),
             'restock_needed_total' => $restockNeededTotal,
             'uploaded_at' => $uploadedAt !== null ? $uploadedAt->toIso8601String() : null,
             'enrichment_status' => (string) ($snapshot->enrichment_status ?? self::ENRICHMENT_COMPLETED),
             'enrichment_error' => $snapshot->enrichment_error,
-            'rows' => $activeRows,
+            'rows' => $allRows,
         ];
-    }
-
-    /**
-     * @return array<string, bool>
-     */
-    private function completedSkuSet(InventoryRestockBetaSnapshot $snapshot): array
-    {
-        $completed = is_array($snapshot->completed_skus) ? $snapshot->completed_skus : [];
-        $set = [];
-        foreach ($completed as $sku) {
-            $key = mb_strtolower(trim((string) $sku));
-            if ($key !== '') {
-                $set[$key] = true;
-            }
-        }
-
-        return $set;
     }
 
     /**
      * @return list<array<string, mixed>>
      */
-    private function activeRows(InventoryRestockBetaSnapshot $snapshot): array
+    private function rowsWithStatus(InventoryRestockBetaSnapshot $snapshot): array
     {
         $rows = is_array($snapshot->rows) ? $snapshot->rows : [];
-        $completed = $this->completedSkuSet($snapshot);
-        $active = [];
+        $statuses = $this->normalizedSkuStatuses($snapshot);
+        $out = [];
         foreach ($rows as $row) {
             if (! is_array($row)) {
                 continue;
             }
             $key = mb_strtolower(trim((string) ($row['sku'] ?? '')));
-            if ($key === '' || isset($completed[$key])) {
+            if ($key === '') {
                 continue;
             }
-            $active[] = $row;
+            $status = $statuses[$key] ?? self::STATUS_PENDING;
+            $row['status'] = $status;
+            $row['status_label'] = self::statusLabel($status);
+            $out[] = $row;
         }
 
-        return $active;
+        return $out;
+    }
+
+    /**
+     * Pending + transfer cart rows (excludes complete) for home / open-work counts.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function openWorkRows(InventoryRestockBetaSnapshot $snapshot): array
+    {
+        return array_values(array_filter(
+            $this->rowsWithStatus($snapshot),
+            static fn (array $row): bool => ($row['status'] ?? self::STATUS_PENDING) !== self::STATUS_COMPLETE
+        ));
     }
 }
+

@@ -35,8 +35,12 @@ function userHasPerm(key) {
   return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
 }
 
-const canUpdate = computed(() => userHasPerm("billing.update"));
-const canDelete = computed(() => userHasPerm("billing.delete"));
+const canUpdate = computed(
+  () => userHasPerm("billing_custom_bills.update") || userHasPerm("billing.update"),
+);
+const canDelete = computed(
+  () => userHasPerm("billing_custom_bills.delete") || userHasPerm("billing.delete"),
+);
 
 const loading = ref(true);
 const bill = ref(null);

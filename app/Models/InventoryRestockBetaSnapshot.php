@@ -13,6 +13,7 @@ class InventoryRestockBetaSnapshot extends Model
         'row_count',
         'rows',
         'completed_skus',
+        'sku_statuses',
         'enrichment_status',
         'enrichment_error',
         'uploaded_at',
@@ -21,6 +22,7 @@ class InventoryRestockBetaSnapshot extends Model
     protected $casts = [
         'rows' => 'array',
         'completed_skus' => 'array',
+        'sku_statuses' => 'array',
         'row_count' => 'integer',
         'uploaded_at' => 'datetime',
     ];

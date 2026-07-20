@@ -110,7 +110,10 @@ function clientAccountHref(row) {
 const canInventoryUpdate = computed(() => {
   const u = crmUser.value;
   if (!u || !Array.isArray(u.permission_keys)) return false;
-  return u.permission_keys.includes("inventory.update");
+  return (
+    u.permission_keys.includes("inventory_out_of_stock.update") ||
+    u.permission_keys.includes("inventory.update")
+  );
 });
 
 function rowKey(row) {

@@ -145,7 +145,11 @@ async function onDrawerDelete() {
 
 onMounted(async () => {
   try {
-    if (userHasPerm("resources.view")) {
+    if (
+      userHasPerm("resources_calendar.view") ||
+      userHasPerm("resources_events.view") ||
+      userHasPerm("resources.view")
+    ) {
       await loadMeta();
     }
   } catch {

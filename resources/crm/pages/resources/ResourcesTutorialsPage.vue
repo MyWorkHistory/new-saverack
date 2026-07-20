@@ -24,9 +24,15 @@ function userHasPerm(key) {
   return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
 }
 
-const canCreate = computed(() => userHasPerm("resources.create"));
-const canUpdate = computed(() => userHasPerm("resources.update"));
-const canDelete = computed(() => userHasPerm("resources.delete"));
+const canCreate = computed(
+  () => userHasPerm("resources_tutorials.create") || userHasPerm("resources.create"),
+);
+const canUpdate = computed(
+  () => userHasPerm("resources_tutorials.update") || userHasPerm("resources.update"),
+);
+const canDelete = computed(
+  () => userHasPerm("resources_tutorials.delete") || userHasPerm("resources.delete"),
+);
 const showActionsCol = computed(() => canUpdate.value || canDelete.value);
 
 const tableColspan = computed(() => (showActionsCol.value ? 5 : 4));

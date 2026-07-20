@@ -61,7 +61,11 @@ const canUpdateInventory = computed(() => {
   const u = crmUser?.value;
   if (!u) return false;
   if (crmIsAdmin(u) || u.is_crm_owner) return true;
-  return Array.isArray(u.permission_keys) && u.permission_keys.includes("inventory.update");
+  const keys = Array.isArray(u.permission_keys) ? u.permission_keys : [];
+  return (
+    keys.includes("inventory_on_demand.update") ||
+    keys.includes("inventory.update")
+  );
 });
 
 const tableColspan = computed(() => (canUpdateInventory.value ? 6 : 5));

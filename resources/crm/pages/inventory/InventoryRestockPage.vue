@@ -7,6 +7,7 @@ import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue
 import InventoryRestockTransferModal from "../../components/inventory/InventoryRestockTransferModal.vue";
 import {
   RESTOCK_STATUS_COMPLETE,
+  RESTOCK_STATUS_PENDING,
   RESTOCK_STATUS_TRANSFER_CART,
   TRANSFER_CART_LOCATIONS,
   isTransferCartLocationName,
@@ -16,7 +17,7 @@ import {
 } from "../../constants/restockTransferCart.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
-import { formatDateTimeUs, formatIsoDate } from "../../utils/formatUserDates.js";
+import { formatIsoDate } from "../../utils/formatUserDates.js";
 
 const toast = useToast();
 const router = useRouter();
@@ -32,6 +33,8 @@ const accountsLoading = ref(false);
 const accounts = ref([]);
 const selectedAccountId = ref("");
 const searchQuery = ref("");
+const selectedStatus = ref("all");
+const filterMenuOpen = ref(false);
 const uploadModalOpen = ref(false);
 const uploadBusy = ref(false);
 const uploadFile = ref(null);
@@ -94,14 +97,6 @@ const accountOptions = computed(() =>
       email: "",
     })),
 );
-
-const uploadedAtLabel = computed(() => {
-  const raw = meta.value.uploaded_at;
-  if (!raw) return null;
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return null;
-  return formatDateTimeUs(d);
-});
 
 const lastUploadDateLabel = computed(() => {
   const raw = meta.value.uploaded_at;
@@ -172,9 +167,13 @@ watch(
 
 const filteredRows = computed(() => {
   const accountId = Number(selectedAccountId.value || 0);
+  const statusFilter = String(selectedStatus.value || "all").toLowerCase();
   const q = searchQuery.value.trim().toLowerCase();
   return rows.value.filter((row) => {
     if (accountId > 0 && Number(row?.client_account_id || 0) !== accountId) {
+      return false;
+    }
+    if (statusFilter !== "all" && rowStatus(row) !== statusFilter) {
       return false;
     }
     if (!q) return true;
@@ -532,6 +531,14 @@ function onDocClickMenus(e) {
   if (!e.target?.closest?.("[data-restock-row-actions]")) {
     lineMenuSku.value = null;
   }
+  if (!e.target?.closest?.("[data-toolbar-filter]")) {
+    filterMenuOpen.value = false;
+  }
+}
+
+function resetStatusFilter() {
+  selectedStatus.value = "all";
+  filterMenuOpen.value = false;
 }
 
 function onRowMenuClick(sku, e) {
@@ -722,10 +729,6 @@ onUnmounted(() => {
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 fw-semibold text-body mb-1">Restocks</h1>
         <p class="text-secondary small mb-0">Inventory Needing Replenishment</p>
-        <p v-if="uploadedAtLabel" class="text-secondary small mb-0 mt-1">
-          Last upload: {{ uploadedAtLabel }}
-          <span v-if="meta.original_filename"> ({{ meta.original_filename }})</span>
-        </p>
       </div>
       <div class="d-flex flex-column align-items-md-end gap-2 flex-shrink-0 ms-md-auto">
         <div class="d-flex flex-wrap align-items-center gap-3 justify-content-md-end">
@@ -777,6 +780,62 @@ onUnmounted(() => {
             placeholder="Search SKU, name, or account"
             autocomplete="off"
           />
+          <div class="position-relative flex-shrink-0" data-toolbar-filter>
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+              :aria-expanded="filterMenuOpen ? 'true' : 'false'"
+              @click.stop="filterMenuOpen = !filterMenuOpen"
+            >
+              <svg
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                />
+              </svg>
+              <span class="staff-toolbar-filter-text">Filters</span>
+            </button>
+            <div
+              v-if="filterMenuOpen"
+              class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+              role="dialog"
+              aria-label="Restock filters"
+              @click.stop
+            >
+              <div class="staff-toolbar-filter-dropdown__head">
+                <span>Filters</span>
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                  @click="resetStatusFilter"
+                >
+                  Reset
+                </button>
+              </div>
+              <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="restock-filter-status">Status</label>
+                <select
+                  id="restock-filter-status"
+                  v-model="selectedStatus"
+                  class="form-select staff-datatable-filters__select"
+                >
+                  <option value="all">All</option>
+                  <option :value="RESTOCK_STATUS_PENDING">Pending</option>
+                  <option :value="RESTOCK_STATUS_TRANSFER_CART">Transfer</option>
+                  <option :value="RESTOCK_STATUS_COMPLETE">Complete</option>
+                </select>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -811,7 +870,7 @@ onUnmounted(() => {
             <tr v-for="row in filteredRows" :key="row.sku" class="align-middle">
               <td class="text-center">
                 <span
-                  class="badge rounded-pill fw-normal"
+                  class="staff-status-badge text-capitalize"
                   :class="restockStatusBadgeClass(row.status)"
                 >
                   {{ row.status_label || restockStatusLabel(row.status) }}

@@ -64,7 +64,7 @@ class InventoryRestockBetaStatusTest extends TestCase
         $this->assertSame(InventoryRestockBetaService::STATUS_PENDING, $payload['rows'][0]['status']);
         $this->assertSame('Pending', $payload['rows'][0]['status_label']);
         $this->assertSame(InventoryRestockBetaService::STATUS_TRANSFER_CART, $payload['rows'][1]['status']);
-        $this->assertSame('Transfer Cart', $payload['rows'][1]['status_label']);
+        $this->assertSame('Transfer', $payload['rows'][1]['status_label']);
         $this->assertSame(InventoryRestockBetaService::STATUS_COMPLETE, $payload['rows'][2]['status']);
         $this->assertSame('Complete', $payload['rows'][2]['status_label']);
     }
@@ -98,7 +98,7 @@ class InventoryRestockBetaStatusTest extends TestCase
         $this->assertSame('Pending', InventoryRestockBetaService::statusLabel(
             InventoryRestockBetaService::STATUS_PENDING
         ));
-        $this->assertSame('Transfer Cart', InventoryRestockBetaService::statusLabel(
+        $this->assertSame('Transfer', InventoryRestockBetaService::statusLabel(
             InventoryRestockBetaService::STATUS_TRANSFER_CART
         ));
         $this->assertSame('Complete', InventoryRestockBetaService::statusLabel(

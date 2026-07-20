@@ -364,7 +364,7 @@ CSV;
         ])
             ->assertOk()
             ->assertJsonPath('rows.0.status', InventoryRestockBetaService::STATUS_TRANSFER_CART)
-            ->assertJsonPath('rows.0.status_label', 'Transfer Cart')
+            ->assertJsonPath('rows.0.status_label', 'Transfer')
             ->assertJsonPath('active_row_count', 1)
             ->assertJsonPath('restock_needed_total', 4);
 

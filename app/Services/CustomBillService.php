@@ -93,7 +93,7 @@ class CustomBillService
      */
     public function create(array $header, array $items, ?User $actor): CustomBill
     {
-        return DB::transaction(function () use ($header, $items, $actor) {
+        $bill = DB::transaction(function () use ($header, $items, $actor) {
             $bill = CustomBill::query()->create([
                 'bill_number' => $this->nextBillNumber(),
                 'name' => isset($header['name']) ? (trim((string) $header['name']) ?: null) : null,
@@ -117,6 +117,10 @@ class CustomBillService
 
             return $bill->fresh(['items', 'clientAccount', 'histories.user']);
         });
+
+        app(BillCreatedSlackService::class)->notifyCustomBill($bill);
+
+        return $bill;
     }
 
     public function updateHeader(CustomBill $bill, array $data, ?User $actor): CustomBill

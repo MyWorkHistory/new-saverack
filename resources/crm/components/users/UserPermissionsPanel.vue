@@ -395,6 +395,10 @@ function keysForColumn(module, colIdx) {
   return (module?.rows || []).map((r) => r.keys[colIdx]).filter(Boolean);
 }
 
+function keysForModule(module) {
+  return (module?.rows || []).flatMap((r) => (r.keys || []).filter(Boolean));
+}
+
 function columnAllChecked(module, colIdx) {
   const keys = keysForColumn(module, colIdx);
   return keys.length > 0 && keys.every((k) => hasKey(k));
@@ -411,11 +415,34 @@ function columnHasKeys(module, colIdx) {
   return keysForColumn(module, colIdx).length > 0;
 }
 
+function moduleAllChecked(module) {
+  const keys = keysForModule(module);
+  return keys.length > 0 && keys.every((k) => hasKey(k));
+}
+
+function moduleSomeChecked(module) {
+  const keys = keysForModule(module);
+  if (keys.length === 0) return false;
+  const some = keys.some((k) => hasKey(k));
+  return some && !moduleAllChecked(module);
+}
+
+function moduleHasKeys(module) {
+  return keysForModule(module).length > 0;
+}
+
 /** Toggle whole column from current state (avoids flaky controlled @change). */
 function toggleColumn(module, colIdx) {
   if (isAdminTarget.value || !columnHasKeys(module, colIdx)) return;
   const keys = keysForColumn(module, colIdx);
   setKeys(keys, !columnAllChecked(module, colIdx));
+}
+
+/** Toggle every permission in a module section. */
+function toggleModule(module) {
+  if (isAdminTarget.value || !moduleHasKeys(module)) return;
+  const keys = keysForModule(module);
+  setKeys(keys, !moduleAllChecked(module));
 }
 
 function toggleCell(key) {
@@ -517,8 +544,10 @@ function normalizePermissionDefs(items) {
         v-else
         class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200"
       >
-        Check any boxes (or a column header to select all in that column), then
-        click Save. A dash means that action is not available for that row.
+        Check the module name to select all permissions in that section, use a
+        column header to select one action across rows, or check boxes one by
+        one. Then click Save. A dash means that action is not available for that
+        row.
       </p>
 
       <div
@@ -584,7 +613,29 @@ function normalizePermissionDefs(items) {
                             />
                           </svg>
                         </button>
-                        <span class="font-semibold text-gray-900 dark:text-white">
+                        <template v-if="moduleHasKeys(mod)">
+                          <input
+                            type="checkbox"
+                            :class="checkboxClass"
+                            :checked="moduleAllChecked(mod)"
+                            :indeterminate.prop="moduleSomeChecked(mod)"
+                            :disabled="isAdminTarget"
+                            :aria-label="`Select all ${mod.label} permissions`"
+                            @click.prevent.stop="toggleModule(mod)"
+                          />
+                          <button
+                            type="button"
+                            class="min-w-0 truncate text-left font-semibold text-gray-900 dark:text-white"
+                            :disabled="isAdminTarget"
+                            @click="toggleModule(mod)"
+                          >
+                            {{ mod.label }}
+                          </button>
+                        </template>
+                        <span
+                          v-else
+                          class="font-semibold text-gray-900 dark:text-white"
+                        >
                           {{ mod.label }}
                         </span>
                       </div>
@@ -605,13 +656,13 @@ function normalizePermissionDefs(items) {
                             :indeterminate.prop="columnSomeChecked(mod, colIdx)"
                             :disabled="isAdminTarget"
                             :aria-label="`${mod.label} ${col}`"
-                            @click.prevent="toggleColumn(mod, colIdx)"
+                            @click.prevent.stop="toggleColumn(mod, colIdx)"
                           />
                           <button
                             type="button"
                             class="text-left text-sm font-medium text-gray-800 dark:text-gray-200"
                             :disabled="isAdminTarget"
-                            @click="toggleColumn(mod, colIdx)"
+                            @click.stop="toggleColumn(mod, colIdx)"
                           >
                             {{ col }}
                           </button>
@@ -660,7 +711,7 @@ function normalizePermissionDefs(items) {
                             :checked="hasKey(colKey)"
                             :disabled="isAdminTarget"
                             :aria-label="`${row.rowLabel} ${ACTION_HEADERS[colIdx]}`"
-                            @click.prevent="toggleCell(colKey)"
+                            @click.prevent.stop="toggleCell(colKey)"
                           />
                         </template>
                         <template v-else>

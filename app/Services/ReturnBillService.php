@@ -125,7 +125,7 @@ class ReturnBillService
         $firstCents = (int) round($this->feeService()->firstItemFeeAmount($return) * 100);
         $additionalCents = (int) round($this->feeService()->additionalItemFeeAmount($return) * 100);
 
-        return DB::transaction(function () use ($return, $actor, $firstQty, $additionalQty, $firstCents, $additionalCents) {
+        $bill = DB::transaction(function () use ($return, $actor, $firstQty, $additionalQty, $firstCents, $additionalCents) {
             $bill = ReturnBill::query()->create([
                 'bill_number' => $this->nextBillNumber(),
                 'status' => ReturnBill::STATUS_OPEN,
@@ -179,6 +179,10 @@ class ReturnBillService
 
             return $bill->fresh(['items', 'clientAccount', 'clientAccountReturn', 'histories.user', 'createdBy']);
         });
+
+        app(BillCreatedSlackService::class)->notifyReturnBill($bill);
+
+        return $bill;
     }
 
     public function updateHeader(ReturnBill $bill, array $data, ?User $actor): ReturnBill

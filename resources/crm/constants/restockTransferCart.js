@@ -7,14 +7,14 @@ export const RESTOCK_STATUS_COMPLETE = "complete";
 
 export function restockStatusLabel(status) {
   const s = String(status || "").toLowerCase();
-  if (s === RESTOCK_STATUS_TRANSFER_CART) return "Transfer Cart";
+  if (s === RESTOCK_STATUS_TRANSFER_CART) return "Transfer";
   if (s === RESTOCK_STATUS_COMPLETE) return "Complete";
   return "Pending";
 }
 
 export function restockStatusBadgeClass(status) {
   const s = String(status || "").toLowerCase();
-  if (s === RESTOCK_STATUS_TRANSFER_CART) return "bg-info-subtle text-info";
+  if (s === RESTOCK_STATUS_TRANSFER_CART) return "bg-primary-subtle text-primary-emphasis";
   if (s === RESTOCK_STATUS_COMPLETE) return "bg-success-subtle text-success";
   return "bg-warning-subtle text-warning-emphasis";
 }

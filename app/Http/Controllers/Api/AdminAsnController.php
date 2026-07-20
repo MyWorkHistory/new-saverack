@@ -471,8 +471,7 @@ class AdminAsnController extends Controller
                 Gate::authorize('create', AsnBill::class);
                 $asn->refresh();
                 $feeCents = (int) round($fee * 100);
-                $bill = $this->asnBills->findOrCreateOpenBillForAsn($asn, $request->user());
-                $this->asnBills->addItem($bill, [
+                $this->asnBills->addItemForAsn($asn, [
                     'line_type' => AsnBill::LINE_NON_COMPLIANT,
                     'name' => AsnReceivingService::nonCompliantBillItemName($asn),
                     'quantity' => 1,

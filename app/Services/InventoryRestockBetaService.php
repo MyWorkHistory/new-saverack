@@ -419,7 +419,7 @@ final class InventoryRestockBetaService
     public static function statusLabel(string $status): string
     {
         if ($status === self::STATUS_TRANSFER_CART) {
-            return 'Transfer Cart';
+            return 'Transfer';
         }
         if ($status === self::STATUS_COMPLETE) {
             return 'Complete';

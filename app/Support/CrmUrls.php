@@ -36,6 +36,21 @@ class CrmUrls
         return self::frontendBase().'/admin/billing/invoices/'.$invoiceId;
     }
 
+    public static function customBillStaffUrl(int $billId): string
+    {
+        return self::frontendBase().'/admin/billing/bills/'.$billId;
+    }
+
+    public static function asnBillStaffUrl(int $billId): string
+    {
+        return self::frontendBase().'/admin/billing/asn-bills/'.$billId;
+    }
+
+    public static function returnBillStaffUrl(int $billId): string
+    {
+        return self::frontendBase().'/admin/billing/return-bills/'.$billId;
+    }
+
     public static function portalLoginUrl(): string
     {
         return self::frontendBase().'/login';

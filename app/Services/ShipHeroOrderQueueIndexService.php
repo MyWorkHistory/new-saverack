@@ -1274,8 +1274,15 @@ class ShipHeroOrderQueueIndexService
         }
 
         if ($tab === ShipHeroOrderQueueIndex::KIND_SHIPPED) {
+            $timezone = (string) ($context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE);
             $from = $this->parseTimestamp($context['shipped_from'] ?? null);
             $to = $this->parseTimestamp($context['shipped_to'] ?? null);
+            if (! empty($filters['order_date_from'])) {
+                $from = $this->parseContextBoundary((string) $filters['order_date_from'], $timezone, true);
+            }
+            if (! empty($filters['order_date_to'])) {
+                $to = $this->parseContextBoundary((string) $filters['order_date_to'], $timezone, false);
+            }
             if ($from !== null) {
                 $query->where('ship_date', '>=', $from);
             }
@@ -1364,8 +1371,9 @@ class ShipHeroOrderQueueIndexService
             ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
         $now = Carbon::now($timezone);
 
+        // Keep last 30 days of shipments indexed so portal/staff "Last 7/30 Days" filters work.
         return $this->queueCounts->contextForAccount($account, [
-            'order_date_from' => $now->toDateString(),
+            'order_date_from' => $now->copy()->subDays(29)->toDateString(),
             'order_date_to' => $now->toDateString(),
         ]);
     }

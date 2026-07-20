@@ -1340,7 +1340,8 @@ class InventoryController extends Controller
         $validated = $request->validate([
             'sku' => ['required', 'string', 'max:255'],
             'warehouse_id' => ['required', 'string', 'max:255'],
-            'from_location_id' => ['required', 'string', 'max:255'],
+            'from_location_id' => ['nullable', 'string', 'max:255'],
+            'from_location' => ['nullable', 'string', 'max:255'],
             'to_location_id' => ['nullable', 'string', 'max:255'],
             'to_location' => ['nullable', 'string', 'max:255'],
             'quantity' => ['required', 'integer', 'min:1'],
@@ -1362,6 +1363,31 @@ class InventoryController extends Controller
                 $clientAccountId > 0 ? $clientAccountId : null,
                 $request,
             );
+            $fromLocationId = isset($validated['from_location_id']) && is_string($validated['from_location_id'])
+                ? trim($validated['from_location_id'])
+                : '';
+            $fromLocationInput = isset($validated['from_location']) && is_string($validated['from_location'])
+                ? trim($validated['from_location'])
+                : '';
+            if ($fromLocationId === '' && $fromLocationInput !== '') {
+                $fromLocationId = $fromLocationInput;
+            }
+            if ($fromLocationId === '') {
+                throw ValidationException::withMessages([
+                    'from_location_id' => ['From location is required.'],
+                ]);
+            }
+            // Resolve cart codes / location names (e.g. T-01) to ShipHero location ids.
+            $resolvedFrom = $this->resolveInventoryLocation(
+                $validated['sku'],
+                $validated['warehouse_id'],
+                $fromLocationId,
+                $shipheroCustomerId
+            );
+            if (is_array($resolvedFrom) && trim((string) ($resolvedFrom['id'] ?? '')) !== '') {
+                $fromLocationId = (string) $resolvedFrom['id'];
+            }
+
             $toLocationId = isset($validated['to_location_id']) && is_string($validated['to_location_id'])
                 ? trim($validated['to_location_id'])
                 : '';
@@ -1392,7 +1418,7 @@ class InventoryController extends Controller
             $updated = $this->inventory->transferLocationQuantity(
                 $validated['sku'],
                 $validated['warehouse_id'],
-                $validated['from_location_id'],
+                $fromLocationId,
                 $toLocationId,
                 (int) $validated['quantity'],
                 $reason,
@@ -1404,7 +1430,7 @@ class InventoryController extends Controller
                     $clientAccountId,
                     $validated['sku'],
                     $validated['warehouse_id'],
-                    $validated['from_location_id'],
+                    $fromLocationId,
                     (int) $validated['quantity'],
                     $shipheroCustomerId
                 );

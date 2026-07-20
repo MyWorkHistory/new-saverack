@@ -8,7 +8,9 @@ import InventoryRestockTransferModal from "../../components/inventory/InventoryR
 import {
   RESTOCK_STATUS_COMPLETE,
   RESTOCK_STATUS_TRANSFER_CART,
+  TRANSFER_CART_LOCATIONS,
   isTransferCartLocationName,
+  matchTransferCartCode,
   restockStatusBadgeClass,
   restockStatusLabel,
 } from "../../constants/restockTransferCart.js";
@@ -122,10 +124,7 @@ const transferFromOptions = computed(() => {
   const whId = preferredWarehouseId(transferProduct.value, transferRow.value);
   const all = flattenProductLocations(transferProduct.value, { includeEmpty: false });
   if (transferMode.value === RESTOCK_STATUS_TRANSFER_CART) {
-    return all.filter((loc) => {
-      if (whId && String(loc.warehouse_id || "") !== whId) return false;
-      return isTransferCartLocationName(loc.location_name || loc.location_id);
-    });
+    return buildCartFromOptions(transferProduct.value, transferRow.value);
   }
   return all.filter(
     (loc) =>
@@ -158,12 +157,7 @@ const transferPickOptions = computed(() => {
 
 watch(transferFromLocationId, (id, prev) => {
   if (String(id || "") === String(prev || "")) return;
-  const loc = transferFromLocation.value;
-  if (loc) {
-    transferForm.quantity = String(loc.quantity ?? 0);
-  } else {
-    transferForm.quantity = "";
-  }
+  // Keep QTY blank until the user enters a value or clicks Transfer All.
   transferForm.to_location_id = "";
 });
 
@@ -301,10 +295,51 @@ function defaultBackstockLocationId(product, row) {
 }
 
 function defaultCartLocationId(product, row) {
-  const carts = flattenProductLocations(product, { includeEmpty: false }).filter((loc) =>
+  const carts = buildCartFromOptions(product, row).filter((loc) => Number(loc.quantity || 0) > 0);
+  if (carts[0]) return String(carts[0].location_id || "");
+  const any = buildCartFromOptions(product, row);
+  return any[0] ? String(any[0].location_id || "") : "";
+}
+
+/** Cart bins on the product, or fixed T-01…T-06 fallbacks for Mode B. */
+function buildCartFromOptions(product, row) {
+  const whId = preferredWarehouseId(product, row);
+  const withQty = flattenProductLocations(product, { includeEmpty: false }).filter((loc) =>
     isTransferCartLocationName(loc.location_name || loc.location_id),
   );
-  return carts[0] ? String(carts[0].location_id || "") : "";
+  const preferred = whId
+    ? withQty.filter((loc) => String(loc.warehouse_id || "") === whId)
+    : withQty;
+  if (preferred.length) return preferred;
+  if (withQty.length) return withQty;
+
+  const anyCart = flattenProductLocations(product, { includeEmpty: true }).filter((loc) =>
+    isTransferCartLocationName(loc.location_name || loc.location_id),
+  );
+  const anyPreferred = whId
+    ? anyCart.filter((loc) => String(loc.warehouse_id || "") === whId)
+    : anyCart;
+  if (anyPreferred.length) return anyPreferred;
+  if (anyCart.length) return anyCart;
+
+  return TRANSFER_CART_LOCATIONS.map((code) => ({
+    location_id: code,
+    location_name: code,
+    quantity: 0,
+    warehouse_id: whId,
+    pickable: false,
+  }));
+}
+
+function resolveCartDestination(product, row, cartCode) {
+  const code = String(cartCode || "").trim().toUpperCase();
+  if (!code) return null;
+  const locs = flattenProductLocations(product, { includeEmpty: true });
+  const match = locs.find((loc) => matchTransferCartCode(loc.location_name || loc.location_id) === code);
+  if (match?.location_id) {
+    return { to_location_id: String(match.location_id) };
+  }
+  return { to_location: code };
 }
 
 function rowStatus(row) {
@@ -561,16 +596,14 @@ async function openTransferFromMenu(row) {
       transferModalOpen.value = false;
       toast.error(
         mode === RESTOCK_STATUS_TRANSFER_CART
-          ? "No transfer cart location with quantity found for this SKU."
+          ? "No transfer cart location found for this SKU."
           : "No backstock location found for this SKU in ShipHero.",
       );
       return;
     }
     transferFromLocationId.value = fromId;
-    const fromLoc = transferFromOptions.value.find(
-      (loc) => String(loc.location_id || "") === fromId,
-    );
-    transferForm.quantity = String(fromLoc?.quantity ?? 0);
+    // Leave QTY blank — user enters qty or clicks Transfer All.
+    transferForm.quantity = "";
     const picks = pickLocationsFromProduct(transferProduct.value, row);
     if (picks.length && !splitLocationText(pickLocationText(row)).length) {
       row.pick_location = picks.map(formatLocationWithQty).join(", ");
@@ -612,7 +645,12 @@ async function submitTransfer() {
       toast.error("Select a transfer cart location.");
       return;
     }
-    body.to_location = cartCode;
+    const dest = resolveCartDestination(transferProduct.value, transferRow.value, cartCode);
+    if (dest?.to_location_id) {
+      body.to_location_id = dest.to_location_id;
+    } else {
+      body.to_location = dest?.to_location || cartCode;
+    }
     nextStatus = RESTOCK_STATUS_TRANSFER_CART;
   } else if (destMode === "new") {
     if (!String(transferForm.to_location || "").trim()) {

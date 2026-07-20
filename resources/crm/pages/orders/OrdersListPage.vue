@@ -193,13 +193,13 @@ const ordersEmptyMessage = computed(() => {
 
   if (orderQueueDateFilterExcludes.value) {
     if (tabKey.value === "shipped") {
-      return "Shipped orders exist in the index outside the selected date range. Try Last 7 Days in the date filter.";
+      return "No shipped orders in this date range yet. Try Refresh, or widen the date filter.";
     }
     return "Orders exist in the index outside the selected date range. Widen the date filter.";
   }
 
   if (tabKey.value === "shipped" && query.datePreset === "today") {
-    return "No orders found for today. Shipped defaults to today — try Last 7 Days in the date filter.";
+    return "No orders found for today. Shipped defaults to today — try Last 7 Days or Last 30 Days in the date filter.";
   }
 
   if (showOrderQueueRefresh.value) {

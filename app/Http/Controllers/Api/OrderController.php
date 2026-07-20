@@ -168,13 +168,27 @@ class OrderController extends Controller
                         ),
                     ]);
 
-                    return response()->json($payload);
+                    // Shipped index may lag behind a widened date filter — fall back to live ShipHero.
+                    $indexEmpty = empty($payload['rows']);
+                    $hasShipDateFilter = $tab === 'shipped'
+                        && ! empty($validated['order_date_from'])
+                        && ! empty($validated['order_date_to']);
+                    if (! ($indexEmpty && $hasShipDateFilter)) {
+                        return response()->json($payload);
+                    }
+                } else {
+                    $payload = $this->orderQueueIndex->emptyListPayload($account, $clientAccountId, $tab, $dispatched);
+                    $payload['meta']['shiphero_customer_account_id'] = $customerId;
+
+                    // Empty shipped index with a date range → live fetch so Last 7/30 Days works before sync catches up.
+                    if (! (
+                        $tab === 'shipped'
+                        && ! empty($validated['order_date_from'])
+                        && ! empty($validated['order_date_to'])
+                    )) {
+                        return response()->json($payload);
+                    }
                 }
-
-                $payload = $this->orderQueueIndex->emptyListPayload($account, $clientAccountId, $tab, $dispatched);
-                $payload['meta']['shiphero_customer_account_id'] = $customerId;
-
-                return response()->json($payload);
             }
 
             if (

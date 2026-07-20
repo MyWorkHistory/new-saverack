@@ -746,6 +746,7 @@ onUnmounted(() => {
         <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table">
           <thead class="table-light staff-table-head">
             <tr>
+              <th class="staff-table-head__th text-center" scope="col">Status</th>
               <th class="staff-table-head__th user-inv-table__text-col" scope="col">Product</th>
               <th class="staff-table-head__th" scope="col">Account</th>
               <th class="staff-table-head__th text-center" scope="col">On Hand</th>
@@ -754,7 +755,6 @@ onUnmounted(() => {
               <th class="staff-table-head__th text-center" scope="col">Backstock</th>
               <th class="staff-table-head__th" scope="col">Backstock Locations</th>
               <th class="staff-table-head__th" scope="col">Pick Location</th>
-              <th class="staff-table-head__th text-center" scope="col">Status</th>
               <th class="staff-table-head__th staff-actions-col text-center restock-actions-col" scope="col">
                 Actions
               </th>
@@ -771,6 +771,14 @@ onUnmounted(() => {
               <td colspan="10" class="py-5 text-center text-secondary">No rows match your search.</td>
             </tr>
             <tr v-for="row in filteredRows" :key="row.sku" class="align-middle">
+              <td class="text-center">
+                <span
+                  class="badge rounded-pill fw-normal"
+                  :class="restockStatusBadgeClass(row.status)"
+                >
+                  {{ row.status_label || restockStatusLabel(row.status) }}
+                </span>
+              </td>
               <td class="user-inv-table__text-col">
                 <div class="restock-product">
                   <a
@@ -839,14 +847,6 @@ onUnmounted(() => {
                   </div>
                 </template>
                 <span v-else class="text-secondary">—</span>
-              </td>
-              <td class="text-center">
-                <span
-                  class="badge rounded-pill fw-normal"
-                  :class="restockStatusBadgeClass(row.status)"
-                >
-                  {{ row.status_label || restockStatusLabel(row.status) }}
-                </span>
               </td>
               <td class="staff-actions-cell text-center restock-actions-cell" @click.stop>
                 <div

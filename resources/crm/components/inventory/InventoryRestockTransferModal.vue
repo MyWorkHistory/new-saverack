@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
+import CrmMaterialIcon from "../common/CrmMaterialIcon.vue";
 import { TRANSFER_CART_LOCATIONS } from "../../constants/restockTransferCart.js";
 
 const props = defineProps({
@@ -11,7 +12,7 @@ const props = defineProps({
   mode: { type: String, default: "pending" },
   fromOptions: { type: Array, default: () => [] },
   fromLocationId: { type: String, default: "" },
-  /** Destination mode for pending: current | cart | new */
+  /** Destination mode: current | cart | new */
   destinationMode: { type: String, default: "current" },
   toLocationId: { type: String, default: "" },
   toLocation: { type: String, default: "" },
@@ -35,8 +36,8 @@ const emit = defineEmits([
   "update:reason",
 ]);
 
-const isCartMode = computed(() => props.mode === "transfer_cart");
-const title = computed(() => (isCartMode.value ? "Transfer Cart" : "Transfer QTY"));
+const isCartStatusMode = computed(() => props.mode === "transfer_cart");
+const title = computed(() => (isCartStatusMode.value ? "Transfer Cart" : "Transfer QTY"));
 
 const selectedFrom = computed(() => {
   const id = String(props.fromLocationId || "");
@@ -52,7 +53,12 @@ function locationOptionLabel(loc) {
   return `${name}(QTY: ${qty.toLocaleString()})`;
 }
 
+/** Toggle Cart / New; clicking active returns to Current Pick Location. */
 function setDestinationMode(mode) {
+  if (props.destinationMode === mode) {
+    emit("update:destinationMode", "current");
+    return;
+  }
   emit("update:destinationMode", mode);
 }
 </script>
@@ -60,22 +66,16 @@ function setDestinationMode(mode) {
 <template>
   <Teleport to="body">
     <div v-if="open" class="crm-vx-modal-overlay" @click.self="emit('close')">
-      <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
-        <header class="crm-vx-modal__head">
-          <h2 class="crm-vx-modal__title">{{ title }}</h2>
+      <div class="crm-vx-modal crm-vx-modal--sm restock-xfer-modal" @click.stop>
+        <header class="crm-vx-modal__head restock-xfer-modal__head">
+          <h2 class="crm-vx-modal__title restock-xfer-modal__title">{{ title }}</h2>
         </header>
         <div class="crm-vx-modal__body">
           <div v-if="loading" class="py-4">
             <CrmLoadingSpinner message="Loading locations…" :center="true" />
           </div>
           <template v-else-if="showForm">
-            <p class="form-label small mb-1">Transfer From</p>
-            <label
-              class="form-label small text-secondary"
-              for="restock-xfer-from"
-            >
-              {{ isCartMode ? "Transfer Cart Locations" : "Backstock Locations" }}
-            </label>
+            <label class="form-label small" for="restock-xfer-from">Transfer From</label>
             <select
               id="restock-xfer-from"
               :value="fromLocationId"
@@ -84,7 +84,7 @@ function setDestinationMode(mode) {
               @change="emit('update:fromLocationId', $event.target.value)"
             >
               <option value="">
-                {{ isCartMode ? "Select transfer cart location" : "Select backstock location" }}
+                {{ isCartStatusMode ? "Transfer Cart Locations" : "Backstock Locations" }}
               </option>
               <option
                 v-for="loc in fromOptions"
@@ -95,178 +95,91 @@ function setDestinationMode(mode) {
               </option>
             </select>
 
-            <p class="form-label small mb-2">Transfer To</p>
+            <label class="form-label small" for="restock-xfer-to">Transfer To</label>
+            <select
+              id="restock-xfer-to"
+              :value="destinationMode === 'current' ? toLocationId : ''"
+              class="form-select mb-3"
+              :disabled="busy || !fromLocationId || destinationMode !== 'current'"
+              @change="emit('update:toLocationId', $event.target.value)"
+            >
+              <option value="">Current Pick Location</option>
+              <option
+                v-for="dest in pickOptions"
+                :key="`pick-${dest.warehouse_id}-${dest.location_id}`"
+                :value="dest.location_id"
+              >
+                {{ locationOptionLabel(dest) }}
+              </option>
+            </select>
 
-            <!-- Pending mode: Current / Transfer Cart / New Location toggles -->
-            <template v-if="!isCartMode">
-              <div class="d-flex flex-wrap gap-2 mb-3">
-                <button
-                  type="button"
-                  class="btn btn-sm"
-                  :class="
-                    destinationMode === 'current'
-                      ? 'btn-primary staff-page-primary'
-                      : 'btn-outline-secondary'
-                  "
-                  :disabled="busy"
-                  @click="setDestinationMode('current')"
-                >
-                  Current
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-sm"
-                  :class="
-                    destinationMode === 'cart'
-                      ? 'btn-primary staff-page-primary'
-                      : 'btn-outline-secondary'
-                  "
-                  :disabled="busy"
-                  @click="setDestinationMode('cart')"
-                >
-                  Transfer Cart
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-sm"
-                  :class="
-                    destinationMode === 'new'
-                      ? 'btn-primary staff-page-primary'
-                      : 'btn-outline-secondary'
-                  "
-                  :disabled="busy"
-                  @click="setDestinationMode('new')"
-                >
-                  New Location
-                </button>
-              </div>
+            <!-- Pending: Transfer Cart / New Location toggles -->
+            <div v-if="!isCartStatusMode" class="restock-xfer-modal__mode-row mb-3">
+              <button
+                type="button"
+                class="restock-xfer-modal__mode-btn"
+                :class="{ 'is-active': destinationMode === 'cart' }"
+                :disabled="busy"
+                @click="setDestinationMode('cart')"
+              >
+                <CrmMaterialIcon name="shoppingCart" :size="18" />
+                Transfer Cart
+              </button>
+              <button
+                type="button"
+                class="restock-xfer-modal__mode-btn"
+                :class="{ 'is-active': destinationMode === 'new' }"
+                :disabled="busy"
+                @click="setDestinationMode('new')"
+              >
+                New Location
+              </button>
+            </div>
 
-              <template v-if="destinationMode === 'current'">
-                <label class="form-label small text-secondary" for="restock-xfer-pick">
-                  Pick Locations
-                </label>
-                <select
-                  id="restock-xfer-pick"
-                  :value="toLocationId"
-                  class="form-select mb-3"
-                  :disabled="busy || !fromLocationId"
-                  @change="emit('update:toLocationId', $event.target.value)"
-                >
-                  <option value="">Select pick location</option>
-                  <option
-                    v-for="dest in pickOptions"
-                    :key="`pick-${dest.warehouse_id}-${dest.location_id}`"
-                    :value="dest.location_id"
-                  >
-                    {{ locationOptionLabel(dest) }}
-                  </option>
-                </select>
-              </template>
+            <!-- Transfer Cart status mode: New Location toggle only -->
+            <div v-else class="restock-xfer-modal__mode-row mb-3">
+              <button
+                type="button"
+                class="restock-xfer-modal__mode-btn"
+                :class="{ 'is-active': destinationMode === 'new' }"
+                :disabled="busy"
+                @click="setDestinationMode('new')"
+              >
+                New Location
+              </button>
+            </div>
 
-              <template v-else-if="destinationMode === 'cart'">
-                <label class="form-label small text-secondary" for="restock-xfer-cart">
-                  Transfer Cart Location
-                </label>
-                <select
-                  id="restock-xfer-cart"
-                  :value="cartLocation"
-                  class="form-select mb-3"
-                  :disabled="busy || !fromLocationId"
-                  @change="emit('update:cartLocation', $event.target.value)"
+            <template v-if="destinationMode === 'cart' && !isCartStatusMode">
+              <label class="form-label small" for="restock-xfer-cart">Transfer Location</label>
+              <select
+                id="restock-xfer-cart"
+                :value="cartLocation"
+                class="form-select mb-3"
+                :disabled="busy || !fromLocationId"
+                @change="emit('update:cartLocation', $event.target.value)"
+              >
+                <option value="">Select location</option>
+                <option
+                  v-for="code in TRANSFER_CART_LOCATIONS"
+                  :key="`cart-${code}`"
+                  :value="code"
                 >
-                  <option value="">Select cart location</option>
-                  <option
-                    v-for="code in TRANSFER_CART_LOCATIONS"
-                    :key="`cart-${code}`"
-                    :value="code"
-                  >
-                    {{ code }}
-                  </option>
-                </select>
-              </template>
-
-              <template v-else>
-                <label class="form-label small text-secondary" for="restock-xfer-new">
-                  New Location
-                </label>
-                <input
-                  id="restock-xfer-new"
-                  :value="toLocation"
-                  type="text"
-                  class="form-control mb-3"
-                  placeholder="Enter location name"
-                  :disabled="busy || !fromLocationId"
-                  @input="emit('update:toLocation', $event.target.value)"
-                />
-              </template>
+                  {{ code }}
+                </option>
+              </select>
             </template>
 
-            <!-- Transfer Cart status mode: Current Pick / New Location -->
-            <template v-else>
-              <div class="d-flex flex-wrap gap-2 mb-3">
-                <button
-                  type="button"
-                  class="btn btn-sm"
-                  :class="
-                    destinationMode === 'current'
-                      ? 'btn-primary staff-page-primary'
-                      : 'btn-outline-secondary'
-                  "
-                  :disabled="busy"
-                  @click="setDestinationMode('current')"
-                >
-                  Current Pick Location
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-sm"
-                  :class="
-                    destinationMode === 'new'
-                      ? 'btn-primary staff-page-primary'
-                      : 'btn-outline-secondary'
-                  "
-                  :disabled="busy"
-                  @click="setDestinationMode('new')"
-                >
-                  New Location
-                </button>
-              </div>
-
-              <template v-if="destinationMode === 'current'">
-                <label class="form-label small text-secondary" for="restock-cart-pick">
-                  Pick Locations
-                </label>
-                <select
-                  id="restock-cart-pick"
-                  :value="toLocationId"
-                  class="form-select mb-3"
-                  :disabled="busy || !fromLocationId"
-                  @change="emit('update:toLocationId', $event.target.value)"
-                >
-                  <option value="">Select pick location</option>
-                  <option
-                    v-for="dest in pickOptions"
-                    :key="`cart-pick-${dest.warehouse_id}-${dest.location_id}`"
-                    :value="dest.location_id"
-                  >
-                    {{ locationOptionLabel(dest) }}
-                  </option>
-                </select>
-              </template>
-              <template v-else>
-                <label class="form-label small text-secondary" for="restock-cart-new">
-                  New Location
-                </label>
-                <input
-                  id="restock-cart-new"
-                  :value="toLocation"
-                  type="text"
-                  class="form-control mb-3"
-                  placeholder="Enter location name"
-                  :disabled="busy || !fromLocationId"
-                  @input="emit('update:toLocation', $event.target.value)"
-                />
-              </template>
+            <template v-else-if="destinationMode === 'new'">
+              <label class="form-label small" for="restock-xfer-new">New Location</label>
+              <input
+                id="restock-xfer-new"
+                :value="toLocation"
+                type="text"
+                class="form-control mb-3"
+                placeholder="Enter location name"
+                :disabled="busy || !fromLocationId"
+                @input="emit('update:toLocation', $event.target.value)"
+              />
             </template>
 
             <div class="row g-2 align-items-end mb-3">
@@ -306,13 +219,13 @@ function setDestinationMode(mode) {
           </template>
           <p v-else class="text-secondary small mb-0">
             {{
-              isCartMode
+              isCartStatusMode
                 ? "No transfer cart locations with quantity found."
                 : "No backstock locations with quantity found."
             }}
           </p>
         </div>
-        <footer class="crm-vx-modal__footer">
+        <footer class="crm-vx-modal__footer restock-xfer-modal__footer">
           <button
             type="button"
             class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
@@ -336,6 +249,60 @@ function setDestinationMode(mode) {
 </template>
 
 <style scoped>
+.restock-xfer-modal__head {
+  justify-content: center;
+  text-align: center;
+}
+
+.restock-xfer-modal__title {
+  text-align: center;
+  width: 100%;
+}
+
+.restock-xfer-modal__mode-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.restock-xfer-modal__mode-row:has(> :only-child) {
+  grid-template-columns: 1fr;
+}
+
+.restock-xfer-modal__mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.5rem;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  border-radius: 0.5rem;
+  background: #fff;
+  color: #0f172a;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.restock-xfer-modal__mode-btn:hover:not(:disabled),
+.restock-xfer-modal__mode-btn:focus-visible {
+  border-color: rgba(37, 99, 235, 0.45);
+  color: #1d4ed8;
+}
+
+.restock-xfer-modal__mode-btn.is-active {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #2563eb;
+}
+
+.restock-xfer-modal__mode-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .restock-xfer-modal__transfer-all-btn {
   border: 1px solid rgba(15, 23, 42, 0.12);
   background: #fff;
@@ -348,5 +315,10 @@ function setDestinationMode(mode) {
   background: #f8fafc;
   border-color: rgba(15, 23, 42, 0.2);
   color: #0f172a;
+}
+
+.restock-xfer-modal__footer {
+  justify-content: center;
+  gap: 0.75rem;
 }
 </style>

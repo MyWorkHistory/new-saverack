@@ -188,6 +188,10 @@ const meta = {
     title: "Save Rack | Orders | Search",
     description: "Find a ShipHero order by order number; optionally filter by client account.",
   },
+  ordersByAccount: {
+    title: "Save Rack | Orders | By Account",
+    description: "On-hold order breakdown by account.",
+  },
   ordersManage: {
     title: "Save Rack | Orders | Manage",
     description:
@@ -732,6 +736,12 @@ const routes = [
     meta: { ...meta.ordersSearch, orderTab: "search" },
   },
   {
+    path: "/admin/orders/by-account",
+    name: "orders-by-account",
+    component: () => import("../pages/orders/OrdersByAccountPage.vue"),
+    meta: meta.ordersByAccount,
+  },
+  {
     path: "/admin/orders/fulfillment",
     name: "orders-fulfillment",
     component: FulfillmentPage,
@@ -1172,6 +1182,7 @@ export function setOrdersNavFromUser(user) {
       update: true,
       pages: {
         search: true,
+        byAccount: true,
         fulfillment: true,
         awaiting: true,
         onHold: true,
@@ -1189,6 +1200,7 @@ export function setOrdersNavFromUser(user) {
       update: false,
       pages: {
         search: true,
+        byAccount: false,
         fulfillment: true,
         awaiting: true,
         onHold: true,
@@ -1225,6 +1237,7 @@ export function setOrdersNavFromUser(user) {
       k.includes("orders.update"),
     pages: {
       search: page("orders_search.view"),
+      byAccount: page("orders_on_hold.view"),
       fulfillment: page("orders_fulfillment.view"),
       awaiting: page("orders_awaiting.view"),
       onHold: page("orders_on_hold.view"),
@@ -1779,6 +1792,7 @@ async function ensureOrdersRouteAccess(path) {
   }
   if (path.startsWith("/admin/orders") || path.startsWith("/users/orders")) {
     const pages = ordersNavCache.pages || {};
+    if (path.startsWith("/admin/orders/by-account")) return pages.byAccount === true;
     if (path.startsWith("/admin/orders/fulfillment")) return pages.fulfillment === true;
     if (path.startsWith("/admin/orders/awaiting")) return pages.awaiting === true;
     if (path.startsWith("/admin/orders/on-hold")) return pages.onHold === true;

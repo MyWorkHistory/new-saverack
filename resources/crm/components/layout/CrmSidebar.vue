@@ -180,6 +180,9 @@ const canViewOrders = computed(() => {
 const canViewOrdersSearch = computed(() =>
   hasPerm("orders_search.view", "orders.view"),
 );
+const canViewOrdersByAccount = computed(() =>
+  hasPerm("orders_on_hold.view", "orders.view"),
+);
 const canViewOrdersFulfillment = computed(() =>
   hasPerm("orders_fulfillment.view", "orders.view"),
 );
@@ -263,6 +266,7 @@ function navActive(mode) {
   if (mode === "clients-projects") return p.startsWith("/admin/clients/projects");
   if (mode === "orders") return p.startsWith("/admin/orders");
   if (mode === "orders-index") return p === "/admin/orders/search";
+  if (mode === "orders-by-account") return p.startsWith("/admin/orders/by-account");
   if (mode === "orders-fulfillment") return p === "/admin/orders/fulfillment";
   if (mode === "orders-manage") return p.startsWith("/admin/orders/search");
   if (mode === "orders-awaiting") return p.startsWith("/admin/orders/awaiting");
@@ -454,6 +458,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Search
+                  </RouterLink>
+                </li>
+                <li v-if="canViewOrdersByAccount">
+                  <RouterLink
+                    to="/admin/orders/by-account"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('orders-by-account') }"
+                    @click="closeMobile"
+                  >
+                    By Account
                   </RouterLink>
                 </li>
                 <li v-if="canViewOrdersFulfillment">

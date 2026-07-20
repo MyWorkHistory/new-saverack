@@ -51,6 +51,11 @@ class CrmUrls
         return self::frontendBase().'/admin/billing/return-bills/'.$billId;
     }
 
+    public static function projectStaffUrl(int $projectId): string
+    {
+        return self::frontendBase().'/admin/clients/projects/'.$projectId;
+    }
+
     public static function portalLoginUrl(): string
     {
         return self::frontendBase().'/login';

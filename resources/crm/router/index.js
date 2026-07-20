@@ -548,7 +548,7 @@ const routes = [
     props: true,
     meta: meta.billingAsnBillDetail,
   },
-  { path: "/admin/billing", redirect: "/admin/billing/summary" },
+  { path: "/admin/billing", redirect: "/admin/billing/invoices" },
   {
     path: "/admin/receiving/asn",
     name: "admin-asn-hub",

@@ -472,16 +472,6 @@ function collapseNav() {
                   Fulfillment Agreement
                 </RouterLink>
               </li>
-              <li>
-                <RouterLink
-                  to="/users/my-account/shipping-instructions"
-                  class="vx-nav-link vx-nav-sublink"
-                  :class="{ 'vx-nav-link--active': navActive('my-account-shipping') }"
-                  @click="closeMobile"
-                >
-                  Shipping Instructions
-                </RouterLink>
-              </li>
             </ul>
           </div>
           <RouterLink

@@ -65,9 +65,6 @@ const canViewBilling = computed(() => {
   ]);
 });
 
-const canViewBillingSummary = computed(() =>
-  hasPerm("billing_summary.view", "billing.view"),
-);
 const canViewBillingInvoices = computed(() =>
   hasPerm("billing_invoices.view", "billing.view"),
 );
@@ -979,16 +976,6 @@ function collapseNav() {
                 </svg>
               </button>
               <ul v-show="billingGroupOpen" class="list-unstyled mb-0 mt-1">
-                <li v-if="canViewBillingSummary">
-                  <RouterLink
-                    to="/admin/billing/summary"
-                    class="vx-nav-link vx-nav-sublink"
-                    :class="{ 'vx-nav-link--active': navActive('billing-summary') }"
-                    @click="closeMobile"
-                  >
-                    Summary
-                  </RouterLink>
-                </li>
                 <li v-if="canViewBillingInvoices">
                   <RouterLink
                     to="/admin/billing/invoices"
@@ -1014,7 +1001,7 @@ function collapseNav() {
           </template>
           <RouterLink
             v-else
-            to="/admin/billing/summary"
+            :to="canViewBillingInvoices ? '/admin/billing/invoices' : '/admin/billing/bills'"
             class="vx-nav-link"
             title="Billing"
             @click="closeMobile"

@@ -21,9 +21,13 @@ class ProjectService
     /** @var CustomBillService */
     private $customBills;
 
-    public function __construct(CustomBillService $customBills)
+    /** @var ProjectCreatedSlackService */
+    private $projectCreatedSlack;
+
+    public function __construct(CustomBillService $customBills, ProjectCreatedSlackService $projectCreatedSlack)
     {
         $this->customBills = $customBills;
+        $this->projectCreatedSlack = $projectCreatedSlack;
     }
 
     /**
@@ -104,7 +108,7 @@ class ProjectService
             ]);
         }
 
-        return DB::transaction(function () use ($data, $actor, $accountId) {
+        $project = DB::transaction(function () use ($data, $actor, $accountId) {
             $pid = $this->nextPid();
 
             $project = Project::query()->create([
@@ -122,6 +126,10 @@ class ProjectService
 
             return $project->fresh(['clientAccount', 'customBill', 'notes.user', 'createdBy', 'quoteItems']);
         });
+
+        $this->projectCreatedSlack->notify($project);
+
+        return $project;
     }
 
     public function findOrFail(int $id): Project

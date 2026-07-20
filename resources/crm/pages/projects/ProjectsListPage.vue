@@ -250,7 +250,7 @@ onUnmounted(() => {
   <div class="staff-page">
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
       <div>
-        <h1 class="staff-page-title mb-0">Projects</h1>
+        <h1 class="h4 mb-1 fw-semibold text-body">Projects</h1>
         <p class="text-secondary small mb-0">Track client projects and quotes.</p>
       </div>
       <button

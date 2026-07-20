@@ -28,7 +28,7 @@
                         <strong>Phone:</strong> {{ $account->phone ?: '—' }}<br>
                         <strong>Status:</strong> {{ $account->status }}<br>
                         <strong>ShipHero customer ID:</strong>
-                        {{ $account->shiphero_customer_account_id ? $account->shiphero_customer_account_id : 'Not set — add in CRM before activating' }}
+                        {{ $account->shiphero_customer_account_id ? $account->shiphero_customer_account_id : 'Not set' }}
                     </td>
                 </tr>
                 <tr>

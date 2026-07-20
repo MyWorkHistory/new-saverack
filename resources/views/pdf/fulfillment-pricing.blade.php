@@ -74,9 +74,11 @@
                 $description = is_array($fee) ? (string) ($fee['description'] ?? '') : '';
                 $category = is_array($fee) ? (string) ($fee['category_label'] ?? $fee['category'] ?? '') : '';
                 $amount = is_array($fee) && array_key_exists('amount', $fee) ? $fee['amount'] : null;
+                $categoryKey = is_array($fee) ? strtolower((string) ($fee['category'] ?? '')) : '';
+                $decimals = $categoryKey === 'storage' ? 3 : 2;
                 $amountLabel = $amount === null || $amount === ''
                     ? '—'
-                    : '$'.number_format((float) $amount, 2);
+                    : '$'.number_format((float) $amount, $decimals, '.', '');
             @endphp
             <div class="fee-row">
                 @if ($category !== '')

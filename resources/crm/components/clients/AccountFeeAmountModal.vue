@@ -13,6 +13,12 @@ const emit = defineEmits(["close", "save"]);
 
 const amount = ref("");
 
+const isStorageFee = computed(
+  () => String(props.fee?.category || "").toLowerCase() === "storage",
+);
+
+const amountStep = computed(() => (isStorageFee.value ? "0.001" : "0.01"));
+
 const amountValid = computed(() => {
   const raw = String(amount.value ?? "").trim();
   if (raw === "") return true;
@@ -22,9 +28,21 @@ const amountValid = computed(() => {
 
 const canSubmit = computed(() => amountValid.value);
 
+function formatAmountForInput(value) {
+  if (value == null || value === "") return "";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  if (isStorageFee.value) {
+    return n.toFixed(3);
+  }
+  // Keep existing precision up to 4 decimals without forcing trailing zeros.
+  const fixed = n.toFixed(4).replace(/\.?0+$/, "");
+  return fixed === "-0" ? "0" : fixed;
+}
+
 function resetForm() {
   const f = props.fee;
-  amount.value = f?.amount != null && f.amount !== "" ? String(f.amount) : "";
+  amount.value = f?.amount != null && f.amount !== "" ? formatAmountForInput(f.amount) : "";
 }
 
 watch(
@@ -107,14 +125,19 @@ function onBackdrop() {
                     id="account-fee-amount"
                     v-model="amount"
                     type="number"
-                    step="0.0001"
+                    :step="amountStep"
                     min="0"
                     class="form-control"
                     :disabled="saving"
                   />
                 </div>
                 <p class="small text-secondary mt-1 mb-0">
-                  Leave blank to clear the account price.
+                  <template v-if="isStorageFee">
+                    Storage prices use 3 decimal places (e.g. 0.023). Leave blank to clear.
+                  </template>
+                  <template v-else>
+                    Leave blank to clear the account price.
+                  </template>
                 </p>
               </div>
             </form>

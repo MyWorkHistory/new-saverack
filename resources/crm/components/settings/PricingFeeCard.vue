@@ -112,7 +112,7 @@ defineProps({
       </p>
       <p v-else class="small text-secondary mb-2 flex-grow-1 fst-italic">No description</p>
       <div class="d-flex align-items-center justify-content-between mt-auto pt-2 border-top">
-        <span class="fw-semibold text-body">{{ priceLabel || formatPrice(fee.amount) }}</span>
+        <span class="fw-semibold text-body">{{ priceLabel || formatPrice(fee.amount, fee.category) }}</span>
         <slot name="actions" />
       </div>
     </div>

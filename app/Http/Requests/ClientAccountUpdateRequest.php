@@ -187,16 +187,6 @@ class ClientAccountUpdateRequest extends FormRequest
                     );
                 }
             }
-            $sid = $this->input('shiphero_customer_account_id');
-            if ($sid === null || $sid === '') {
-                $sid = $account->shiphero_customer_account_id;
-            }
-            if (! is_string($sid) || trim($sid) === '') {
-                $v->errors()->add(
-                    'shiphero_customer_account_id',
-                    'ShipHero customer account ID is required before activating this account.'
-                );
-            }
         });
     }
 }

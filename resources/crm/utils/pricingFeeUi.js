@@ -104,13 +104,18 @@ export function groupFeesByCategory(fees) {
   return ordered;
 }
 
-export function formatPrice(amount) {
+export function formatPrice(amount, category = null) {
   const n = Number(amount);
-  if (!Number.isFinite(n)) return "$0.00";
+  if (!Number.isFinite(n)) {
+    return String(category || "").toLowerCase() === "storage" ? "$0.000" : "$0.00";
+  }
+  if (String(category || "").toLowerCase() === "storage") {
+    return `$${n.toFixed(3)}`;
+  }
   try {
     return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(n);
   } catch {
-    return `$${n}`;
+    return `$${n.toFixed(2)}`;
   }
 }
 

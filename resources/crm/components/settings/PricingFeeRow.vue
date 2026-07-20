@@ -137,7 +137,7 @@ function onKeydown(e) {
     </div>
 
     <div class="pricing-fee-row__price flex-shrink-0">
-      {{ priceLabel || formatPrice(fee.amount) }}
+      {{ priceLabel || formatPrice(fee.amount, fee.category) }}
     </div>
   </article>
 </template>

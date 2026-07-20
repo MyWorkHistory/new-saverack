@@ -40,6 +40,10 @@ const removeIcon = ref(false);
 
 const isEdit = computed(() => props.fee != null && props.fee.id != null);
 const title = computed(() => (isEdit.value ? "Edit Fee" : "Create Fee"));
+const isStorageCategory = computed(
+  () => String(category.value || "").toLowerCase() === "storage",
+);
+const amountStep = computed(() => (isStorageCategory.value ? "0.001" : "0.01"));
 
 const amountValid = computed(() => {
   const raw = String(amount.value ?? "").trim();
@@ -50,12 +54,26 @@ const amountValid = computed(() => {
 
 const canSubmit = computed(() => name.value.trim() !== "" && amountValid.value);
 
+function formatAmountForInput(value, cat) {
+  if (value == null || value === "") return "";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  if (String(cat || "").toLowerCase() === "storage") {
+    return n.toFixed(3);
+  }
+  const fixed = n.toFixed(4).replace(/\.?0+$/, "");
+  return fixed === "-0" ? "0" : fixed;
+}
+
 function resetForm() {
   const f = props.fee;
   name.value = f?.name != null ? String(f.name) : "";
   description.value = f?.description != null ? String(f.description) : "";
   category.value = f?.category != null ? String(f.category) : "fulfillment";
-  amount.value = f?.amount != null && f.amount !== "" ? String(f.amount) : "";
+  amount.value =
+    f?.amount != null && f.amount !== ""
+      ? formatAmountForInput(f.amount, category.value)
+      : "";
   iconFile.value = null;
   iconPreview.value = f?.icon_url != null ? resolvePublicUrl(String(f.icon_url)) : null;
   removeIcon.value = false;
@@ -162,13 +180,16 @@ function close() {
           id="pricing-fee-amount"
           v-model="amount"
           type="number"
-          step="0.0001"
+          :step="amountStep"
           min="0"
           class="form-control"
           required
           :disabled="saving"
         />
       </div>
+      <p v-if="isStorageCategory" class="small text-secondary mt-1 mb-0">
+        Storage prices use 3 decimal places (e.g. 0.023).
+      </p>
     </div>
     <div class="mb-0">
       <label class="form-label" for="pricing-fee-icon">Icon</label>
@@ -298,13 +319,16 @@ function close() {
                     id="pricing-fee-amount-edit"
                     v-model="amount"
                     type="number"
-                    step="0.0001"
+                    :step="amountStep"
                     min="0"
                     class="form-control"
                     required
                     :disabled="saving"
                   />
                 </div>
+                <p v-if="isStorageCategory" class="small text-secondary mt-1 mb-0">
+                  Storage prices use 3 decimal places (e.g. 0.023).
+                </p>
               </div>
               <div class="mb-0">
                 <label class="form-label" for="pricing-fee-icon-edit">Icon</label>

@@ -105,6 +105,10 @@ class PortalFulfillmentPricingApiTest extends TestCase
         $approve->assertOk();
         $approve->assertJsonPath('fulfillment_pricing_status', 'approved');
         $this->assertNotNull($account->fresh()->fulfillment_pricing_approved_at);
+        $verifications = $account->fresh()->onboarding_verifications;
+        $this->assertIsArray($verifications);
+        $this->assertArrayHasKey('fulfillment_pricing', $verifications);
+        $this->assertNotEmpty($verifications['fulfillment_pricing']['verified_at'] ?? null);
 
         $pdfAdmin = $this->get('/api/client-accounts/'.$account->id.'/onboarding/fulfillment-pricing.pdf');
         $pdfAdmin->assertOk();

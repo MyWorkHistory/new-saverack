@@ -600,7 +600,7 @@ class ClientAccountService
                 $storage[] = [
                     'id' => $fee->id,
                     'label' => $fee->label !== null && $fee->label !== '' ? (string) $fee->label : 'Storage fee',
-                    'amount' => $amount,
+                    'amount' => $this->feeAmountForApi($fee->amount, ClientAccountFee::GROUP_STORAGE),
                     'currency' => $fee->currency !== null && $fee->currency !== '' ? (string) $fee->currency : 'USD',
                 ];
             }
@@ -628,7 +628,7 @@ class ClientAccountService
     private function feeItemPayloadForApi(ClientAccountFee $fee, PricingFeeIconService $iconService): array
     {
         $category = (string) $fee->fee_group;
-        $amount = $fee->amount !== null ? (float) $fee->amount : null;
+        $amount = $this->feeAmountForApi($fee->amount, $category);
 
         return [
             'id' => $fee->id,
@@ -642,6 +642,23 @@ class ClientAccountService
             'sort_order' => (int) $fee->sort_order,
             'line_code' => $fee->line_code,
         ];
+    }
+
+    /**
+     * @param  mixed  $amount
+     */
+    private function feeAmountForApi($amount, string $category): ?float
+    {
+        if ($amount === null || $amount === '') {
+            return null;
+        }
+        if (! is_numeric($amount)) {
+            return null;
+        }
+
+        $decimals = strtolower(trim($category)) === ClientAccountFee::GROUP_STORAGE ? 3 : 4;
+
+        return round((float) $amount, $decimals);
     }
 
     private function feeDisplayName(ClientAccountFee $fee): string
@@ -710,7 +727,7 @@ class ClientAccountService
      */
     private function catalogLinePayload(ClientAccountFee $fee, PricingFeeIconService $iconService): array
     {
-        $amount = $fee->amount !== null ? (float) $fee->amount : null;
+        $amount = $this->feeAmountForApi($fee->amount, (string) $fee->fee_group);
 
         return [
             'id' => $fee->id,
@@ -845,6 +862,14 @@ class ClientAccountService
             $account->fulfillment_pricing_accepted_at = null;
         }
         $account->save();
+
+        $onboarding = app(PortalOnboardingService::class);
+        $actorId = $actor !== null ? (int) $actor->id : null;
+        if ($status === ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED) {
+            $onboarding->setTaskVerified($account, 'fulfillment_pricing', true, $actorId);
+        } else {
+            $onboarding->setTaskVerified($account, 'fulfillment_pricing', false, $actorId);
+        }
 
         if ($actor !== null) {
             $this->activityLog->log($actor, 'client_account.updated', $account, null, [

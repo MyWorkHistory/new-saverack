@@ -262,7 +262,7 @@ function setDestinationMode(mode) {
 .restock-xfer-modal__mode-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
+  gap: 0.625rem;
 }
 
 .restock-xfer-modal__mode-row:has(> :only-child) {
@@ -273,29 +273,39 @@ function setDestinationMode(mode) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  min-height: 2.5rem;
-  padding: 0.45rem 0.75rem;
-  border: 1px solid rgba(15, 23, 42, 0.18);
+  gap: 0.45rem;
+  min-height: 2.625rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #e3e3e9;
   border-radius: 0.5rem;
   background: #fff;
-  color: #0f172a;
-  font-size: 0.875rem;
-  font-weight: 600;
+  color: #2b4561;
+  font-size: 0.9375rem;
+  font-weight: 500;
   line-height: 1.2;
+  box-shadow: none;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
 }
 
-.restock-xfer-modal__mode-btn:hover:not(:disabled),
-.restock-xfer-modal__mode-btn:focus-visible {
-  border-color: rgba(37, 99, 235, 0.45);
-  color: #1d4ed8;
+.restock-xfer-modal__mode-btn:hover:not(:disabled):not(.is-active),
+.restock-xfer-modal__mode-btn:focus-visible:not(.is-active) {
+  border-color: #cfd0d6;
+  color: #1e3349;
+  background: #fff;
 }
 
 .restock-xfer-modal__mode-btn.is-active {
-  border-color: #2563eb;
-  color: #2563eb;
-  background: #fff;
-  box-shadow: inset 0 0 0 1px #2563eb;
+  border-color: #4a7af8;
+  color: #4a7af8;
+  background: #f1f5fd;
+  box-shadow: none;
+}
+
+.restock-xfer-modal__mode-btn.is-active:hover:not(:disabled),
+.restock-xfer-modal__mode-btn.is-active:focus-visible {
+  border-color: #3b6ef0;
+  color: #3b6ef0;
+  background: #eaf0fc;
 }
 
 .restock-xfer-modal__mode-btn:disabled {
@@ -304,17 +314,19 @@ function setDestinationMode(mode) {
 }
 
 .restock-xfer-modal__transfer-all-btn {
-  border: 1px solid rgba(15, 23, 42, 0.12);
+  border: 1px solid #e3e3e9;
   background: #fff;
-  color: #334155;
-  font-weight: 600;
+  color: #2b4561;
+  font-weight: 500;
+  border-radius: 0.5rem;
+  min-height: 2.625rem;
 }
 
 .restock-xfer-modal__transfer-all-btn:hover:not(:disabled),
 .restock-xfer-modal__transfer-all-btn:focus-visible {
   background: #f8fafc;
-  border-color: rgba(15, 23, 42, 0.2);
-  color: #0f172a;
+  border-color: #cfd0d6;
+  color: #1e3349;
 }
 
 .restock-xfer-modal__footer {

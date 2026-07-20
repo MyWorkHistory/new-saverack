@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import api from "../../services/api";
+import BillingDollarStatIcon from "../../components/billing/BillingDollarStatIcon.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -373,101 +374,95 @@ onMounted(() => {
       </div>
 
       <template v-else>
-        <div class="billing-summary-ui__cards">
-          <article class="billing-summary-card">
-            <div class="billing-summary-card__top">
-              <div>
-                <div class="billing-summary-card__eyebrow">
-                  Last Week ({{ currentRangeLabel }})
-                </div>
-                <div class="billing-summary-card__label">Total Billed</div>
-                <div class="billing-summary-card__value billing-summary-card__value--accent">
-                  {{ formatCents(lastWeekTotal) }}
-                </div>
+        <div class="row g-3 g-xl-4 mb-4 billing-summary-ui__cards">
+          <div class="col-12 col-md-4">
+            <div class="staff-stat-card billing-inv-summary-card billing-inv-summary-card--static h-100">
+              <p class="staff-stat-card__label">
+                Last Week ({{ currentRangeLabel }})
+              </p>
+              <p class="staff-stat-card__value text-primary">
+                {{ formatCents(lastWeekTotal) }}
+              </p>
+              <p class="staff-stat-card__sub">Total billed</p>
+              <div class="staff-stat-card__icon staff-stat-card__icon--money" aria-hidden="true">
+                <BillingDollarStatIcon />
               </div>
-              <div class="billing-summary-card__icon billing-summary-card__icon--blue" aria-hidden="true">
-                <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5A2.25 2.25 0 015.25 5.25h13.5A2.25 2.25 0 0121 7.5v11.25A2.25 2.25 0 0118.75 21H5.25A2.25 2.25 0 013 18.75zM3 9.75h18" />
+            </div>
+          </div>
+
+          <div class="col-12 col-md-4">
+            <div class="staff-stat-card billing-inv-summary-card billing-inv-summary-card--static h-100">
+              <p class="staff-stat-card__label">
+                Previous Week ({{ previousRangeLabel }})
+              </p>
+              <p class="staff-stat-card__value">
+                {{ previousWeekTotal == null ? "—" : formatCents(previousWeekTotal) }}
+              </p>
+              <p class="staff-stat-card__sub">Total billed</p>
+              <div
+                class="staff-stat-card__icon bg-secondary-subtle text-secondary"
+                aria-hidden="true"
+              >
+                <svg fill="currentColor" viewBox="0 0 24 24">
+                  <path
+                    d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2m0 16H5V10h14zm0-12H5V6h14z"
+                  />
                 </svg>
               </div>
             </div>
-          </article>
+          </div>
 
-          <article class="billing-summary-card">
-            <div class="billing-summary-card__top">
-              <div>
-                <div class="billing-summary-card__eyebrow">
-                  Previous Week ({{ previousRangeLabel }})
-                </div>
-                <div class="billing-summary-card__label">Total Billed</div>
-                <div class="billing-summary-card__value">
-                  {{ previousWeekTotal == null ? "—" : formatCents(previousWeekTotal) }}
-                </div>
-              </div>
-              <div class="billing-summary-card__icon billing-summary-card__icon--gray" aria-hidden="true">
-                <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5A2.25 2.25 0 015.25 5.25h13.5A2.25 2.25 0 0121 7.5v11.25A2.25 2.25 0 0118.75 21H5.25A2.25 2.25 0 013 18.75zM3 9.75h18" />
-                </svg>
-              </div>
-            </div>
-          </article>
-
-          <article class="billing-summary-card">
-            <div class="billing-summary-card__top">
-              <div>
-                <div class="billing-summary-card__eyebrow">Change (vs Previous Week)</div>
-                <div
-                  class="billing-summary-card__value"
-                  :class="
-                    heroChange.up === true
-                      ? 'billing-summary-card__value--up'
-                      : heroChange.up === false
-                        ? 'billing-summary-card__value--down'
-                        : ''
-                  "
-                >
-                  <span class="billing-summary-card__change-row">
-                    <svg
-                      v-if="heroChange.up === true"
-                      width="18"
-                      height="18"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      stroke-width="2.25"
-                      aria-hidden="true"
-                    >
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
-                    </svg>
-                    <svg
-                      v-else-if="heroChange.up === false"
-                      width="18"
-                      height="18"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      stroke-width="2.25"
-                      aria-hidden="true"
-                    >
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 4.5l15 15m0 0V8.25m0 11.25H8.25" />
-                    </svg>
-                    {{ formatSignedCents(heroChange.delta) }}
-                  </span>
-                </div>
-                <div
-                  v-if="heroChange.percent != null"
-                  class="billing-summary-card__pct"
-                  :class="heroChange.up ? 'text-success' : 'text-danger'"
-                >
+          <div class="col-12 col-md-4">
+            <div class="staff-stat-card billing-inv-summary-card billing-inv-summary-card--static h-100">
+              <p class="staff-stat-card__label">Change (vs Previous Week)</p>
+              <p
+                class="staff-stat-card__value"
+                :class="
+                  heroChange.up === true
+                    ? 'text-success'
+                    : heroChange.up === false
+                      ? 'text-danger'
+                      : ''
+                "
+              >
+                {{ formatSignedCents(heroChange.delta) }}
+              </p>
+              <p
+                class="staff-stat-card__sub"
+                :class="
+                  heroChange.up === true
+                    ? 'text-success'
+                    : heroChange.up === false
+                      ? 'text-danger'
+                      : ''
+                "
+              >
+                <template v-if="heroChange.percent != null">
                   {{ formatPercent(heroChange.percent, heroChange.up) }}
                   {{ heroChange.up ? "increase" : "decrease" }}
-                </div>
-                <div v-else class="billing-summary-card__pct text-secondary">
+                </template>
+                <template v-else>
                   {{ previousWeekTotal == null ? "Generate previous week to compare" : "—" }}
-                </div>
+                </template>
+              </p>
+              <div
+                class="staff-stat-card__icon"
+                :class="
+                  heroChange.up === false
+                    ? 'bg-danger-subtle text-danger'
+                    : 'bg-success-subtle text-success'
+                "
+                aria-hidden="true"
+              >
+                <svg v-if="heroChange.up === false" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M16 18l2.29-2.29-4.88-4.88-4 4L2 7.41 3.41 6l6 6 4-4 6.3 6.29L22 12v6z" />
+                </svg>
+                <svg v-else fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z" />
+                </svg>
               </div>
             </div>
-          </article>
+          </div>
         </div>
 
         <section class="billing-summary-table-card">
@@ -740,94 +735,8 @@ onMounted(() => {
   padding: 2rem;
 }
 
-.billing-summary-ui__cards {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
-  margin-bottom: 1.25rem;
-}
-
-@media (max-width: 991.98px) {
-  .billing-summary-ui__cards {
-    grid-template-columns: 1fr;
-  }
-}
-
-.billing-summary-card {
-  border: 1px solid var(--bs-border);
-  border-radius: var(--bs-card-radius);
-  background: #fff;
-  padding: 1.15rem 1.25rem;
-}
-
-.billing-summary-card__top {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.billing-summary-card__eyebrow {
-  font-size: 0.8rem;
-  color: var(--bs-muted);
-  margin-bottom: 0.35rem;
-}
-
-.billing-summary-card__label {
-  font-size: 0.8rem;
-  color: var(--bs-muted);
-  margin-bottom: 0.35rem;
-}
-
-.billing-summary-card__value {
-  font-size: 1.65rem;
-  font-weight: 700;
-  color: var(--bs-text);
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-}
-
-.billing-summary-card__value--accent {
-  color: var(--bs-accent);
-}
-
-.billing-summary-card__value--up {
-  color: var(--bs-up);
-}
-
-.billing-summary-card__value--down {
-  color: var(--bs-down);
-}
-
-.billing-summary-card__change-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.billing-summary-card__pct {
-  margin-top: 0.35rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-.billing-summary-card__icon {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.billing-summary-card__icon--blue {
-  background: #dbeafe;
-  color: #2563eb;
-}
-
-.billing-summary-card__icon--gray {
-  background: #f3f4f6;
-  color: #6b7280;
+.billing-summary-ui__cards :deep(.billing-inv-summary-card--static) {
+  cursor: default;
 }
 
 .billing-summary-table-card {

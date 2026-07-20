@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AsnController;
 use App\Http\Controllers\Api\ReturnController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BillingSummaryController;
+use App\Http\Controllers\Api\BillingWeekSummaryController;
 use App\Http\Controllers\Api\BillingBillsController;
 use App\Http\Controllers\Api\CustomBillController;
 use App\Http\Controllers\Api\ClientAccountController;
@@ -91,6 +92,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/billing/summary', BillingSummaryController::class)
         ->name('billing.summary');
+    Route::get('/billing/week-summaries', [BillingWeekSummaryController::class, 'index'])
+        ->name('billing.week-summaries.index');
+    Route::post('/billing/week-summaries/generate', [BillingWeekSummaryController::class, 'generate'])
+        ->name('billing.week-summaries.generate');
 
     Route::get('/billing/bills', [BillingBillsController::class, 'index'])
         ->name('billing.bills');

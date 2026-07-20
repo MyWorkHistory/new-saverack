@@ -8,8 +8,10 @@ const props = defineProps({
   statuses: { type: Array, default: () => [] },
   busy: { type: Boolean, default: false },
   reasonOptions: { type: Array, default: () => [] },
+  /** Map of status → reason option arrays, e.g. { paused: [...], inactive: [...] } */
+  reasonOptionsByStatus: { type: Object, default: null },
   reasonLabel: { type: String, default: "Reason" },
-  showReasonWhenStatus: { type: String, default: "paused" },
+  showReasonWhenStatus: { type: [String, Array], default: "paused" },
 });
 
 const open = defineModel("open", { type: Boolean, default: false });
@@ -18,15 +20,45 @@ const reason = defineModel("reason", { type: String, default: "" });
 
 const emit = defineEmits(["save"]);
 
+const reasonStatuses = computed(() => {
+  const raw = props.showReasonWhenStatus;
+  if (Array.isArray(raw)) {
+    return raw.map((s) => String(s || "").toLowerCase()).filter(Boolean);
+  }
+  const single = String(raw || "paused").toLowerCase();
+  return single ? [single] : [];
+});
+
+const activeReasonOptions = computed(() => {
+  const st = String(status.value || "").toLowerCase();
+  const byStatus = props.reasonOptionsByStatus;
+  if (byStatus && typeof byStatus === "object" && !Array.isArray(byStatus)) {
+    const opts = byStatus[st];
+    return Array.isArray(opts) ? opts : [];
+  }
+  return Array.isArray(props.reasonOptions) ? props.reasonOptions : [];
+});
+
 const showReasonField = computed(
   () =>
-    props.reasonOptions.length > 0 &&
-    String(status.value || "").toLowerCase() === String(props.showReasonWhenStatus || "").toLowerCase(),
+    activeReasonOptions.value.length > 0 &&
+    reasonStatuses.value.includes(String(status.value || "").toLowerCase()),
 );
 
 const saveDisabled = computed(
   () => props.busy || (showReasonField.value && !String(reason.value || "").trim()),
 );
+
+watch(status, () => {
+  if (!showReasonField.value) {
+    return;
+  }
+  const current = String(reason.value || "");
+  const valid = activeReasonOptions.value.some((opt) => String(opt?.value ?? "") === current);
+  if (!valid) {
+    reason.value = "";
+  }
+});
 
 function displayStatus(value) {
   return String(value || "")
@@ -138,7 +170,11 @@ onUnmounted(() => {
                     required
                   >
                     <option value="" disabled>Select a reason</option>
-                    <option v-for="opt in reasonOptions" :key="opt.value" :value="opt.value">
+                    <option
+                      v-for="opt in activeReasonOptions"
+                      :key="opt.value"
+                      :value="opt.value"
+                    >
                       {{ opt.label }}
                     </option>
                   </select>

@@ -52,6 +52,20 @@ class ClientAccount extends Model
         self::PAUSE_REASON_USER_REQUEST => 'User Request',
     ];
 
+    public const INACTIVE_REASON_ACCOUNT_CLOSED = 'account_closed';
+
+    public const INACTIVE_REASON_COLLECTIONS = 'collections';
+
+    public const INACTIVE_REASONS = [
+        self::INACTIVE_REASON_ACCOUNT_CLOSED,
+        self::INACTIVE_REASON_COLLECTIONS,
+    ];
+
+    public const INACTIVE_REASON_LABELS = [
+        self::INACTIVE_REASON_ACCOUNT_CLOSED => 'Account Closed',
+        self::INACTIVE_REASON_COLLECTIONS => 'Collections',
+    ];
+
     public static function pauseReasonLabel(?string $reason): ?string
     {
         if ($reason === null || trim($reason) === '') {
@@ -59,6 +73,15 @@ class ClientAccount extends Model
         }
 
         return self::PAUSE_REASON_LABELS[$reason] ?? null;
+    }
+
+    public static function inactiveReasonLabel(?string $reason): ?string
+    {
+        if ($reason === null || trim($reason) === '') {
+            return null;
+        }
+
+        return self::INACTIVE_REASON_LABELS[$reason] ?? null;
     }
 
     public const DEFAULT_PAYMENT_TYPES = [
@@ -76,6 +99,7 @@ class ClientAccount extends Model
         'status',
         'paused_at',
         'pause_reason',
+        'inactive_reason',
         'company_name',
         'brand_name',
         'website',

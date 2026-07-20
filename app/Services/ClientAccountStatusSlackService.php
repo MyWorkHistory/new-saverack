@@ -25,7 +25,7 @@ class ClientAccountStatusSlackService
     }
 
     /**
-     * Post to the account in-house Slack channel when CRM status changes to active or paused.
+     * Post to the account in-house Slack channel when CRM status changes to active, paused, or inactive.
      * Failures are logged and do not block the CRM save.
      */
     public function notifyStatusChange(
@@ -152,6 +152,16 @@ class ClientAccountStatusSlackService
             ];
         }
 
+        if ($newStatus === ClientAccount::STATUS_INACTIVE) {
+            return [
+                'label' => 'Inactive',
+                'shipheroLinkLabel' => 'Set Inactive in Shiphero',
+                // Reuse paused icons until a dedicated inactive asset exists.
+                'iconUrl' => $this->iconUrls->pausedThumbUrl(),
+                'iconUrlFallbacks' => [$this->iconUrls->pausedUrl()],
+            ];
+        }
+
         return null;
     }
 
@@ -211,7 +221,11 @@ class ClientAccountStatusSlackService
         ];
 
         if ($statusLabel === 'Paused') {
-            $this->appendPauseReasonLine($lines, $account);
+            $this->appendReasonLine($lines, ClientAccount::pauseReasonLabel($account->pause_reason));
+        }
+
+        if ($statusLabel === 'Inactive') {
+            $this->appendReasonLine($lines, ClientAccount::inactiveReasonLabel($account->inactive_reason));
         }
 
         $this->appendActorLine($lines, $actor);
@@ -226,9 +240,8 @@ class ClientAccountStatusSlackService
     /**
      * @param  array<int, string>  $lines
      */
-    private function appendPauseReasonLine(array &$lines, ClientAccount $account): void
+    private function appendReasonLine(array &$lines, ?string $label): void
     {
-        $label = ClientAccount::pauseReasonLabel($account->pause_reason);
         if ($label === null || trim($label) === '') {
             return;
         }

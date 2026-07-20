@@ -1376,6 +1376,15 @@ class InvoiceService
                 : null,
             'client_account_email' => $account !== null ? $account->email : null,
             'client_account_contact_name' => $account !== null ? $account->contactFullName() : null,
+            'client_account_status' => $account !== null ? $account->status : null,
+            'client_account_pause_reason' => $account !== null ? $account->pause_reason : null,
+            'client_account_pause_reason_label' => $account !== null
+                ? ClientAccount::pauseReasonLabel($account->pause_reason)
+                : null,
+            'client_account_inactive_reason' => $account !== null ? $account->inactive_reason : null,
+            'client_account_inactive_reason_label' => $account !== null
+                ? ClientAccount::inactiveReasonLabel($account->inactive_reason)
+                : null,
             'client_account_street' => $account !== null ? $account->street : null,
             'client_account_city' => $account !== null ? $account->city : null,
             'client_account_state' => $account !== null ? $account->state : null,

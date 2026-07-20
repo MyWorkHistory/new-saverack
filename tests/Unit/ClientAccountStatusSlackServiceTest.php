@@ -193,13 +193,51 @@ final class ClientAccountStatusSlackServiceTest extends TestCase
         $this->assertArrayNotHasKey('blocks', $result['slack']);
     }
 
+    public function test_build_inactive_message_includes_reason(): void
+    {
+        $account = $this->sampleAccount();
+        $account->inactive_reason = ClientAccount::INACTIVE_REASON_ACCOUNT_CLOSED;
+
+        $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
+            $account,
+            ClientAccount::STATUS_ACTIVE,
+            ClientAccount::STATUS_INACTIVE,
+            $this->sampleActor()
+        );
+
+        $this->assertNotNull($payload);
+        $this->assertSame('Shipping Status Update', $payload['username']);
+        $this->assertSame(
+            "Demo Company is set to Inactive.\nReason: Account Closed\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Inactive in Shiphero>",
+            $payload['text']
+        );
+        $this->assertStringContainsString('/shipping-status-paused-thumb.png', $payload['icon_url']);
+    }
+
+    public function test_build_inactive_message_omits_reason_when_missing(): void
+    {
+        $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
+            $this->sampleAccount(),
+            ClientAccount::STATUS_ACTIVE,
+            ClientAccount::STATUS_INACTIVE,
+            $this->sampleActor()
+        );
+
+        $this->assertNotNull($payload);
+        $this->assertSame(
+            "Demo Company is set to Inactive.\nUpdated by: Audi Kowalski\n<https://app.shiphero.com/3pl|Set Inactive in Shiphero>",
+            $payload['text']
+        );
+        $this->assertStringNotContainsString('Reason:', $payload['text']);
+    }
+
     public function test_other_status_changes_do_not_build_slack_payload(): void
     {
         $account = new ClientAccount(['company_name' => 'Demo Company']);
         $payload = app(ClientAccountStatusSlackService::class)->buildMessagePayload(
             $account,
             ClientAccount::STATUS_ACTIVE,
-            ClientAccount::STATUS_INACTIVE
+            ClientAccount::STATUS_PENDING
         );
 
         $this->assertNull($payload);

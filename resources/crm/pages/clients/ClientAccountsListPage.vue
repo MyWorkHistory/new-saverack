@@ -43,6 +43,10 @@ import {
   CLIENT_ACCOUNT_PAUSE_REASONS,
   clientAccountPauseReasonLabel,
 } from "../../constants/clientAccountPauseReasons.js";
+import {
+  CLIENT_ACCOUNT_INACTIVE_REASONS,
+  clientAccountInactiveReasonLabel,
+} from "../../constants/clientAccountInactiveReasons.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -486,7 +490,14 @@ function openStatusModal(row) {
   statusModalMode.value = "single";
   statusModalRow.value = row;
   statusForm.value = String(row.status || "pending");
-  pauseReasonForm.value = String(row.pause_reason || "");
+  const st = String(row.status || "").toLowerCase();
+  if (st === "paused") {
+    pauseReasonForm.value = String(row.pause_reason || "");
+  } else if (st === "inactive") {
+    pauseReasonForm.value = String(row.inactive_reason || "");
+  } else {
+    pauseReasonForm.value = "";
+  }
   statusModalOpen.value = true;
 }
 
@@ -512,10 +523,14 @@ function closeStatusModal() {
 
 async function saveBulkStatusFromModal() {
   const status = String(statusForm.value || "").trim();
-  const pauseReason = String(pauseReasonForm.value || "").trim();
+  const reason = String(pauseReasonForm.value || "").trim();
   if (!selectedIds.value.length || statusPickerBusy.value) return;
-  if (status === "paused" && !pauseReason) {
+  if (status === "paused" && !reason) {
     toast.error("Select a pause reason.");
+    return;
+  }
+  if (status === "inactive" && !reason) {
+    toast.error("Select an inactive reason.");
     return;
   }
   statusPickerBusy.value = true;
@@ -525,7 +540,10 @@ async function saveBulkStatusFromModal() {
       status,
     };
     if (status === "paused") {
-      payload.pause_reason = pauseReason;
+      payload.pause_reason = reason;
+    }
+    if (status === "inactive") {
+      payload.inactive_reason = reason;
     }
     const { data } = await api.patch("/client-accounts/bulk", payload);
     const updated = Number(data?.updated ?? selectedIds.value.length);
@@ -552,18 +570,27 @@ async function saveStatusFromModal() {
   }
   const row = statusModalRow.value;
   const status = String(statusForm.value || "").trim();
-  const pauseReason = String(pauseReasonForm.value || "").trim();
+  const reason = String(pauseReasonForm.value || "").trim();
   if (!row || statusPickerBusy.value) return;
   const prevStatus = String(row.status || "");
-  const prevReason = String(row.pause_reason || "");
+  const prevReason =
+    prevStatus === "paused"
+      ? String(row.pause_reason || "")
+      : prevStatus === "inactive"
+        ? String(row.inactive_reason || "")
+        : "";
   const statusUnchanged = prevStatus === status;
-  const reasonUnchanged = prevReason === pauseReason;
+  const reasonUnchanged = prevReason === reason;
   if (statusUnchanged && reasonUnchanged) {
     closeStatusModal();
     return;
   }
-  if (status === "paused" && !pauseReason) {
+  if (status === "paused" && !reason) {
     toast.error("Select a pause reason.");
+    return;
+  }
+  if (status === "inactive" && !reason) {
+    toast.error("Select an inactive reason.");
     return;
   }
   if (status === "active") {
@@ -579,14 +606,21 @@ async function saveStatusFromModal() {
   try {
     const payload = { status };
     if (status === "paused") {
-      payload.pause_reason = pauseReason;
+      payload.pause_reason = reason;
+    }
+    if (status === "inactive") {
+      payload.inactive_reason = reason;
     }
     const { data } = await api.patch(`/client-accounts/${row.id}`, payload);
     row.status = status;
-    row.pause_reason = data?.pause_reason ?? (status === "paused" ? pauseReason : null);
+    row.pause_reason = data?.pause_reason ?? (status === "paused" ? reason : null);
     row.pause_reason_label =
       data?.pause_reason_label ??
-      (status === "paused" ? clientAccountPauseReasonLabel(pauseReason) : null);
+      (status === "paused" ? clientAccountPauseReasonLabel(reason) : null);
+    row.inactive_reason = data?.inactive_reason ?? (status === "inactive" ? reason : null);
+    row.inactive_reason_label =
+      data?.inactive_reason_label ??
+      (status === "inactive" ? clientAccountInactiveReasonLabel(reason) : null);
     toast.success("Status updated.");
     warnIfShipheroSyncFailed(data, toast);
     statusModalOpen.value = false;
@@ -814,7 +848,11 @@ onUnmounted(() => {
       :title="statusModalMode === 'bulk' ? 'Bulk Update Status' : 'Account Status'"
       :subtitle="statusModalSubtitle"
       :statuses="accountStatusOptions"
-      :reason-options="CLIENT_ACCOUNT_PAUSE_REASONS"
+      :show-reason-when-status="['paused', 'inactive']"
+      :reason-options-by-status="{
+        paused: CLIENT_ACCOUNT_PAUSE_REASONS,
+        inactive: CLIENT_ACCOUNT_INACTIVE_REASONS,
+      }"
       :busy="statusPickerBusy"
       @save="saveStatusFromModal"
     />
@@ -1357,6 +1395,12 @@ onUnmounted(() => {
                     class="small text-secondary"
                   >
                     Reason: {{ row.pause_reason_label || clientAccountPauseReasonLabel(row.pause_reason) }}
+                  </span>
+                  <span
+                    v-else-if="String(row.status || '').toLowerCase() === 'inactive' && (row.inactive_reason_label || row.inactive_reason)"
+                    class="small text-secondary"
+                  >
+                    Reason: {{ row.inactive_reason_label || clientAccountInactiveReasonLabel(row.inactive_reason) }}
                   </span>
                 </div>
               </td>

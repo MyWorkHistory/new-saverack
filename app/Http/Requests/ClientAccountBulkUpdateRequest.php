@@ -21,6 +21,7 @@ class ClientAccountBulkUpdateRequest extends FormRequest
             'client_account_ids.*' => ['integer', 'exists:client_accounts,id'],
             'status' => ['required', 'string', Rule::in(ClientAccount::STATUSES)],
             'pause_reason' => ['sometimes', 'nullable', 'string', Rule::in(ClientAccount::PAUSE_REASONS)],
+            'inactive_reason' => ['sometimes', 'nullable', 'string', Rule::in(ClientAccount::INACTIVE_REASONS)],
         ];
     }
 
@@ -44,6 +45,25 @@ class ClientAccountBulkUpdateRequest extends FormRequest
                             $v->errors()->add(
                                 'pause_reason',
                                 'A pause reason is required when setting accounts to paused.'
+                            );
+
+                            return;
+                        }
+                    }
+                }
+            }
+
+            if ($newStatus === ClientAccount::STATUS_INACTIVE) {
+                $reason = $this->input('inactive_reason');
+                $hasReason = is_string($reason) && trim($reason) !== '';
+                if (! $hasReason) {
+                    $accounts = ClientAccount::query()->whereIn('id', $ids)->get();
+                    foreach ($accounts as $account) {
+                        $alreadyInactive = strtolower(trim((string) $account->status)) === ClientAccount::STATUS_INACTIVE;
+                        if (! $alreadyInactive) {
+                            $v->errors()->add(
+                                'inactive_reason',
+                                'An inactive reason is required when setting accounts to inactive.'
                             );
 
                             return;

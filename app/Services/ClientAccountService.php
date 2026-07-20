@@ -203,7 +203,8 @@ class ClientAccountService
         array $ids,
         string $status,
         ?User $actor = null,
-        ?string $pauseReason = null
+        ?string $pauseReason = null,
+        ?string $inactiveReason = null
     ): array {
         $accountsBefore = ClientAccount::query()
             ->whereIn('id', $ids)
@@ -227,6 +228,13 @@ class ClientAccountService
                 && trim($pauseReason) !== ''
             ) {
                 $payload['pause_reason'] = trim($pauseReason);
+            }
+            if (
+                strtolower(trim($status)) === ClientAccount::STATUS_INACTIVE
+                && is_string($inactiveReason)
+                && trim($inactiveReason) !== ''
+            ) {
+                $payload['inactive_reason'] = trim($inactiveReason);
             }
             if (strtolower(trim($oldStatus)) !== strtolower(trim($status))) {
                 $this->applyPausedAtForStatusChange($payload, $oldStatus);
@@ -287,6 +295,16 @@ class ClientAccountService
 
         if ($newStatus === ClientAccount::STATUS_PAUSED) {
             $data['paused_at'] = now();
+            $data['inactive_reason'] = null;
+
+            return;
+        }
+
+        if ($newStatus === ClientAccount::STATUS_INACTIVE) {
+            if ($old === ClientAccount::STATUS_PAUSED) {
+                $data['paused_at'] = null;
+                $data['pause_reason'] = null;
+            }
 
             return;
         }
@@ -294,6 +312,10 @@ class ClientAccountService
         if ($old === ClientAccount::STATUS_PAUSED) {
             $data['paused_at'] = null;
             $data['pause_reason'] = null;
+        }
+
+        if ($old === ClientAccount::STATUS_INACTIVE) {
+            $data['inactive_reason'] = null;
         }
     }
 
@@ -729,6 +751,8 @@ class ClientAccountService
             'status' => $account->status,
             'pause_reason' => $account->pause_reason,
             'pause_reason_label' => ClientAccount::pauseReasonLabel($account->pause_reason),
+            'inactive_reason' => $account->inactive_reason,
+            'inactive_reason_label' => ClientAccount::inactiveReasonLabel($account->inactive_reason),
             'company_name' => $account->company_name,
             'brand_name' => $account->brand_name,
             'brand_logo_url' => $brandLogoUrl,

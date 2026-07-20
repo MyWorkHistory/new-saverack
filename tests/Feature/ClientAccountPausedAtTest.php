@@ -90,4 +90,65 @@ class ClientAccountPausedAtTest extends TestCase
         $this->assertNull($account->paused_at);
         $this->assertNull($account->pause_reason);
     }
+
+    public function test_patch_to_inactive_requires_inactive_reason(): void
+    {
+        $this->staffWithClientsUpdate();
+
+        $account = ClientAccount::create([
+            'company_name' => 'Inactive Reason Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'email' => 'inactive-reason-co@test.com',
+        ]);
+
+        $this->patchJson('/api/client-accounts/'.$account->id, [
+            'status' => ClientAccount::STATUS_INACTIVE,
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['inactive_reason']);
+    }
+
+    public function test_patch_to_inactive_sets_inactive_reason(): void
+    {
+        $this->staffWithClientsUpdate();
+
+        $account = ClientAccount::create([
+            'company_name' => 'Inactive Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'email' => 'inactive-co@test.com',
+        ]);
+
+        $response = $this->patchJson('/api/client-accounts/'.$account->id, [
+            'status' => ClientAccount::STATUS_INACTIVE,
+            'inactive_reason' => ClientAccount::INACTIVE_REASON_COLLECTIONS,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('inactive_reason', ClientAccount::INACTIVE_REASON_COLLECTIONS)
+            ->assertJsonPath('inactive_reason_label', 'Collections');
+        $account->refresh();
+        $this->assertSame(ClientAccount::STATUS_INACTIVE, $account->status);
+        $this->assertSame(ClientAccount::INACTIVE_REASON_COLLECTIONS, $account->inactive_reason);
+    }
+
+    public function test_patch_from_inactive_clears_inactive_reason(): void
+    {
+        $this->staffWithClientsUpdate();
+
+        $account = ClientAccount::create([
+            'company_name' => 'Reactivate Co',
+            'status' => ClientAccount::STATUS_INACTIVE,
+            'email' => 'reactivate-co@test.com',
+            'inactive_reason' => ClientAccount::INACTIVE_REASON_ACCOUNT_CLOSED,
+            'shiphero_customer_account_id' => 'sh-123',
+        ]);
+
+        $response = $this->patchJson('/api/client-accounts/'.$account->id, [
+            'status' => ClientAccount::STATUS_ACTIVE,
+        ]);
+
+        $response->assertOk();
+        $account->refresh();
+        $this->assertSame(ClientAccount::STATUS_ACTIVE, $account->status);
+        $this->assertNull($account->inactive_reason);
+    }
 }

@@ -92,6 +92,7 @@ class ClientAccountUpdateRequest extends FormRequest
         return [
             'status' => ['sometimes', 'string', Rule::in(ClientAccount::STATUSES)],
             'pause_reason' => ['sometimes', 'nullable', 'string', Rule::in(ClientAccount::PAUSE_REASONS)],
+            'inactive_reason' => ['sometimes', 'nullable', 'string', Rule::in(ClientAccount::INACTIVE_REASONS)],
             'company_name' => ['sometimes', 'string', 'max:190'],
             'brand_name' => ['sometimes', 'nullable', 'string', 'max:190'],
             'website' => ['sometimes', 'nullable', 'string', 'max:512'],
@@ -157,6 +158,17 @@ class ClientAccountUpdateRequest extends FormRequest
                     $v->errors()->add(
                         'pause_reason',
                         'A pause reason is required when setting an account to paused.'
+                    );
+                }
+            }
+            if ($newStatus === ClientAccount::STATUS_INACTIVE) {
+                $reason = $this->input('inactive_reason');
+                $hasReason = is_string($reason) && trim($reason) !== '';
+                $transitioningToInactive = strtolower(trim($oldStatus)) !== ClientAccount::STATUS_INACTIVE;
+                if ($transitioningToInactive && ! $hasReason) {
+                    $v->errors()->add(
+                        'inactive_reason',
+                        'An inactive reason is required when setting an account to inactive.'
                     );
                 }
             }

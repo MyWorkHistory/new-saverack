@@ -31,6 +31,7 @@ import {
 import { inHouseSlackDisplayLabel, inHouseSlackHref } from "../../utils/slackChannel.js";
 import { warnIfShipheroSyncFailed } from "../../utils/clientAccountShipheroSync.js";
 import { CLIENT_ACCOUNT_PAUSE_REASONS } from "../../constants/clientAccountPauseReasons.js";
+import { CLIENT_ACCOUNT_INACTIVE_REASONS } from "../../constants/clientAccountInactiveReasons.js";
 import {
   SHIPHERO_STORE_TYPE_OPTIONS,
   shipHeroStoreTypeLabel,
@@ -611,24 +612,40 @@ async function onBrandLogoChange(e) {
 function openAccountStatusModal() {
   if (!account.value || !canUpdateAccount.value) return;
   accountStatusForm.value = account.value.status || "pending";
-  accountPauseReasonForm.value = String(account.value.pause_reason || "");
+  const st = String(account.value.status || "").toLowerCase();
+  if (st === "paused") {
+    accountPauseReasonForm.value = String(account.value.pause_reason || "");
+  } else if (st === "inactive") {
+    accountPauseReasonForm.value = String(account.value.inactive_reason || "");
+  } else {
+    accountPauseReasonForm.value = "";
+  }
   accountStatusModalOpen.value = true;
 }
 
 async function saveAccountStatusFromModal() {
   if (!account.value || !canUpdateAccount.value) return;
   const next = accountStatusForm.value;
-  const pauseReason = String(accountPauseReasonForm.value || "").trim();
+  const reason = String(accountPauseReasonForm.value || "").trim();
   const prevStatus = String(account.value.status || "");
-  const prevReason = String(account.value.pause_reason || "");
+  const prevReason =
+    prevStatus === "paused"
+      ? String(account.value.pause_reason || "")
+      : prevStatus === "inactive"
+        ? String(account.value.inactive_reason || "")
+        : "";
   const statusUnchanged = prevStatus === next;
-  const reasonUnchanged = prevReason === pauseReason;
+  const reasonUnchanged = prevReason === reason;
   if (statusUnchanged && reasonUnchanged) {
     accountStatusModalOpen.value = false;
     return;
   }
-  if (next === "paused" && !pauseReason) {
+  if (next === "paused" && !reason) {
     toast.error("Select a pause reason.");
+    return;
+  }
+  if (next === "inactive" && !reason) {
+    toast.error("Select an inactive reason.");
     return;
   }
   if (next === "active") {
@@ -646,14 +663,19 @@ async function saveAccountStatusFromModal() {
   try {
     const payload = { status: next };
     if (next === "paused") {
-      payload.pause_reason = pauseReason;
+      payload.pause_reason = reason;
+    }
+    if (next === "inactive") {
+      payload.inactive_reason = reason;
     }
     const { data } = await api.patch(`/client-accounts/${props.id}`, payload);
     account.value = {
       ...account.value,
       status: data?.status ?? next,
-      pause_reason: data?.pause_reason ?? (next === "paused" ? pauseReason : null),
+      pause_reason: data?.pause_reason ?? (next === "paused" ? reason : null),
       pause_reason_label: data?.pause_reason_label ?? null,
+      inactive_reason: data?.inactive_reason ?? (next === "inactive" ? reason : null),
+      inactive_reason_label: data?.inactive_reason_label ?? null,
     };
     accountStatusModalOpen.value = false;
     toast.success("Account status updated.");
@@ -1126,10 +1148,14 @@ onUnmounted(() => {
       v-model:open="accountStatusModalOpen"
       v-model:status="accountStatusForm"
       v-model:reason="accountPauseReasonForm"
-      title="Account status"
+      title="Account Status"
       subtitle="Choose the directory status for this client account."
       :statuses="accountStatuses"
-      :reason-options="CLIENT_ACCOUNT_PAUSE_REASONS"
+      :show-reason-when-status="['paused', 'inactive']"
+      :reason-options-by-status="{
+        paused: CLIENT_ACCOUNT_PAUSE_REASONS,
+        inactive: CLIENT_ACCOUNT_INACTIVE_REASONS,
+      }"
       :busy="accountStatusSaving"
       @save="saveAccountStatusFromModal"
     />
@@ -1276,10 +1302,22 @@ onUnmounted(() => {
                 :class="accountStatusBadgeClass(account.status)"
               >{{ account.status }}</span>
               <div
-                v-if="String(account.status || '').toLowerCase() === 'paused' && account.pause_reason_label"
+                v-if="
+                  String(account.status || '').toLowerCase() === 'paused' &&
+                  account.pause_reason_label
+                "
                 class="small text-secondary mt-2"
               >
                 Reason: {{ account.pause_reason_label }}
+              </div>
+              <div
+                v-else-if="
+                  String(account.status || '').toLowerCase() === 'inactive' &&
+                  account.inactive_reason_label
+                "
+                class="small text-secondary mt-2"
+              >
+                Reason: {{ account.inactive_reason_label }}
               </div>
             </div>
             <div class="staff-user-profile__stats">

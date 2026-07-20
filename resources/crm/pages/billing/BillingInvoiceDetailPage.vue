@@ -17,6 +17,13 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { formatCents } from "../../utils/formatMoney.js";
 import { formatIsoDate, parseCalendarDay, toDateInputValue } from "../../utils/formatUserDates.js";
 import { INVOICE_CATEGORY_OPTIONS } from "../../constants/invoiceCategoryOptions.js";
+import {
+  ONBOARDING_ACTIVATION_BLOCKED_MESSAGE,
+  checkOnboardingReadyForActivation,
+} from "../../utils/clientAccountOnboardingActivation.js";
+import { warnIfShipheroSyncFailed } from "../../utils/clientAccountShipheroSync.js";
+import { CLIENT_ACCOUNT_PAUSE_REASONS } from "../../constants/clientAccountPauseReasons.js";
+import { CLIENT_ACCOUNT_INACTIVE_REASONS } from "../../constants/clientAccountInactiveReasons.js";
 
 const invoiceCategoryOptions = INVOICE_CATEGORY_OPTIONS;
 
@@ -99,6 +106,12 @@ const invoiceStatuses = [
   "paid",
   "void",
 ];
+
+const accountStatusModalOpen = ref(false);
+const accountStatusForm = ref("pending");
+const accountStatusReasonForm = ref("");
+const accountStatusSaving = ref(false);
+const accountStatuses = ["pending", "active", "paused", "inactive"];
 
 const deleteModalOpen = ref(false);
 const deleteBusy = ref(false);
@@ -1044,6 +1057,100 @@ function statusBadgeClass(status) {
   if (s === "past due" || s === "past_due") return "bg-danger-subtle text-danger-emphasis";
   if (s === "open") return "bg-primary-subtle text-primary-emphasis";
   return "bg-body-secondary text-body-secondary";
+}
+
+function accountStatusBadgeClass(status) {
+  const s = String(status || "").toLowerCase();
+  if (s === "active") return "badge bg-success-subtle text-success";
+  if (s === "pending") return "badge bg-warning-subtle text-warning-emphasis";
+  if (s === "paused") return "badge bg-danger-subtle text-danger";
+  if (s === "inactive") return "badge bg-secondary-subtle text-secondary";
+  return "badge bg-body-secondary text-body-secondary";
+}
+
+function openAccountStatusModal() {
+  if (!canUpdateClientAccount.value || !invoice.value?.client_account_id) return;
+  const st = String(invoice.value.client_account_status || "pending");
+  accountStatusForm.value = st;
+  const key = st.toLowerCase();
+  if (key === "paused") {
+    accountStatusReasonForm.value = String(invoice.value.client_account_pause_reason || "");
+  } else if (key === "inactive") {
+    accountStatusReasonForm.value = String(invoice.value.client_account_inactive_reason || "");
+  } else {
+    accountStatusReasonForm.value = "";
+  }
+  accountStatusModalOpen.value = true;
+}
+
+async function saveAccountStatusFromModal() {
+  if (!canUpdateClientAccount.value || !invoice.value?.client_account_id) return;
+  const next = String(accountStatusForm.value || "").trim();
+  const reason = String(accountStatusReasonForm.value || "").trim();
+  const prevStatus = String(invoice.value.client_account_status || "");
+  const prevReason =
+    prevStatus === "paused"
+      ? String(invoice.value.client_account_pause_reason || "")
+      : prevStatus === "inactive"
+        ? String(invoice.value.client_account_inactive_reason || "")
+        : "";
+  if (prevStatus === next && prevReason === reason) {
+    accountStatusModalOpen.value = false;
+    return;
+  }
+  if (next === "paused" && !reason) {
+    toast.error("Select a pause reason.");
+    return;
+  }
+  if (next === "inactive" && !reason) {
+    toast.error("Select an inactive reason.");
+    return;
+  }
+  if (next === "active") {
+    const u = crmUser.value;
+    const canBypassOnboarding = crmIsAdmin(u) || !!u?.is_crm_owner;
+    if (!canBypassOnboarding) {
+      const ready = await checkOnboardingReadyForActivation(
+        api,
+        invoice.value.client_account_id,
+      );
+      if (!ready) {
+        toast.error(ONBOARDING_ACTIVATION_BLOCKED_MESSAGE);
+        return;
+      }
+    }
+  }
+  accountStatusSaving.value = true;
+  try {
+    const payload = { status: next };
+    if (next === "paused") {
+      payload.pause_reason = reason;
+    }
+    if (next === "inactive") {
+      payload.inactive_reason = reason;
+    }
+    const { data } = await api.patch(
+      `/client-accounts/${invoice.value.client_account_id}`,
+      payload,
+    );
+    invoice.value = {
+      ...invoice.value,
+      client_account_status: data?.status ?? next,
+      client_account_pause_reason:
+        data?.pause_reason ?? (next === "paused" ? reason : null),
+      client_account_pause_reason_label: data?.pause_reason_label ?? null,
+      client_account_inactive_reason:
+        data?.inactive_reason ?? (next === "inactive" ? reason : null),
+      client_account_inactive_reason_label: data?.inactive_reason_label ?? null,
+    };
+    accountStatusModalOpen.value = false;
+    toast.success("Account status updated.");
+    warnIfShipheroSyncFailed(data, toast);
+  } catch (e) {
+    toast.errorFrom(e, "Could not update account status.");
+  } finally {
+    accountStatusSaving.value = false;
+  }
 }
 
 function openStatusModal() {
@@ -2482,7 +2589,7 @@ function onDocKeydown(e) {
                 <div class="col-lg-6 min-w-0">
                   <div class="billing-inv-invoice-to-block">
                     <div class="billing-inv-section-label">Invoice to</div>
-                    <div class="fw-bold text-body fs-5 mb-1">
+                    <div class="fw-bold text-body fs-5 mb-1 d-flex flex-wrap align-items-center gap-2">
                       <a
                         v-if="invoice.client_account_id && clientAccountDetailHref"
                         :href="clientAccountDetailHref"
@@ -2491,6 +2598,41 @@ function onDocKeydown(e) {
                         class="text-body text-decoration-none billing-inv-client-link"
                       >{{ invoice.client_company_name || "—" }}</a>
                       <template v-else>{{ invoice.client_company_name || "—" }}</template>
+                      <button
+                        v-if="canUpdateClientAccount && invoice.client_account_id && invoice.client_account_status"
+                        type="button"
+                        class="staff-status-badge text-capitalize"
+                        :class="accountStatusBadgeClass(invoice.client_account_status)"
+                        title="Change account status"
+                        @click="openAccountStatusModal"
+                      >
+                        {{ invoice.client_account_status }}
+                      </button>
+                      <span
+                        v-else-if="invoice.client_account_status"
+                        class="staff-status-badge text-capitalize"
+                        :class="accountStatusBadgeClass(invoice.client_account_status)"
+                      >
+                        {{ invoice.client_account_status }}
+                      </span>
+                    </div>
+                    <div
+                      v-if="
+                        String(invoice.client_account_status || '').toLowerCase() === 'paused' &&
+                        invoice.client_account_pause_reason_label
+                      "
+                      class="small text-secondary mb-1"
+                    >
+                      Reason: {{ invoice.client_account_pause_reason_label }}
+                    </div>
+                    <div
+                      v-else-if="
+                        String(invoice.client_account_status || '').toLowerCase() === 'inactive' &&
+                        invoice.client_account_inactive_reason_label
+                      "
+                      class="small text-secondary mb-1"
+                    >
+                      Reason: {{ invoice.client_account_inactive_reason_label }}
                     </div>
                     <div
                       v-if="invoice.client_account_contact_name"
@@ -4201,11 +4343,27 @@ function onDocKeydown(e) {
     <CrmStatusUpdateModal
       v-model:open="statusModalOpen"
       v-model:status="statusForm"
-      title="Invoice status"
+      title="Invoice Status"
       subtitle="Choose the billing status for this invoice."
       :statuses="invoiceStatuses"
       :busy="statusSaving"
       @save="saveStatusFromModal"
+    />
+    <CrmStatusUpdateModal
+      v-if="canUpdateClientAccount"
+      v-model:open="accountStatusModalOpen"
+      v-model:status="accountStatusForm"
+      v-model:reason="accountStatusReasonForm"
+      title="Account Status"
+      subtitle="Choose the directory status for this client account."
+      :statuses="accountStatuses"
+      :show-reason-when-status="['paused', 'inactive']"
+      :reason-options-by-status="{
+        paused: CLIENT_ACCOUNT_PAUSE_REASONS,
+        inactive: CLIENT_ACCOUNT_INACTIVE_REASONS,
+      }"
+      :busy="accountStatusSaving"
+      @save="saveAccountStatusFromModal"
     />
   </div>
 </template>

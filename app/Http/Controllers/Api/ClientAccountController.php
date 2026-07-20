@@ -437,6 +437,12 @@ class ClientAccountController extends Controller
         if ($pauseReason === '') {
             $pauseReason = null;
         }
+        $inactiveReason = isset($validated['inactive_reason']) && is_string($validated['inactive_reason'])
+            ? trim($validated['inactive_reason'])
+            : null;
+        if ($inactiveReason === '') {
+            $inactiveReason = null;
+        }
 
         foreach ($ids as $id) {
             $this->authorize('update', ClientAccount::query()->findOrFail($id));
@@ -446,7 +452,8 @@ class ClientAccountController extends Controller
             $ids,
             $status,
             $request->user(),
-            $pauseReason
+            $pauseReason,
+            $inactiveReason
         );
 
         $payload = [

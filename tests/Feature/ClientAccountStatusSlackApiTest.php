@@ -163,4 +163,45 @@ class ClientAccountStatusSlackApiTest extends TestCase
             return str_contains($request->url(), 'hooks.slack.com');
         });
     }
+
+    public function test_status_patch_with_bot_includes_native_header_for_inactive(): void
+    {
+        $this->staffWithClientsUpdate();
+
+        Http::fake([
+            'https://slack.com/api/conversations.join' => Http::response(['ok' => true], 200),
+            'https://slack.com/api/chat.postMessage' => Http::response(['ok' => true, 'channel' => 'C1', 'ts' => '1'], 200),
+        ]);
+
+        $account = ClientAccount::create([
+            'company_name' => 'Slack Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'email' => 'slack-co-inactive@test.com',
+            'in_house_slack' => 'slack-co',
+        ]);
+
+        $this->patchJson('/api/client-accounts/'.$account->id, [
+            'status' => ClientAccount::STATUS_INACTIVE,
+            'inactive_reason' => ClientAccount::INACTIVE_REASON_COLLECTIONS,
+        ])->assertOk();
+
+        Http::assertSent(function ($request) {
+            if (! str_contains($request->url(), 'chat.postMessage')) {
+                return false;
+            }
+
+            $payload = $request->data();
+            $this->assertSame('Shipping Status Update', $payload['username'] ?? null);
+            $this->assertStringContainsString('/images/slack/shipping-status-paused-thumb.png', (string) ($payload['icon_url'] ?? ''));
+            $this->assertStringContainsString('Slack Co is set to Inactive.', (string) ($payload['text'] ?? ''));
+            $this->assertStringContainsString('Reason: Collections', (string) ($payload['text'] ?? ''));
+            $this->assertArrayNotHasKey('blocks', $payload);
+
+            return true;
+        });
+
+        Http::assertNotSent(function ($request) {
+            return str_contains($request->url(), 'hooks.slack.com');
+        });
+    }
 }

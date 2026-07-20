@@ -1337,6 +1337,7 @@ class InventoryController extends Controller
 
     public function transferQuantity(Request $request): JsonResponse
     {
+        $this->normalizeInventoryAccountRequest($request);
         $validated = $request->validate([
             'sku' => ['required', 'string', 'max:255'],
             'warehouse_id' => ['required', 'string', 'max:255'],
@@ -1359,10 +1360,16 @@ class InventoryController extends Controller
             : null;
 
         try {
-            $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId(
-                $clientAccountId > 0 ? $clientAccountId : null,
-                $request,
-            );
+            // Prefer account ShipHero id, but fall back to SKU index like product detail does.
+            $shipheroCustomerId = null;
+            if ($clientAccountId !== null && $clientAccountId > 0) {
+                $shipheroCustomerId = $this->tryResolveShipHeroCustomerAccountId($clientAccountId, $request);
+            }
+            if ($shipheroCustomerId === null || $shipheroCustomerId === '') {
+                $shipheroCustomerId = $this->inventory->resolveCustomerAccountIdForSkuMutation(
+                    $validated['sku']
+                );
+            }
             $fromLocationId = isset($validated['from_location_id']) && is_string($validated['from_location_id'])
                 ? trim($validated['from_location_id'])
                 : '';

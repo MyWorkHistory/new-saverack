@@ -592,7 +592,7 @@ async function openTransferFromMenu(row) {
   transferBusy.value = false;
   try {
     const { data } = await api.get(`/inventory/products/${encodeURIComponent(row.sku)}`, {
-      params: { client_account_id: accountId },
+      params: { client_account_id: accountId, refresh: true },
     });
     transferProduct.value = data?.product ?? null;
     const fromId =
@@ -642,8 +642,11 @@ async function submitTransfer() {
     from_location_id: transferFromLocation.value.location_id,
     quantity: qty,
     reason: transferForm.reason,
-    client_account_id: Number(transferRow.value.client_account_id || 0),
   };
+  const accountId = Number(transferRow.value.client_account_id || 0);
+  if (accountId > 0) {
+    body.client_account_id = accountId;
+  }
 
   let nextStatus = RESTOCK_STATUS_COMPLETE;
   if (transferMode.value === "pending" && destMode === "cart") {

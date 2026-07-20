@@ -5997,20 +5997,31 @@ GQL;
         if ($fromLocationId === $toLocationId) {
             throw new RuntimeException('Source and destination locations must be different.');
         }
-        $product = $this->searchProduct($sku, $warehouseId, $customerAccountId);
+
+        $warehouseId = trim($warehouseId);
+        $resolved = $this->resolveProductForTransfer($sku, $warehouseId, $customerAccountId);
+        $product = $resolved['product'] ?? null;
         if (! is_array($product)) {
             throw new RuntimeException('Product not found for transfer.');
         }
-        $warehouse = null;
-        foreach (($product['warehouses'] ?? []) as $wh) {
-            if (is_array($wh) && (string) ($wh['warehouse_id'] ?? '') === $warehouseId) {
-                $warehouse = $wh;
-                break;
+        $mutationCustomerId = $resolved['customer_account_id'] ?? $customerAccountId;
+
+        $warehouse = $this->findWarehouseSlice($product, $warehouseId);
+        if (! is_array($warehouse)) {
+            // Warehouse filter on the first lookup can miss; retry with full product payload.
+            $resolved = $this->resolveProductForTransfer($sku, null, $mutationCustomerId);
+            if (is_array($resolved['product'] ?? null)) {
+                $product = $resolved['product'];
+                if (array_key_exists('customer_account_id', $resolved)) {
+                    $mutationCustomerId = $resolved['customer_account_id'];
+                }
+                $warehouse = $this->findWarehouseSlice($product, $warehouseId);
             }
         }
         if (! is_array($warehouse)) {
             throw new RuntimeException('Warehouse not found for transfer.');
         }
+
         $fromQty = null;
         $toQty = 0;
         foreach (($warehouse['locations'] ?? []) as $loc) {
@@ -6037,7 +6048,7 @@ GQL;
             $fromLocationId,
             max(0, $fromQty - $quantity),
             $reason,
-            $customerAccountId
+            $mutationCustomerId
         );
 
         return $this->replaceLocationQuantity(
@@ -6046,8 +6057,88 @@ GQL;
             $toLocationId,
             max(0, $toQty + $quantity),
             $reason,
-            $customerAccountId
+            $mutationCustomerId
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $product
+     * @return array<string, mixed>|null
+     */
+    private function findWarehouseSlice(array $product, string $warehouseId): ?array
+    {
+        $warehouseId = trim($warehouseId);
+        if ($warehouseId === '') {
+            return null;
+        }
+        foreach (($product['warehouses'] ?? []) as $wh) {
+            if (is_array($wh) && (string) ($wh['warehouse_id'] ?? '') === $warehouseId) {
+                return $wh;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve a product for transfer using the same paths as product detail, with customer fallbacks.
+     * Restock UI often loads a cached detail while a scoped live search can miss the SKU.
+     *
+     * @return array{product: ?array<string,mixed>, customer_account_id: ?string}
+     */
+    private function resolveProductForTransfer(
+        string $sku,
+        ?string $warehouseId,
+        ?string $customerAccountId
+    ): array {
+        $sku = trim($sku);
+        $customerCandidates = [];
+        if (is_string($customerAccountId) && trim($customerAccountId) !== '') {
+            $customerCandidates[] = trim($customerAccountId);
+        }
+        $fromIndex = $this->resolveCustomerAccountIdForSkuMutation($sku, null);
+        if (is_string($fromIndex) && trim($fromIndex) !== '' && ! in_array(trim($fromIndex), $customerCandidates, true)) {
+            $customerCandidates[] = trim($fromIndex);
+        }
+        // Last: unscoped brand-level lookup (matches product detail when account id is absent).
+        $customerCandidates[] = null;
+
+        foreach ($customerCandidates as $customerId) {
+            $product = null;
+            try {
+                $product = $this->getProductDetailBySku($sku, $warehouseId, $customerId, false);
+            } catch (\Throwable $e) {
+                Log::warning('shiphero.inventory.transfer.detail_lookup_failed', [
+                    'sku' => $sku,
+                    'customer_account_id' => $customerId,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+            if (! is_array($product)) {
+                $product = $this->searchProduct($sku, $warehouseId, $customerId);
+            }
+            if (is_array($product)) {
+                $resolvedCustomer = $customerId;
+                if ($resolvedCustomer === null || $resolvedCustomer === '') {
+                    $fromProduct = $this->customerAccountIdFromProductData($product);
+                    if (is_string($fromProduct) && trim($fromProduct) !== '') {
+                        $resolvedCustomer = trim($fromProduct);
+                    }
+                }
+
+                return [
+                    'product' => $product,
+                    'customer_account_id' => $resolvedCustomer,
+                ];
+            }
+        }
+
+        return [
+            'product' => null,
+            'customer_account_id' => is_string($customerAccountId) && trim($customerAccountId) !== ''
+                ? trim($customerAccountId)
+                : null,
+        ];
     }
 
     /**

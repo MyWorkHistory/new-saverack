@@ -376,19 +376,18 @@ function hasKey(key) {
   return draftKeySet.value.has(key);
 }
 
-/** Batch update so column multi-select is one reactive write. */
+/** Batch update so column/module multi-select is one reactive write. */
 function setKeys(keys, on) {
   if (isAdminTarget.value) return;
   const list = (keys || []).filter((k) => typeof k === "string" && k !== "");
   if (list.length === 0) return;
-  const editable = editablePermissionKeys.value;
   const next = new Set(draftKeys.value);
   for (const key of list) {
-    if (!editable.has(key)) continue;
     if (on) next.add(key);
     else next.delete(key);
   }
-  draftKeys.value = [...next];
+  // Always assign a new array so :checked bindings re-render.
+  draftKeys.value = Array.from(next);
 }
 
 function keysForColumn(module, colIdx) {
@@ -397,6 +396,10 @@ function keysForColumn(module, colIdx) {
 
 function keysForModule(module) {
   return (module?.rows || []).flatMap((r) => (r.keys || []).filter(Boolean));
+}
+
+function keysForRow(row) {
+  return (row?.keys || []).filter(Boolean);
 }
 
 function columnAllChecked(module, colIdx) {
@@ -431,23 +434,43 @@ function moduleHasKeys(module) {
   return keysForModule(module).length > 0;
 }
 
-/** Toggle whole column from current state (avoids flaky controlled @change). */
-function toggleColumn(module, colIdx) {
-  if (isAdminTarget.value || !columnHasKeys(module, colIdx)) return;
-  const keys = keysForColumn(module, colIdx);
-  setKeys(keys, !columnAllChecked(module, colIdx));
+function rowAllChecked(row) {
+  const keys = keysForRow(row);
+  return keys.length > 0 && keys.every((k) => hasKey(k));
 }
 
-/** Toggle every permission in a module section. */
+/** Apply checkbox state from the native change event (avoids stuck :checked + prevent). */
+function onModuleChange(module, ev) {
+  if (isAdminTarget.value || !moduleHasKeys(module)) return;
+  const on = Boolean(ev?.target?.checked);
+  // Defer past browser click bookkeeping so :checked isn't wiped after prevent-less updates.
+  setTimeout(() => setKeys(keysForModule(module), on), 0);
+}
+
+function onColumnChange(module, colIdx, ev) {
+  if (isAdminTarget.value || !columnHasKeys(module, colIdx)) return;
+  const on = Boolean(ev?.target?.checked);
+  setTimeout(() => setKeys(keysForColumn(module, colIdx), on), 0);
+}
+
 function toggleModule(module) {
   if (isAdminTarget.value || !moduleHasKeys(module)) return;
-  const keys = keysForModule(module);
-  setKeys(keys, !moduleAllChecked(module));
+  const on = !moduleAllChecked(module);
+  setTimeout(() => setKeys(keysForModule(module), on), 0);
 }
 
-function toggleCell(key) {
-  if (!key || isAdminTarget.value) return;
-  setKeys([key], !hasKey(key));
+function toggleColumn(module, colIdx) {
+  if (isAdminTarget.value || !columnHasKeys(module, colIdx)) return;
+  const on = !columnAllChecked(module, colIdx);
+  setTimeout(() => setKeys(keysForColumn(module, colIdx), on), 0);
+}
+
+function toggleRow(row) {
+  if (isAdminTarget.value) return;
+  const keys = keysForRow(row);
+  if (keys.length === 0) return;
+  const on = !rowAllChecked(row);
+  setTimeout(() => setKeys(keys, on), 0);
 }
 
 const checkboxClass =
@@ -613,24 +636,34 @@ function normalizePermissionDefs(items) {
                             />
                           </svg>
                         </button>
-                        <template v-if="moduleHasKeys(mod)">
+                        <template v-if="moduleHasKeys(mod) && !isAdminTarget">
                           <input
                             type="checkbox"
                             :class="checkboxClass"
                             :checked="moduleAllChecked(mod)"
-                            :indeterminate.prop="moduleSomeChecked(mod)"
-                            :disabled="isAdminTarget"
+                            :indeterminate="moduleSomeChecked(mod)"
                             :aria-label="`Select all ${mod.label} permissions`"
-                            @click.prevent.stop="toggleModule(mod)"
+                            @change="onModuleChange(mod, $event)"
                           />
                           <button
                             type="button"
                             class="min-w-0 truncate text-left font-semibold text-gray-900 dark:text-white"
-                            :disabled="isAdminTarget"
                             @click="toggleModule(mod)"
                           >
                             {{ mod.label }}
                           </button>
+                        </template>
+                        <template v-else-if="moduleHasKeys(mod)">
+                          <input
+                            type="checkbox"
+                            :class="checkboxClass"
+                            checked
+                            disabled
+                            :aria-label="`Select all ${mod.label} permissions`"
+                          />
+                          <span class="font-semibold text-gray-900 dark:text-white">
+                            {{ mod.label }}
+                          </span>
                         </template>
                         <span
                           v-else
@@ -648,24 +681,34 @@ function normalizePermissionDefs(items) {
                       <div
                         class="grid grid-cols-[1.125rem_minmax(0,1fr)] items-center gap-x-3 gap-y-0"
                       >
-                        <template v-if="columnHasKeys(mod, colIdx)">
+                        <template v-if="columnHasKeys(mod, colIdx) && !isAdminTarget">
                           <input
                             type="checkbox"
                             :class="checkboxClass"
                             :checked="columnAllChecked(mod, colIdx)"
-                            :indeterminate.prop="columnSomeChecked(mod, colIdx)"
-                            :disabled="isAdminTarget"
+                            :indeterminate="columnSomeChecked(mod, colIdx)"
                             :aria-label="`${mod.label} ${col}`"
-                            @click.prevent.stop="toggleColumn(mod, colIdx)"
+                            @change="onColumnChange(mod, colIdx, $event)"
                           />
                           <button
                             type="button"
                             class="text-left text-sm font-medium text-gray-800 dark:text-gray-200"
-                            :disabled="isAdminTarget"
-                            @click.stop="toggleColumn(mod, colIdx)"
+                            @click="toggleColumn(mod, colIdx)"
                           >
                             {{ col }}
                           </button>
+                        </template>
+                        <template v-else-if="columnHasKeys(mod, colIdx)">
+                          <input
+                            type="checkbox"
+                            :class="checkboxClass"
+                            checked
+                            disabled
+                            :aria-label="`${mod.label} ${col}`"
+                          />
+                          <span class="text-sm font-medium text-gray-400 dark:text-gray-500">
+                            {{ col }}
+                          </span>
                         </template>
                         <template v-else>
                           <span
@@ -694,7 +737,14 @@ function normalizePermissionDefs(items) {
                       scope="row"
                       class="border border-gray-200 px-5 py-4 pl-12 align-middle text-left text-sm font-normal text-gray-700 dark:border-gray-700 dark:text-gray-300 sm:px-6 sm:pl-14 sm:py-5"
                     >
-                      {{ row.rowLabel }}
+                      <button
+                        type="button"
+                        class="text-left font-normal text-gray-700 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:text-gray-300 dark:hover:text-white"
+                        :disabled="isAdminTarget || keysForRow(row).length === 0"
+                        @click="toggleRow(row)"
+                      >
+                        {{ row.rowLabel }}
+                      </button>
                     </th>
                     <td
                       v-for="(colKey, colIdx) in row.keys"
@@ -704,14 +754,22 @@ function normalizePermissionDefs(items) {
                       <div
                         class="grid grid-cols-[1.125rem_minmax(0,1fr)] items-center gap-x-3"
                       >
-                        <template v-if="colKey">
+                        <template v-if="colKey && !isAdminTarget">
                           <input
                             type="checkbox"
                             :class="checkboxClass"
-                            :checked="hasKey(colKey)"
-                            :disabled="isAdminTarget"
+                            :value="colKey"
+                            v-model="draftKeys"
                             :aria-label="`${row.rowLabel} ${ACTION_HEADERS[colIdx]}`"
-                            @click.prevent.stop="toggleCell(colKey)"
+                          />
+                        </template>
+                        <template v-else-if="colKey">
+                          <input
+                            type="checkbox"
+                            :class="checkboxClass"
+                            checked
+                            disabled
+                            :aria-label="`${row.rowLabel} ${ACTION_HEADERS[colIdx]}`"
                           />
                         </template>
                         <template v-else>

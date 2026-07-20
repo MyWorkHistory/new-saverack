@@ -45,10 +45,16 @@ const CLIENT_PAYMENT_TYPE_OPTIONS = [
   "Varies",
 ];
 
-const canUpdate = computed(() => userHasPerm("billing.update"));
-const canCreate = computed(() => userHasPerm("billing.create"));
+const canUpdate = computed(
+  () => userHasPerm("billing_invoices.update") || userHasPerm("billing.update"),
+);
+const canCreate = computed(
+  () => userHasPerm("billing_invoices.create") || userHasPerm("billing.create"),
+);
 const canUpdateClientAccount = computed(() => userHasPerm("clients.update"));
-const canDelete = computed(() => userHasPerm("billing.delete"));
+const canDelete = computed(
+  () => userHasPerm("billing_invoices.delete") || userHasPerm("billing.delete"),
+);
 const canHardDeleteInvoices = computed(() => {
   const u = crmUser.value;
   if (!u) return false;

@@ -50,9 +50,21 @@ const portalAccountId = computed(() => {
   return Number(crmUser.value?.client_account_id || 0);
 });
 
-const canCreate = computed(() => !props.portalMode && userHasPerm("billing.create"));
-const canUpdate = computed(() => !props.portalMode && userHasPerm("billing.update"));
-const canDelete = computed(() => !props.portalMode && userHasPerm("billing.delete"));
+const canCreate = computed(
+  () =>
+    !props.portalMode &&
+    (userHasPerm("billing_invoices.create") || userHasPerm("billing.create")),
+);
+const canUpdate = computed(
+  () =>
+    !props.portalMode &&
+    (userHasPerm("billing_invoices.update") || userHasPerm("billing.update")),
+);
+const canDelete = computed(
+  () =>
+    !props.portalMode &&
+    (userHasPerm("billing_invoices.delete") || userHasPerm("billing.delete")),
+);
 /** Administrator / CRM owner: may delete invoices in any status (backend-enforced). */
 const canHardDeleteInvoices = computed(() => {
   if (props.portalMode) {

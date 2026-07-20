@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted } from "vue";
+import { computed, nextTick, onMounted, watch } from "vue";
+import { useRoute } from "vue-router";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarButton.vue";
 import CrmSyncToolbar from "../../components/common/CrmSyncToolbar.vue";
@@ -13,6 +14,7 @@ import { useToast } from "../../composables/useToast.js";
 import { formatDateTimeUs } from "../../utils/formatUserDates.js";
 
 const toast = useToast();
+const route = useRoute();
 
 const { loading, refreshing, sections, pausedOnHoldOrderCount, load, refreshSection } = useAdminHomeDashboard({
   onError: (e) => toast.errorFrom(e, "Could not load on-hold overview."),
@@ -119,6 +121,15 @@ function scrollToSection(key) {
   el?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function scrollToHashTarget() {
+  const hash = String(route.hash || "").replace(/^#/, "");
+  if (hash === "hold-paused") {
+    scrollToSection("paused");
+  } else if (hash.startsWith("hold-")) {
+    scrollToSection(hash.slice("hold-".length));
+  }
+}
+
 function refreshToastMessage(data, fallbackQueued) {
   if (data?.refresh_index_only) {
     return "Counts updated from database. Full sync queued if index was empty.";
@@ -157,10 +168,19 @@ onMounted(async () => {
   });
   try {
     await load();
+    await nextTick();
+    scrollToHashTarget();
   } catch {
     /* toast handled */
   }
 });
+
+watch(
+  () => route.hash,
+  () => {
+    nextTick(() => scrollToHashTarget());
+  },
+);
 </script>
 
 <template>

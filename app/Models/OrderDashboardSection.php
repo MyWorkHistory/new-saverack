@@ -63,6 +63,21 @@ class OrderDashboardSection extends Model
         self::KEY_HOLD_BACKORDER,
     ];
 
+    /**
+     * Sections that should include paused accounts in account breakdowns / paused order counts.
+     *
+     * @return list<string>
+     */
+    public static function keysIncludingPausedAccounts(): array
+    {
+        return array_merge([self::KEY_ON_HOLD], self::HOLD_KEYS);
+    }
+
+    public static function includesPausedAccounts(string $sectionKey): bool
+    {
+        return in_array($sectionKey, self::keysIncludingPausedAccounts(), true);
+    }
+
     /** @var list<string> */
     public const SHIPHERO_KEYS = [
         self::KEY_READY_TO_SHIP,

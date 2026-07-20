@@ -592,7 +592,8 @@ async function openTransferFromMenu(row) {
   transferBusy.value = false;
   try {
     const { data } = await api.get(`/inventory/products/${encodeURIComponent(row.sku)}`, {
-      params: { client_account_id: accountId, refresh: true },
+      // Use 1 — GET query params stringify booleans as "true", which fails Laravel's boolean rule.
+      params: { client_account_id: accountId, refresh: 1 },
     });
     transferProduct.value = data?.product ?? null;
     const fromId =

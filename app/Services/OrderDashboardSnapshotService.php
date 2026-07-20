@@ -252,10 +252,15 @@ class OrderDashboardSnapshotService
             );
         }
 
-        $onHoldTotal = $this->orderIndex->aggregateOnHoldTodayFromIndex();
+        $onHoldResult = $this->orderIndex->aggregateDashboardSection(OrderDashboardSection::KEY_ON_HOLD, false);
+        $onHoldTotal = (int) ($onHoldResult['total_count'] ?? 0);
+        $onHoldPayload = is_array($onHoldResult['payload'] ?? null)
+            ? $onHoldResult['payload']
+            : ['accounts' => [], 'truncated' => false];
+        $onHoldPayload['from_index'] = true;
         $this->saveSectionPayload(
             OrderDashboardSection::KEY_ON_HOLD,
-            ['accounts' => [], 'truncated' => false, 'from_index' => true],
+            $onHoldPayload,
             $onHoldTotal,
             0,
             true
@@ -308,13 +313,21 @@ class OrderDashboardSnapshotService
             ->orderBy('company_name')
             ->get(['id', 'company_name', 'status', 'shiphero_customer_account_id']);
 
+        $pausedAccounts = ClientAccount::query()
+            ->withShipHeroCustomerLink()
+            ->where('status', ClientAccount::STATUS_PAUSED)
+            ->orderBy('company_name')
+            ->get(['id', 'company_name', 'status', 'shiphero_customer_account_id']);
+
         $onHoldTotal = 0;
         $failures = 0;
+        $accountIndex = 0;
 
-        foreach ($accounts as $index => $account) {
-            if ($index > 0) {
+        foreach ($accounts as $account) {
+            if ($accountIndex > 0) {
                 usleep(ShipHeroCreditLimit::INTER_ACCOUNT_SLEEP_MICROS);
             }
+            $accountIndex++;
 
             $customerId = trim((string) $account->shiphero_customer_account_id);
             if ($customerId === '') {
@@ -402,8 +415,46 @@ class OrderDashboardSnapshotService
                 ]);
             }
 
-            if ($index > 0 && $index % 10 === 0) {
+            if ($accountIndex > 0 && $accountIndex % 10 === 0) {
                 $this->bumpDashboardRevision();
+            }
+        }
+
+        // Paused accounts: on-hold counts only (shown on PAUSED card + on-hold paused section).
+        foreach ($pausedAccounts as $account) {
+            if ($accountIndex > 0) {
+                usleep(ShipHeroCreditLimit::INTER_ACCOUNT_SLEEP_MICROS);
+            }
+            $accountIndex++;
+
+            $customerId = trim((string) $account->shiphero_customer_account_id);
+            if ($customerId === '') {
+                continue;
+            }
+
+            try {
+                $holdContext = $this->queueCounts->contextForOnHoldDashboardTotal($account);
+                $hold = ShipHeroCreditLimit::run(function () use ($holdContext, $customerId) {
+                    return $this->orders->countOrders([
+                        'customer_account_id' => $customerId,
+                        'tab' => 'on_hold',
+                        'order_date_from' => $holdContext['open_from'] ?? null,
+                        'order_date_to' => $holdContext['open_to'] ?? null,
+                        'timezone' => $holdContext['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
+                        'max_pages' => 50,
+                    ]);
+                });
+                $this->mergeAccountIntoSection(
+                    OrderDashboardSection::KEY_ON_HOLD,
+                    $account,
+                    (int) ($hold['count'] ?? 0)
+                );
+            } catch (Throwable $e) {
+                $failures++;
+                Log::warning('order_dashboard.live_paused_on_hold_account_failed', [
+                    'client_account_id' => (int) $account->id,
+                    'message' => $e->getMessage(),
+                ]);
             }
         }
 
@@ -440,7 +491,8 @@ class OrderDashboardSnapshotService
             'shipped' => $shippedTotal,
             'on_hold' => $onHoldTotal,
             'accounts_failed' => $failures,
-            'accounts_total' => $accounts->count(),
+            'accounts_total' => $accounts->count() + $pausedAccounts->count(),
+            'paused_accounts_total' => $pausedAccounts->count(),
             'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
         ]);
     }
@@ -995,6 +1047,11 @@ class OrderDashboardSnapshotService
             if (! is_array($entry)) {
                 continue;
             }
+            if ($sectionKey === OrderDashboardSection::KEY_ON_HOLD
+                && strcasecmp((string) ($entry['account_status'] ?? ''), ClientAccount::STATUS_PAUSED) === 0
+            ) {
+                continue;
+            }
             $total += (int) ($entry['orders_count'] ?? 0);
         }
 
@@ -1187,7 +1244,9 @@ class OrderDashboardSnapshotService
             return $this->orderIndex->aggregateDashboardSection($sectionKey);
         }
 
-        $accounts = $this->shipHeroLinkedAccounts();
+        $accounts = $this->shipHeroLinkedAccounts(
+            OrderDashboardSection::includesPausedAccounts($sectionKey)
+        );
         if ($accounts === []) {
             return [
                 'payload' => ['accounts' => [], 'truncated' => false],
@@ -1227,7 +1286,13 @@ class OrderDashboardSnapshotService
                 'account_status' => (string) $account->status,
                 'orders_count' => $count,
             ];
-            $total += $count;
+            if ($sectionKey === OrderDashboardSection::KEY_ON_HOLD
+                && strcasecmp((string) $account->status, ClientAccount::STATUS_PAUSED) === 0
+            ) {
+                // Keep paused rows in the payload for the PAUSED card; exclude from ON-HOLD total.
+            } else {
+                $total += $count;
+            }
         }
 
         usort($rows, static function (array $a, array $b) {
@@ -1392,10 +1457,16 @@ class OrderDashboardSnapshotService
     /**
      * @return list<ClientAccount>
      */
-    private function shipHeroLinkedAccounts(): array
+    private function shipHeroLinkedAccounts(bool $includePaused = false): array
     {
-        return ClientAccount::query()
-            ->operationalForOrderDashboards()
+        $query = ClientAccount::query()->withShipHeroCustomerLink();
+        if ($includePaused) {
+            $query->whereIn('status', [ClientAccount::STATUS_ACTIVE, ClientAccount::STATUS_PAUSED]);
+        } else {
+            $query->where('status', ClientAccount::STATUS_ACTIVE);
+        }
+
+        return $query
             ->orderBy('company_name')
             ->get()
             ->all();
@@ -1523,9 +1594,20 @@ class OrderDashboardSnapshotService
         }
 
         if ($hasAccountBreakdown) {
-            $accounts = $this->filterOperationalDashboardAccounts($accounts);
+            $sectionKey = (string) $row->section_key;
+            if ($sectionKey === '') {
+                $sectionKey = $fallbackKey;
+            }
+            $includePaused = OrderDashboardSection::includesPausedAccounts($sectionKey);
+            $accounts = $this->filterOperationalDashboardAccounts($accounts, $includePaused);
             $totalCount = 0;
             foreach ($accounts as $entry) {
+                if ($sectionKey === OrderDashboardSection::KEY_ON_HOLD
+                    && strcasecmp((string) ($entry['account_status'] ?? ''), ClientAccount::STATUS_PAUSED) === 0
+                ) {
+                    // Paused orders are surfaced on the PAUSED card, not the main ON-HOLD total.
+                    continue;
+                }
                 $totalCount += (int) ($entry['orders_count'] ?? 0);
             }
         } else {
@@ -1548,11 +1630,12 @@ class OrderDashboardSnapshotService
 
     /**
      * Drop inactive/deleted/stale account cards from stored snapshots and refresh names/status.
+     * When $includePaused is true, paused accounts are kept (for on-hold / paused order cards).
      *
      * @param  list<mixed>  $accounts
      * @return list<array<string, mixed>>
      */
-    private function filterOperationalDashboardAccounts(array $accounts): array
+    private function filterOperationalDashboardAccounts(array $accounts, bool $includePaused = false): array
     {
         $ids = [];
         foreach ($accounts as $entry) {
@@ -1569,8 +1652,14 @@ class OrderDashboardSnapshotService
             return [];
         }
 
-        $live = ClientAccount::query()
-            ->operationalForOrderDashboards()
+        $query = ClientAccount::query()->withShipHeroCustomerLink();
+        if ($includePaused) {
+            $query->whereIn('status', [ClientAccount::STATUS_ACTIVE, ClientAccount::STATUS_PAUSED]);
+        } else {
+            $query->where('status', ClientAccount::STATUS_ACTIVE);
+        }
+
+        $live = $query
             ->whereIn('id', array_keys($ids))
             ->get(['id', 'company_name', 'status'])
             ->keyBy('id');

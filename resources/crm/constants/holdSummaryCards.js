@@ -64,7 +64,7 @@ export const HOLD_TYPE_SECTIONS = [
   },
 ];
 
-/** Paused summary card on On-Hold (replaces Backorder; links to paused accounts). */
+/** Paused summary card on On-Hold (scrolls to paused accounts section). */
 export const ON_HOLD_PAUSED_CARD = {
   key: "paused",
   label: "Paused",
@@ -73,7 +73,7 @@ export const ON_HOLD_PAUSED_CARD = {
   icon: "pauseCircle",
   titleColor: "#6b7280",
   iconStyle: { background: "#f3f4f6", color: "#4b5563" },
-  to: { name: "client-accounts", query: { status: "paused" } },
+  to: { name: "orders-on-hold", hash: "#hold-paused" },
   valueSource: "paused_on_hold_order_count",
 };
 

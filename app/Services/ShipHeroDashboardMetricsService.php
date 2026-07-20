@@ -116,9 +116,13 @@ class ShipHeroDashboardMetricsService
      */
     private function aggregateAcrossAccounts(callable $countForAccount, ?string $sectionKey): array
     {
-        $accounts = ClientAccount::query()
-            ->whereNotNull('shiphero_customer_account_id')
-            ->where('shiphero_customer_account_id', '!=', '')
+        $query = ClientAccount::query()->withShipHeroCustomerLink();
+        if ($sectionKey === null || OrderDashboardSection::includesPausedAccounts((string) $sectionKey)) {
+            $query->whereIn('status', [ClientAccount::STATUS_ACTIVE, ClientAccount::STATUS_PAUSED]);
+        } else {
+            $query->where('status', ClientAccount::STATUS_ACTIVE);
+        }
+        $accounts = $query
             ->orderBy('company_name')
             ->get(['id', 'company_name', 'status', 'shiphero_customer_account_id']);
 
@@ -168,6 +172,12 @@ class ShipHeroDashboardMetricsService
                 'account_status' => (string) $account->status,
                 'orders_count' => $count,
             ];
+            // On-hold aggregate (sectionKey null): paused counts go to PAUSED card only.
+            if ($sectionKey === null
+                && strcasecmp((string) $account->status, ClientAccount::STATUS_PAUSED) === 0
+            ) {
+                continue;
+            }
             $total += $count;
         }
 

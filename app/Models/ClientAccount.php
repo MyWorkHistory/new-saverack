@@ -172,8 +172,8 @@ class ClientAccount extends Model
     }
 
     /**
-     * Active accounts used for home / fulfillment / on-hold order dashboards.
-     * Inactive, paused, and pending accounts are excluded so cards match list pages
+     * Active accounts used for home / fulfillment order dashboards (RTS, shipped).
+     * Inactive, paused, and pending accounts are excluded so those cards match list pages
      * and ShipHero "hide orders from app" for non-active statuses.
      *
      * @param  \Illuminate\Database\Eloquent\Builder  $query
@@ -184,6 +184,19 @@ class ClientAccount extends Model
         return $query
             ->withShipHeroCustomerLink()
             ->where('status', self::STATUS_ACTIVE);
+    }
+
+    /**
+     * Active + paused ShipHero-linked accounts for on-hold dashboards / paused order counts.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeActiveOrPausedForOrderDashboards($query)
+    {
+        return $query
+            ->withShipHeroCustomerLink()
+            ->whereIn('status', [self::STATUS_ACTIVE, self::STATUS_PAUSED]);
     }
 
     /**

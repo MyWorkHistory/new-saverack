@@ -48,6 +48,6 @@ export const HOME_SUMMARY_CARDS = [
     iconStyle: { background: "#fee2e2", color: "#dc2626" },
     valueSource: "paused_on_hold_order_count",
     valueKey: null,
-    to: { name: "client-accounts", query: { status: "paused" } },
+    to: { name: "orders-on-hold", hash: "#hold-paused" },
   },
 ];

@@ -815,8 +815,14 @@ class ShipHeroOrderQueueIndexService
             throw new RuntimeException('Unsupported dashboard section for index aggregate: '.$sectionKey);
         }
 
-        $accounts = ClientAccount::query()
-            ->operationalForOrderDashboards()
+        $includePaused = OrderDashboardSection::includesPausedAccounts($sectionKey);
+        $accountsQuery = ClientAccount::query()->withShipHeroCustomerLink();
+        if ($includePaused) {
+            $accountsQuery->whereIn('status', [ClientAccount::STATUS_ACTIVE, ClientAccount::STATUS_PAUSED]);
+        } else {
+            $accountsQuery->where('status', ClientAccount::STATUS_ACTIVE);
+        }
+        $accounts = $accountsQuery
             ->orderBy('company_name')
             ->get(['id', 'company_name', 'status', 'shiphero_customer_account_id']);
 
@@ -861,6 +867,12 @@ class ShipHeroOrderQueueIndexService
                 'account_status' => (string) $account->status,
                 'orders_count' => $count,
             ];
+            if ($sectionKey === OrderDashboardSection::KEY_ON_HOLD
+                && strcasecmp((string) $account->status, ClientAccount::STATUS_PAUSED) === 0
+            ) {
+                // Include in accounts for PAUSED breakdown; exclude from ON-HOLD total.
+                continue;
+            }
             $total += $count;
         }
 

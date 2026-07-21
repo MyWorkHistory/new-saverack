@@ -21,15 +21,16 @@
         .label table {
             border-collapse: collapse;
             width: 100%;
-            height: {{ $pageH }}pt;
         }
         .label td {
-            vertical-align: middle;
+            vertical-align: top;
             padding: 0;
         }
         .qr-cell {
             width: {{ $qrCellW }}pt;
             text-align: center;
+            /* Explicit top padding centers content; dompdf's vertical-align is unreliable. */
+            padding-top: {{ $qrPadTop }}pt;
         }
         .qr-cell img {
             width: {{ $qrSize }}pt;
@@ -60,7 +61,7 @@
                     <td class="qr-cell">
                         <img src="{{ $item['qrDataUri'] }}" alt="QR Code">
                     </td>
-                    <td class="text-cell">
+                    <td class="text-cell" style="padding-top: {{ $item['textPadTop'] }}pt;">
                         <div class="display-name" style="font-size: {{ $item['font'] }}pt;">{!! $item['html'] !!}</div>
                     </td>
                 </tr>

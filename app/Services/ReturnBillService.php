@@ -180,8 +180,6 @@ class ReturnBillService
             return $bill->fresh(['items', 'clientAccount', 'clientAccountReturn', 'histories.user', 'createdBy']);
         });
 
-        app(BillCreatedSlackService::class)->notifyReturnBill($bill);
-
         return $bill;
     }
 

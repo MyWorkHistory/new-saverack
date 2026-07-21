@@ -276,15 +276,9 @@ class AsnBillService
      */
     public function addItemForAsn(ClientAccountAsn $asn, array $row, ?User $actor): AsnBill
     {
-        $wasMissing = $asn->asn_bill_id === null;
         $bill = $this->findOrCreateOpenBillForAsn($asn, $actor);
-        $result = $this->addItem($bill, $row, $actor);
 
-        if ($wasMissing) {
-            app(BillCreatedSlackService::class)->notifyAsnBill($result);
-        }
-
-        return $result;
+        return $this->addItem($bill, $row, $actor);
     }
 
     /**

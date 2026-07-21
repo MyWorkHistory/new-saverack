@@ -44,10 +44,16 @@ class LocationLabelPrintService
 
             $layout = $this->fitText($text, $textW, $textH, $maxFont);
 
+            // Center the text block vertically by measuring it, since dompdf's
+            // vertical-align support is unreliable.
+            $textBlockH = $layout['lines'] * $layout['font'] * self::LINE_HEIGHT;
+            $textPadTop = max(($pageH - $textBlockH) / 2, 0);
+
             $items[] = [
                 'qrDataUri' => QrCodeSvg::dataUri($barcode !== '' ? $barcode : $text, $isSmall ? 120 : 200),
                 'html' => $layout['html'],
                 'font' => $layout['font'],
+                'textPadTop' => round($textPadTop, 1),
             ];
         }
 
@@ -58,6 +64,7 @@ class LocationLabelPrintService
             'pageH' => $pageH,
             'qrSize' => $qrSize,
             'qrCellW' => $qrCellW,
+            'qrPadTop' => round(max(($pageH - $qrSize) / 2, 0), 1),
             'labelType' => $isSmall ? 'small' : 'normal',
         ])->setPaper([0, 0, $pageW, $pageH], 'landscape');
 
@@ -70,13 +77,13 @@ class LocationLabelPrintService
      * Largest font that fits the text box in 1-3 lines; wraps on spaces/hyphens
      * where possible and hard-splits unbroken codes as a fallback.
      *
-     * @return array{html:string, font:int}
+     * @return array{html:string, font:int, lines:int}
      */
     private function fitText(string $text, float $boxW, float $boxH, int $maxFont): array
     {
         $text = trim($text);
         if ($text === '') {
-            return ['html' => '', 'font' => $maxFont];
+            return ['html' => '', 'font' => $maxFont, 'lines' => 1];
         }
 
         $len = mb_strlen($text);
@@ -111,6 +118,7 @@ class LocationLabelPrintService
         return [
             'html' => implode('<br>', array_map('e', $chunks)),
             'font' => $font,
+            'lines' => count($chunks),
         ];
     }
 

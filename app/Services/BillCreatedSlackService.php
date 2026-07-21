@@ -2,10 +2,8 @@
 
 namespace App\Services;
 
-use App\Models\AsnBill;
 use App\Models\ClientAccount;
 use App\Models\CustomBill;
-use App\Models\ReturnBill;
 use App\Support\CrmUrls;
 use Illuminate\Support\Facades\Log;
 
@@ -34,38 +32,6 @@ class BillCreatedSlackService
             (string) $bill->bill_number,
             CrmUrls::customBillStaffUrl((int) $bill->id),
             ['bill_type' => 'custom', 'bill_id' => (int) $bill->id]
-        );
-    }
-
-    /**
-     * Post to #billing when an ASN bill is first created (after the first line).
-     * Failures are logged and do not block bill creation.
-     */
-    public function notifyAsnBill(AsnBill $bill): void
-    {
-        $bill->loadMissing('clientAccount');
-        $this->notify(
-            $this->accountName($bill->clientAccount),
-            (int) $bill->total_cents,
-            (string) $bill->bill_number,
-            CrmUrls::asnBillStaffUrl((int) $bill->id),
-            ['bill_type' => 'asn', 'bill_id' => (int) $bill->id]
-        );
-    }
-
-    /**
-     * Post to #billing when a return bill is created.
-     * Failures are logged and do not block bill creation.
-     */
-    public function notifyReturnBill(ReturnBill $bill): void
-    {
-        $bill->loadMissing('clientAccount');
-        $this->notify(
-            $this->accountName($bill->clientAccount),
-            (int) $bill->total_cents,
-            (string) $bill->bill_number,
-            CrmUrls::returnBillStaffUrl((int) $bill->id),
-            ['bill_type' => 'return', 'bill_id' => (int) $bill->id]
         );
     }
 

@@ -177,12 +177,6 @@ function onPerPageChange(e) {
   load();
 }
 
-function descriptionPreview(text) {
-  const s = String(text || "").trim();
-  if (!s) return "";
-  return s.length > 120 ? `${s.slice(0, 120)}…` : s;
-}
-
 function openEdit(row) {
   if (!row?.id || !canUpdate.value) return;
   closeManageMenu();
@@ -318,7 +312,9 @@ onUnmounted(() => {
     >
       <div class="min-w-0 flex-grow-1 text-center text-md-start w-100">
         <h1 class="h4 mb-1 fw-semibold text-body staff-page__heading">Tutorials</h1>
-        <p class="staff-page__intro mb-0">Training guides for warehouse and CRM workflows.</p>
+        <p class="staff-page__intro resources-tutorials-intro mb-0">
+          Training guides for warehouse and CRM workflows.
+        </p>
       </div>
       <div
         class="d-flex flex-wrap align-items-center justify-content-center justify-content-md-end gap-2 flex-shrink-0"
@@ -504,13 +500,6 @@ onUnmounted(() => {
                 <span class="fw-semibold text-body d-block text-truncate" style="max-width: 24rem" :title="row.title">
                   {{ row.title }}
                 </span>
-                <span
-                  v-if="descriptionPreview(row.description)"
-                  class="small text-secondary d-block resources-tutorial-row__subtitle"
-                  :title="row.description"
-                >
-                  {{ descriptionPreview(row.description) }}
-                </span>
               </td>
               <td class="text-body staff-table-cell__meta">
                 {{ row.category_label || "—" }}
@@ -686,17 +675,11 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.resources-tutorial-row {
-  cursor: pointer;
+.resources-tutorials-intro {
+  font-weight: 400;
 }
 
-.resources-tutorial-row__subtitle {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  max-width: 24rem;
-  font-weight: 400;
-  margin-top: 0.15rem;
+.resources-tutorial-row {
+  cursor: pointer;
 }
 </style>

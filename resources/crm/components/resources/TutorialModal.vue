@@ -2,6 +2,7 @@
 import { computed, onUnmounted, reactive, ref, watch } from "vue";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
+import CrmRichTextEditor from "../common/CrmRichTextEditor.vue";
 import { useToast } from "../../composables/useToast";
 import { errorMessage } from "../../utils/apiError";
 
@@ -29,6 +30,14 @@ const form = reactive({
   description: "",
   category: "",
 });
+
+/** TipTap empty doc is often `<p></p>` — store null instead. */
+function normalizeDescription(html) {
+  const s = String(html || "").trim();
+  if (!s) return null;
+  const text = s.replace(/<[^>]+>/g, "").replace(/&nbsp;/gi, " ").trim();
+  return text ? s : null;
+}
 
 function applyTutorial(t) {
   if (!t?.id) return;
@@ -79,7 +88,7 @@ async function onSubmit() {
   try {
     await api.put(`/resources/tutorials/${props.tutorial.id}`, {
       title: form.title.trim(),
-      description: form.description?.trim() || null,
+      description: normalizeDescription(form.description),
       category: form.category,
     });
     toast.success("Tutorial updated.");
@@ -136,13 +145,13 @@ onUnmounted(() => document.removeEventListener("keydown", onEsc));
                 :disabled="saving"
               />
               <label class="form-label small" for="tutorial-edit-desc">Description</label>
-              <textarea
-                id="tutorial-edit-desc"
-                v-model="form.description"
-                rows="12"
-                class="form-control mb-3 tutorial-edit-desc"
-                :disabled="saving"
-              />
+              <div id="tutorial-edit-desc" class="mb-3 tutorial-edit-desc">
+                <CrmRichTextEditor
+                  v-model="form.description"
+                  :disabled="saving"
+                  aria-label="Tutorial description"
+                />
+              </div>
               <label class="form-label small" for="tutorial-edit-category">Category</label>
               <select
                 id="tutorial-edit-category"

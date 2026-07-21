@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onUnmounted, reactive, ref, watch } from "vue";
 import api from "../../services/api";
+import CrmRichTextEditor from "../common/CrmRichTextEditor.vue";
 import { useToast } from "../../composables/useToast";
 import { errorMessage } from "../../utils/apiError";
 import {
@@ -28,6 +29,14 @@ const form = reactive({
   description: "",
   category: "",
 });
+
+/** TipTap empty doc is often `<p></p>` — store null instead. */
+function normalizeDescription(html) {
+  const s = String(html || "").trim();
+  if (!s) return null;
+  const text = s.replace(/<[^>]+>/g, "").replace(/&nbsp;/gi, " ").trim();
+  return text ? s : null;
+}
 
 function resetForm() {
   form.title = "";
@@ -92,7 +101,7 @@ async function onSubmit() {
   try {
     await api.post("/resources/tutorials", {
       title: form.title.trim(),
-      description: form.description?.trim() || null,
+      description: normalizeDescription(form.description),
       category: form.category,
     });
     toast.success("Tutorial created.");
@@ -167,11 +176,10 @@ function onBackdropClick() {
                   </div>
                   <div>
                     <label class="mb-1 block text-xs font-medium text-gray-500">Description</label>
-                    <textarea
+                    <CrmRichTextEditor
                       v-model="form.description"
-                      rows="8"
-                      class="min-h-[12rem] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                      placeholder="Paste URLs in the description — they will be clickable on the tutorial page."
+                      :disabled="saving"
+                      aria-label="Tutorial description"
                     />
                   </div>
                   <div>

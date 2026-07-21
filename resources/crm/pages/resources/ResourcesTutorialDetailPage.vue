@@ -86,6 +86,19 @@ const comments = computed(() => {
   const c = tutorial.value?.comments;
   return Array.isArray(c) ? c : [];
 });
+
+const descriptionLooksLikeHtml = computed(() => {
+  const raw = String(tutorial.value?.description || "");
+  return /<[a-z][\s\S]*>/i.test(raw);
+});
+
+const hasDescription = computed(() => {
+  const raw = String(tutorial.value?.description || "").trim();
+  if (!raw) return false;
+  if (!descriptionLooksLikeHtml.value) return true;
+  return Boolean(raw.replace(/<[^>]+>/g, "").replace(/&nbsp;/gi, " ").trim());
+});
+
 const commentsExpanded = ref(false);
 const NOTES_PREVIEW_LIMIT = 3;
 
@@ -473,8 +486,17 @@ onUnmounted(() => {
             <h2 class="h5 fw-semibold text-body mb-0">{{ tutorial.title }}</h2>
           </div>
           <section class="p-4 p-md-5">
-            <h3 class="small fw-semibold text-secondary text-uppercase mb-2">Description</h3>
-            <CrmLinkedText :text="tutorial.description" class="whitespace-pre-wrap" />
+            <div
+              v-if="hasDescription && descriptionLooksLikeHtml"
+              class="tutorial-description-html"
+              v-html="tutorial.description"
+            />
+            <CrmLinkedText
+              v-else-if="hasDescription"
+              :text="tutorial.description"
+              class="whitespace-pre-wrap"
+            />
+            <p v-else class="text-secondary small mb-0">No description.</p>
           </section>
         </div>
 
@@ -562,20 +584,55 @@ onUnmounted(() => {
       <aside class="col-12 col-lg-4 d-flex flex-column gap-4">
         <div class="staff-table-card overflow-hidden p-4 p-md-5">
           <h3 class="small fw-semibold text-secondary text-uppercase mb-3">Details</h3>
-          <dl class="row small mb-0 gy-3">
-            <div class="col-12">
-              <dt class="text-secondary mb-1">Category</dt>
-              <dd class="mb-0 text-body">{{ tutorial.category_label || "—" }}</dd>
+          <div class="tutorial-detail-fields">
+            <div class="tutorial-detail-field">
+              <span class="tutorial-detail-field__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 013 12V7a4 4 0 014-4z"
+                  />
+                </svg>
+              </span>
+              <div class="min-w-0">
+                <p class="tutorial-detail-field__label">Category</p>
+                <p class="tutorial-detail-field__value">{{ tutorial.category_label || "—" }}</p>
+              </div>
             </div>
-            <div class="col-12">
-              <dt class="text-secondary mb-1">Created Date</dt>
-              <dd class="mb-0 text-body">{{ formatDateUs(tutorial.created_at) || "—" }}</dd>
+
+            <div class="tutorial-detail-field">
+              <span class="tutorial-detail-field__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M8 7V3m8 4V3M4 11h16M5 5h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z"
+                  />
+                </svg>
+              </span>
+              <div class="min-w-0">
+                <p class="tutorial-detail-field__label">Created Date</p>
+                <p class="tutorial-detail-field__value">{{ formatDateUs(tutorial.created_at) || "—" }}</p>
+              </div>
             </div>
-            <div class="col-12">
-              <dt class="text-secondary mb-1">Created By</dt>
-              <dd class="mb-0 text-body">{{ tutorial.creator?.name || "—" }}</dd>
+
+            <div class="tutorial-detail-field">
+              <span class="tutorial-detail-field__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                  />
+                </svg>
+              </span>
+              <div class="min-w-0">
+                <p class="tutorial-detail-field__label">Created By</p>
+                <p class="tutorial-detail-field__value">{{ tutorial.creator?.name || "—" }}</p>
+              </div>
             </div>
-          </dl>
+          </div>
         </div>
 
         <div class="staff-table-card overflow-hidden p-4 p-md-5">
@@ -719,6 +776,76 @@ onUnmounted(() => {
 .wm-task-detail-avatar {
   width: 2.25rem;
   height: 2.25rem;
+}
+.tutorial-description-html {
+  font-size: 0.925rem;
+  line-height: 1.55;
+  color: var(--bs-body-color);
+}
+.tutorial-description-html :deep(p) {
+  margin: 0 0 0.65rem;
+}
+.tutorial-description-html :deep(ul),
+.tutorial-description-html :deep(ol) {
+  margin: 0 0 0.65rem;
+  padding-left: 1.25rem;
+}
+.tutorial-description-html :deep(h2),
+.tutorial-description-html :deep(h3),
+.tutorial-description-html :deep(h4) {
+  margin: 0.85rem 0 0.45rem;
+  font-size: 1.05rem;
+  line-height: 1.3;
+}
+.tutorial-description-html :deep(blockquote) {
+  margin: 0 0 0.85rem;
+  padding-left: 0.85rem;
+  border-left: 3px solid rgba(47, 43, 61, 0.2);
+  color: #555;
+}
+.tutorial-description-html :deep(a) {
+  color: #696cff;
+}
+.tutorial-detail-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.tutorial-detail-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.tutorial-detail-field__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.75rem;
+  background: #eef2ff;
+  color: #2563eb;
+  flex-shrink: 0;
+}
+.tutorial-detail-field__icon svg {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+.tutorial-detail-field__label {
+  margin: 0 0 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}
+.tutorial-detail-field__value {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1e293b;
+  word-break: break-word;
 }
 .resources-photo-card {
   border: 1px solid rgba(0, 0, 0, 0.08);

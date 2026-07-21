@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Tutorial extends Model
 {
+    public const CATEGORY_ACCOUNTS = 'accounts';
+
     public const CATEGORY_ORDERS = 'orders';
 
     public const CATEGORY_INVENTORY = 'inventory';
@@ -21,6 +23,7 @@ class Tutorial extends Model
     public const CATEGORY_BILLING = 'billing';
 
     public const CATEGORIES = [
+        self::CATEGORY_ACCOUNTS,
         self::CATEGORY_ORDERS,
         self::CATEGORY_INVENTORY,
         self::CATEGORY_RECEIVING,
@@ -54,6 +57,7 @@ class Tutorial extends Model
     public static function categoryLabel(?string $category): string
     {
         $map = [
+            self::CATEGORY_ACCOUNTS => 'Accounts',
             self::CATEGORY_ORDERS => 'Orders',
             self::CATEGORY_INVENTORY => 'Inventory',
             self::CATEGORY_RECEIVING => 'Receiving',

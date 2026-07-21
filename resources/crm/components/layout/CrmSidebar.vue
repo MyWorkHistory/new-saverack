@@ -133,6 +133,7 @@ const canViewInventory = computed(() => {
     "inventory_out_of_stock",
     "inventory_restock",
     "inventory_on_demand",
+    "inventory_location_labels",
     "inventory",
   ]);
 });
@@ -148,6 +149,9 @@ const canViewInventoryRestock = computed(() =>
 );
 const canViewInventoryOnDemand = computed(() =>
   hasPerm("inventory_on_demand.view", "inventory.view"),
+);
+const canViewInventoryLocationLabels = computed(() =>
+  hasPerm("inventory_location_labels.view", "inventory.view"),
 );
 
 const canViewReceiving = computed(() => {
@@ -298,6 +302,12 @@ function navActive(mode) {
     return p === "/admin/inventory/restock" || p.startsWith("/admin/inventory/restock/");
   }
   if (mode === "inventory-on-demand") return p.startsWith("/admin/inventory/on-demand");
+  if (mode === "inventory-location-labels") {
+    return (
+      p === "/admin/inventory/location-labels" ||
+      p.startsWith("/admin/inventory/location-labels/")
+    );
+  }
   if (mode === "billing-summary") {
     return p === "/admin/billing/revenue" || p === "/admin/billing/summary";
   }
@@ -835,6 +845,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     On-Demand
+                  </RouterLink>
+                </li>
+                <li v-if="!isPortal && canViewInventoryLocationLabels">
+                  <RouterLink
+                    to="/admin/inventory/location-labels"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('inventory-location-labels') }"
+                    @click="closeMobile"
+                  >
+                    Location Labels
                   </RouterLink>
                 </li>
               </ul>

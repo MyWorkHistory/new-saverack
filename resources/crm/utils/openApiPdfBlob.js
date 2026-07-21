@@ -2,14 +2,22 @@
  * Open a PDF returned by the API in a new tab (avoids popup blockers after async fetch).
  * @param {import('axios').AxiosInstance} apiClient
  * @param {string} path
- * @param {{ params?: Record<string, unknown>, download?: string }} [options] Pass `download` to save file; omit to open in a new tab.
+ * @param {{ params?: Record<string, unknown>, data?: Record<string, unknown>, method?: 'get'|'post', download?: string }} [options] Pass `download` to save file; omit to open in a new tab.
  */
 export async function openApiPdfBlob(apiClient, path, options = {}) {
-  const res = await apiClient.get(path, {
-    params: options.params,
+  const method = String(options.method || "get").toLowerCase() === "post" ? "post" : "get";
+  const config = {
     responseType: "blob",
     headers: { Accept: "application/pdf" },
-  });
+  };
+  if (options.params) {
+    config.params = options.params;
+  }
+
+  const res =
+    method === "post"
+      ? await apiClient.post(path, options.data ?? {}, config)
+      : await apiClient.get(path, config);
 
   let blob = res.data instanceof Blob ? res.data : new Blob([res.data], { type: "application/pdf" });
   const contentType = String(res.headers?.["content-type"] || blob.type || "");

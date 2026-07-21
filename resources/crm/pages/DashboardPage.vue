@@ -32,7 +32,8 @@ const canViewInventory = computed(
     userHasPerm("inventory_products.view") ||
     userHasPerm("inventory_out_of_stock.view") ||
     userHasPerm("inventory_restock.view") ||
-    userHasPerm("inventory_on_demand.view"),
+    userHasPerm("inventory_on_demand.view") ||
+    userHasPerm("inventory_location_labels.view"),
 );
 
 const {

@@ -75,6 +75,7 @@ class CrmStaffPermissionCatalog
             'inventory_out_of_stock' => 'out of stock',
             'inventory_restock' => 'restock',
             'inventory_on_demand' => 'on-demand',
+            'inventory_location_labels' => 'location labels',
         ] as $mod => $label) {
             foreach (['view', 'create', 'update', 'delete'] as $a) {
                 $add($rows, $mod.'.'.$a, ucfirst($a).' '.$label, $mod);
@@ -183,6 +184,7 @@ class CrmStaffPermissionCatalog
                 'inventory_out_of_stock',
                 'inventory_restock',
                 'inventory_on_demand',
+                'inventory_location_labels',
             ],
             'billing' => [
                 'billing_summary',

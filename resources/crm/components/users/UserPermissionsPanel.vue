@@ -198,6 +198,13 @@ const PAGE_META = {
     order: 60,
     rowOrder: 4,
   },
+  inventory_location_labels: {
+    moduleKey: "inventory",
+    moduleLabel: "Inventory",
+    rowLabel: "Location Labels",
+    order: 60,
+    rowOrder: 5,
+  },
   receiving_asn: {
     moduleKey: "receiving",
     moduleLabel: "Receiving",

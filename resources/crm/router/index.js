@@ -168,6 +168,10 @@ const meta = {
     title: "Save Rack | On-Demand Inventory",
     description: "Account On-Demand SKU catalog.",
   },
+  inventoryLocationLabels: {
+    title: "Save Rack | Inventory | Location Labels",
+    description: "Warehouse location barcodes and printable labels.",
+  },
   inventoryRestock: {
     title: "Save Rack | Inventory | Restocks",
     description: "Inventory needing replenishment.",
@@ -693,6 +697,12 @@ const routes = [
     name: "inventory-on-demand",
     component: InventoryOnDemandPage,
     meta: meta.inventoryOnDemand,
+  },
+  {
+    path: "/admin/inventory/location-labels",
+    name: "inventory-location-labels",
+    component: () => import("../pages/inventory/InventoryLocationLabelsPage.vue"),
+    meta: meta.inventoryLocationLabels,
   },
   {
     path: "/admin/inventory/:sku",
@@ -1267,6 +1277,7 @@ export function setInventoryNavFromUser(user) {
         outOfStock: true,
         restock: true,
         onDemand: true,
+        locationLabels: true,
       },
     };
     return;
@@ -1280,6 +1291,7 @@ export function setInventoryNavFromUser(user) {
         outOfStock: true,
         restock: false,
         onDemand: false,
+        locationLabels: false,
       },
     };
     return;
@@ -1292,18 +1304,21 @@ export function setInventoryNavFromUser(user) {
       page("inventory_out_of_stock.view") ||
       page("inventory_restock.view") ||
       page("inventory_on_demand.view") ||
+      page("inventory_location_labels.view") ||
       k.includes("inventory.view"),
     update:
       k.includes("inventory_products.update") ||
       k.includes("inventory_out_of_stock.update") ||
       k.includes("inventory_restock.update") ||
       k.includes("inventory_on_demand.update") ||
+      k.includes("inventory_location_labels.update") ||
       k.includes("inventory.update"),
     pages: {
       products: page("inventory_products.view"),
       outOfStock: page("inventory_out_of_stock.view"),
       restock: page("inventory_restock.view"),
       onDemand: page("inventory_on_demand.view"),
+      locationLabels: page("inventory_location_labels.view"),
     },
   };
 }
@@ -1694,6 +1709,7 @@ async function ensureInventoryRouteAccess(path) {
     if (path.startsWith("/admin/inventory/out-of-stock")) return pages.outOfStock === true;
     if (path.startsWith("/admin/inventory/restock")) return pages.restock === true;
     if (path.startsWith("/admin/inventory/on-demand")) return pages.onDemand === true;
+    if (path.startsWith("/admin/inventory/location-labels")) return pages.locationLabels === true;
     if (path === "/admin/inventory" || path.startsWith("/admin/inventory/")) {
       return pages.products === true || inventoryNavCache.view === true;
     }

@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\InvoiceImportController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\InventoryBetaController;
+use App\Http\Controllers\Api\LocationLabelController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\OrderDraftController;
 use App\Http\Controllers\Api\CrmLookupController;
@@ -239,6 +240,21 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:inventory.update');
         Route::delete('/on-demand-products/{onDemandProduct}', [InventoryController::class, 'destroyOnDemandProduct'])
             ->middleware('can:inventory.update');
+
+        Route::get('/location-labels', [LocationLabelController::class, 'index'])
+            ->middleware('can:inventory_location_labels.view');
+        Route::post('/location-labels', [LocationLabelController::class, 'store'])
+            ->middleware('can:inventory_location_labels.create');
+        Route::patch('/location-labels/{location_label}', [LocationLabelController::class, 'update'])
+            ->middleware('can:inventory_location_labels.update');
+        Route::delete('/location-labels/{location_label}', [LocationLabelController::class, 'destroy'])
+            ->middleware('can:inventory_location_labels.delete');
+        Route::post('/location-labels/bulk-delete', [LocationLabelController::class, 'bulkDestroy'])
+            ->middleware('can:inventory_location_labels.delete');
+        Route::post('/location-labels/import', [LocationLabelController::class, 'import'])
+            ->middleware('can:inventory_location_labels.create');
+        Route::post('/location-labels/print', [LocationLabelController::class, 'print'])
+            ->middleware('can:inventory_location_labels.view');
     });
 
     Route::prefix('inventory-beta')->group(function () {

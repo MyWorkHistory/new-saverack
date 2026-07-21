@@ -106,6 +106,64 @@ class AuthServiceProvider extends ServiceProvider
             return $user->hasPermission('inventory.update');
         });
 
+        Gate::define('inventory_location_labels.view', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return $user->hasPermission('inventory_location_labels.view');
+        });
+
+        Gate::define('inventory_location_labels.create', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return $user->hasPermission('inventory_location_labels.create')
+                || $user->hasPermission('inventory_location_labels.update');
+        });
+
+        Gate::define('inventory_location_labels.update', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return $user->hasPermission('inventory_location_labels.update');
+        });
+
+        Gate::define('inventory_location_labels.delete', function ($user) {
+            if (! $user) {
+                return false;
+            }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return false;
+            }
+            if ($user->isAdministrator() || $user->isCrmOwner()) {
+                return true;
+            }
+
+            return $user->hasPermission('inventory_location_labels.delete')
+                || $user->hasPermission('inventory_location_labels.update');
+        });
+
         Gate::define('orders.view', function ($user) {
             if (! $user) {
                 return false;

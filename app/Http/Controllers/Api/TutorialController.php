@@ -11,6 +11,7 @@ use App\Models\Tutorial;
 use App\Models\TutorialComment;
 use App\Support\CrmCommentUserSerializer;
 use App\Services\TutorialService;
+use App\Services\TutorialSlackService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -102,6 +103,21 @@ class TutorialController extends Controller
         $tutorial->delete();
 
         return response()->json(['message' => 'Tutorial deleted.']);
+    }
+
+    public function sendToSlack(
+        Request $request,
+        Tutorial $tutorial,
+        TutorialSlackService $tutorialSlack
+    ): JsonResponse {
+        $this->authorize('update', $tutorial);
+
+        $result = $tutorialSlack->send($tutorial);
+
+        return response()->json([
+            'message' => 'Tutorial sent to Slack.',
+            'channel' => $result['channel'],
+        ]);
     }
 
     public function storeComment(TutorialCommentStoreRequest $request, Tutorial $tutorial): JsonResponse

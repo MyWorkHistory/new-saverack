@@ -46,8 +46,9 @@ const deletePhotoBusy = ref(false);
 const thumbUrls = ref({});
 const actionsMenuOpen = ref(false);
 const actionsMenuRect = ref({ top: 0, left: 0 });
+const sendingSlack = ref(false);
 const ACTIONS_MENU_W = 180;
-const ACTIONS_MENU_H = 100;
+const ACTIONS_MENU_H = 132;
 
 const canShowActionsMenu = computed(() => Boolean(tutorial.value) && (canUpdate.value || canDelete.value));
 
@@ -295,6 +296,20 @@ function openEditFromMenu() {
 function openDeleteFromMenu() {
   closeActionsMenu();
   deleteTutorialOpen.value = true;
+}
+
+async function sendToSlack() {
+  if (!tutorial.value?.id || sendingSlack.value) return;
+  closeActionsMenu();
+  sendingSlack.value = true;
+  try {
+    await api.post(`/resources/tutorials/${tutorial.value.id}/send-slack`);
+    toast.success("Tutorial sent to #faq.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not send tutorial to Slack.");
+  } finally {
+    sendingSlack.value = false;
+  }
 }
 
 function onDocClick(e) {
@@ -708,6 +723,16 @@ onUnmounted(() => {
           @click="openEditFromMenu"
         >
           Edit
+        </button>
+        <button
+          v-if="canUpdate"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          :disabled="sendingSlack"
+          @click="sendToSlack"
+        >
+          {{ sendingSlack ? "Sending…" : "Send to Slack" }}
         </button>
         <button
           v-if="canDelete"

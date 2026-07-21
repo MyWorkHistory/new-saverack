@@ -6,6 +6,7 @@ use App\Models\Permission;
 use App\Models\ResourcePhoto;
 use App\Models\Tutorial;
 use App\Models\User;
+use App\Services\TutorialSlackService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -146,6 +147,51 @@ class ResourcesTutorialTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('title', 'New title');
+    }
+
+    public function test_user_with_update_can_send_tutorial_to_slack(): void
+    {
+        $user = $this->staffWithView();
+        $user->permissions()->attach($this->resourcesUpdatePermission()->id);
+        Sanctum::actingAs($user);
+
+        $tutorial = Tutorial::query()->create([
+            'title' => 'New Client Account Creating & Onboarding',
+            'category' => Tutorial::CATEGORY_ACCOUNTS,
+            'created_by' => $user->id,
+        ]);
+
+        $mock = $this->createMock(TutorialSlackService::class);
+        $mock->expects($this->once())
+            ->method('send')
+            ->with($this->callback(function ($arg) use ($tutorial) {
+                return $arg instanceof Tutorial && (int) $arg->id === (int) $tutorial->id;
+            }))
+            ->willReturn(['method' => 'bot', 'channel' => '#faq', 'ts' => '1.0']);
+        $this->app->instance(TutorialSlackService::class, $mock);
+
+        $this->postJson("/api/resources/tutorials/{$tutorial->id}/send-slack")
+            ->assertOk()
+            ->assertJsonPath('channel', '#faq')
+            ->assertJsonPath('message', 'Tutorial sent to Slack.');
+    }
+
+    public function test_user_without_update_cannot_send_tutorial_to_slack(): void
+    {
+        Sanctum::actingAs($this->staffWithView());
+
+        $tutorial = Tutorial::query()->create([
+            'title' => 'Protected Slack',
+            'category' => Tutorial::CATEGORY_ORDERS,
+            'created_by' => User::factory()->create()->id,
+        ]);
+
+        $mock = $this->createMock(TutorialSlackService::class);
+        $mock->expects($this->never())->method('send');
+        $this->app->instance(TutorialSlackService::class, $mock);
+
+        $this->postJson("/api/resources/tutorials/{$tutorial->id}/send-slack")
+            ->assertForbidden();
     }
 
     public function test_user_with_delete_can_destroy_tutorial(): void

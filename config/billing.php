@@ -25,6 +25,7 @@ return [
         'billing_channel' => env('BILLING_SLACK_BILLING_CHANNEL') ?: '#billing',
         'alerts_channel' => env('SLACK_ALERTS_CHANNEL') ?: '#alerts',
         'restock_channel' => env('SLACK_RESTOCK_CHANNEL') ?: '#restock',
+        'faq_channel' => env('SLACK_FAQ_CHANNEL') ?: '#faq',
         /** Bot User OAuth Token (xoxb-…) for chat.postMessage. */
         'bot_token' => env('SLACK_BOT_USER_OAUTH_TOKEN') ?: env('SLACK_BOT_TOKEN'),
         /**

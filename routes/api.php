@@ -522,6 +522,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('resources')->group(function () {
         Route::get('/tutorials/meta', [TutorialController::class, 'meta']);
+        Route::post('/tutorials/{tutorial}/send-slack', [TutorialController::class, 'sendToSlack']);
         Route::post('/tutorials/{tutorial}/comments', [TutorialController::class, 'storeComment']);
         Route::get('/tutorials/{tutorial}/comments/{comment}/attachment', [TutorialController::class, 'downloadCommentAttachment']);
         Route::get('/tutorials/{tutorial}/photos', [TutorialPhotoController::class, 'index']);

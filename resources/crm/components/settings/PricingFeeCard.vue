@@ -112,7 +112,15 @@ defineProps({
       </p>
       <p v-else class="small text-secondary mb-2 flex-grow-1 fst-italic">No description</p>
       <div class="d-flex align-items-center justify-content-between mt-auto pt-2 border-top">
-        <span class="fw-semibold text-body">{{ priceLabel || formatPrice(fee.amount, fee.category) }}</span>
+        <div>
+          <span class="fw-semibold text-body d-block">{{ priceLabel || formatPrice(fee.amount, fee.category) }}</span>
+          <span
+            v-if="Object.prototype.hasOwnProperty.call(fee, 'cost') && fee.cost != null"
+            class="small text-secondary"
+          >
+            Cost: {{ formatPrice(fee.cost, fee.category) }}
+          </span>
+        </div>
         <slot name="actions" />
       </div>
     </div>

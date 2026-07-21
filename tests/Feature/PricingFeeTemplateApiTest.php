@@ -180,26 +180,69 @@ class PricingFeeTemplateApiTest extends TestCase
         $this->assertNull($template->fresh()->description);
     }
 
-    public function test_admin_can_create_postage_markup_percent_fee(): void
+    public function test_admin_can_create_postage_fee_and_provisions_accounts(): void
     {
         $this->actingAsAdmin();
 
+        ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Postage Client',
+            'email' => 'postage-client@example.test',
+        ]);
+
         $create = $this->postJson('/api/settings/pricing-fees', [
-            'name' => 'USPS Markup',
-            'description' => 'Carrier postage markup',
+            'name' => 'USPS',
+            'description' => 'USPS postage fee',
             'category' => PricingFeeTemplate::CATEGORY_POSTAGE,
-            'amount' => 12.5,
+            'amount' => 0.25,
         ]);
 
         $create->assertCreated();
         $create->assertJsonPath('category', PricingFeeTemplate::CATEGORY_POSTAGE);
         $create->assertJsonPath('category_label', 'Postage');
-        $create->assertJsonPath('amount', 12.5);
+        $create->assertJsonPath('amount', 0.25);
 
         $templateId = (int) $create->json('id');
-        $this->assertSame(
+        $this->assertGreaterThan(
             0,
             ClientAccountFee::query()->where('pricing_template_id', $templateId)->count()
         );
+        $fee = ClientAccountFee::query()->where('pricing_template_id', $templateId)->first();
+        $this->assertNotNull($fee);
+        $this->assertSame(PricingFeeTemplate::CATEGORY_POSTAGE, $fee->fee_group);
+        $this->assertEquals('0.2500', (string) $fee->amount);
+    }
+
+    public function test_admin_can_create_and_update_fee_with_cost(): void
+    {
+        $this->actingAsAdmin();
+
+        $create = $this->postJson('/api/settings/pricing-fees', [
+            'name' => 'Box Fee',
+            'description' => 'Per box',
+            'category' => PricingFeeTemplate::CATEGORY_PACKAGING,
+            'amount' => 2.5,
+            'cost' => 0.75,
+        ]);
+
+        $create->assertCreated();
+        $create->assertJsonPath('amount', 2.5);
+        $create->assertJsonPath('cost', 0.75);
+
+        $templateId = (int) $create->json('id');
+        $template = PricingFeeTemplate::query()->findOrFail($templateId);
+        $this->assertSame('0.7500', (string) $template->cost);
+
+        $update = $this->post('/api/settings/pricing-fees/'.$templateId, [
+            '_method' => 'PATCH',
+            'name' => 'Box Fee',
+            'description' => 'Per box',
+            'category' => PricingFeeTemplate::CATEGORY_PACKAGING,
+            'amount' => 2.5,
+            'cost' => '',
+        ]);
+        $update->assertOk();
+        $update->assertJsonPath('cost', null);
+        $this->assertNull($template->fresh()->cost);
     }
 }

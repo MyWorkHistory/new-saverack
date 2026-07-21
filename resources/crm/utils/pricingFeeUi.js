@@ -11,10 +11,8 @@ export const PRICING_CATEGORY_OPTIONS = [
   { value: "postage", label: "Postage" },
 ];
 
-/** Account / portal fee UIs — postage is settings-only markup. */
-export const CLIENT_VISIBLE_PRICING_CATEGORY_OPTIONS = PRICING_CATEGORY_OPTIONS.filter(
-  (o) => o.value !== "postage",
-);
+/** Account / portal fee category filters (same as settings). */
+export const CLIENT_VISIBLE_PRICING_CATEGORY_OPTIONS = PRICING_CATEGORY_OPTIONS;
 
 /** @type {Record<string, { label: string, subtitle: string, accent: string, headerBg: string }>} */
 export const PRICING_CATEGORY_META = {
@@ -68,7 +66,7 @@ export const PRICING_CATEGORY_META = {
   },
   postage: {
     label: "Postage",
-    subtitle: "Carrier postage cost markup percentage.",
+    subtitle: "Carrier postage fees.",
     accent: "#334155",
     headerBg: "#e2e8f0",
   },
@@ -120,12 +118,7 @@ export function formatPrice(amount, category = null) {
   const n = Number(amount);
   const cat = String(category || "").toLowerCase();
   if (!Number.isFinite(n)) {
-    if (cat === "postage") return "0%";
     return cat === "storage" ? "$0.000" : "$0.00";
-  }
-  if (cat === "postage") {
-    const fixed = n.toFixed(4).replace(/\.?0+$/, "");
-    return `${fixed === "-0" ? "0" : fixed}%`;
   }
   if (cat === "storage") {
     return `$${n.toFixed(3)}`;

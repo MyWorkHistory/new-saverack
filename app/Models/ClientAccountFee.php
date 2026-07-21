@@ -51,12 +51,14 @@ class ClientAccountFee extends Model
         'description',
         'icon_path',
         'amount',
+        'cost',
         'currency',
         'sort_order',
     ];
 
     protected $casts = [
         'amount' => 'decimal:4',
+        'cost' => 'decimal:4',
     ];
 
     public function clientAccount(): BelongsTo

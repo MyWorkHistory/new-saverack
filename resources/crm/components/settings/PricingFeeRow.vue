@@ -137,7 +137,13 @@ function onKeydown(e) {
     </div>
 
     <div class="pricing-fee-row__price flex-shrink-0">
-      {{ priceLabel || formatPrice(fee.amount, fee.category) }}
+      <div>{{ priceLabel || formatPrice(fee.amount, fee.category) }}</div>
+      <div
+        v-if="Object.prototype.hasOwnProperty.call(fee, 'cost') && fee.cost != null"
+        class="pricing-fee-row__cost"
+      >
+        Cost: {{ formatPrice(fee.cost, fee.category) }}
+      </div>
     </div>
   </article>
 </template>
@@ -210,6 +216,13 @@ function onKeydown(e) {
   padding-top: 0.125rem;
   text-align: right;
   min-width: 4.5rem;
+}
+
+.pricing-fee-row__cost {
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--bs-secondary-color);
 }
 
 .settings-pricing-badge {

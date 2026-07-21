@@ -98,29 +98,32 @@ class PricingFeeTemplateServiceTest extends TestCase
         );
     }
 
-    public function test_postage_template_does_not_provision_account_fees(): void
+    public function test_postage_template_provisions_account_fees(): void
     {
         $account = $this->account();
 
         $template = $this->service()->create([
-            'name' => 'Carrier Markup',
-            'description' => 'Postage markup percent',
+            'name' => 'USPS',
+            'description' => 'USPS postage fee',
             'category' => PricingFeeTemplate::CATEGORY_POSTAGE,
-            'amount' => 12.5,
+            'amount' => 0.25,
         ]);
 
         $this->assertSame(PricingFeeTemplate::CATEGORY_POSTAGE, $template->category);
-        $this->assertEquals('12.5000', (string) $template->amount);
-        $this->assertSame(
-            0,
-            ClientAccountFee::query()
-                ->where('client_account_id', $account->id)
-                ->where('pricing_template_id', $template->id)
-                ->count()
-        );
+        $this->assertEquals('0.2500', (string) $template->amount);
+
+        $fee = ClientAccountFee::query()
+            ->where('client_account_id', $account->id)
+            ->where('pricing_template_id', $template->id)
+            ->first();
+
+        $this->assertNotNull($fee);
+        $this->assertSame(PricingFeeTemplate::CATEGORY_POSTAGE, $fee->fee_group);
+        $this->assertSame('USPS', $fee->label);
+        $this->assertEquals('0.2500', (string) $fee->amount);
     }
 
-    public function test_provision_all_templates_skips_postage(): void
+    public function test_provision_all_templates_includes_postage(): void
     {
         PricingFeeTemplate::query()->create([
             'name' => 'First Pick',
@@ -129,9 +132,9 @@ class PricingFeeTemplateServiceTest extends TestCase
             'sort_order' => 0,
         ]);
         PricingFeeTemplate::query()->create([
-            'name' => 'Postage Markup',
+            'name' => 'USPS',
             'category' => PricingFeeTemplate::CATEGORY_POSTAGE,
-            'amount' => 10,
+            'amount' => 0.25,
             'sort_order' => 1,
         ]);
 
@@ -139,14 +142,14 @@ class PricingFeeTemplateServiceTest extends TestCase
         $this->service()->provisionAllTemplatesForAccount($account);
 
         $this->assertSame(
-            1,
+            2,
             ClientAccountFee::query()
                 ->where('client_account_id', $account->id)
                 ->whereNotNull('pricing_template_id')
                 ->count()
         );
         $this->assertSame(
-            0,
+            1,
             ClientAccountFee::query()
                 ->where('client_account_id', $account->id)
                 ->where('fee_group', PricingFeeTemplate::CATEGORY_POSTAGE)
@@ -154,7 +157,7 @@ class PricingFeeTemplateServiceTest extends TestCase
         );
     }
 
-    public function test_updating_template_to_postage_removes_linked_account_fees(): void
+    public function test_updating_template_to_postage_keeps_linked_account_fees(): void
     {
         $account = $this->account();
 
@@ -174,14 +177,61 @@ class PricingFeeTemplateServiceTest extends TestCase
 
         $this->service()->update($template, [
             'category' => PricingFeeTemplate::CATEGORY_POSTAGE,
-            'amount' => 8.5,
+            'amount' => 0.25,
         ]);
 
-        $this->assertSame(
-            0,
-            ClientAccountFee::query()
-                ->where('pricing_template_id', $template->id)
-                ->count()
-        );
+        $fee = ClientAccountFee::query()
+            ->where('pricing_template_id', $template->id)
+            ->first();
+
+        $this->assertNotNull($fee);
+        $this->assertSame(PricingFeeTemplate::CATEGORY_POSTAGE, $fee->fee_group);
+        $this->assertSame('Was Receiving', $fee->label);
+        $this->assertEquals('3.0000', (string) $fee->amount);
+    }
+
+    public function test_template_cost_is_inherited_and_account_override_is_preserved(): void
+    {
+        $account = $this->account();
+
+        $template = $this->service()->create([
+            'name' => 'Hourly Labor',
+            'category' => PricingFeeTemplate::CATEGORY_CUSTOM_WORK,
+            'amount' => 45,
+            'cost' => 18,
+        ]);
+
+        $fee = ClientAccountFee::query()
+            ->where('client_account_id', $account->id)
+            ->where('pricing_template_id', $template->id)
+            ->first();
+
+        $this->assertNotNull($fee);
+        $this->assertNull($fee->cost);
+
+        $payload = app(\App\Services\ClientAccountService::class)
+            ->feesPayloadForApi($account->fresh(['feeItems.pricingTemplate']), true);
+        $item = collect($payload['items'])->firstWhere('id', $fee->id);
+        $this->assertNotNull($item);
+        $this->assertSame(18.0, $item['cost']);
+        $this->assertSame(18.0, $item['default_cost']);
+        $this->assertFalse($item['cost_is_override']);
+
+        $fee->update(['cost' => '22.0000']);
+
+        $this->service()->update($template, [
+            'cost' => 30,
+        ]);
+
+        $fee->refresh();
+        $this->assertSame('22.0000', (string) $fee->cost);
+        $this->assertSame('30.0000', (string) $template->fresh()->cost);
+
+        $payloadAfter = app(\App\Services\ClientAccountService::class)
+            ->feesPayloadForApi($account->fresh(['feeItems.pricingTemplate']), true);
+        $itemAfter = collect($payloadAfter['items'])->firstWhere('id', $fee->id);
+        $this->assertSame(22.0, $itemAfter['cost']);
+        $this->assertSame(30.0, $itemAfter['default_cost']);
+        $this->assertTrue($itemAfter['cost_is_override']);
     }
 }

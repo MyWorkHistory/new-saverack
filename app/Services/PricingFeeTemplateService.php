@@ -63,6 +63,7 @@ class PricingFeeTemplateService
                 'description' => isset($data['description']) ? (string) $data['description'] : null,
                 'category' => (string) $data['category'],
                 'amount' => $this->normalizeAmount($data['amount'] ?? 0),
+                'cost' => array_key_exists('cost', $data) ? $this->normalizeNullableCost($data['cost']) : null,
                 'sort_order' => $sortOrder,
             ]);
 
@@ -86,11 +87,15 @@ class PricingFeeTemplateService
     {
         return DB::transaction(function () use ($template, $data, $icon, $removeIcon) {
             $payload = [];
-            foreach (['name', 'description', 'category', 'amount'] as $key) {
+            foreach (['name', 'description', 'category', 'amount', 'cost'] as $key) {
                 if (array_key_exists($key, $data)) {
-                    $payload[$key] = $key === 'amount'
-                        ? $this->normalizeAmount($data[$key])
-                        : $data[$key];
+                    if ($key === 'amount') {
+                        $payload[$key] = $this->normalizeAmount($data[$key]);
+                    } elseif ($key === 'cost') {
+                        $payload[$key] = $this->normalizeNullableCost($data[$key]);
+                    } else {
+                        $payload[$key] = $data[$key];
+                    }
                 }
             }
 
@@ -243,6 +248,7 @@ class PricingFeeTemplateService
             'category' => $template->category,
             'category_label' => PricingFeeTemplate::categoryLabel($template->category),
             'amount' => $template->amount !== null ? (float) $template->amount : 0.0,
+            'cost' => $template->cost !== null ? (float) $template->cost : null,
             'icon_url' => $this->icons->publicUrl($template->icon_path),
             'sort_order' => (int) $template->sort_order,
             'created_at' => $template->created_at !== null ? $template->created_at->toIso8601String() : null,
@@ -286,6 +292,24 @@ class PricingFeeTemplateService
         }
         if (! is_numeric($value)) {
             return '0.0000';
+        }
+
+        return number_format((float) $value, 4, '.', '');
+    }
+
+    /**
+     * @param  mixed  $value
+     */
+    private function normalizeNullableCost($value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (is_string($value) && trim($value) === '') {
+            return null;
+        }
+        if (! is_numeric($value)) {
+            return null;
         }
 
         return number_format((float) $value, 4, '.', '');

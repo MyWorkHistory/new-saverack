@@ -40,7 +40,6 @@ class PricingFeeTemplate extends Model
 
     /**
      * Categories shown on client account / portal fee schedules.
-     * Postage is settings-only markup and is never provisioned to accounts.
      *
      * @var list<string>
      */
@@ -53,6 +52,7 @@ class PricingFeeTemplate extends Model
         self::CATEGORY_WHOLESALE,
         self::CATEGORY_PACKAGING,
         self::CATEGORY_AMAZON,
+        self::CATEGORY_POSTAGE,
     ];
 
     /** @var array<string, string> */
@@ -73,12 +73,14 @@ class PricingFeeTemplate extends Model
         'description',
         'category',
         'amount',
+        'cost',
         'icon_path',
         'sort_order',
     ];
 
     protected $casts = [
         'amount' => 'decimal:4',
+        'cost' => 'decimal:4',
     ];
 
     public function accountFees(): HasMany
@@ -94,11 +96,6 @@ class PricingFeeTemplate extends Model
     public static function isClientVisibleCategory(string $category): bool
     {
         return in_array($category, self::CLIENT_VISIBLE_CATEGORIES, true);
-    }
-
-    public static function isMarkupPercentCategory(string $category): bool
-    {
-        return strcasecmp(trim($category), self::CATEGORY_POSTAGE) === 0;
     }
 
     public static function categoryToFeeGroup(string $category): string

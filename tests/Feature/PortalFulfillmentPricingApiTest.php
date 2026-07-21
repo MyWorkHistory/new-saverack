@@ -119,6 +119,12 @@ class PortalFulfillmentPricingApiTest extends TestCase
         $show->assertOk();
         $show->assertJsonPath('fulfillment_pricing.approved', true);
         $this->assertNotEmpty($show->json('fulfillment_pricing.fees'));
+        foreach ($show->json('fulfillment_pricing.fees') as $feeRow) {
+            $this->assertIsArray($feeRow);
+            $this->assertArrayNotHasKey('cost', $feeRow);
+            $this->assertArrayNotHasKey('default_cost', $feeRow);
+            $this->assertArrayNotHasKey('cost_is_override', $feeRow);
+        }
 
         $accept = $this->postJson('/api/portal/onboarding/fulfillment-pricing/accept');
         $accept->assertOk();

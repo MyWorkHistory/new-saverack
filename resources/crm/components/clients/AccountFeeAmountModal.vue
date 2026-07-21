@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from "vue";
+import { formatPrice } from "../../utils/pricingFeeUi.js";
 
 const FORM_ID = "account-fee-amount-form";
 
@@ -12,12 +13,19 @@ const props = defineProps({
 const emit = defineEmits(["close", "save"]);
 
 const amount = ref("");
+const cost = ref("");
 
 const isStorageFee = computed(
   () => String(props.fee?.category || "").toLowerCase() === "storage",
 );
 
 const amountStep = computed(() => (isStorageFee.value ? "0.001" : "0.01"));
+
+const defaultCostLabel = computed(() => {
+  const n = Number(props.fee?.default_cost);
+  if (!Number.isFinite(n)) return null;
+  return formatPrice(n, props.fee?.category);
+});
 
 const amountValid = computed(() => {
   const raw = String(amount.value ?? "").trim();
@@ -26,7 +34,14 @@ const amountValid = computed(() => {
   return Number.isFinite(n) && n >= 0;
 });
 
-const canSubmit = computed(() => amountValid.value);
+const costValid = computed(() => {
+  const raw = String(cost.value ?? "").trim();
+  if (raw === "") return true;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0;
+});
+
+const canSubmit = computed(() => amountValid.value && costValid.value);
 
 function formatAmountForInput(value) {
   if (value == null || value === "") return "";
@@ -43,6 +58,12 @@ function formatAmountForInput(value) {
 function resetForm() {
   const f = props.fee;
   amount.value = f?.amount != null && f.amount !== "" ? formatAmountForInput(f.amount) : "";
+  // Show override value when set; otherwise leave blank so blank = use default.
+  if (f?.cost_is_override) {
+    cost.value = f?.cost != null && f.cost !== "" ? formatAmountForInput(f.cost) : "";
+  } else {
+    cost.value = "";
+  }
 }
 
 watch(
@@ -57,9 +78,11 @@ watch(
 
 function submit() {
   if (!canSubmit.value) return;
-  const raw = String(amount.value ?? "").trim();
+  const rawAmount = String(amount.value ?? "").trim();
+  const rawCost = String(cost.value ?? "").trim();
   emit("save", {
-    amount: raw === "" ? null : raw,
+    amount: rawAmount === "" ? null : rawAmount,
+    cost: rawCost === "" ? null : rawCost,
   });
 }
 
@@ -117,7 +140,7 @@ function onBackdrop() {
                   {{ fee.category_label }}
                 </p>
               </div>
-              <div class="mb-0">
+              <div class="mb-3">
                 <label class="form-label" for="account-fee-amount">Price</label>
                 <div class="input-group">
                   <span class="input-group-text">$</span>
@@ -140,6 +163,29 @@ function onBackdrop() {
                   </template>
                 </p>
               </div>
+              <div class="mb-0">
+                <label class="form-label" for="account-fee-cost">Cost</label>
+                <div class="input-group">
+                  <span class="input-group-text">$</span>
+                  <input
+                    id="account-fee-cost"
+                    v-model="cost"
+                    type="number"
+                    :step="amountStep"
+                    min="0"
+                    class="form-control"
+                    :disabled="saving"
+                  />
+                </div>
+                <p class="small text-secondary mt-1 mb-0">
+                  <template v-if="defaultCostLabel">
+                    Leave blank to use the default cost ({{ defaultCostLabel }}).
+                  </template>
+                  <template v-else>
+                    Leave blank to use the default cost from Settings Pricing.
+                  </template>
+                </p>
+              </div>
             </form>
           </div>
 
@@ -158,7 +204,7 @@ function onBackdrop() {
               class="crm-vx-modal-btn crm-vx-modal-btn--primary"
               :disabled="saving || !canSubmit"
             >
-              {{ saving ? "Saving…" : "Save Price" }}
+              {{ saving ? "Saving…" : "Save Fee" }}
             </button>
           </footer>
         </div>

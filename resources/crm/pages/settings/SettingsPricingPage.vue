@@ -95,6 +95,11 @@ function buildFormData(payload, forUpdate = false) {
   fd.append("description", payload.description ?? "");
   fd.append("category", payload.category);
   fd.append("amount", String(payload.amount));
+  if (payload.cost != null && payload.cost !== "") {
+    fd.append("cost", String(payload.cost));
+  } else {
+    fd.append("cost", "");
+  }
   if (payload.icon) fd.append("icon", payload.icon);
   if (payload.remove_icon) fd.append("remove_icon", "1");
   if (forUpdate) {

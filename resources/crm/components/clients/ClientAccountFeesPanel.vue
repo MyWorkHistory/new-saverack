@@ -146,7 +146,7 @@ async function onSave(payload) {
   try {
     const { data } = await api.patch(
       `/client-accounts/${props.accountId}/fees/${editingFee.value.id}`,
-      { amount: payload.amount },
+      { amount: payload.amount, cost: payload.cost },
     );
     emit("fees-updated", data);
     modalOpen.value = false;

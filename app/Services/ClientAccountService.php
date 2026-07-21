@@ -546,8 +546,12 @@ class ClientAccountService
     /**
      * @return array<string, mixed>
      */
-    public function feesPayloadForApi(ClientAccount $account): array
+    public function feesPayloadForApi(ClientAccount $account, bool $withCost = false): array
     {
+        if ($withCost) {
+            $account->loadMissing(['feeItems.pricingTemplate']);
+        }
+
         $items = $account->relationLoaded('feeItems')
             ? $account->feeItems
             : $account->feeItems()->get();
@@ -566,6 +570,7 @@ class ClientAccountService
             PricingFeeTemplate::CATEGORY_WHOLESALE => [],
             PricingFeeTemplate::CATEGORY_PACKAGING => [],
             PricingFeeTemplate::CATEGORY_AMAZON => [],
+            PricingFeeTemplate::CATEGORY_POSTAGE => [],
         ];
 
         $feeItems = $items
@@ -577,7 +582,7 @@ class ClientAccountService
             ->values();
 
         $flatItems = $feeItems
-            ->map(fn (ClientAccountFee $fee) => $this->feeItemPayloadForApi($fee, $iconService))
+            ->map(fn (ClientAccountFee $fee) => $this->feeItemPayloadForApi($fee, $iconService, $withCost))
             ->all();
 
         foreach ($feeItems as $fee) {
@@ -628,12 +633,15 @@ class ClientAccountService
     /**
      * @return array<string, mixed>
      */
-    private function feeItemPayloadForApi(ClientAccountFee $fee, PricingFeeIconService $iconService): array
-    {
+    private function feeItemPayloadForApi(
+        ClientAccountFee $fee,
+        PricingFeeIconService $iconService,
+        bool $withCost = false
+    ): array {
         $category = (string) $fee->fee_group;
         $amount = $this->feeAmountForApi($fee->amount, $category);
 
-        return [
+        $payload = [
             'id' => $fee->id,
             'name' => $this->feeDisplayName($fee),
             'description' => $fee->description,
@@ -645,6 +653,29 @@ class ClientAccountService
             'sort_order' => (int) $fee->sort_order,
             'line_code' => $fee->line_code,
         ];
+
+        if ($withCost) {
+            $defaultCost = null;
+            if ($fee->relationLoaded('pricingTemplate') && $fee->pricingTemplate !== null) {
+                $defaultCost = $this->feeAmountForApi($fee->pricingTemplate->cost, $category);
+            } elseif ($fee->pricing_template_id) {
+                $template = PricingFeeTemplate::query()->find($fee->pricing_template_id);
+                if ($template !== null) {
+                    $defaultCost = $this->feeAmountForApi($template->cost, $category);
+                }
+            }
+
+            $isOverride = $fee->cost !== null && $fee->cost !== '';
+            $effectiveCost = $isOverride
+                ? $this->feeAmountForApi($fee->cost, $category)
+                : $defaultCost;
+
+            $payload['cost'] = $effectiveCost;
+            $payload['default_cost'] = $defaultCost;
+            $payload['cost_is_override'] = $isOverride;
+        }
+
+        return $payload;
     }
 
     /**
@@ -683,19 +714,28 @@ class ClientAccountService
     }
 
     /**
-     * Update a single account fee amount (account-specific override).
+     * Update a single account fee amount and/or cost (account-specific overrides).
+     * Passing null for cost clears the override so the template default is used again.
+     *
+     * @param  array{amount?: float|null, cost?: float|null}|null  $fields
      */
     public function updateFeeAmount(
         ClientAccount $account,
         ClientAccountFee $fee,
         ?float $amount,
-        ?User $actor = null
+        ?User $actor = null,
+        ?array $fields = null
     ): ClientAccount {
         if ((int) $fee->client_account_id !== (int) $account->id) {
             throw new \InvalidArgumentException('Fee does not belong to this account.');
         }
 
-        $fee->update(['amount' => $this->normalizeFeeAmount($amount)]);
+        $payload = ['amount' => $this->normalizeFeeAmount($amount)];
+        if (is_array($fields) && array_key_exists('cost', $fields)) {
+            $payload['cost'] = $this->normalizeFeeAmount($fields['cost']);
+        }
+
+        $fee->update($payload);
 
         if ($actor !== null) {
             $this->activityLog->log($actor, 'client_account.updated', $account, null, [
@@ -703,7 +743,7 @@ class ClientAccountService
             ]);
         }
 
-        $fresh = $account->fresh(['feeItems']);
+        $fresh = $account->fresh(['feeItems.pricingTemplate']);
 
         return $fresh !== null ? $fresh : $account;
     }
@@ -716,6 +756,7 @@ class ClientAccountService
             PricingFeeTemplate::CATEGORY_WHOLESALE,
             PricingFeeTemplate::CATEGORY_PACKAGING,
             PricingFeeTemplate::CATEGORY_AMAZON,
+            PricingFeeTemplate::CATEGORY_POSTAGE,
         ], true)) {
             return true;
         }
@@ -751,7 +792,7 @@ class ClientAccountService
         $account->loadMissing([
             'accountManager:id,name,email',
             'primaryAccountUser:id,email,client_account_id,is_account_primary',
-            'feeItems',
+            'feeItems.pricingTemplate',
         ]);
         $primaryLogin = $account->primaryAccountUser;
         if ($primaryLogin !== null) {
@@ -820,7 +861,7 @@ class ClientAccountService
             'updated_at' => $account->updated_at !== null
                 ? $account->updated_at->toIso8601String()
                 : null,
-            'fees' => $this->feesPayloadForApi($account),
+            'fees' => $this->feesPayloadForApi($account, true),
             'fulfillment_pricing_status' => $this->normalizeFulfillmentPricingStatus(
                 $account->fulfillment_pricing_status
             ),

@@ -13,13 +13,23 @@ class ClientAccountFeeAmountRequest extends FormRequest
         return $account !== null && $this->user() !== null && $this->user()->can('update', $account);
     }
 
+    protected function prepareForValidation(): void
+    {
+        foreach (['amount', 'cost'] as $key) {
+            if ($this->exists($key) && $this->input($key) === '') {
+                $this->merge([$key => null]);
+            }
+        }
+    }
+
     /**
      * @return array<string, mixed>
      */
     public function rules(): array
     {
         return [
-            'amount' => ['nullable', 'numeric'],
+            'amount' => ['nullable', 'numeric', 'min:0'],
+            'cost' => ['nullable', 'numeric', 'min:0'],
         ];
     }
 }

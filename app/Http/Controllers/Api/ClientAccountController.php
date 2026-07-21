@@ -333,13 +333,18 @@ class ClientAccountController extends Controller
 
         $validated = $request->validated();
         $rawAmount = array_key_exists('amount', $validated) ? $validated['amount'] : null;
+        $fields = [];
+        if (array_key_exists('cost', $validated)) {
+            $fields['cost'] = $validated['cost'] !== null ? (float) $validated['cost'] : null;
+        }
 
         try {
             $account = $this->clientAccounts->updateFeeAmount(
                 $client_account,
                 $fee,
                 $rawAmount !== null ? (float) $rawAmount : null,
-                $request->user()
+                $request->user(),
+                $fields !== [] ? $fields : null
             );
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);

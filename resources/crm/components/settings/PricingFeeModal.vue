@@ -35,6 +35,7 @@ const name = ref("");
 const description = ref("");
 const category = ref("fulfillment");
 const amount = ref("");
+const cost = ref("");
 const iconFile = ref(null);
 const iconPreview = ref(null);
 const removeIcon = ref(false);
@@ -44,11 +45,7 @@ const title = computed(() => (isEdit.value ? "Edit Fee" : "Create Fee"));
 const isStorageCategory = computed(
   () => String(category.value || "").toLowerCase() === "storage",
 );
-const isPostageCategory = computed(
-  () => String(category.value || "").toLowerCase() === "postage",
-);
 const amountStep = computed(() => (isStorageCategory.value ? "0.001" : "0.01"));
-const amountLabel = computed(() => (isPostageCategory.value ? "Markup %" : "Price"));
 
 const amountValid = computed(() => {
   const raw = String(amount.value ?? "").trim();
@@ -57,7 +54,16 @@ const amountValid = computed(() => {
   return Number.isFinite(n) && n >= 0;
 });
 
-const canSubmit = computed(() => name.value.trim() !== "" && amountValid.value);
+const costValid = computed(() => {
+  const raw = String(cost.value ?? "").trim();
+  if (raw === "") return true;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0;
+});
+
+const canSubmit = computed(
+  () => name.value.trim() !== "" && amountValid.value && costValid.value,
+);
 
 function formatAmountForInput(value, cat) {
   if (value == null || value === "") return "";
@@ -78,6 +84,10 @@ function resetForm() {
   amount.value =
     f?.amount != null && f.amount !== ""
       ? formatAmountForInput(f.amount, category.value)
+      : "";
+  cost.value =
+    f?.cost != null && f.cost !== ""
+      ? formatAmountForInput(f.cost, category.value)
       : "";
   iconFile.value = null;
   iconPreview.value = f?.icon_url != null ? resolvePublicUrl(String(f.icon_url)) : null;
@@ -115,11 +125,13 @@ function clearIcon() {
 
 function submit() {
   if (!canSubmit.value) return;
+  const costRaw = String(cost.value ?? "").trim();
   emit("save", {
     name: name.value.trim(),
     description: description.value.trim(),
     category: category.value,
     amount: amount.value,
+    cost: costRaw === "" ? null : costRaw,
     icon: iconFile.value,
     remove_icon: removeIcon.value,
   });
@@ -178,9 +190,9 @@ function close() {
       </select>
     </div>
     <div class="mb-3">
-      <label class="form-label" for="pricing-fee-amount">{{ amountLabel }}</label>
+      <label class="form-label" for="pricing-fee-amount">Price</label>
       <div class="input-group">
-        <span v-if="!isPostageCategory" class="input-group-text">$</span>
+        <span class="input-group-text">$</span>
         <input
           id="pricing-fee-amount"
           v-model="amount"
@@ -191,13 +203,27 @@ function close() {
           required
           :disabled="saving"
         />
-        <span v-if="isPostageCategory" class="input-group-text">%</span>
       </div>
       <p v-if="isStorageCategory" class="small text-secondary mt-1 mb-0">
         Storage prices use 3 decimal places (e.g. 0.023).
       </p>
-      <p v-else-if="isPostageCategory" class="small text-secondary mt-1 mb-0">
-        Postage markup percentage (e.g. 12.5). Settings only — not applied to account fees.
+    </div>
+    <div class="mb-3">
+      <label class="form-label" for="pricing-fee-cost">Cost</label>
+      <div class="input-group">
+        <span class="input-group-text">$</span>
+        <input
+          id="pricing-fee-cost"
+          v-model="cost"
+          type="number"
+          :step="amountStep"
+          min="0"
+          class="form-control"
+          :disabled="saving"
+        />
+      </div>
+      <p class="small text-secondary mt-1 mb-0">
+        Admin-only. Applied as the default cost for all accounts (overrides preserved).
       </p>
     </div>
     <div class="mb-0">
@@ -321,9 +347,9 @@ function close() {
                 </select>
               </div>
               <div class="mb-3">
-                <label class="form-label" for="pricing-fee-amount-edit">{{ amountLabel }}</label>
+                <label class="form-label" for="pricing-fee-amount-edit">Price</label>
                 <div class="input-group">
-                  <span v-if="!isPostageCategory" class="input-group-text">$</span>
+                  <span class="input-group-text">$</span>
                   <input
                     id="pricing-fee-amount-edit"
                     v-model="amount"
@@ -334,13 +360,27 @@ function close() {
                     required
                     :disabled="saving"
                   />
-                  <span v-if="isPostageCategory" class="input-group-text">%</span>
                 </div>
                 <p v-if="isStorageCategory" class="small text-secondary mt-1 mb-0">
                   Storage prices use 3 decimal places (e.g. 0.023).
                 </p>
-                <p v-else-if="isPostageCategory" class="small text-secondary mt-1 mb-0">
-                  Postage markup percentage (e.g. 12.5). Settings only — not applied to account fees.
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="pricing-fee-cost-edit">Cost</label>
+                <div class="input-group">
+                  <span class="input-group-text">$</span>
+                  <input
+                    id="pricing-fee-cost-edit"
+                    v-model="cost"
+                    type="number"
+                    :step="amountStep"
+                    min="0"
+                    class="form-control"
+                    :disabled="saving"
+                  />
+                </div>
+                <p class="small text-secondary mt-1 mb-0">
+                  Admin-only. Applied as the default cost for all accounts (overrides preserved).
                 </p>
               </div>
               <div class="mb-0">

@@ -13,6 +13,13 @@ class PricingFeeTemplateUpdateRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->exists('cost') && $this->input('cost') === '') {
+            $this->merge(['cost' => null]);
+        }
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -23,6 +30,7 @@ class PricingFeeTemplateUpdateRequest extends FormRequest
             'description' => ['nullable', 'string', 'max:5000'],
             'category' => ['sometimes', 'required', 'string', Rule::in(PricingFeeTemplate::CATEGORIES)],
             'amount' => ['sometimes', 'required', 'numeric', 'min:0'],
+            'cost' => ['nullable', 'numeric', 'min:0'],
             'icon' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'remove_icon' => ['sometimes', 'boolean'],
         ];

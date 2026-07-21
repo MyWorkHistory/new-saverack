@@ -174,25 +174,25 @@ class ClientAccountFeeApiTest extends TestCase
         ])->assertUnauthorized();
     }
 
-    public function test_account_fees_payload_excludes_postage_rows(): void
+    public function test_account_fees_payload_includes_postage_rows(): void
     {
         $this->actingStaffWithClientsUpdate();
 
         $account = ClientAccount::query()->create([
             'status' => ClientAccount::STATUS_ACTIVE,
-            'company_name' => 'No Postage Co',
-            'email' => 'no-postage@example.test',
+            'company_name' => 'Postage Co',
+            'email' => 'postage@example.test',
         ]);
 
         ClientAccountFee::query()->create([
             'client_account_id' => $account->id,
             'pricing_template_id' => null,
             'fee_group' => PricingFeeTemplate::CATEGORY_POSTAGE,
-            'line_code' => 'postage_orphan',
-            'label' => 'Should Hide',
+            'line_code' => 'postage_usps',
+            'label' => 'USPS',
             'description' => null,
             'icon_path' => null,
-            'amount' => 12.5,
+            'amount' => 0.25,
             'currency' => 'USD',
             'sort_order' => 99,
         ]);
@@ -217,7 +217,7 @@ class ClientAccountFeeApiTest extends TestCase
         );
 
         $this->assertContains(ClientAccountFee::GROUP_FULFILLMENT, $categories);
-        $this->assertNotContains(PricingFeeTemplate::CATEGORY_POSTAGE, $categories);
+        $this->assertContains(PricingFeeTemplate::CATEGORY_POSTAGE, $categories);
 
         $response = $this->getJson('/api/client-accounts/'.$account->id);
         $response->assertOk();
@@ -225,7 +225,7 @@ class ClientAccountFeeApiTest extends TestCase
             static fn ($item) => (string) ($item['category'] ?? ''),
             $response->json('fees.items') ?? []
         );
-        $this->assertNotContains(PricingFeeTemplate::CATEGORY_POSTAGE, $apiCategories);
+        $this->assertContains(PricingFeeTemplate::CATEGORY_POSTAGE, $apiCategories);
     }
 
     public function test_guest_cannot_download_account_pricing_pdf(): void
@@ -276,5 +276,63 @@ class ClientAccountFeeApiTest extends TestCase
         $disposition = (string) $response->headers->get('content-disposition');
         $this->assertStringContainsString('Acme-Widgets-Pricing.pdf', $disposition);
         $this->assertGreaterThan(100, strlen($response->getContent()));
+    }
+
+    public function test_staff_account_fees_include_effective_cost_and_patch_override(): void
+    {
+        $this->actingStaffWithClientsUpdate();
+
+        $template = PricingFeeTemplate::query()->create([
+            'name' => 'Inbound Fee',
+            'category' => PricingFeeTemplate::CATEGORY_RECEIVING,
+            'amount' => 3,
+            'cost' => 1.25,
+            'sort_order' => 0,
+        ]);
+
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Cost Co',
+            'email' => 'cost-co@example.test',
+        ]);
+
+        app(ClientAccountService::class)->ensureDefaultFeeItems($account);
+
+        $fee = ClientAccountFee::query()
+            ->where('client_account_id', $account->id)
+            ->where('pricing_template_id', $template->id)
+            ->firstOrFail();
+
+        $show = $this->getJson('/api/client-accounts/'.$account->id);
+        $show->assertOk();
+        $item = collect($show->json('fees.items'))->firstWhere('id', $fee->id);
+        $this->assertNotNull($item);
+        $this->assertSame(1.25, $item['cost']);
+        $this->assertSame(1.25, $item['default_cost']);
+        $this->assertFalse($item['cost_is_override']);
+
+        $patch = $this->patchJson('/api/client-accounts/'.$account->id.'/fees/'.$fee->id, [
+            'amount' => 3,
+            'cost' => 2.5,
+        ]);
+        $patch->assertOk();
+        $patchedItem = collect($patch->json('fees.items'))->firstWhere('id', $fee->id);
+        $this->assertSame(2.5, $patchedItem['cost']);
+        $this->assertTrue($patchedItem['cost_is_override']);
+
+        $template->update(['cost' => 9]);
+        $showAfterDefaultChange = $this->getJson('/api/client-accounts/'.$account->id);
+        $itemAfter = collect($showAfterDefaultChange->json('fees.items'))->firstWhere('id', $fee->id);
+        $this->assertSame(2.5, $itemAfter['cost']);
+        $this->assertSame(9.0, $itemAfter['default_cost']);
+
+        $clear = $this->patchJson('/api/client-accounts/'.$account->id.'/fees/'.$fee->id, [
+            'amount' => 3,
+            'cost' => null,
+        ]);
+        $clear->assertOk();
+        $clearedItem = collect($clear->json('fees.items'))->firstWhere('id', $fee->id);
+        $this->assertSame(9.0, $clearedItem['cost']);
+        $this->assertFalse($clearedItem['cost_is_override']);
     }
 }

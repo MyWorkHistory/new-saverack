@@ -270,14 +270,14 @@ function exportCsv() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `billing-summary-${current.value.week_start || "week"}.csv`;
+  a.download = `revenue-${current.value.week_start || "week"}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
 onMounted(() => {
   setCrmPageMeta({
-    title: "Save Rack | Billing Summary",
+    title: "Save Rack | Revenue",
     description: "Weekly overview of charges and comparisons.",
   });
   load();
@@ -288,7 +288,7 @@ onMounted(() => {
   <div class="staff-page staff-page--wide billing-summary-ui">
     <header class="billing-summary-ui__head">
       <div class="min-w-0">
-        <h1 class="billing-summary-ui__title">Billing Summary</h1>
+        <h1 class="billing-summary-ui__title">Revenue</h1>
         <p class="billing-summary-ui__subtitle">
           Weekly overview of charges and comparisons.
         </p>

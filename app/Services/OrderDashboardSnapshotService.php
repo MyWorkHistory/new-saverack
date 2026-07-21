@@ -161,6 +161,7 @@ class OrderDashboardSnapshotService
         }
 
         $sections = $this->overlaySectionsFromIndexWhenHealthy($sections);
+        $sections = $this->hydrateSectionAccountRows($sections);
 
         $rtsTotal = (int) ($sections[OrderDashboardSection::KEY_READY_TO_SHIP]['total_count'] ?? 0);
         $shippedTotal = (int) ($sections[OrderDashboardSection::KEY_SHIPPED]['total_count'] ?? 0);
@@ -1607,6 +1608,46 @@ class OrderDashboardSnapshotService
                     'message' => $e->getMessage(),
                 ]);
             }
+        }
+
+        return $sections;
+    }
+
+    /**
+     * Re-apply live account name/status (and operational filters) after any index overlay
+     * so the UI never shows stale snapshot metadata.
+     *
+     * @param  array<string, mixed>  $sections
+     * @return array<string, mixed>
+     */
+    private function hydrateSectionAccountRows(array $sections): array
+    {
+        foreach ($sections as $sectionKey => $section) {
+            if (! is_array($section)) {
+                continue;
+            }
+            $accounts = isset($section['accounts']) && is_array($section['accounts'])
+                ? $section['accounts']
+                : [];
+            if ($accounts === []) {
+                continue;
+            }
+
+            $key = (string) $sectionKey;
+            $includePaused = OrderDashboardSection::includesPausedAccounts($key);
+            $hydrated = $this->filterOperationalDashboardAccounts($accounts, $includePaused);
+            $sections[$sectionKey]['accounts'] = $hydrated;
+
+            // Preserve on-hold total when it came from the distinct-index overlay.
+            if ($key === OrderDashboardSection::KEY_ON_HOLD) {
+                continue;
+            }
+
+            $totalCount = 0;
+            foreach ($hydrated as $entry) {
+                $totalCount += (int) ($entry['orders_count'] ?? 0);
+            }
+            $sections[$sectionKey]['total_count'] = $totalCount;
         }
 
         return $sections;

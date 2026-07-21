@@ -121,8 +121,8 @@ const meta = {
     description: "Portal user profile.",
   },
   billingSummary: {
-    title: "Save Rack | Billing Summary",
-    description: "Billing overview.",
+    title: "Save Rack | Revenue",
+    description: "Weekly revenue overview.",
   },
   billingInvoices: {
     title: "Save Rack | Invoices",
@@ -491,10 +491,14 @@ const routes = [
   },
   { path: "/admin/clients", redirect: "/admin/clients/accounts" },
   {
-    path: "/admin/billing/summary",
-    name: "billing-summary",
+    path: "/admin/billing/revenue",
+    name: "billing-revenue",
     component: BillingSummaryPage,
     meta: meta.billingSummary,
+  },
+  {
+    path: "/admin/billing/summary",
+    redirect: "/admin/billing/revenue",
   },
   {
     path: "/admin/billing/invoices",
@@ -552,7 +556,7 @@ const routes = [
     props: true,
     meta: meta.billingAsnBillDetail,
   },
-  { path: "/admin/billing", redirect: "/admin/billing/summary" },
+  { path: "/admin/billing", redirect: "/admin/billing/revenue" },
   {
     path: "/admin/receiving/asn",
     name: "admin-asn-hub",
@@ -1599,7 +1603,9 @@ async function ensureBillingRouteAccess(path) {
   }
   if (path === "/admin/billing" || path.startsWith("/admin/billing/")) {
     const pages = billingNavCache.pages || {};
-    if (path.startsWith("/admin/billing/summary")) return pages.summary === true;
+    if (path.startsWith("/admin/billing/revenue") || path.startsWith("/admin/billing/summary")) {
+      return pages.summary === true;
+    }
     if (path.startsWith("/admin/billing/invoices")) return pages.invoices === true;
     if (path.startsWith("/admin/billing/bills") || path.startsWith("/admin/billing/custom-bills")) return pages.customBills === true;
     if (path.startsWith("/admin/billing/asn-bills")) return pages.asnBills === true;

@@ -82,7 +82,7 @@ const PAGE_META = {
   billing_summary: {
     moduleKey: "billing",
     moduleLabel: "Billing",
-    rowLabel: "Summary",
+    rowLabel: "Revenue",
     order: 40,
     rowOrder: 1,
   },

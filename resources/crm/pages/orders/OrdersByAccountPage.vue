@@ -12,6 +12,23 @@ import { formatDateTimeUs } from "../../utils/formatUserDates.js";
 
 const PER_PAGE = 20;
 
+const QUEUE_ROWS = [
+  {
+    key: "ready_to_ship",
+    label: "Ready to Ship",
+    description: "Orders ready to be fulfilled",
+    tone: "blue",
+    icon: "rts",
+  },
+  {
+    key: "shipped",
+    label: "Shipped Today",
+    description: "Orders shipped today",
+    tone: "green",
+    icon: "shipped",
+  },
+];
+
 const HOLD_BREAKDOWN = [
   {
     key: "hold_operator",
@@ -81,7 +98,7 @@ function sectionData(key) {
   );
 }
 
-/** Merge on-hold + hold-type + paused RTS accounts from cached dashboard snapshots. */
+/** Merge RTS + shipped + on-hold + hold-type accounts from cached dashboard snapshots. */
 const allAccounts = computed(() => {
   const byId = new Map();
 
@@ -94,6 +111,8 @@ const allAccounts = computed(() => {
         account_id: accountId,
         account_name: String(row.account_name || `Account #${accountId}`),
         account_status: String(row.account_status || "active").toLowerCase(),
+        ready_to_ship_count: 0,
+        shipped_count: 0,
         on_hold_count: 0,
         paused_rts_count: 0,
         holds: {
@@ -114,10 +133,33 @@ const allAccounts = computed(() => {
     return entry;
   }
 
+  for (const row of sectionData("ready_to_ship").accounts || []) {
+    const entry = ensure(row);
+    if (!entry) continue;
+    const count = Number(row.orders_count || 0);
+    entry.ready_to_ship_count = Math.max(entry.ready_to_ship_count, count);
+    if (entry.account_status === "paused") {
+      entry.paused_rts_count = Math.max(entry.paused_rts_count, count);
+    }
+  }
+
+  for (const row of sectionData("shipped").accounts || []) {
+    const entry = ensure(row);
+    if (!entry) continue;
+    entry.shipped_count = Math.max(entry.shipped_count, Number(row.orders_count || 0));
+  }
+
   for (const row of sectionData("on_hold").accounts || []) {
     const entry = ensure(row);
     if (!entry) continue;
-    entry.on_hold_count = Math.max(entry.on_hold_count, Number(row.orders_count || 0));
+    const count = Number(row.orders_count || 0);
+    if (entry.account_status === "paused") {
+      // Paused on-hold payload includes RTS+hold for paused accounts.
+      entry.paused_rts_count = Math.max(entry.paused_rts_count, count);
+      entry.on_hold_count = Math.max(entry.on_hold_count, count);
+    } else {
+      entry.on_hold_count = Math.max(entry.on_hold_count, count);
+    }
   }
 
   for (const hold of HOLD_TYPE_SECTIONS) {
@@ -129,26 +171,21 @@ const allAccounts = computed(() => {
     }
   }
 
-  // Paused accounts: RTS counts feed the "Paused" breakdown row.
-  for (const row of sectionData("ready_to_ship").accounts || []) {
-    if (String(row?.account_status || "").toLowerCase() !== "paused") continue;
-    const entry = ensure(row);
-    if (!entry) continue;
-    entry.paused_rts_count = Math.max(entry.paused_rts_count, Number(row.orders_count || 0));
-  }
-
   return [...byId.values()]
     .map((a) => {
       const holdSum = Object.values(a.holds).reduce((s, n) => s + Number(n || 0), 0);
-      // Prefer distinct on-hold total; fall back to hold-type sum when on_hold row is missing.
-      const totalOrders = a.on_hold_count > 0 ? a.on_hold_count : holdSum;
+      const onHoldTotal = a.on_hold_count > 0 ? a.on_hold_count : holdSum;
+      const totalOrders =
+        Number(a.ready_to_ship_count || 0) +
+        Number(a.shipped_count || 0) +
+        Number(onHoldTotal || 0);
       return {
         ...a,
+        on_hold_total: onHoldTotal,
         total_orders: totalOrders,
-        is_paused: a.account_status === "paused",
       };
     })
-    .filter((a) => a.total_orders > 0)
+    .filter((a) => a.total_orders > 0 || a.paused_rts_count > 0)
     .sort((a, b) => {
       const diff = Number(b.total_orders) - Number(a.total_orders);
       return sortDir.value === "asc" ? -diff : diff;
@@ -198,6 +235,18 @@ const selectedAccount = computed(() => {
   return allAccounts.value.find((a) => a.account_id === selectedAccountId.value) || null;
 });
 
+const queueRows = computed(() => {
+  const account = selectedAccount.value;
+  if (!account) return [];
+  return QUEUE_ROWS.map((meta) => ({
+    ...meta,
+    orders:
+      meta.key === "ready_to_ship"
+        ? Number(account.ready_to_ship_count || 0)
+        : Number(account.shipped_count || 0),
+  }));
+});
+
 const breakdownRows = computed(() => {
   const account = selectedAccount.value;
   if (!account) return [];
@@ -213,11 +262,22 @@ const breakdownRows = computed(() => {
 const selectedHoldTotal = computed(() => {
   const account = selectedAccount.value;
   if (!account) return 0;
+  return Number(account.on_hold_total || 0);
+});
+
+const selectedGrandTotal = computed(() => {
+  const account = selectedAccount.value;
+  if (!account) return 0;
   return Number(account.total_orders || 0);
 });
 
 const lastSyncedLabel = computed(() => {
-  const keys = ["on_hold", "ready_to_ship", ...HOLD_TYPE_SECTIONS.map((h) => h.key)];
+  const keys = [
+    "ready_to_ship",
+    "shipped",
+    "on_hold",
+    ...HOLD_TYPE_SECTIONS.map((h) => h.key),
+  ];
   let latestMs = null;
   for (const key of keys) {
     const at = sectionData(key).refreshed_at;
@@ -244,10 +304,17 @@ function goToPage(n) {
 }
 
 function statusBadge(account) {
-  if (account?.is_paused) {
-    return { label: "Paused", className: "oba-badge oba-badge--paused" };
-  }
-  return { label: "On Hold", className: "oba-badge oba-badge--hold" };
+  const status = String(account?.account_status || "active").toLowerCase();
+  const labels = {
+    active: "Active",
+    paused: "Paused",
+    pending: "Pending",
+    inactive: "Inactive",
+  };
+  return {
+    label: labels[status] || status.charAt(0).toUpperCase() + status.slice(1),
+    className: `oba-badge oba-badge--${status}`,
+  };
 }
 
 function refreshToastMessage(data) {
@@ -286,7 +353,7 @@ watch(pagedAccounts, (rows) => {
 onMounted(async () => {
   setCrmPageMeta({
     title: "Save Rack | Orders | By Account",
-    description: "On-hold order breakdown by account.",
+    description: "Order breakdown by account.",
   });
   try {
     await load();
@@ -302,7 +369,7 @@ onMounted(async () => {
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-semibold text-body">Orders by Account</h1>
         <p class="text-secondary small mb-0">
-          View on-hold order breakdown by account
+          View ready to ship, shipped, and on-hold orders by account
         </p>
       </div>
       <CrmSyncToolbar :last-synced-label="lastSyncedLabel" prefix="Last Updated:">
@@ -375,7 +442,7 @@ onMounted(async () => {
               <tbody>
                 <tr v-if="pagedAccounts.length === 0">
                   <td colspan="3" class="text-secondary text-center py-4">
-                    No accounts with on-hold orders.
+                    No accounts with orders.
                   </td>
                 </tr>
                 <tr
@@ -457,7 +524,7 @@ onMounted(async () => {
           <template v-if="selectedAccount">
             <header class="oba-card__head">
               <h2 class="oba-card__title">
-                Hold Breakdown - {{ selectedAccount.account_name }}
+                Order Breakdown - {{ selectedAccount.account_name }}
               </h2>
               <p class="oba-card__total">
                 <span class="oba-card__total-icon" aria-hidden="true">
@@ -467,8 +534,8 @@ onMounted(async () => {
                     />
                   </svg>
                 </span>
-                Total Orders On Hold:
-                <strong>{{ nf.format(selectedHoldTotal) }}</strong>
+                Total Orders:
+                <strong>{{ nf.format(selectedGrandTotal) }}</strong>
               </p>
             </header>
 
@@ -476,13 +543,13 @@ onMounted(async () => {
               <table class="oba-breakdown-table">
                 <thead>
                   <tr>
-                    <th>Hold Type</th>
+                    <th>Type</th>
                     <th class="text-end">Orders</th>
                     <th>Description</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="row in breakdownRows" :key="row.key">
+                  <tr v-for="row in queueRows" :key="row.key">
                     <td>
                       <div class="oba-hold-type">
                         <span
@@ -490,23 +557,11 @@ onMounted(async () => {
                           :class="`oba-hold-type__icon--${row.tone}`"
                           aria-hidden="true"
                         >
-                          <svg v-if="row.icon === 'operator'" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2zm0-4h-2V7h2z" />
-                          </svg>
-                          <svg v-else-if="row.icon === 'address'" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z" />
-                          </svg>
-                          <svg v-else-if="row.icon === 'fraud'" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 6h2v6h-2zm0 8h2v2h-2z" />
-                          </svg>
-                          <svg v-else-if="row.icon === 'payment'" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16zm0-10H4V6h16z" />
-                          </svg>
-                          <svg v-else-if="row.icon === 'user'" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                          <svg v-if="row.icon === 'rts'" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M20 2H4c-1 0-2 .9-2 2v3.01c0 .72.43 1.34 1 1.69V20c0 1.1 1.1 2 2 2h14c.9 0 2-.9 2-2V8.7c.57-.35 1-.97 1-1.69V4c0-1.1-1-2-2-2zm-5 12H9v-2h6v2zm5-7H4V4h16v3z" />
                           </svg>
                           <svg v-else fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M6 19h4V5H6zm8-14v14h4V5z" />
+                            <path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4zM6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
                           </svg>
                         </span>
                         <span class="oba-hold-type__label">{{ row.label }}</span>
@@ -518,9 +573,65 @@ onMounted(async () => {
                 </tbody>
               </table>
             </div>
+
+            <div class="oba-holds-block">
+              <div class="oba-holds-block__head">
+                <h3 class="oba-holds-block__title">Hold Breakdown</h3>
+                <p class="oba-card__total oba-card__total--sm mb-0">
+                  Total Orders On Hold:
+                  <strong>{{ nf.format(selectedHoldTotal) }}</strong>
+                </p>
+              </div>
+              <div class="table-responsive">
+                <table class="oba-breakdown-table">
+                  <thead>
+                    <tr>
+                      <th>Hold Type</th>
+                      <th class="text-end">Orders</th>
+                      <th>Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in breakdownRows" :key="row.key">
+                      <td>
+                        <div class="oba-hold-type">
+                          <span
+                            class="oba-hold-type__icon"
+                            :class="`oba-hold-type__icon--${row.tone}`"
+                            aria-hidden="true"
+                          >
+                            <svg v-if="row.icon === 'operator'" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2zm0-4h-2V7h2z" />
+                            </svg>
+                            <svg v-else-if="row.icon === 'address'" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z" />
+                            </svg>
+                            <svg v-else-if="row.icon === 'fraud'" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 6h2v6h-2zm0 8h2v2h-2z" />
+                            </svg>
+                            <svg v-else-if="row.icon === 'payment'" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16zm0-10H4V6h16z" />
+                            </svg>
+                            <svg v-else-if="row.icon === 'user'" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                            </svg>
+                            <svg v-else fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M6 19h4V5H6zm8-14v14h4V5z" />
+                            </svg>
+                          </span>
+                          <span class="oba-hold-type__label">{{ row.label }}</span>
+                        </div>
+                      </td>
+                      <td class="text-end fw-semibold">{{ nf.format(row.orders) }}</td>
+                      <td class="text-secondary">{{ row.description }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </template>
           <div v-else class="oba-card__empty text-secondary">
-            Select an account to view hold breakdown.
+            Select an account to view order breakdown.
           </div>
         </section>
       </div>
@@ -590,6 +701,11 @@ onMounted(async () => {
   font-size: 0.95rem;
 }
 
+.oba-card__total--sm {
+  margin-top: 0;
+  font-size: 0.875rem;
+}
+
 .oba-card__total-icon {
   display: inline-flex;
   color: var(--oba-blue);
@@ -614,6 +730,27 @@ onMounted(async () => {
 .oba-card__count {
   font-size: 0.8rem;
   color: var(--oba-muted);
+}
+
+.oba-holds-block {
+  border-top: 1px solid var(--oba-border);
+  margin-top: 0.25rem;
+}
+
+.oba-holds-block__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem 0.35rem;
+}
+
+.oba-holds-block__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--oba-text);
 }
 
 .oba-table,
@@ -727,14 +864,24 @@ onMounted(async () => {
   background: currentColor;
 }
 
-.oba-badge--hold {
+.oba-badge--active {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.oba-badge--paused {
   background: #fee2e2;
   color: #dc2626;
 }
 
-.oba-badge--paused {
+.oba-badge--pending {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.oba-badge--inactive {
   background: #f3f4f6;
-  color: #4b5563;
+  color: #6b7280;
 }
 
 .oba-pagination {
@@ -801,6 +948,10 @@ onMounted(async () => {
 .oba-hold-type__icon--blue {
   background: #dbeafe;
   color: #2563eb;
+}
+.oba-hold-type__icon--green {
+  background: #dcfce7;
+  color: #16a34a;
 }
 .oba-hold-type__icon--orange {
   background: #ffedd5;

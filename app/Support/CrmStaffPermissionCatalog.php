@@ -83,7 +83,7 @@ class CrmStaffPermissionCatalog
 
         // Billing
         foreach ([
-            'billing_summary' => 'billing summary',
+            'billing_summary' => 'revenue',
             'billing_invoices' => 'invoices',
             'billing_custom_bills' => 'custom bills',
             'billing_asn_bills' => 'ASN bills',

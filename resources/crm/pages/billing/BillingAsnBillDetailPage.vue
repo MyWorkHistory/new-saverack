@@ -476,7 +476,7 @@ onUnmounted(() => {
       class="staff-user-view__breadcrumb d-flex flex-wrap align-items-center gap-1 mb-3"
       aria-label="Breadcrumb"
     >
-      <RouterLink to="/admin/billing/summary">Billing</RouterLink>
+      <RouterLink to="/admin/billing/revenue">Billing</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>
       <RouterLink to="/admin/billing/bills">Bills</RouterLink>
       <span class="text-secondary" aria-hidden="true">/</span>

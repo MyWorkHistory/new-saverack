@@ -44,15 +44,22 @@ class HomeDashboardApiTest extends TestCase
     {
         $this->actingAsAdmin();
 
+        $account = ClientAccount::create([
+            'company_name' => 'Home Dash Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'email' => 'home-dash@test.com',
+            'shiphero_customer_account_id' => 'sh-home-dash',
+        ]);
+
         $now = now();
         OrderDashboardSection::query()->insert([
             'section_key' => OrderDashboardSection::KEY_READY_TO_SHIP,
             'payload' => json_encode([
                 'accounts' => [
                     [
-                        'account_id' => 12,
-                        'account_name' => 'Home Dash Co',
-                        'account_status' => 'active',
+                        'account_id' => $account->id,
+                        'account_name' => 'Stale Name',
+                        'account_status' => 'paused',
                         'orders_count' => 3,
                     ],
                 ],
@@ -70,7 +77,49 @@ class HomeDashboardApiTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('totals.ready_to_ship', 3)
             ->assertJsonPath('sections.ready_to_ship.total_count', 3)
-            ->assertJsonPath('sections.ready_to_ship.accounts.0.account_name', 'Home Dash Co');
+            ->assertJsonPath('sections.ready_to_ship.accounts.0.account_name', 'Home Dash Co')
+            ->assertJsonPath('sections.ready_to_ship.accounts.0.account_status', 'active');
+    }
+
+    public function test_home_dashboard_hydrates_live_account_status_for_on_hold(): void
+    {
+        $this->actingAsAdmin();
+
+        $account = ClientAccount::create([
+            'company_name' => 'Live Status Co',
+            'status' => ClientAccount::STATUS_PAUSED,
+            'email' => 'live-status@test.com',
+            'shiphero_customer_account_id' => 'sh-live-status',
+            'paused_at' => now(),
+        ]);
+
+        $now = now();
+        OrderDashboardSection::query()->insert([
+            'section_key' => OrderDashboardSection::KEY_ON_HOLD,
+            'payload' => json_encode([
+                'accounts' => [
+                    [
+                        'account_id' => $account->id,
+                        'account_name' => 'Old Name Co',
+                        'account_status' => 'active',
+                        'orders_count' => 5,
+                    ],
+                ],
+                'truncated' => false,
+            ]),
+            'total_count' => 5,
+            'status' => OrderDashboardSection::STATUS_IDLE,
+            'refreshed_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $response = $this->getJson('/api/home-dashboard');
+
+        $response->assertOk()
+            ->assertJsonPath('sections.on_hold.accounts.0.account_name', 'Live Status Co')
+            ->assertJsonPath('sections.on_hold.accounts.0.account_status', 'paused')
+            ->assertJsonPath('sections.on_hold.accounts.0.orders_count', 5);
     }
 
     public function test_home_dashboard_refresh_enqueues_job(): void

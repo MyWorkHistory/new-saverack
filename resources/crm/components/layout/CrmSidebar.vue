@@ -298,7 +298,9 @@ function navActive(mode) {
     return p === "/admin/inventory/restock" || p.startsWith("/admin/inventory/restock/");
   }
   if (mode === "inventory-on-demand") return p.startsWith("/admin/inventory/on-demand");
-  if (mode === "billing-summary") return p === "/admin/billing/summary";
+  if (mode === "billing-summary") {
+    return p === "/admin/billing/revenue" || p === "/admin/billing/summary";
+  }
   if (mode === "billing-invoices") return p.startsWith("/admin/billing/invoices");
   if (mode === "billing-custom-bills") {
     return (
@@ -995,12 +997,12 @@ function collapseNav() {
               <ul v-show="billingGroupOpen" class="list-unstyled mb-0 mt-1">
                 <li v-if="canViewBillingSummary">
                   <RouterLink
-                    to="/admin/billing/summary"
+                    to="/admin/billing/revenue"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('billing-summary') }"
                     @click="closeMobile"
                   >
-                    Summary
+                    Revenue
                   </RouterLink>
                 </li>
                 <li v-if="canViewBillingInvoices">
@@ -1030,7 +1032,7 @@ function collapseNav() {
             v-else
             :to="
               canViewBillingSummary
-                ? '/admin/billing/summary'
+                ? '/admin/billing/revenue'
                 : canViewBillingInvoices
                   ? '/admin/billing/invoices'
                   : '/admin/billing/bills'

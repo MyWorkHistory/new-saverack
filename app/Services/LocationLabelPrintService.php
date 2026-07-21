@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Models\LocationLabel;
-use App\Support\Barcode\QrCodePng;
+use App\Support\Barcode\QrCodeSvg;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -44,7 +44,7 @@ class LocationLabelPrintService
             $wrapped = implode('<br>', array_map('e', $chunks));
 
             $items[] = [
-                'qrDataUri' => QrCodePng::dataUri($barcode !== '' ? $barcode : $text, $labelType === self::LABEL_SMALL ? 120 : 200),
+                'qrDataUri' => QrCodeSvg::dataUri($barcode !== '' ? $barcode : $text, $labelType === self::LABEL_SMALL ? 120 : 200),
                 'is_long' => $isLong,
                 'sku' => $wrapped,
             ];

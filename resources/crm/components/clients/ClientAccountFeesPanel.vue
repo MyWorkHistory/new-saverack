@@ -6,6 +6,7 @@ import PricingFeeList from "../settings/PricingFeeList.vue";
 import ConfirmModal from "../common/ConfirmModal.vue";
 import { useToast } from "../../composables/useToast";
 import { normalizeAccountFeeItems } from "../../utils/accountFees.js";
+import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
 import {
   CLIENT_VISIBLE_PRICING_CATEGORY_OPTIONS,
   feeMatchesCategory,
@@ -32,6 +33,7 @@ const statusMenuOpen = ref(false);
 const statusConfirmOpen = ref(false);
 const statusSaving = ref(false);
 const pendingStatus = ref(null);
+const downloading = ref(false);
 
 const CATEGORY_OPTIONS = CLIENT_VISIBLE_PRICING_CATEGORY_OPTIONS;
 
@@ -49,6 +51,12 @@ const pricingStatusClass = computed(() =>
     ? "badge rounded-pill fw-medium bg-success-subtle text-success"
     : "badge rounded-pill fw-medium bg-warning-subtle text-warning-emphasis",
 );
+
+const downloadFileName = computed(() => {
+  const raw = String(props.account?.company_name || props.account?.brand_name || "Account").trim();
+  const safe = raw.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "Account";
+  return `${safe}-Pricing.pdf`;
+});
 
 const statusConfirmMessage = computed(() =>
   pendingStatus.value === "approved"
@@ -151,6 +159,20 @@ async function onSave(payload) {
   }
 }
 
+async function downloadPricingPdf() {
+  if (downloading.value) return;
+  downloading.value = true;
+  try {
+    await openApiPdfBlob(api, `/client-accounts/${props.accountId}/fees/pricing.pdf`, {
+      download: downloadFileName.value,
+    });
+  } catch (e) {
+    toast.errorFrom(e, "Could not download pricing PDF.");
+  } finally {
+    downloading.value = false;
+  }
+}
+
 onMounted(() => {
   document.addEventListener("click", onDocClick);
 });
@@ -205,6 +227,14 @@ onUnmounted(() => {
             </button>
           </div>
         </div>
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm ms-auto"
+          :disabled="downloading"
+          @click="downloadPricingPdf"
+        >
+          {{ downloading ? "Downloading…" : "Download" }}
+        </button>
       </div>
       <p class="small text-secondary mb-0">
         Pricing for this account. Click a fee to set an account-specific price.

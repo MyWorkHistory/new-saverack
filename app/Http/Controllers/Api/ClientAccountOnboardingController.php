@@ -390,4 +390,11 @@ class ClientAccountOnboardingController extends Controller
 
         return $this->pricingPdfs->download($client_account);
     }
+
+    public function downloadAccountPricingPdf(ClientAccount $client_account): Response
+    {
+        Gate::authorize('view', $client_account);
+
+        return $this->pricingPdfs->downloadForAccount($client_account);
+    }
 }

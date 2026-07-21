@@ -227,4 +227,54 @@ class ClientAccountFeeApiTest extends TestCase
         );
         $this->assertNotContains(PricingFeeTemplate::CATEGORY_POSTAGE, $apiCategories);
     }
+
+    public function test_guest_cannot_download_account_pricing_pdf(): void
+    {
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'PDF Guest Co',
+            'email' => 'pdf-guest@example.test',
+        ]);
+
+        $this->get('/api/client-accounts/'.$account->id.'/fees/pricing.pdf')
+            ->assertUnauthorized();
+    }
+
+    public function test_staff_can_download_account_pricing_pdf_when_pending(): void
+    {
+        $user = User::factory()->create(['client_account_id' => null]);
+        $user->permissions()->attach([$this->clientsViewPermission()->id]);
+        Sanctum::actingAs($user);
+
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Acme Widgets',
+            'email' => 'pdf-pending@example.test',
+            'fulfillment_pricing_status' => ClientAccount::FULFILLMENT_PRICING_STATUS_PENDING,
+        ]);
+
+        ClientAccountFee::query()->create([
+            'client_account_id' => $account->id,
+            'pricing_template_id' => null,
+            'fee_group' => ClientAccountFee::GROUP_FULFILLMENT,
+            'line_code' => ClientAccountFee::LINE_FIRST_PICK,
+            'label' => 'First Pick',
+            'description' => 'Per order first pick',
+            'icon_path' => null,
+            'amount' => 1.5,
+            'currency' => 'USD',
+            'sort_order' => 0,
+        ]);
+
+        $response = $this->get('/api/client-accounts/'.$account->id.'/fees/pricing.pdf');
+
+        $response->assertOk();
+        $this->assertStringContainsString(
+            'application/pdf',
+            (string) $response->headers->get('content-type')
+        );
+        $disposition = (string) $response->headers->get('content-disposition');
+        $this->assertStringContainsString('Acme-Widgets-Pricing.pdf', $disposition);
+        $this->assertGreaterThan(100, strlen($response->getContent()));
+    }
 }

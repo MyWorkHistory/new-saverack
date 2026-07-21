@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>Fulfillment Pricing</title>
+    <title>{{ $title ?? 'Save Rack Fulfillment Pricing' }}</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -59,9 +59,9 @@
     </style>
 </head>
 <body>
-    <h1>Fulfillment Pricing</h1>
+    <h1>{{ $title ?? 'Save Rack Fulfillment Pricing' }}</h1>
     <p class="meta">
-        <strong>Account:</strong> {{ $accountName }}<br>
+        <strong>Account Name:</strong> {{ $accountName }}<br>
         <strong>Date:</strong> {{ $dateLabel }}
     </p>
 

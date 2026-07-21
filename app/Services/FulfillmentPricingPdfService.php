@@ -84,45 +84,101 @@ class FulfillmentPricingPdfService
     }
 
     /**
-     * Embed fee icons so DomPDF does not depend on public URLs or remote-image access.
+     * Embed fee icons as small data URIs so DomPDF never fetches URLs.
+     * Icons are best-effort: any failure (missing GD, bad file, unsupported
+     * format) falls back to the letter placeholder instead of a 500.
      *
      * @param  list<array<string, mixed>>  $fees
      * @return list<array<string, mixed>>
      */
     private function addEmbeddedIcons(ClientAccount $account, array $fees): array
     {
+        $gdAvailable = extension_loaded('gd');
+        $disk = Storage::disk('public');
+
         $pathsById = $account->feeItems
             ->mapWithKeys(function ($fee) {
                 return [(int) $fee->id => $fee->icon_path];
             });
 
         foreach ($fees as $index => $fee) {
+            $fees[$index]['icon_data_uri'] = null;
+
             $id = (int) ($fee['id'] ?? 0);
             $path = $pathsById->get($id);
             if (! is_string($path) || trim($path) === '') {
-                $fees[$index]['icon_data_uri'] = null;
                 continue;
             }
 
-            $disk = Storage::disk('public');
-            if (! $disk->exists($path)) {
-                $fees[$index]['icon_data_uri'] = null;
-                continue;
+            try {
+                if (! $disk->exists($path)) {
+                    continue;
+                }
+                $contents = $disk->get($path);
+                if (! is_string($contents) || $contents === '') {
+                    continue;
+                }
+
+                if ($gdAvailable) {
+                    $normalized = $this->normalizeIconToPng($contents);
+                    if ($normalized !== null) {
+                        $fees[$index]['icon_data_uri'] = 'data:image/png;base64,'.base64_encode($normalized);
+                    }
+                    continue;
+                }
+
+                // Without GD, DomPDF can only embed plain JPEGs reliably.
+                $extension = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+                if (in_array($extension, ['jpg', 'jpeg'], true)) {
+                    $fees[$index]['icon_data_uri'] = 'data:image/jpeg;base64,'.base64_encode($contents);
+                }
+            } catch (\Throwable $e) {
+                // Icon is decorative; never fail the PDF over it.
             }
-
-            $contents = $disk->get($path);
-            $extension = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
-            $mime = [
-                'jpg' => 'image/jpeg',
-                'jpeg' => 'image/jpeg',
-                'png' => 'image/png',
-                'webp' => 'image/webp',
-            ][$extension] ?? 'image/png';
-
-            $fees[$index]['icon_data_uri'] = 'data:'.$mime.';base64,'.base64_encode($contents);
         }
 
         return $fees;
+    }
+
+    /**
+     * Decode any supported image and re-encode as a small PNG (max 96px)
+     * so the PDF stays light and DomPDF gets a format it always handles.
+     */
+    private function normalizeIconToPng(string $contents): ?string
+    {
+        $source = @imagecreatefromstring($contents);
+        if ($source === false) {
+            return null;
+        }
+
+        $width = imagesx($source);
+        $height = imagesy($source);
+        if ($width < 1 || $height < 1) {
+            imagedestroy($source);
+
+            return null;
+        }
+
+        $max = 96;
+        $scale = min(1, $max / max($width, $height));
+        $targetWidth = max(1, (int) round($width * $scale));
+        $targetHeight = max(1, (int) round($height * $scale));
+
+        $target = imagecreatetruecolor($targetWidth, $targetHeight);
+        imagealphablending($target, false);
+        imagesavealpha($target, true);
+        $transparent = imagecolorallocatealpha($target, 0, 0, 0, 127);
+        imagefilledrectangle($target, 0, 0, $targetWidth, $targetHeight, $transparent);
+        imagecopyresampled($target, $source, 0, 0, 0, 0, $targetWidth, $targetHeight, $width, $height);
+
+        ob_start();
+        $ok = imagepng($target);
+        $png = ob_get_clean();
+
+        imagedestroy($source);
+        imagedestroy($target);
+
+        return $ok && is_string($png) && $png !== '' ? $png : null;
     }
 
     private function safeAccountSlug(ClientAccount $account): string

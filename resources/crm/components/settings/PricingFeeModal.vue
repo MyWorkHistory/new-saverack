@@ -17,6 +17,7 @@ const CATEGORIES = [
   { value: "wholesale", label: "Wholesale" },
   { value: "packaging", label: "Packaging" },
   { value: "amazon", label: "Amazon" },
+  { value: "postage", label: "Postage" },
 ];
 
 const FORM_ID = "pricing-fee-form";
@@ -43,7 +44,11 @@ const title = computed(() => (isEdit.value ? "Edit Fee" : "Create Fee"));
 const isStorageCategory = computed(
   () => String(category.value || "").toLowerCase() === "storage",
 );
+const isPostageCategory = computed(
+  () => String(category.value || "").toLowerCase() === "postage",
+);
 const amountStep = computed(() => (isStorageCategory.value ? "0.001" : "0.01"));
+const amountLabel = computed(() => (isPostageCategory.value ? "Markup %" : "Price"));
 
 const amountValid = computed(() => {
   const raw = String(amount.value ?? "").trim();
@@ -173,9 +178,9 @@ function close() {
       </select>
     </div>
     <div class="mb-3">
-      <label class="form-label" for="pricing-fee-amount">Price</label>
+      <label class="form-label" for="pricing-fee-amount">{{ amountLabel }}</label>
       <div class="input-group">
-        <span class="input-group-text">$</span>
+        <span v-if="!isPostageCategory" class="input-group-text">$</span>
         <input
           id="pricing-fee-amount"
           v-model="amount"
@@ -186,9 +191,13 @@ function close() {
           required
           :disabled="saving"
         />
+        <span v-if="isPostageCategory" class="input-group-text">%</span>
       </div>
       <p v-if="isStorageCategory" class="small text-secondary mt-1 mb-0">
         Storage prices use 3 decimal places (e.g. 0.023).
+      </p>
+      <p v-else-if="isPostageCategory" class="small text-secondary mt-1 mb-0">
+        Postage markup percentage (e.g. 12.5). Settings only — not applied to account fees.
       </p>
     </div>
     <div class="mb-0">
@@ -312,9 +321,9 @@ function close() {
                 </select>
               </div>
               <div class="mb-3">
-                <label class="form-label" for="pricing-fee-amount-edit">Price</label>
+                <label class="form-label" for="pricing-fee-amount-edit">{{ amountLabel }}</label>
                 <div class="input-group">
-                  <span class="input-group-text">$</span>
+                  <span v-if="!isPostageCategory" class="input-group-text">$</span>
                   <input
                     id="pricing-fee-amount-edit"
                     v-model="amount"
@@ -325,9 +334,13 @@ function close() {
                     required
                     :disabled="saving"
                   />
+                  <span v-if="isPostageCategory" class="input-group-text">%</span>
                 </div>
                 <p v-if="isStorageCategory" class="small text-secondary mt-1 mb-0">
                   Storage prices use 3 decimal places (e.g. 0.023).
+                </p>
+                <p v-else-if="isPostageCategory" class="small text-secondary mt-1 mb-0">
+                  Postage markup percentage (e.g. 12.5). Settings only — not applied to account fees.
                 </p>
               </div>
               <div class="mb-0">

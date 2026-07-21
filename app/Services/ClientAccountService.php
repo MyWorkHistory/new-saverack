@@ -570,6 +570,9 @@ class ClientAccountService
 
         $feeItems = $items
             ->filter(fn ($fee) => $fee instanceof ClientAccountFee)
+            ->filter(function (ClientAccountFee $fee) {
+                return PricingFeeTemplate::isClientVisibleCategory((string) $fee->fee_group);
+            })
             ->sortBy(fn (ClientAccountFee $fee) => [(int) $fee->sort_order, (int) $fee->id])
             ->values();
 

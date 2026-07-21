@@ -179,4 +179,27 @@ class PricingFeeTemplateApiTest extends TestCase
 
         $this->assertNull($template->fresh()->description);
     }
+
+    public function test_admin_can_create_postage_markup_percent_fee(): void
+    {
+        $this->actingAsAdmin();
+
+        $create = $this->postJson('/api/settings/pricing-fees', [
+            'name' => 'USPS Markup',
+            'description' => 'Carrier postage markup',
+            'category' => PricingFeeTemplate::CATEGORY_POSTAGE,
+            'amount' => 12.5,
+        ]);
+
+        $create->assertCreated();
+        $create->assertJsonPath('category', PricingFeeTemplate::CATEGORY_POSTAGE);
+        $create->assertJsonPath('category_label', 'Postage');
+        $create->assertJsonPath('amount', 12.5);
+
+        $templateId = (int) $create->json('id');
+        $this->assertSame(
+            0,
+            ClientAccountFee::query()->where('pricing_template_id', $templateId)->count()
+        );
+    }
 }

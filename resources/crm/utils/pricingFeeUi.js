@@ -8,7 +8,13 @@ export const PRICING_CATEGORY_OPTIONS = [
   { value: "wholesale", label: "Wholesale" },
   { value: "packaging", label: "Packaging" },
   { value: "amazon", label: "Amazon" },
+  { value: "postage", label: "Postage" },
 ];
+
+/** Account / portal fee UIs — postage is settings-only markup. */
+export const CLIENT_VISIBLE_PRICING_CATEGORY_OPTIONS = PRICING_CATEGORY_OPTIONS.filter(
+  (o) => o.value !== "postage",
+);
 
 /** @type {Record<string, { label: string, subtitle: string, accent: string, headerBg: string }>} */
 export const PRICING_CATEGORY_META = {
@@ -60,6 +66,12 @@ export const PRICING_CATEGORY_META = {
     accent: "#c2410c",
     headerBg: "#ffedd5",
   },
+  postage: {
+    label: "Postage",
+    subtitle: "Carrier postage cost markup percentage.",
+    accent: "#334155",
+    headerBg: "#e2e8f0",
+  },
 };
 
 export const PRICING_CATEGORY_ORDER = PRICING_CATEGORY_OPTIONS.filter((o) => o.value !== "all").map(
@@ -106,10 +118,16 @@ export function groupFeesByCategory(fees) {
 
 export function formatPrice(amount, category = null) {
   const n = Number(amount);
+  const cat = String(category || "").toLowerCase();
   if (!Number.isFinite(n)) {
-    return String(category || "").toLowerCase() === "storage" ? "$0.000" : "$0.00";
+    if (cat === "postage") return "0%";
+    return cat === "storage" ? "$0.000" : "$0.00";
   }
-  if (String(category || "").toLowerCase() === "storage") {
+  if (cat === "postage") {
+    const fixed = n.toFixed(4).replace(/\.?0+$/, "");
+    return `${fixed === "-0" ? "0" : fixed}%`;
+  }
+  if (cat === "storage") {
     return `$${n.toFixed(3)}`;
   }
   try {
@@ -135,6 +153,7 @@ export function categoryBadgeClass(category) {
   if (c === "wholesale") return "settings-pricing-badge settings-pricing-badge--wholesale";
   if (c === "packaging") return "settings-pricing-badge settings-pricing-badge--packaging";
   if (c === "amazon") return "settings-pricing-badge settings-pricing-badge--amazon";
+  if (c === "postage") return "settings-pricing-badge settings-pricing-badge--postage";
   return "settings-pricing-badge";
 }
 

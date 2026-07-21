@@ -2,11 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\TransferInventoryLocationJob;
 use App\Models\ClientAccount;
 use App\Models\Permission;
+use App\Models\ShipHeroInventoryProductDetailCache;
 use App\Models\User;
 use App\Services\ShipHeroInventoryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Laravel\Sanctum\Sanctum;
 use Mockery;
 use Tests\TestCase;
@@ -374,6 +377,89 @@ class InventoryApiTest extends TestCase
             'to_location' => 'test 3',
             'quantity' => 2,
         ])->assertOk();
+    }
+
+    public function test_background_transfer_queues_job_and_returns_quickly(): void
+    {
+        Bus::fake();
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('resolveCustomerAccountIdForSkuMutation')
+            ->once()
+            ->with('SKU-1')
+            ->andReturn(null);
+        $mock->shouldNotReceive('transferLocationQuantity');
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->inventoryViewPermission()->id,
+            $this->inventoryUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/inventory/transfer', [
+            'sku' => 'SKU-1',
+            'warehouse_id' => 'WH1',
+            'from_location_id' => 'LOC-A',
+            'to_location_id' => 'LOC-B',
+            'quantity' => 4,
+            'background' => true,
+            'restock_previous_status' => 'pending',
+        ])
+            ->assertStatus(202)
+            ->assertJsonPath('queued', true)
+            ->assertJsonPath('ok', true);
+
+        Bus::assertDispatched(TransferInventoryLocationJob::class);
+    }
+
+    public function test_product_detail_returns_cache_when_refresh_omitted(): void
+    {
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Cache Detail Co',
+            'email' => 'cache-detail@example.test',
+        ]);
+
+        ShipHeroInventoryProductDetailCache::query()->create([
+            'client_account_id' => $account->id,
+            'sku' => 'CACHE-SKU',
+            'sku_search' => 'cache-sku',
+            'product_json' => [
+                'sku' => 'CACHE-SKU',
+                'name' => 'Cached Product',
+                'warehouses' => [
+                    [
+                        'warehouse_id' => 'WH1',
+                        'locations' => [
+                            [
+                                'location_id' => 'LOC1',
+                                'location_name' => 'test 2',
+                                'quantity' => 42,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'product_synced_at' => now(),
+            'synced_at' => now(),
+        ]);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldNotReceive('getProductDetailBySku');
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $user = User::factory()->create();
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/inventory/products/CACHE-SKU?client_account_id='.$account->id)
+            ->assertOk()
+            ->assertJsonPath('cached', true)
+            ->assertJsonPath('product.sku', 'CACHE-SKU')
+            ->assertJsonPath('product.warehouses.0.locations.0.location_name', 'test 2')
+            ->assertJsonPath('product.warehouses.0.locations.0.quantity', 42);
     }
 
     public function test_adjustment_reasons_includes_default_add_location_reason(): void

@@ -404,6 +404,12 @@ function applySnapshot(data, { silent = false } = {}) {
   if (!silent && meta.value.enrichment_status === "failed" && meta.value.enrichment_error) {
     toast.error(meta.value.enrichment_error);
   }
+  for (const row of rows.value) {
+    const transferError = String(row?.transfer_error || "").trim();
+    if (transferError) {
+      toast.error(transferError);
+    }
+  }
   if (!isEnrichmentActive(meta.value.enrichment_status)) {
     nextTick(() => {
       enrichMissingPickLocations(rows.value);
@@ -591,11 +597,22 @@ async function openTransferFromMenu(row) {
   transferLoading.value = true;
   transferBusy.value = false;
   try {
-    const { data } = await api.get(`/inventory/products/${encodeURIComponent(row.sku)}`, {
-      // Use 1 — GET query params stringify booleans as "true", which fails Laravel's boolean rule.
-      params: { client_account_id: accountId, refresh: 1 },
+    // Prefer DB product-detail cache (omit refresh) so the modal opens instantly.
+    let { data } = await api.get(`/inventory/products/${encodeURIComponent(row.sku)}`, {
+      params: { client_account_id: accountId },
     });
-    transferProduct.value = data?.product ?? null;
+    let product = data?.product ?? null;
+    const hasLocations =
+      Array.isArray(product?.warehouses) &&
+      product.warehouses.some((wh) => Array.isArray(wh?.locations) && wh.locations.length > 0);
+    if (!hasLocations) {
+      // Soft fallback: one live refresh when cache is empty.
+      ({ data } = await api.get(`/inventory/products/${encodeURIComponent(row.sku)}`, {
+        params: { client_account_id: accountId, refresh: 1 },
+      }));
+      product = data?.product ?? null;
+    }
+    transferProduct.value = product;
     const fromId =
       mode === RESTOCK_STATUS_TRANSFER_CART
         ? defaultCartLocationId(transferProduct.value, row)
@@ -643,6 +660,7 @@ async function submitTransfer() {
     from_location_id: transferFromLocation.value.location_id,
     quantity: qty,
     reason: transferForm.reason,
+    background: 1,
   };
   const accountId = Number(transferRow.value.client_account_id || 0);
   if (accountId > 0) {
@@ -677,24 +695,55 @@ async function submitTransfer() {
     body.to_location_id = String(transferForm.to_location_id).trim();
   }
 
-  transferBusy.value = true;
+  const row = transferRow.value;
+  const previousStatus = rowStatus(row);
+  body.restock_previous_status = previousStatus;
+
+  // Close immediately and optimistically update status while ShipHero runs in background.
+  transferModalOpen.value = false;
+  transferBusy.value = false;
+  row.status = nextStatus;
+  row.status_label =
+    nextStatus === RESTOCK_STATUS_TRANSFER_CART
+      ? "Transfer"
+      : nextStatus === RESTOCK_STATUS_COMPLETE
+        ? "Complete"
+        : "Pending";
+  toast.success(
+    nextStatus === RESTOCK_STATUS_TRANSFER_CART
+      ? "Transferred to cart."
+      : "Transferred and marked complete.",
+  );
+
   try {
-    await api.post("/inventory/transfer", body);
-    transferModalOpen.value = false;
-    const { data } = await api.post("/inventory/restock-beta/status", {
-      sku: transferRow.value.sku,
+    const { data: statusData } = await api.post("/inventory/restock-beta/status", {
+      sku: row.sku,
       status: nextStatus,
     });
-    applySnapshot(data, { silent: true });
-    toast.success(
-      nextStatus === RESTOCK_STATUS_TRANSFER_CART
-        ? "Transferred to cart."
-        : "Transferred and marked complete.",
-    );
+    applySnapshot(statusData, { silent: true });
   } catch (e) {
+    row.status = previousStatus;
+    toast.errorFrom(e, "Could not update restock status.");
+    return;
+  }
+
+  try {
+    await api.post("/inventory/transfer", body);
+    // Pick up any async failure rollback / transfer_error toast.
+    window.setTimeout(() => {
+      loadSnapshot({ showSpinner: false });
+    }, 4000);
+  } catch (e) {
+    try {
+      const { data } = await api.post("/inventory/restock-beta/status", {
+        sku: row.sku,
+        status: previousStatus,
+      });
+      applySnapshot(data, { silent: true });
+    } catch {
+      row.status = previousStatus;
+    }
     toast.errorFrom(e, "Could not transfer quantity.");
-  } finally {
-    transferBusy.value = false;
   }
 }
 

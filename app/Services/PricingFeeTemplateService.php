@@ -71,7 +71,9 @@ class PricingFeeTemplateService
                 $template->refresh();
             }
 
-            $this->provisionTemplateToAllAccounts($template);
+            if (PricingFeeTemplate::isClientVisibleCategory((string) $template->category)) {
+                $this->provisionTemplateToAllAccounts($template);
+            }
 
             return $template;
         });
@@ -132,12 +134,19 @@ class PricingFeeTemplateService
     {
         $templates = PricingFeeTemplate::query()->orderBy('sort_order')->orderBy('id')->get();
         foreach ($templates as $template) {
+            if (! PricingFeeTemplate::isClientVisibleCategory((string) $template->category)) {
+                continue;
+            }
             $this->provisionTemplateForAccount($account, $template);
         }
     }
 
     public function provisionTemplateToAllAccounts(PricingFeeTemplate $template): void
     {
+        if (! PricingFeeTemplate::isClientVisibleCategory((string) $template->category)) {
+            return;
+        }
+
         ClientAccount::query()
             ->select('id')
             ->orderBy('id')
@@ -148,8 +157,12 @@ class PricingFeeTemplateService
             });
     }
 
-    public function provisionTemplateForAccount(ClientAccount $account, PricingFeeTemplate $template): ClientAccountFee
+    public function provisionTemplateForAccount(ClientAccount $account, PricingFeeTemplate $template): ?ClientAccountFee
     {
+        if (! PricingFeeTemplate::isClientVisibleCategory((string) $template->category)) {
+            return null;
+        }
+
         $feeGroup = PricingFeeTemplate::categoryToFeeGroup($template->category);
         $lineCode = 'template_'.$template->id;
 
@@ -198,6 +211,14 @@ class PricingFeeTemplateService
 
     public function syncLinkedAccountFees(PricingFeeTemplate $template): void
     {
+        if (! PricingFeeTemplate::isClientVisibleCategory((string) $template->category)) {
+            ClientAccountFee::query()
+                ->where('pricing_template_id', $template->id)
+                ->delete();
+
+            return;
+        }
+
         $feeGroup = PricingFeeTemplate::categoryToFeeGroup($template->category);
 
         ClientAccountFee::query()

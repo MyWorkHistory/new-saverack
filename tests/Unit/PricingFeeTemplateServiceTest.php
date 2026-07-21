@@ -97,4 +97,91 @@ class PricingFeeTemplateServiceTest extends TestCase
                 ->count()
         );
     }
+
+    public function test_postage_template_does_not_provision_account_fees(): void
+    {
+        $account = $this->account();
+
+        $template = $this->service()->create([
+            'name' => 'Carrier Markup',
+            'description' => 'Postage markup percent',
+            'category' => PricingFeeTemplate::CATEGORY_POSTAGE,
+            'amount' => 12.5,
+        ]);
+
+        $this->assertSame(PricingFeeTemplate::CATEGORY_POSTAGE, $template->category);
+        $this->assertEquals('12.5000', (string) $template->amount);
+        $this->assertSame(
+            0,
+            ClientAccountFee::query()
+                ->where('client_account_id', $account->id)
+                ->where('pricing_template_id', $template->id)
+                ->count()
+        );
+    }
+
+    public function test_provision_all_templates_skips_postage(): void
+    {
+        PricingFeeTemplate::query()->create([
+            'name' => 'First Pick',
+            'category' => PricingFeeTemplate::CATEGORY_FULFILLMENT,
+            'amount' => 1.25,
+            'sort_order' => 0,
+        ]);
+        PricingFeeTemplate::query()->create([
+            'name' => 'Postage Markup',
+            'category' => PricingFeeTemplate::CATEGORY_POSTAGE,
+            'amount' => 10,
+            'sort_order' => 1,
+        ]);
+
+        $account = $this->account();
+        $this->service()->provisionAllTemplatesForAccount($account);
+
+        $this->assertSame(
+            1,
+            ClientAccountFee::query()
+                ->where('client_account_id', $account->id)
+                ->whereNotNull('pricing_template_id')
+                ->count()
+        );
+        $this->assertSame(
+            0,
+            ClientAccountFee::query()
+                ->where('client_account_id', $account->id)
+                ->where('fee_group', PricingFeeTemplate::CATEGORY_POSTAGE)
+                ->count()
+        );
+    }
+
+    public function test_updating_template_to_postage_removes_linked_account_fees(): void
+    {
+        $account = $this->account();
+
+        $template = $this->service()->create([
+            'name' => 'Was Receiving',
+            'category' => PricingFeeTemplate::CATEGORY_RECEIVING,
+            'amount' => 3,
+        ]);
+
+        $this->assertSame(
+            1,
+            ClientAccountFee::query()
+                ->where('client_account_id', $account->id)
+                ->where('pricing_template_id', $template->id)
+                ->count()
+        );
+
+        $this->service()->update($template, [
+            'category' => PricingFeeTemplate::CATEGORY_POSTAGE,
+            'amount' => 8.5,
+        ]);
+
+        $this->assertSame(
+            0,
+            ClientAccountFee::query()
+                ->where('pricing_template_id', $template->id)
+                ->count()
+        );
+    }
 }

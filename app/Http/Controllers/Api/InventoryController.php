@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\InventoryBulkCrmActiveRequest;
+use App\Jobs\TransferInventoryLocationJob;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
 use App\Models\ClientAccountAsnLine;
@@ -1348,6 +1349,8 @@ class InventoryController extends Controller
             'quantity' => ['required', 'integer', 'min:1'],
             'reason' => ['nullable', 'string', 'max:500'],
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
+            'background' => ['nullable', 'boolean'],
+            'restock_previous_status' => ['nullable', 'string', 'in:pending,transfer_cart,complete'],
         ]);
         $reason = $this->inventoryReasonWithActor(
             isset($validated['reason']) && is_string($validated['reason'])
@@ -1358,6 +1361,7 @@ class InventoryController extends Controller
         $clientAccountId = isset($validated['client_account_id'])
             ? (int) $validated['client_account_id']
             : null;
+        $background = (bool) ($validated['background'] ?? false);
 
         try {
             // Prefer account ShipHero id, but fall back to SKU index like product detail does.
@@ -1384,6 +1388,48 @@ class InventoryController extends Controller
                     'from_location_id' => ['From location is required.'],
                 ]);
             }
+
+            $toLocationId = isset($validated['to_location_id']) && is_string($validated['to_location_id'])
+                ? trim($validated['to_location_id'])
+                : '';
+            $toLocationInput = isset($validated['to_location']) && is_string($validated['to_location'])
+                ? trim($validated['to_location'])
+                : '';
+
+            if ($background) {
+                try {
+                    TransferInventoryLocationJob::dispatch([
+                        'sku' => $validated['sku'],
+                        'warehouse_id' => $validated['warehouse_id'],
+                        'from_location_id' => $fromLocationId,
+                        'from_location' => $fromLocationInput,
+                        'to_location_id' => $toLocationId,
+                        'to_location' => $toLocationInput,
+                        'quantity' => (int) $validated['quantity'],
+                        'reason' => $reason,
+                        'shiphero_customer_id' => $shipheroCustomerId,
+                        'client_account_id' => $clientAccountId,
+                        'restock_previous_status' => $validated['restock_previous_status'] ?? null,
+                    ]);
+                } catch (ValidationException $e) {
+                    throw $e;
+                } catch (Throwable $e) {
+                    // Sync queue runs the job inline; surface failure so optimistic UI can roll back.
+                    report($e);
+
+                    return response()->json([
+                        'message' => config('app.debug')
+                            ? $e->getMessage()
+                            : 'Could not transfer quantity.',
+                    ], 502);
+                }
+
+                return response()->json([
+                    'ok' => true,
+                    'queued' => true,
+                ], 202);
+            }
+
             // Resolve cart codes / location names (e.g. T-01) to ShipHero location ids.
             $resolvedFrom = $this->resolveInventoryLocation(
                 $validated['sku'],
@@ -1395,13 +1441,7 @@ class InventoryController extends Controller
                 $fromLocationId = (string) $resolvedFrom['id'];
             }
 
-            $toLocationId = isset($validated['to_location_id']) && is_string($validated['to_location_id'])
-                ? trim($validated['to_location_id'])
-                : '';
             if ($toLocationId === '') {
-                $toLocationInput = isset($validated['to_location']) && is_string($validated['to_location'])
-                    ? trim($validated['to_location'])
-                    : '';
                 $resolved = $this->resolveInventoryLocation(
                     $validated['sku'],
                     $validated['warehouse_id'],

@@ -3,11 +3,13 @@
 namespace App\Services;
 
 use App\Jobs\EnrichInventoryRestockSnapshotJob;
+use App\Jobs\TransferInventoryLocationJob;
 use App\Models\InventoryRestockBetaSnapshot;
 use App\Models\ShipHeroInventoryProductIndex;
 use App\Models\User;
 use App\Support\Inventory\RestockBetaCsvParser;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use RuntimeException;
 
 final class InventoryRestockBetaService
@@ -477,6 +479,10 @@ final class InventoryRestockBetaService
             $status = $statuses[$key] ?? self::STATUS_PENDING;
             $row['status'] = $status;
             $row['status_label'] = self::statusLabel($status);
+            $transferError = Cache::pull(TransferInventoryLocationJob::RESTOCK_ERROR_CACHE_PREFIX.$key);
+            if (is_string($transferError) && trim($transferError) !== '') {
+                $row['transfer_error'] = trim($transferError);
+            }
             $out[] = $row;
         }
 

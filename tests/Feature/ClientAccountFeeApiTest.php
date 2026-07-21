@@ -173,4 +173,58 @@ class ClientAccountFeeApiTest extends TestCase
             'amount' => 2,
         ])->assertUnauthorized();
     }
+
+    public function test_account_fees_payload_excludes_postage_rows(): void
+    {
+        $this->actingStaffWithClientsUpdate();
+
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'No Postage Co',
+            'email' => 'no-postage@example.test',
+        ]);
+
+        ClientAccountFee::query()->create([
+            'client_account_id' => $account->id,
+            'pricing_template_id' => null,
+            'fee_group' => PricingFeeTemplate::CATEGORY_POSTAGE,
+            'line_code' => 'postage_orphan',
+            'label' => 'Should Hide',
+            'description' => null,
+            'icon_path' => null,
+            'amount' => 12.5,
+            'currency' => 'USD',
+            'sort_order' => 99,
+        ]);
+
+        ClientAccountFee::query()->create([
+            'client_account_id' => $account->id,
+            'pricing_template_id' => null,
+            'fee_group' => ClientAccountFee::GROUP_FULFILLMENT,
+            'line_code' => ClientAccountFee::LINE_FIRST_PICK,
+            'label' => 'First Pick',
+            'description' => null,
+            'icon_path' => null,
+            'amount' => 1.5,
+            'currency' => 'USD',
+            'sort_order' => 0,
+        ]);
+
+        $payload = app(ClientAccountService::class)->feesPayloadForApi($account->fresh(['feeItems']));
+        $categories = array_map(
+            static fn ($item) => (string) ($item['category'] ?? ''),
+            $payload['items'] ?? []
+        );
+
+        $this->assertContains(ClientAccountFee::GROUP_FULFILLMENT, $categories);
+        $this->assertNotContains(PricingFeeTemplate::CATEGORY_POSTAGE, $categories);
+
+        $response = $this->getJson('/api/client-accounts/'.$account->id);
+        $response->assertOk();
+        $apiCategories = array_map(
+            static fn ($item) => (string) ($item['category'] ?? ''),
+            $response->json('fees.items') ?? []
+        );
+        $this->assertNotContains(PricingFeeTemplate::CATEGORY_POSTAGE, $apiCategories);
+    }
 }

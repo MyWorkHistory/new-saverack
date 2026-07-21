@@ -62,7 +62,7 @@ const showForm = computed(() => {
 function locationOptionLabel(loc) {
   const name = loc?.location_name || loc?.location_id || "—";
   const qty = Number(loc?.quantity ?? 0);
-  return `${name}(QTY: ${qty.toLocaleString()})`;
+  return `${name} (QTY: ${qty.toLocaleString()})`;
 }
 </script>
 

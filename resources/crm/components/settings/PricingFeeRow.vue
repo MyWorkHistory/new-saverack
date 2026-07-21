@@ -270,6 +270,12 @@ function onKeydown(e) {
   border-color: #fdba74;
 }
 
+.settings-pricing-badge--postage {
+  color: #334155;
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+
 @media (max-width: 575.98px) {
   .pricing-fee-row {
     flex-wrap: wrap;

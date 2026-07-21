@@ -7,7 +7,7 @@ import ConfirmModal from "../common/ConfirmModal.vue";
 import { useToast } from "../../composables/useToast";
 import { normalizeAccountFeeItems } from "../../utils/accountFees.js";
 import {
-  PRICING_CATEGORY_OPTIONS,
+  CLIENT_VISIBLE_PRICING_CATEGORY_OPTIONS,
   feeMatchesCategory,
   feeMatchesSearch,
 } from "../../utils/pricingFeeUi.js";
@@ -33,7 +33,7 @@ const statusConfirmOpen = ref(false);
 const statusSaving = ref(false);
 const pendingStatus = ref(null);
 
-const CATEGORY_OPTIONS = PRICING_CATEGORY_OPTIONS;
+const CATEGORY_OPTIONS = CLIENT_VISIBLE_PRICING_CATEGORY_OPTIONS;
 
 const pricingStatus = computed(() => {
   const raw = String(props.account?.fulfillment_pricing_status || "pending").toLowerCase();

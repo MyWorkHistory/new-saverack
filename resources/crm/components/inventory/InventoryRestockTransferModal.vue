@@ -50,7 +50,7 @@ const showForm = computed(() => !props.loading && props.fromOptions.length > 0);
 function locationOptionLabel(loc) {
   const name = loc?.location_name || loc?.location_id || "—";
   const qty = Number(loc?.quantity ?? 0);
-  return `${name}(QTY: ${qty.toLocaleString()})`;
+  return `${name} (QTY: ${qty.toLocaleString()})`;
 }
 
 /** Toggle Cart / New; clicking active returns to Current Pick Location. */

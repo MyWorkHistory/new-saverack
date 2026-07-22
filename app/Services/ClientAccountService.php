@@ -546,7 +546,7 @@ class ClientAccountService
     /**
      * @return array<string, mixed>
      */
-    public function feesPayloadForApi(ClientAccount $account, bool $withCost = false): array
+    public function feesPayloadForApi(ClientAccount $account, bool $withCost = false, bool $clientFacing = false): array
     {
         if ($withCost) {
             $account->loadMissing(['feeItems.pricingTemplate']);
@@ -575,8 +575,13 @@ class ClientAccountService
 
         $feeItems = $items
             ->filter(fn ($fee) => $fee instanceof ClientAccountFee)
-            ->filter(function (ClientAccountFee $fee) {
-                return PricingFeeTemplate::isClientVisibleCategory((string) $fee->fee_group);
+            ->filter(function (ClientAccountFee $fee) use ($clientFacing) {
+                $group = (string) $fee->fee_group;
+                if ($clientFacing) {
+                    return PricingFeeTemplate::isClientVisibleCategory($group);
+                }
+
+                return PricingFeeTemplate::isAccountScheduleCategory($group);
             })
             ->sortBy(fn (ClientAccountFee $fee) => [(int) $fee->sort_order, (int) $fee->id])
             ->values();

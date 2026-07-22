@@ -29,7 +29,7 @@ class FulfillmentPricingPdfService
         ) === ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED;
 
         $fees = $approved
-            ? ($this->clientAccounts->feesPayloadForApi($account)['items'] ?? [])
+            ? ($this->clientAccounts->feesPayloadForApi($account, false, true)['items'] ?? [])
             : [];
 
         return $this->streamPdf(
@@ -42,12 +42,12 @@ class FulfillmentPricingPdfService
     }
 
     /**
-     * Admin account Fees tab export — always includes all account fees.
+     * Admin account Fees tab export — client-visible fees only (no Postage, no cost).
      */
     public function downloadForAccount(ClientAccount $account): Response
     {
         $account->loadMissing('feeItems');
-        $fees = $this->clientAccounts->feesPayloadForApi($account)['items'] ?? [];
+        $fees = $this->clientAccounts->feesPayloadForApi($account, false, true)['items'] ?? [];
         $fees = is_array($fees) ? $fees : [];
 
         return $this->streamPdf(

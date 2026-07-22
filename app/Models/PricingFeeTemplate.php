@@ -39,7 +39,8 @@ class PricingFeeTemplate extends Model
     ];
 
     /**
-     * Categories shown on client account / portal fee schedules.
+     * Categories shown on portal / client-facing fee schedules and pricing PDFs.
+     * Postage is admin-only on account fees (still provisioned) and never exported.
      *
      * @var list<string>
      */
@@ -52,7 +53,6 @@ class PricingFeeTemplate extends Model
         self::CATEGORY_WHOLESALE,
         self::CATEGORY_PACKAGING,
         self::CATEGORY_AMAZON,
-        self::CATEGORY_POSTAGE,
     ];
 
     /** @var array<string, string> */
@@ -96,6 +96,15 @@ class PricingFeeTemplate extends Model
     public static function isClientVisibleCategory(string $category): bool
     {
         return in_array($category, self::CLIENT_VISIBLE_CATEGORIES, true);
+    }
+
+    /**
+     * Categories provisioned to accounts and shown on the admin Fees tab
+     * (includes Postage; broader than client-visible).
+     */
+    public static function isAccountScheduleCategory(string $category): bool
+    {
+        return in_array($category, self::CATEGORIES, true);
     }
 
     public static function categoryToFeeGroup(string $category): string

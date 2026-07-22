@@ -173,7 +173,7 @@ class PortalOnboardingService
         );
         $approved = $pricingStatus === ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED;
         $acceptedAt = $account->fulfillment_pricing_accepted_at;
-        $feesPayload = $clientAccounts->feesPayloadForApi($account);
+        $feesPayload = $clientAccounts->feesPayloadForApi($account, false, true);
         $items = $approved && is_array($feesPayload['items'] ?? null)
             ? $feesPayload['items']
             : [];

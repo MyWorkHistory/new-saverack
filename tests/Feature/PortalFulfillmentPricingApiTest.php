@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountFee;
 use App\Models\Permission;
+use App\Models\PricingFeeTemplate;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -96,6 +97,15 @@ class PortalFulfillmentPricingApiTest extends TestCase
             'amount' => 1.25,
             'sort_order' => 1,
         ]);
+        ClientAccountFee::query()->create([
+            'client_account_id' => $account->id,
+            'fee_group' => PricingFeeTemplate::CATEGORY_POSTAGE,
+            'line_code' => 'postage_usps',
+            'label' => 'USPS Postage PortalHidden',
+            'description' => 'Admin only',
+            'amount' => 0.25,
+            'sort_order' => 99,
+        ]);
 
         $this->actingAsStaff();
         $approve = $this->patchJson(
@@ -113,18 +123,24 @@ class PortalFulfillmentPricingApiTest extends TestCase
         $pdfAdmin = $this->get('/api/client-accounts/'.$account->id.'/onboarding/fulfillment-pricing.pdf');
         $pdfAdmin->assertOk();
         $this->assertStringContainsString('application/pdf', (string) $pdfAdmin->headers->get('content-type'));
+        $this->assertStringNotContainsString('USPS Postage PortalHidden', $pdfAdmin->getContent());
 
         $this->actingAsPortalUser($account);
         $show = $this->getJson('/api/portal/onboarding');
         $show->assertOk();
         $show->assertJsonPath('fulfillment_pricing.approved', true);
         $this->assertNotEmpty($show->json('fulfillment_pricing.fees'));
+        $portalCategories = [];
         foreach ($show->json('fulfillment_pricing.fees') as $feeRow) {
             $this->assertIsArray($feeRow);
             $this->assertArrayNotHasKey('cost', $feeRow);
             $this->assertArrayNotHasKey('default_cost', $feeRow);
             $this->assertArrayNotHasKey('cost_is_override', $feeRow);
+            $portalCategories[] = (string) ($feeRow['category'] ?? '');
+            $this->assertNotSame('USPS Postage PortalHidden', (string) ($feeRow['name'] ?? ''));
         }
+        $this->assertContains(ClientAccountFee::GROUP_FULFILLMENT, $portalCategories);
+        $this->assertNotContains(PricingFeeTemplate::CATEGORY_POSTAGE, $portalCategories);
 
         $accept = $this->postJson('/api/portal/onboarding/fulfillment-pricing/accept');
         $accept->assertOk();
@@ -135,6 +151,7 @@ class PortalFulfillmentPricingApiTest extends TestCase
         $pdfPortal = $this->get('/api/portal/onboarding/fulfillment-pricing.pdf');
         $pdfPortal->assertOk();
         $this->assertStringContainsString('application/pdf', (string) $pdfPortal->headers->get('content-type'));
+        $this->assertStringNotContainsString('USPS Postage PortalHidden', $pdfPortal->getContent());
     }
 
     public function test_pending_pdf_still_downloads(): void

@@ -72,7 +72,7 @@ class PricingFeeTemplateService
                 $template->refresh();
             }
 
-            if (PricingFeeTemplate::isClientVisibleCategory((string) $template->category)) {
+            if (PricingFeeTemplate::isAccountScheduleCategory((string) $template->category)) {
                 $this->provisionTemplateToAllAccounts($template);
             }
 
@@ -139,7 +139,7 @@ class PricingFeeTemplateService
     {
         $templates = PricingFeeTemplate::query()->orderBy('sort_order')->orderBy('id')->get();
         foreach ($templates as $template) {
-            if (! PricingFeeTemplate::isClientVisibleCategory((string) $template->category)) {
+            if (! PricingFeeTemplate::isAccountScheduleCategory((string) $template->category)) {
                 continue;
             }
             $this->provisionTemplateForAccount($account, $template);
@@ -148,7 +148,7 @@ class PricingFeeTemplateService
 
     public function provisionTemplateToAllAccounts(PricingFeeTemplate $template): void
     {
-        if (! PricingFeeTemplate::isClientVisibleCategory((string) $template->category)) {
+        if (! PricingFeeTemplate::isAccountScheduleCategory((string) $template->category)) {
             return;
         }
 
@@ -164,7 +164,7 @@ class PricingFeeTemplateService
 
     public function provisionTemplateForAccount(ClientAccount $account, PricingFeeTemplate $template): ?ClientAccountFee
     {
-        if (! PricingFeeTemplate::isClientVisibleCategory((string) $template->category)) {
+        if (! PricingFeeTemplate::isAccountScheduleCategory((string) $template->category)) {
             return null;
         }
 
@@ -216,7 +216,7 @@ class PricingFeeTemplateService
 
     public function syncLinkedAccountFees(PricingFeeTemplate $template): void
     {
-        if (! PricingFeeTemplate::isClientVisibleCategory((string) $template->category)) {
+        if (! PricingFeeTemplate::isAccountScheduleCategory((string) $template->category)) {
             ClientAccountFee::query()
                 ->where('pricing_template_id', $template->id)
                 ->delete();

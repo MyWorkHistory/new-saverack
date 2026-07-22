@@ -219,6 +219,18 @@ class ClientAccountFeeApiTest extends TestCase
         $this->assertContains(ClientAccountFee::GROUP_FULFILLMENT, $categories);
         $this->assertContains(PricingFeeTemplate::CATEGORY_POSTAGE, $categories);
 
+        $clientFacing = app(ClientAccountService::class)->feesPayloadForApi(
+            $account->fresh(['feeItems']),
+            false,
+            true
+        );
+        $clientCategories = array_map(
+            static fn ($item) => (string) ($item['category'] ?? ''),
+            $clientFacing['items'] ?? []
+        );
+        $this->assertContains(ClientAccountFee::GROUP_FULFILLMENT, $clientCategories);
+        $this->assertNotContains(PricingFeeTemplate::CATEGORY_POSTAGE, $clientCategories);
+
         $response = $this->getJson('/api/client-accounts/'.$account->id);
         $response->assertOk();
         $apiCategories = array_map(
@@ -266,6 +278,19 @@ class ClientAccountFeeApiTest extends TestCase
             'sort_order' => 0,
         ]);
 
+        ClientAccountFee::query()->create([
+            'client_account_id' => $account->id,
+            'pricing_template_id' => null,
+            'fee_group' => PricingFeeTemplate::CATEGORY_POSTAGE,
+            'line_code' => 'postage_usps',
+            'label' => 'USPS Postage UniqueLabel',
+            'description' => 'Should not appear in PDF',
+            'icon_path' => null,
+            'amount' => 0.25,
+            'currency' => 'USD',
+            'sort_order' => 99,
+        ]);
+
         $response = $this->get('/api/client-accounts/'.$account->id.'/fees/pricing.pdf');
 
         $response->assertOk();
@@ -275,7 +300,9 @@ class ClientAccountFeeApiTest extends TestCase
         );
         $disposition = (string) $response->headers->get('content-disposition');
         $this->assertStringContainsString('Acme-Widgets-Pricing.pdf', $disposition);
-        $this->assertGreaterThan(100, strlen($response->getContent()));
+        $content = $response->getContent();
+        $this->assertGreaterThan(100, strlen($content));
+        $this->assertStringNotContainsString('USPS Postage UniqueLabel', $content);
     }
 
     public function test_staff_account_fees_include_effective_cost_and_patch_override(): void

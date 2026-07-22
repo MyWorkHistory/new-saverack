@@ -11,8 +11,10 @@ export const PRICING_CATEGORY_OPTIONS = [
   { value: "postage", label: "Postage" },
 ];
 
-/** Account / portal fee category filters (same as settings). */
-export const CLIENT_VISIBLE_PRICING_CATEGORY_OPTIONS = PRICING_CATEGORY_OPTIONS;
+/** Account / portal fee category filters (excludes admin-only Postage). */
+export const CLIENT_VISIBLE_PRICING_CATEGORY_OPTIONS = PRICING_CATEGORY_OPTIONS.filter(
+  (opt) => opt.value !== "postage"
+);
 
 /** @type {Record<string, { label: string, subtitle: string, accent: string, headerBg: string }>} */
 export const PRICING_CATEGORY_META = {

@@ -14,35 +14,29 @@
             font-family: DejaVu Sans, sans-serif;
             color: #111;
         }
+        /* Absolute positioning throughout: dompdf's table vertical-align and
+           line stacking are unreliable, so every element (including each text
+           line) is pinned at exact centered coordinates. */
         .label {
+            position: relative;
             width: {{ $pageW }}pt;
             height: {{ $pageH }}pt;
+            overflow: hidden;
         }
-        .label table {
-            border-collapse: collapse;
-            width: 100%;
-        }
-        .label td {
-            vertical-align: top;
-            padding: 0;
-        }
-        .qr-cell {
-            width: {{ $qrCellW }}pt;
-            text-align: center;
-            /* Explicit top padding centers content; dompdf's vertical-align is unreliable. */
-            padding-top: {{ $qrPadTop }}pt;
-        }
-        .qr-cell img {
+        .label-qr {
+            position: absolute;
+            top: {{ $qrTop }}pt;
+            left: {{ $qrLeft }}pt;
             width: {{ $qrSize }}pt;
             height: {{ $qrSize }}pt;
         }
-        .text-cell {
-            padding-right: {{ $labelType === 'small' ? 4 : 8 }}pt;
-        }
-        .display-name {
+        .label-line {
+            position: absolute;
+            left: {{ $textLeft }}pt;
+            width: {{ $textW }}pt;
             font-weight: bold;
-            line-height: 1.12;
-            word-wrap: break-word;
+            line-height: 1;
+            white-space: nowrap;
         }
         .page-break {
             page-break-before: always;
@@ -55,18 +49,10 @@
         <div class="page-break"></div>
     @endif
     <div class="label">
-        <table>
-            <tbody>
-                <tr>
-                    <td class="qr-cell">
-                        <img src="{{ $item['qrDataUri'] }}" alt="QR Code">
-                    </td>
-                    <td class="text-cell" style="padding-top: {{ $item['textPadTop'] }}pt;">
-                        <div class="display-name" style="font-size: {{ $item['font'] }}pt;">{!! $item['html'] !!}</div>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
+        <img class="label-qr" src="{{ $item['qrDataUri'] }}" alt="QR Code">
+        @foreach($item['lines'] as $line)
+            <div class="label-line" style="top: {{ $line['top'] }}pt; font-size: {{ $item['font'] }}pt;">{{ $line['text'] }}</div>
+        @endforeach
     </div>
 @endforeach
 </body>

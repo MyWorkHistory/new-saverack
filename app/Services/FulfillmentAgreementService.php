@@ -98,6 +98,35 @@ class FulfillmentAgreementService
     }
 
     /**
+     * Mark an uploaded (wet-ink) agreement as verified without staff e-sign.
+     * The uploaded PDF is the agreement of record — no counter-signature overlay.
+     */
+    public function verifyUpload(ClientAccount $account, ?int $verifiedByUserId = null): ClientAccount
+    {
+        if ($account->fulfillment_agreement_accepted_at === null) {
+            throw ValidationException::withMessages([
+                'agreement' => ['The client has not completed the fulfillment agreement yet.'],
+            ]);
+        }
+
+        if ($account->fulfillment_agreement_method !== FulfillmentAgreementPdfService::METHOD_UPLOAD) {
+            throw ValidationException::withMessages([
+                'agreement' => ['This agreement was e-signed and must be counter-signed to verify.'],
+            ]);
+        }
+
+        /** @var PortalOnboardingService $onboarding */
+        $onboarding = app(PortalOnboardingService::class);
+
+        return $onboarding->setTaskVerified(
+            $account,
+            'fulfillment_agreement',
+            true,
+            $verifiedByUserId
+        );
+    }
+
+    /**
      * @param  array{rep_name: string, signed_at?: string|null, signature_style: string, signature_text: string, signature_image: string}  $data
      */
     public function verifyAndCounterSign(ClientAccount $account, array $data, ?int $verifiedByUserId = null): ClientAccount
@@ -107,6 +136,12 @@ class FulfillmentAgreementService
         if ($account->fulfillment_agreement_accepted_at === null) {
             throw ValidationException::withMessages([
                 'agreement' => ['The client has not completed the fulfillment agreement yet.'],
+            ]);
+        }
+
+        if ($account->fulfillment_agreement_method === FulfillmentAgreementPdfService::METHOD_UPLOAD) {
+            throw ValidationException::withMessages([
+                'agreement' => ['Uploaded agreements are verified by reviewing the PDF — counter-sign is not used.'],
             ]);
         }
 
@@ -127,11 +162,6 @@ class FulfillmentAgreementService
             $account->fulfillment_agreement_method = FulfillmentAgreementPdfService::METHOD_ESIGN;
         }
         $account->save();
-
-        // Wet-ink uploads must not be lost when we rebuild the composite PDF with both signatures.
-        if ($account->fulfillment_agreement_method === FulfillmentAgreementPdfService::METHOD_UPLOAD) {
-            $account = $this->pdf->preserveWetInkUpload($account);
-        }
 
         $account = $this->pdf->buildAndStoreSigned($account);
 
@@ -182,6 +212,18 @@ class FulfillmentAgreementService
             ]);
         }
 
+        /** @var PortalOnboardingService $onboarding */
+        $onboarding = app(PortalOnboardingService::class);
+
+        // Uploaded PDFs are never counter-signed — just clear task verification.
+        if ($account->fulfillment_agreement_method === FulfillmentAgreementPdfService::METHOD_UPLOAD) {
+            return $onboarding->setTaskVerified(
+                $account,
+                'fulfillment_agreement',
+                false
+            );
+        }
+
         $this->pdf->deleteSignatureImage($account, 'staff');
 
         $account->fulfillment_agreement_staff_rep_name = null;
@@ -189,8 +231,6 @@ class FulfillmentAgreementService
         $account->fulfillment_agreement_staff_signature = null;
         $account->save();
 
-        /** @var PortalOnboardingService $onboarding */
-        $onboarding = app(PortalOnboardingService::class);
         $account = $onboarding->setTaskVerified(
             $account,
             'fulfillment_agreement',

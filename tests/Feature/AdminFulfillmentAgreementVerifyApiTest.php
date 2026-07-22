@@ -88,7 +88,7 @@ class AdminFulfillmentAgreementVerifyApiTest extends TestCase
         $pdf->assertOk();
     }
 
-    public function test_staff_verify_upload_preserves_wet_ink_and_builds_composite_pdf(): void
+    public function test_staff_verify_upload_marks_verified_without_counter_sign(): void
     {
         Storage::fake('local');
         TermsOfService::query()->create(['body' => '<p>Terms</p>']);
@@ -105,7 +105,6 @@ class AdminFulfillmentAgreementVerifyApiTest extends TestCase
             'fulfillment_agreement_client_signature' => json_encode([
                 'style' => 'upload',
                 'text' => 'Manually signed (uploaded PDF)',
-                'upload_path' => 'fulfillment-agreements/1/upload-original.pdf',
             ]),
             'fulfillment_agreement_path' => 'fulfillment-agreements/1/upload-original.pdf',
             'fulfillment_agreement_original_name' => 'signed-agreement.pdf',
@@ -115,13 +114,53 @@ class AdminFulfillmentAgreementVerifyApiTest extends TestCase
 
         $this->actingAsStaff();
 
-        $tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        $response = $this->postJson(
+            '/api/client-accounts/'.$account->id.'/onboarding/fulfillment-agreement/verify',
+            []
+        );
 
+        $response->assertOk();
+        $task = collect($response->json('tasks'))->firstWhere('id', 'fulfillment_agreement');
+        $this->assertNotNull($task);
+        $this->assertTrue($task['verified'] ?? false);
+        $response->assertJsonPath('fulfillment_agreement.staff_counter_signed', false);
+
+        $account->refresh();
+        $this->assertNull($account->fulfillment_agreement_staff_signed_at);
+        $this->assertNull($account->fulfillment_agreement_staff_signature);
+        $this->assertSame('upload', $account->fulfillment_agreement_method);
+        Storage::disk('local')->assertExists($account->fulfillment_agreement_path);
+        $this->assertSame('%PDF-1.4 wet-ink-upload', Storage::disk('local')->get($account->fulfillment_agreement_path));
+
+        $pdf = $this->get('/api/client-accounts/'.$account->id.'/onboarding/fulfillment-agreement/signed.pdf');
+        $pdf->assertOk();
+        $this->assertStringContainsString('application/pdf', (string) $pdf->headers->get('content-type'));
+    }
+
+    public function test_staff_verify_upload_ignores_signature_payload(): void
+    {
+        Storage::fake('local');
+        TermsOfService::query()->create(['body' => '<p>Terms</p>']);
+
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_PENDING,
+            'company_name' => 'Upload No Sign Co',
+            'email' => 'upload-nosign@example.test',
+            'fulfillment_agreement_accepted_at' => now(),
+            'fulfillment_agreement_method' => 'upload',
+            'fulfillment_agreement_path' => 'fulfillment-agreements/1/upload-original.pdf',
+            'fulfillment_agreement_mime' => 'application/pdf',
+        ]);
+        Storage::disk('local')->put($account->fulfillment_agreement_path, '%PDF-1.4 wet-ink');
+
+        $this->actingAsStaff();
+
+        // Upload path ignores signature fields and verifies without counter-sign.
+        $tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
         $response = $this->postJson(
             '/api/client-accounts/'.$account->id.'/onboarding/fulfillment-agreement/verify',
             [
                 'rep_name' => 'Audi Kowalski',
-                'signed_at' => '2026-07-16',
                 'signature_style' => 'great_vibes',
                 'signature_text' => 'Audi Kowalski',
                 'signature_image' => $tinyPng,
@@ -130,24 +169,55 @@ class AdminFulfillmentAgreementVerifyApiTest extends TestCase
 
         $response->assertOk();
         $account->refresh();
+        $this->assertNull($account->fulfillment_agreement_staff_signed_at);
+        $this->assertTrue(
+            collect($response->json('tasks'))->firstWhere('id', 'fulfillment_agreement')['verified'] ?? false
+        );
+    }
 
-        $this->assertNotNull($account->fulfillment_agreement_staff_signed_at);
-        $this->assertSame('Audi Kowalski', $account->fulfillment_agreement_staff_rep_name);
-        Storage::disk('local')->assertExists($account->fulfillment_agreement_path);
-        Storage::disk('local')->assertExists(
-            'fulfillment-agreements/'.$account->id.'/client-wet-ink.pdf'
+    public function test_removing_verification_on_upload_keeps_uploaded_pdf(): void
+    {
+        Storage::fake('local');
+        TermsOfService::query()->create(['body' => '<p>Terms</p>']);
+
+        $path = 'fulfillment-agreements/1/upload-original.pdf';
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_PENDING,
+            'company_name' => 'Upload Unverify Co',
+            'email' => 'upload-unverify@example.test',
+            'fulfillment_agreement_accepted_at' => now(),
+            'fulfillment_agreement_method' => 'upload',
+            'fulfillment_agreement_client_signed_at' => now(),
+            'fulfillment_agreement_path' => $path,
+            'fulfillment_agreement_original_name' => 'signed-agreement.pdf',
+            'fulfillment_agreement_mime' => 'application/pdf',
+            'onboarding_verifications' => [
+                'fulfillment_agreement' => [
+                    'verified_at' => now()->toIso8601String(),
+                    'verified_by' => 1,
+                ],
+            ],
+        ]);
+        Storage::disk('local')->put($path, '%PDF-1.4 wet-ink-keep');
+
+        $this->actingAsStaff();
+
+        $response = $this->deleteJson(
+            '/api/client-accounts/'.$account->id.'/onboarding/fulfillment-agreement/verify'
         );
 
-        $meta = json_decode((string) $account->fulfillment_agreement_client_signature, true);
-        $this->assertIsArray($meta);
-        $this->assertSame(
-            'fulfillment-agreements/'.$account->id.'/client-wet-ink.pdf',
-            $meta['upload_path'] ?? null
-        );
+        $response->assertOk();
+        $response->assertJsonPath('fulfillment_agreement.status', 'completed');
+        $response->assertJsonPath('fulfillment_agreement.staff_counter_signed', false);
+        $task = collect($response->json('tasks'))->firstWhere('id', 'fulfillment_agreement');
+        $this->assertFalse($task['verified'] ?? true);
 
-        $pdf = $this->get('/api/client-accounts/'.$account->id.'/onboarding/fulfillment-agreement/signed.pdf');
-        $pdf->assertOk();
-        $this->assertStringContainsString('application/pdf', (string) $pdf->headers->get('content-type'));
+        $account->refresh();
+        $this->assertSame('upload', $account->fulfillment_agreement_method);
+        $this->assertNotNull($account->fulfillment_agreement_accepted_at);
+        $this->assertNull($account->fulfillment_agreement_staff_signed_at);
+        Storage::disk('local')->assertExists($path);
+        $this->assertSame('%PDF-1.4 wet-ink-keep', Storage::disk('local')->get($path));
     }
 
     public function test_removing_verification_clears_staff_signature_and_keeps_client_completion(): void

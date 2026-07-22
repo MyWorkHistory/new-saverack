@@ -883,7 +883,10 @@ class ClientAccountService
                 ? $account->fulfillment_agreement_staff_signed_at->toIso8601String()
                 : null,
             'fulfillment_agreement_fully_signed' => $account->fulfillment_agreement_client_signed_at !== null
-                && $account->fulfillment_agreement_staff_signed_at !== null,
+                && (
+                    $account->fulfillment_agreement_method === FulfillmentAgreementPdfService::METHOD_UPLOAD
+                    || $account->fulfillment_agreement_staff_signed_at !== null
+                ),
         ];
     }
 

@@ -335,21 +335,26 @@ class ClientAccountOnboardingController extends Controller
     {
         Gate::authorize('update', $client_account);
 
-        $validated = $request->validate([
-            'rep_name' => ['required', 'string', 'max:255'],
-            'signed_at' => ['nullable', 'date'],
-            'signature_style' => ['required', 'string', 'max:64'],
-            'signature_text' => ['required', 'string', 'max:255'],
-            'signature_image' => ['required', 'string'],
-        ]);
-
         $adminUser = $request->user();
+        $verifiedBy = $adminUser !== null ? (int) $adminUser->id : null;
+
         try {
-            $client_account = $this->agreements->verifyAndCounterSign(
-                $client_account,
-                $validated,
-                $adminUser !== null ? (int) $adminUser->id : null
-            );
+            if ($client_account->fulfillment_agreement_method === FulfillmentAgreementPdfService::METHOD_UPLOAD) {
+                $client_account = $this->agreements->verifyUpload($client_account, $verifiedBy);
+            } else {
+                $validated = $request->validate([
+                    'rep_name' => ['required', 'string', 'max:255'],
+                    'signed_at' => ['nullable', 'date'],
+                    'signature_style' => ['required', 'string', 'max:64'],
+                    'signature_text' => ['required', 'string', 'max:255'],
+                    'signature_image' => ['required', 'string'],
+                ]);
+                $client_account = $this->agreements->verifyAndCounterSign(
+                    $client_account,
+                    $validated,
+                    $verifiedBy
+                );
+            }
         } catch (\InvalidArgumentException $e) {
             throw ValidationException::withMessages([
                 'agreement' => [$e->getMessage()],

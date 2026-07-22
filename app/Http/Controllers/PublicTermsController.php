@@ -32,9 +32,13 @@ class PublicTermsController extends Controller
 
     public function account(ClientAccount $clientAccount)
     {
-        // Once both parties have signed, the public link shows the signed agreement PDF.
-        if ($clientAccount->fulfillment_agreement_client_signed_at !== null
-            && $clientAccount->fulfillment_agreement_staff_signed_at !== null) {
+        // Once the client has completed the agreement: e-sign needs both signatures;
+        // uploaded wet-ink PDFs are the agreement of record as soon as uploaded.
+        $clientDone = $clientAccount->fulfillment_agreement_client_signed_at !== null;
+        $uploadDone = $clientDone
+            && $clientAccount->fulfillment_agreement_method === FulfillmentAgreementPdfService::METHOD_UPLOAD;
+        $esignDone = $clientDone && $clientAccount->fulfillment_agreement_staff_signed_at !== null;
+        if ($uploadDone || $esignDone) {
             return $this->agreementPdfs->signedPdfResponse($clientAccount);
         }
 

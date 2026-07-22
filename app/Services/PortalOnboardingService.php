@@ -353,7 +353,10 @@ class PortalOnboardingService
         }
 
         if ($verified && $taskId === 'fulfillment_agreement' && $account->fulfillment_agreement_staff_signed_at === null) {
-            throw new \InvalidArgumentException('Counter-sign the fulfillment agreement before verifying this task.');
+            $isUpload = $account->fulfillment_agreement_method === FulfillmentAgreementPdfService::METHOD_UPLOAD;
+            if (! $isUpload) {
+                throw new \InvalidArgumentException('Counter-sign the fulfillment agreement before verifying this task.');
+            }
         }
 
         $verifications = $this->verificationsArray($account);

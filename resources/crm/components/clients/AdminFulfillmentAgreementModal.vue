@@ -31,6 +31,7 @@ const clearConfirmOpen = ref(false);
 const fileInput = ref(null);
 
 const accepted = computed(() => props.agreement?.status === "completed");
+const isUploadAgreement = computed(() => String(props.agreement?.method || "") === "upload");
 const hasSignedPdf = computed(() => !!props.agreement?.has_signed_pdf || accepted.value);
 const taskVerified = computed(() => !!props.task?.verified);
 const bodyHtml = computed(() => props.agreement?.body || "");
@@ -57,9 +58,39 @@ function close() {
   if (!busy.value && !props.verifying) emit("update:open", false);
 }
 
-function startVerify() {
+async function startVerify() {
   if (!canVerify.value || busy.value || props.verifying) return;
+
+  // Uploaded wet-ink PDFs are the agreement of record — view and mark verified, no e-sign.
+  if (isUploadAgreement.value) {
+    await verifyUploadAgreement();
+    return;
+  }
+
   counterSignOpen.value = true;
+}
+
+async function verifyUploadAgreement() {
+  if (busy.value) return;
+  busy.value = true;
+  try {
+    if (hasSignedPdf.value) {
+      try {
+        await openApiPdfBlob(api, `${basePath.value}/signed.pdf`);
+      } catch (e) {
+        toast.errorFrom(e, "Could not open uploaded agreement.");
+        return;
+      }
+    }
+    const { data } = await api.post(`${basePath.value}/verify`, {});
+    emit("saved", data);
+    toast.success("Fulfillment Agreement verified.");
+    emit("update:open", false);
+  } catch (e) {
+    toast.errorFrom(e, "Could not verify agreement.");
+  } finally {
+    busy.value = false;
+  }
 }
 
 function triggerUpload() {
@@ -173,7 +204,11 @@ async function clearAgreement() {
           Download a printable copy, then Upload Agreement or E-Sign Agreement. After that, Verify.
         </template>
         <template v-else-if="taskVerified">
-          This agreement is verified. You can view the signed PDF or remove verification.
+          This agreement is verified. You can view the
+          {{ isUploadAgreement ? "uploaded" : "signed" }} PDF or remove verification.
+        </template>
+        <template v-else-if="isUploadAgreement">
+          An agreement PDF was uploaded. Review the file, then click Verify — no e-sign needed.
         </template>
         <template v-else>
           Client side is complete. Click Verify to counter-sign for Save Rack LLC.
@@ -250,7 +285,7 @@ async function clearAgreement() {
             :disabled="viewing || busy"
             @click="viewSigned"
           >
-            {{ viewing ? "Opening…" : "View Signed PDF" }}
+            {{ viewing ? "Opening…" : isUploadAgreement ? "View Uploaded PDF" : "View Signed PDF" }}
           </button>
           <button
             v-if="taskVerified"
@@ -295,6 +330,7 @@ async function clearAgreement() {
   />
 
   <FulfillmentAgreementSignLightbox
+    v-if="!isUploadAgreement"
     v-model:open="counterSignOpen"
     :saving="busy || verifying"
     title="Verify Fulfillment Agreement"

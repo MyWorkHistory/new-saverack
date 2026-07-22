@@ -95,11 +95,18 @@ const selectedCustomOpen = computed(() =>
   selectedRows.value.filter((r) => r.bill_kind === "custom" && r.status === "open"),
 );
 
+const selectedEligibleForInvoice = computed(() =>
+  selectedRows.value.filter(
+    (r) =>
+      ["custom", "asn", "return"].includes(String(r.bill_kind || "")) &&
+      r.status === "open" &&
+      Number(r.items_count ?? 0) > 0,
+  ),
+);
+
 const selectedOpenCount = computed(() => selectedCustomOpen.value.length);
 
-const selectedOpenWithLinesCount = computed(
-  () => selectedCustomOpen.value.filter((r) => Number(r.items_count ?? 0) > 0).length,
-);
+const selectedOpenWithLinesCount = computed(() => selectedEligibleForInvoice.value.length);
 
 let searchDebounce = null;
 watch(
@@ -278,7 +285,14 @@ const bulkDeleteMessage = computed(() => {
 const bulkAddMessage = computed(() => {
   const total = selectedIds.value.length;
   const eligible = selectedOpenWithLinesCount.value;
-  return `Add ${eligible} open bill${eligible === 1 ? "" : "s"} to each account's newest draft invoice? Bills are processed one by one; line items are not combined. ${total - eligible > 0 ? `${total - eligible} selected bill${total - eligible === 1 ? "" : "s"} will be skipped (non-custom, invoiced, or no lines).` : ""}`;
+  const skipped = total - eligible;
+  let msg = `Add ${eligible} open bill${eligible === 1 ? "" : "s"} to each account's newest draft invoice (a draft is created if none exists)? `;
+  msg +=
+    "Custom and ASN bills stay separate on the invoice; Return bills combine under Returns. Bills are processed one by one.";
+  if (skipped > 0) {
+    msg += ` ${skipped} selected bill${skipped === 1 ? "" : "s"} will be skipped (invoiced or no lines).`;
+  }
+  return msg;
 });
 
 async function confirmBulkDelete() {
@@ -311,26 +325,42 @@ async function confirmBulkDelete() {
   }
 }
 
+function billApiBase(row) {
+  const kind = String(row.bill_kind || "");
+  if (kind === "asn") return "asn-bills";
+  if (kind === "return") return "return-bills";
+  return "custom-bills";
+}
+
 async function confirmBulkAddToInvoices() {
-  const customOpen = selectedCustomOpen.value.filter(
-    (r) => Number(r.items_count ?? 0) > 0,
-  );
+  const eligible = selectedEligibleForInvoice.value;
   if (!selectedIds.value.length || bulkBusy.value) return;
   bulkBusy.value = true;
   let added = 0;
-  let skipped = selectedIds.value.length - customOpen.length;
+  let skipped = selectedIds.value.length - eligible.length;
   let failed = 0;
+  /** @type {Record<number, number>} */
+  const draftByAccount = {};
   try {
-    for (const row of customOpen) {
+    for (const row of eligible) {
       try {
-        const { data: draftData } = await api.get(`/custom-bills/${row.id}/draft-invoices`);
-        const drafts = Array.isArray(draftData?.invoices) ? draftData.invoices : [];
-        if (!drafts.length) {
-          failed++;
-          continue;
+        const accountId = Number(row.client_account_id);
+        const base = billApiBase(row);
+        let invoiceId = draftByAccount[accountId];
+        if (!invoiceId) {
+          const { data: draftData } = await api.get(`/${base}/${row.id}/draft-invoices`, {
+            params: { ensure: 1 },
+          });
+          const drafts = Array.isArray(draftData?.invoices) ? draftData.invoices : [];
+          if (!drafts.length) {
+            failed++;
+            continue;
+          }
+          invoiceId = Number(drafts[0].id);
+          if (accountId > 0) draftByAccount[accountId] = invoiceId;
         }
-        await api.post(`/custom-bills/${row.id}/add-to-invoice`, {
-          invoice_id: Number(drafts[0].id),
+        await api.post(`/${base}/${row.id}/add-to-invoice`, {
+          invoice_id: invoiceId,
         });
         added++;
       } catch {
@@ -343,7 +373,7 @@ async function confirmBulkAddToInvoices() {
     const parts = [];
     if (added > 0) parts.push(`${added} added to invoice${added === 1 ? "" : "s"}`);
     if (skipped > 0) parts.push(`${skipped} skipped`);
-    if (failed > 0) parts.push(`${failed} failed (no draft invoice)`);
+    if (failed > 0) parts.push(`${failed} failed`);
     if (added > 0) {
       toast.success(parts.join("; ") + ".");
     } else {
@@ -746,12 +776,13 @@ onUnmounted(() => {
     />
 
     <ConfirmModal
-      v-model:open="deleteModalOpen"
+      :open="deleteModalOpen"
       title="Delete Bill"
       :message="deleteTarget ? `Delete bill #${deleteTarget.bill_number}? This cannot be undone.` : ''"
       confirm-label="Delete"
-      variant="danger"
+      :danger="true"
       :busy="deleteBusy"
+      @close="() => { if (!deleteBusy) deleteModalOpen = false; }"
       @confirm="confirmDelete"
     />
 
@@ -760,9 +791,9 @@ onUnmounted(() => {
       title="Bulk Delete"
       :message="bulkDeleteMessage"
       confirm-label="Delete"
-      variant="danger"
+      :danger="true"
       :busy="bulkBusy"
-      @update:open="(v) => { if (!bulkBusy) bulkDeleteOpen = v; }"
+      @close="() => { if (!bulkBusy) bulkDeleteOpen = false; }"
       @confirm="confirmBulkDelete"
     />
 
@@ -771,9 +802,9 @@ onUnmounted(() => {
       title="Add to Invoices"
       :message="bulkAddMessage"
       confirm-label="Add to Invoices"
-      variant="primary"
+      :danger="false"
       :busy="bulkBusy"
-      @update:open="(v) => { if (!bulkBusy) bulkAddOpen = v; }"
+      @close="() => { if (!bulkBusy) bulkAddOpen = false; }"
       @confirm="confirmBulkAddToInvoices"
     />
   </div>

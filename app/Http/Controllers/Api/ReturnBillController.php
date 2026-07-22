@@ -83,12 +83,18 @@ class ReturnBillController extends Controller
         return response()->json(['message' => 'Return bill deleted.']);
     }
 
-    public function draftInvoices(ReturnBill $returnBill): JsonResponse
+    public function draftInvoices(Request $request, ReturnBill $returnBill): JsonResponse
     {
         $this->authorize('view', $returnBill);
 
+        $ensure = $request->boolean('ensure');
+
         return response()->json([
-            'invoices' => $this->returnBills->draftInvoicesForBill($returnBill),
+            'invoices' => $this->returnBills->draftInvoicesForBill(
+                $returnBill,
+                $ensure,
+                $request->user()
+            ),
         ]);
     }
 

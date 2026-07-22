@@ -64,7 +64,7 @@ const subtitle = computed(() => {
     @update:open="emit('update:open', $event)"
   >
     <p v-if="!draftInvoices.length" class="small text-secondary mb-0">
-      No draft invoices for this account. Create a draft invoice first.
+      No draft invoices for this account yet.
     </p>
     <div v-else class="list-group list-group-flush border rounded mb-4">
       <label

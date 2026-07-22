@@ -366,24 +366,13 @@ class ReturnBillService
     /**
      * @return list<array<string, mixed>>
      */
-    public function draftInvoicesForBill(ReturnBill $bill): array
+    public function draftInvoicesForBill(ReturnBill $bill, bool $ensure = false, ?User $actor = null): array
     {
-        return Invoice::query()
-            ->where('client_account_id', $bill->client_account_id)
-            ->where('status', Invoice::STATUS_DRAFT)
-            ->orderByDesc('id')
-            ->limit(50)
-            ->get(['id', 'invoice_number', 'total_cents', 'balance_due_cents'])
-            ->map(static function (Invoice $inv) {
-                return [
-                    'id' => $inv->id,
-                    'invoice_number' => $inv->invoice_number,
-                    'total_cents' => (int) $inv->total_cents,
-                    'balance_due_cents' => (int) $inv->balance_due_cents,
-                ];
-            })
-            ->values()
-            ->all();
+        return $this->invoices->draftInvoicesPayloadForAccount(
+            (int) $bill->client_account_id,
+            $ensure,
+            $actor
+        );
     }
 
     public function toDetailArray(ReturnBill $bill): array

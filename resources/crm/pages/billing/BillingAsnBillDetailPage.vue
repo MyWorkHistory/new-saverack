@@ -424,8 +424,13 @@ async function openAddToInvoiceModal() {
   initAddToInvoiceSelections();
   addToInvoiceModalOpen.value = true;
   try {
-    const { data } = await api.get(`/asn-bills/${props.id}/draft-invoices`);
+    const { data } = await api.get(`/asn-bills/${props.id}/draft-invoices`, {
+      params: { ensure: 1 },
+    });
     draftInvoices.value = Array.isArray(data?.invoices) ? data.invoices : [];
+    if (draftInvoices.value.length && !selectedInvoiceId.value) {
+      selectedInvoiceId.value = String(draftInvoices.value[0].id);
+    }
   } catch (e) {
     toast.errorFrom(e, "Could not load draft invoices.");
     addToInvoiceModalOpen.value = false;

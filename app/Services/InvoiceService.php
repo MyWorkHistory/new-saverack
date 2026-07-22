@@ -84,6 +84,78 @@ class InvoiceService
     }
 
     /**
+     * Newest draft for the account, or a new empty draft if none exists.
+     */
+    public function findOrCreateDraftForAccount(int $clientAccountId, ?User $actor = null): Invoice
+    {
+        $clientAccountId = (int) $clientAccountId;
+        if ($clientAccountId <= 0) {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['A client account is required to create a draft invoice.'],
+            ]);
+        }
+
+        $existing = Invoice::query()
+            ->where('client_account_id', $clientAccountId)
+            ->where('status', Invoice::STATUS_DRAFT)
+            ->orderByDesc('id')
+            ->first();
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        $account = ClientAccount::query()->find($clientAccountId);
+        if ($account === null) {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['Client account not found.'],
+            ]);
+        }
+
+        $issuedAt = now();
+        $dueAt = ClientAccountBillingPreferences::invoiceDueDate($account, $issuedAt);
+
+        return $this->createDraft([
+            'client_account_id' => $clientAccountId,
+            'currency' => 'USD',
+            'issued_at' => $issuedAt->toDateString(),
+            'due_at' => $dueAt->toDateString(),
+            'payment_terms' => ClientAccountBillingPreferences::paymentTermsLabelForAccount($account),
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+        ], [], $actor);
+    }
+
+    /**
+     * @return list<array{id:int, invoice_number:string, total_cents:int, balance_due_cents:int}>
+     */
+    public function draftInvoicesPayloadForAccount(int $clientAccountId, bool $ensure = false, ?User $actor = null): array
+    {
+        if ($ensure) {
+            $this->findOrCreateDraftForAccount($clientAccountId, $actor);
+        }
+
+        return Invoice::query()
+            ->where('client_account_id', $clientAccountId)
+            ->where('status', Invoice::STATUS_DRAFT)
+            ->orderByDesc('id')
+            ->limit(50)
+            ->get(['id', 'invoice_number', 'total_cents', 'balance_due_cents'])
+            ->map(static function (Invoice $inv) {
+                return [
+                    'id' => (int) $inv->id,
+                    'invoice_number' => (string) $inv->invoice_number,
+                    'total_cents' => (int) $inv->total_cents,
+                    'balance_due_cents' => (int) $inv->balance_due_cents,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $items
      */
     public function updateDraft(Invoice $invoice, array $header, array $items, ?User $actor): Invoice

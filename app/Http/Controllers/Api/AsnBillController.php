@@ -90,12 +90,18 @@ class AsnBillController extends Controller
         return response()->json(['message' => 'ASN bill deleted.']);
     }
 
-    public function draftInvoices(AsnBill $asnBill): JsonResponse
+    public function draftInvoices(Request $request, AsnBill $asnBill): JsonResponse
     {
         $this->authorize('view', $asnBill);
 
+        $ensure = $request->boolean('ensure');
+
         return response()->json([
-            'invoices' => $this->asnBills->draftInvoicesForBill($asnBill),
+            'invoices' => $this->asnBills->draftInvoicesForBill(
+                $asnBill,
+                $ensure,
+                $request->user()
+            ),
         ]);
     }
 

@@ -139,12 +139,18 @@ class CustomBillController extends Controller
         return response()->json($this->customBills->toDetailArray($bill));
     }
 
-    public function draftInvoices(CustomBill $customBill): JsonResponse
+    public function draftInvoices(Request $request, CustomBill $customBill): JsonResponse
     {
         $this->authorize('view', $customBill);
 
+        $ensure = $request->boolean('ensure');
+
         return response()->json([
-            'invoices' => $this->customBills->listDraftInvoicesForAccount($customBill),
+            'invoices' => $this->customBills->listDraftInvoicesForAccount(
+                $customBill,
+                $ensure,
+                $request->user()
+            ),
         ]);
     }
 

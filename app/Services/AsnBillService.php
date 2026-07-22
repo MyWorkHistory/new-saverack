@@ -377,7 +377,6 @@ class AsnBillService
             foreach ($items as $item) {
                 $lineType = (string) $item->line_type;
                 $subtype = AsnBillChargeCatalog::subtype($lineType);
-                $groupKey = AsnBillChargeCatalog::groupKey($lineType);
                 $qty = (float) $item->quantity;
                 $unitCents = (int) $item->unit_price_cents;
                 $lineTotal = (int) $item->line_total_cents;
@@ -386,7 +385,7 @@ class AsnBillService
                     $name = AsnBillChargeCatalog::displayName($lineType);
                 }
 
-                $this->invoices->addOrMergeReceivingLine($invoice, [
+                $this->invoices->addInvoiceItem($invoice, [
                     'description' => $name,
                     'display_name' => $name,
                     'category' => InvoiceLineCategory::RECEIVING,
@@ -394,7 +393,7 @@ class AsnBillService
                     'quantity' => $qty,
                     'unit_price_cents' => $unitCents,
                     'line_total_cents' => $lineTotal,
-                    'group_key' => $groupKey,
+                    'group_key' => 'asn_bill:'.(int) $bill->id.':'.$lineType,
                     'metadata' => [
                         'source' => 'asn_bill',
                         'asn_bill_id' => (int) $bill->id,
@@ -422,24 +421,13 @@ class AsnBillService
     /**
      * @return list<array<string, mixed>>
      */
-    public function draftInvoicesForBill(AsnBill $bill): array
+    public function draftInvoicesForBill(AsnBill $bill, bool $ensure = false, ?User $actor = null): array
     {
-        return Invoice::query()
-            ->where('client_account_id', $bill->client_account_id)
-            ->where('status', Invoice::STATUS_DRAFT)
-            ->orderByDesc('id')
-            ->limit(50)
-            ->get(['id', 'invoice_number', 'total_cents', 'balance_due_cents'])
-            ->map(static function (Invoice $inv) {
-                return [
-                    'id' => $inv->id,
-                    'invoice_number' => $inv->invoice_number,
-                    'total_cents' => (int) $inv->total_cents,
-                    'balance_due_cents' => (int) $inv->balance_due_cents,
-                ];
-            })
-            ->values()
-            ->all();
+        return $this->invoices->draftInvoicesPayloadForAccount(
+            (int) $bill->client_account_id,
+            $ensure,
+            $actor
+        );
     }
 
     /**

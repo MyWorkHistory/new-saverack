@@ -211,12 +211,51 @@ class AsnBillApiTest extends TestCase
         $this->assertSame(0, AsnBillItem::query()->where('asn_bill_id', $bill->id)->count());
     }
 
-    public function test_add_to_invoice_merges_receiving_line_with_asn_breakdown(): void
+    public function test_add_to_invoice_keeps_asn_bills_as_separate_receiving_lines(): void
     {
         $account = $this->account();
-        [$asn, $bill] = $this->asnWithOpenBill($account, 'ASN-9001');
+        $asnOne = ClientAccountAsn::query()->create([
+            'client_account_id' => $account->id,
+            'asn_number' => 'ASN-9001',
+            'status' => ClientAccountAsn::STATUS_PENDING,
+            'total_boxes' => 1,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+        $billOne = AsnBill::query()->create([
+            'bill_number' => 9001,
+            'status' => AsnBill::STATUS_OPEN,
+            'client_account_id' => $account->id,
+            'client_account_asn_id' => $asnOne->id,
+            'bill_date' => now()->toDateString(),
+            'total_cents' => 0,
+        ]);
+        $asnOne->asn_bill_id = $billOne->id;
+        $asnOne->save();
+
+        $asnTwo = ClientAccountAsn::query()->create([
+            'client_account_id' => $account->id,
+            'asn_number' => 'ASN-9002',
+            'status' => ClientAccountAsn::STATUS_PENDING,
+            'total_boxes' => 1,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+        $billTwo = AsnBill::query()->create([
+            'bill_number' => 9002,
+            'status' => AsnBill::STATUS_OPEN,
+            'client_account_id' => $account->id,
+            'client_account_asn_id' => $asnTwo->id,
+            'bill_date' => now()->toDateString(),
+            'total_cents' => 0,
+        ]);
+        $asnTwo->asn_bill_id = $billTwo->id;
+        $asnTwo->save();
+
         AsnBillItem::query()->create([
-            'asn_bill_id' => $bill->id,
+            'asn_bill_id' => $billOne->id,
             'line_type' => AsnBill::LINE_RECEIVING_PER_BOX,
             'name' => AsnBillChargeCatalog::displayName(AsnBill::LINE_RECEIVING_PER_BOX),
             'quantity' => 2,
@@ -224,8 +263,19 @@ class AsnBillApiTest extends TestCase
             'line_total_cents' => 1000,
             'sort_order' => 0,
         ]);
-        $bill->total_cents = 1000;
-        $bill->save();
+        $billOne->total_cents = 1000;
+        $billOne->save();
+        AsnBillItem::query()->create([
+            'asn_bill_id' => $billTwo->id,
+            'line_type' => AsnBill::LINE_RECEIVING_PER_BOX,
+            'name' => AsnBillChargeCatalog::displayName(AsnBill::LINE_RECEIVING_PER_BOX),
+            'quantity' => 3,
+            'unit_price_cents' => 500,
+            'line_total_cents' => 1500,
+            'sort_order' => 0,
+        ]);
+        $billTwo->total_cents = 1500;
+        $billTwo->save();
 
         $this->billingUser();
 
@@ -241,21 +291,64 @@ class AsnBillApiTest extends TestCase
             'balance_due_cents' => 0,
         ]);
 
-        $this->postJson('/api/asn-bills/'.$bill->id.'/add-to-invoice', [
+        $this->postJson('/api/asn-bills/'.$billOne->id.'/add-to-invoice', [
+            'invoice_id' => $invoice->id,
+        ])->assertOk();
+        $this->postJson('/api/asn-bills/'.$billTwo->id.'/add-to-invoice', [
             'invoice_id' => $invoice->id,
         ])->assertOk();
 
-        $item = InvoiceItem::query()->where('invoice_id', $invoice->id)->first();
-        $this->assertNotNull($item);
-        $this->assertSame(InvoiceLineCategory::RECEIVING, $item->category);
-        $breakdown = is_array($item->metadata['breakdown'] ?? null) ? $item->metadata['breakdown'] : [];
-        $this->assertCount(1, $breakdown);
-        $this->assertSame('ASN-9001', $breakdown[0]['asn_number'] ?? null);
-        $this->assertSame('asn_bill', $breakdown[0]['source'] ?? null);
+        $items = InvoiceItem::query()
+            ->where('invoice_id', $invoice->id)
+            ->where('category', InvoiceLineCategory::RECEIVING)
+            ->orderBy('id')
+            ->get();
+        $this->assertCount(2, $items);
+        $this->assertSame(1000, (int) $items[0]->line_total_cents);
+        $this->assertSame(1500, (int) $items[1]->line_total_cents);
+        $this->assertSame('asn_bill:'.$billOne->id.':'.AsnBill::LINE_RECEIVING_PER_BOX, $items[0]->group_key);
+        $this->assertSame('asn_bill:'.$billTwo->id.':'.AsnBill::LINE_RECEIVING_PER_BOX, $items[1]->group_key);
+        $this->assertSame('ASN-9001', $items[0]->metadata['asn_number'] ?? null);
+        $this->assertSame('ASN-9002', $items[1]->metadata['asn_number'] ?? null);
 
-        $bill->refresh();
-        $this->assertSame(AsnBill::STATUS_INVOICED, $bill->status);
-        $this->assertSame($invoice->id, (int) $bill->invoice_id);
+        $billOne->refresh();
+        $billTwo->refresh();
+        $this->assertSame(AsnBill::STATUS_INVOICED, $billOne->status);
+        $this->assertSame(AsnBill::STATUS_INVOICED, $billTwo->status);
+        $this->assertSame($invoice->id, (int) $billOne->invoice_id);
+        $this->assertSame($invoice->id, (int) $billTwo->invoice_id);
+    }
+
+    public function test_draft_invoices_ensure_creates_draft_when_missing(): void
+    {
+        $account = $this->account();
+        [, $bill] = $this->asnWithOpenBill($account, 'ASN-ENSURE-1');
+        AsnBillItem::query()->create([
+            'asn_bill_id' => $bill->id,
+            'line_type' => AsnBill::LINE_RECEIVING_PER_BOX,
+            'name' => AsnBillChargeCatalog::displayName(AsnBill::LINE_RECEIVING_PER_BOX),
+            'quantity' => 1,
+            'unit_price_cents' => 100,
+            'line_total_cents' => 100,
+            'sort_order' => 0,
+        ]);
+
+        $this->billingUser();
+
+        $this->assertSame(
+            0,
+            Invoice::query()->where('client_account_id', $account->id)->where('status', Invoice::STATUS_DRAFT)->count()
+        );
+
+        $response = $this->getJson('/api/asn-bills/'.$bill->id.'/draft-invoices?ensure=1');
+        $response->assertOk();
+        $invoices = $response->json('invoices');
+        $this->assertIsArray($invoices);
+        $this->assertCount(1, $invoices);
+        $this->assertSame(
+            1,
+            Invoice::query()->where('client_account_id', $account->id)->where('status', Invoice::STATUS_DRAFT)->count()
+        );
     }
 
     public function test_asn_bill_item_from_admin_api_appears_on_lines_list(): void

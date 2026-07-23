@@ -1557,6 +1557,12 @@ button.staff-status-badge:focus-visible {
   text-align: center !important;
 }
 
+/* Return bins list/detail — center kebab like location labels / invoices */
+.table.staff-data-table > thead > tr > th.return-bins-actions-col,
+.table.staff-data-table > tbody > tr > td.return-bins-actions-cell {
+  text-align: center !important;
+}
+
 .staff-actions-inner.billing-invoices-actions-inner.staff-actions-inner--single {
   justify-content: center !important;
 }

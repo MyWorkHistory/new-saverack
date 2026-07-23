@@ -49,6 +49,8 @@ const menuRow = computed(() => {
   return rows.value.find((r) => Number(r.id) === Number(id)) ?? null;
 });
 
+const tableColspan = computed(() => (canManage.value ? 3 : 2));
+
 async function load() {
   loading.value = true;
   try {
@@ -211,11 +213,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide admin-returns-page">
+  <div class="staff-page staff-page--wide admin-return-bins-page">
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
       <div>
         <h1 class="h4 mb-1 fw-semibold text-body">Return Bins</h1>
-        <p class="small admin-returns-list__subtitle mb-0">
+        <p class="small text-secondary mb-0">
           Items staged in return bins before restock to pick locations.
         </p>
       </div>
@@ -230,44 +232,63 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <div class="admin-returns-list staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
+      <div class="staff-table-toolbar">
+        <div class="staff-table-toolbar--row">
+          <div class="staff-toolbar-row-actions d-flex align-items-center gap-2 ms-md-auto flex-wrap">
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn"
+              :disabled="loading"
+              @click="load"
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div class="table-responsive staff-table-wrap">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
               <th class="staff-table-head__th" scope="col">Bin Name</th>
-              <th class="staff-table-head__th text-center" scope="col">Items</th>
-              <th class="staff-table-head__th text-center" scope="col">Actions</th>
+              <th class="staff-table-head__th text-center" scope="col" style="width: 7rem">Items</th>
+              <th
+                v-if="canManage"
+                class="staff-table-head__th staff-actions-col return-bins-actions-col"
+                scope="col"
+              >
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="3" class="py-5">
+              <td :colspan="tableColspan" class="py-5">
                 <div class="d-flex justify-content-center py-3">
                   <CrmLoadingSpinner message="Loading return bins…" />
                 </div>
-              </td>
-            </tr>
-            <tr v-else-if="!rows.length">
-              <td colspan="3" class="text-center text-secondary py-5">
-                No return bins yet. Add a bin to get started.
               </td>
             </tr>
             <tr
               v-for="row in rows"
               v-else
               :key="`bin-${row.id}`"
-              class="align-middle admin-returns-result-row"
+              class="align-middle admin-return-bins-page__row"
               role="button"
               tabindex="0"
               @click="openBin(row)"
               @keydown.enter.prevent="openBin(row)"
             >
-              <td class="fw-semibold">{{ row.name || "—" }}</td>
-              <td class="text-center">{{ row.items_count ?? 0 }}</td>
-              <td class="staff-actions-cell text-center" @click.stop>
+              <td class="fw-semibold text-body text-start">{{ row.name || "—" }}</td>
+              <td class="text-center text-body">{{ row.items_count ?? 0 }}</td>
+              <td
+                v-if="canManage"
+                class="staff-actions-cell return-bins-actions-cell"
+                @click.stop
+              >
                 <div
-                  v-if="canManage"
                   data-return-bin-list-actions
                   class="staff-actions-inner staff-actions-inner--single justify-content-center"
                 >
@@ -284,12 +305,19 @@ onUnmounted(() => {
                     <CrmIconRowActions variant="horizontal" />
                   </button>
                 </div>
-                <span v-else class="text-secondary">—</span>
+              </td>
+            </tr>
+            <tr v-if="!loading && !rows.length">
+              <td :colspan="tableColspan" class="px-4 py-5 text-center text-secondary">
+                No return bins yet. Add a bin to get started.
               </td>
             </tr>
           </tbody>
         </table>
       </div>
+      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
+        Scroll sideways or swipe to see all columns.
+      </p>
     </div>
 
     <Teleport to="body">
@@ -388,13 +416,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.admin-returns-list__subtitle {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--bs-secondary-color, #6c757d);
-}
-
-.admin-returns-result-row {
+.admin-return-bins-page__row {
   cursor: pointer;
 }
 </style>

@@ -246,7 +246,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide admin-returns-page admin-return-bin-detail-page">
+  <div class="staff-page staff-page--wide admin-return-bins-page admin-return-bin-detail-page">
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
       <div>
         <h1 class="h4 mb-1 fw-semibold text-body">{{ binName || "Return Bin" }}</h1>
@@ -258,17 +258,30 @@ onUnmounted(() => {
           &lt; Return Bins
         </button>
       </div>
+      <button
+        type="button"
+        class="btn btn-outline-secondary staff-toolbar-btn"
+        :disabled="loading"
+        @click="load"
+      >
+        Refresh
+      </button>
     </div>
 
-    <div class="admin-returns-list staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
       <div class="table-responsive staff-table-wrap">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
-              <th class="staff-table-head__th" scope="col">Product</th>
-              <th class="staff-table-head__th text-center" scope="col">Qty</th>
-              <th class="staff-table-head__th" scope="col">Pick Location</th>
-              <th class="staff-table-head__th text-center" scope="col">Actions</th>
+              <th class="staff-table-head__th text-start" scope="col">Product</th>
+              <th class="staff-table-head__th text-center" scope="col" style="width: 6rem">Qty</th>
+              <th class="staff-table-head__th text-start" scope="col">Pick Location</th>
+              <th
+                class="staff-table-head__th staff-actions-col return-bins-actions-col"
+                scope="col"
+              >
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -279,44 +292,41 @@ onUnmounted(() => {
                 </div>
               </td>
             </tr>
-            <tr v-else-if="!rows.length">
-              <td colspan="4" class="text-center text-secondary py-5">No items in this bin.</td>
-            </tr>
             <tr v-for="row in rows" v-else :key="`${row.sku}-${row.client_account_id}`">
-              <td class="order-detail-page__items-col">
-                <div class="order-detail-page__item-cell">
+              <td class="return-bin-product-col text-start">
+                <div class="return-bin-product-cell">
                   <img
                     v-if="row.image_url"
                     :src="row.image_url"
                     alt=""
-                    class="asn-line-thumb"
+                    class="return-bin-product-thumb"
                     loading="lazy"
                   />
-                  <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
-                  <div class="order-detail-page__item-copy">
-                    <div class="order-detail-page__item-sku fw-semibold" :title="row.sku || undefined">
+                  <div v-else class="return-bin-product-thumb return-bin-product-thumb--empty" aria-hidden="true" />
+                  <div class="return-bin-product-copy">
+                    <div class="return-bin-product-sku" :title="row.sku || undefined">
                       {{ row.sku || "—" }}
                     </div>
-                    <div class="order-detail-page__item-name text-secondary small" :title="row.name || undefined">
+                    <div class="return-bin-product-name" :title="row.name || undefined">
                       {{ row.name || "—" }}
                     </div>
                   </div>
                 </div>
               </td>
-              <td class="text-center">{{ row.qty ?? 0 }}</td>
-              <td class="return-bin-pick-col">
+              <td class="text-center text-body">{{ row.qty ?? 0 }}</td>
+              <td class="return-bin-pick-col text-start">
                 <template v-if="splitPickLocations(row.pick_location).length">
                   <div
                     v-for="(location, index) in splitPickLocations(row.pick_location)"
                     :key="`${row.sku}-pick-${index}`"
-                    class="small text-secondary"
+                    class="staff-table-cell__meta text-secondary"
                   >
                     {{ location }}
                   </div>
                 </template>
                 <span v-else class="text-secondary">—</span>
               </td>
-              <td class="staff-actions-cell text-center" @click.stop>
+              <td class="staff-actions-cell return-bins-actions-cell" @click.stop>
                 <div
                   data-return-bin-row-actions
                   class="staff-actions-inner staff-actions-inner--single justify-content-center"
@@ -335,9 +345,15 @@ onUnmounted(() => {
                 </div>
               </td>
             </tr>
+            <tr v-if="!loading && !rows.length">
+              <td colspan="4" class="px-4 py-5 text-center text-secondary">No items in this bin.</td>
+            </tr>
           </tbody>
         </table>
       </div>
+      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
+        Scroll sideways or swipe to see all columns.
+      </p>
     </div>
 
     <Teleport to="body">
@@ -391,11 +407,23 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.return-bin-pick-col {
-  max-width: 14rem;
+.return-bin-product-col {
+  min-width: 16rem;
+  max-width: 28rem;
+  text-align: left !important;
+  vertical-align: middle;
 }
 
-.admin-return-bin-detail-page .asn-line-thumb {
+.return-bin-product-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+  text-align: left;
+}
+
+.return-bin-product-thumb {
   width: 48px;
   height: 48px;
   border-radius: 0.4rem;
@@ -405,26 +433,40 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.admin-return-bin-detail-page .asn-line-thumb--empty {
+.return-bin-product-thumb--empty {
   display: block;
   background: rgba(0, 0, 0, 0.05);
 }
 
-.admin-return-bin-detail-page .order-detail-page__item-cell {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
+.return-bin-product-copy {
   min-width: 0;
+  flex: 1 1 auto;
+  text-align: left;
 }
 
-.admin-return-bin-detail-page .order-detail-page__item-copy {
-  min-width: 0;
-}
-
-.admin-return-bin-detail-page .order-detail-page__item-sku,
-.admin-return-bin-detail-page .order-detail-page__item-name {
+.return-bin-product-sku {
+  font-weight: 600;
+  color: var(--bs-body-color);
+  line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: left;
+}
+
+.return-bin-product-name {
+  margin-top: 0.15rem;
+  font-size: 0.875rem;
+  line-height: 1.35;
+  color: var(--bs-secondary-color, #6c757d);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.return-bin-pick-col {
+  max-width: 14rem;
+  text-align: left !important;
 }
 </style>

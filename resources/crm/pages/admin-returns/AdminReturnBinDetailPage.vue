@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarButton.vue";
 import ReturnBinAddQtyModal from "../../components/admin-returns/ReturnBinAddQtyModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
@@ -247,9 +248,13 @@ onUnmounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide admin-return-bins-page admin-return-bin-detail-page">
-    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
-      <div>
-        <h1 class="h4 mb-1 fw-semibold text-body">{{ binName || "Return Bin" }}</h1>
+    <div
+      class="d-flex flex-column flex-md-row align-items-center justify-content-between gap-3 mb-4"
+    >
+      <div class="min-w-0 flex-grow-1 text-center text-md-start w-100">
+        <h1 class="h4 mb-1 fw-semibold text-body staff-page__heading">
+          {{ binName || "Return Bin" }}
+        </h1>
         <button
           type="button"
           class="btn btn-link btn-sm text-secondary px-0 py-0 mt-1 text-decoration-none"
@@ -258,14 +263,16 @@ onUnmounted(() => {
           &lt; Return Bins
         </button>
       </div>
-      <button
-        type="button"
-        class="btn btn-outline-secondary staff-toolbar-btn"
-        :disabled="loading"
-        @click="load"
+      <div
+        class="d-flex flex-wrap align-items-center justify-content-center justify-content-md-end gap-2 flex-shrink-0"
       >
-        Refresh
-      </button>
+        <CrmRefreshToolbarButton
+          :disabled="loading"
+          :loading="loading"
+          title="Refresh bin items"
+          @click="load"
+        />
+      </div>
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white">

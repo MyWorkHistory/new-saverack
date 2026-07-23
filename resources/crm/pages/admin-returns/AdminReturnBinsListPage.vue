@@ -5,6 +5,7 @@ import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarButton.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 
@@ -214,40 +215,40 @@ onUnmounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide admin-return-bins-page">
-    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
-      <div>
-        <h1 class="h4 mb-1 fw-semibold text-body">Return Bins</h1>
-        <p class="small text-secondary mb-0">
+    <div
+      class="d-flex flex-column flex-md-row align-items-center justify-content-between gap-3 mb-4"
+    >
+      <div class="min-w-0 flex-grow-1 text-center text-md-start w-100">
+        <h1 class="h4 mb-1 fw-semibold text-body staff-page__heading">Return Bins</h1>
+        <p class="staff-page__intro mb-0">
           Items staged in return bins before restock to pick locations.
         </p>
       </div>
-      <button
-        v-if="canManage"
-        type="button"
-        class="btn btn-primary staff-page-primary fw-semibold"
-        :disabled="loading || actionBusy"
-        @click="openAddModal"
+      <div
+        class="d-flex flex-wrap align-items-center justify-content-center justify-content-md-end gap-2 flex-shrink-0"
       >
-        Add Bin
-      </button>
+        <button
+          v-if="canManage"
+          type="button"
+          class="btn btn-primary staff-page-primary d-inline-flex align-items-center gap-2 text-nowrap"
+          :disabled="loading || actionBusy"
+          @click="openAddModal"
+        >
+          <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+          </svg>
+          Add Bin
+        </button>
+        <CrmRefreshToolbarButton
+          :disabled="loading || actionBusy"
+          :loading="loading"
+          title="Refresh list"
+          @click="load"
+        />
+      </div>
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
-      <div class="staff-table-toolbar">
-        <div class="staff-table-toolbar--row">
-          <div class="staff-toolbar-row-actions d-flex align-items-center gap-2 ms-md-auto flex-wrap">
-            <button
-              type="button"
-              class="btn btn-outline-secondary staff-toolbar-btn"
-              :disabled="loading"
-              @click="load"
-            >
-              Refresh
-            </button>
-          </div>
-        </div>
-      </div>
-
       <div class="table-responsive staff-table-wrap">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">

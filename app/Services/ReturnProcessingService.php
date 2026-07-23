@@ -36,7 +36,7 @@ class ReturnProcessingService
         array $lineIds,
         array $restockByLineId,
         ?User $actor,
-        int $binNumber
+        int $binId
     ): ClientAccountReturn {
         if ($return->status !== ClientAccountReturn::STATUS_PENDING) {
             throw ValidationException::withMessages([
@@ -53,12 +53,12 @@ class ReturnProcessingService
             $this->assertStaffManagedLinesReady($lines, $lineIds);
         }
 
-        return DB::transaction(function () use ($return, $lines, $lineIds, $restockByLineId, $actor, $binNumber) {
+        return DB::transaction(function () use ($return, $lines, $lineIds, $restockByLineId, $actor, $binId) {
             $this->applyLineSelection($lines, $lineIds, $restockByLineId, true, $return);
             $this->finalizeProcessedReturn($return, $actor);
-            $this->bins->assignReturnToBin($return->fresh(['lines']), $binNumber);
+            $this->bins->assignReturnToBin($return->fresh(['lines']), $binId);
 
-            return $return->fresh(['lines', 'clientAccount', 'returnBill']);
+            return $return->fresh(['lines', 'clientAccount', 'returnBill', 'returnBin']);
         });
     }
 
@@ -73,7 +73,7 @@ class ReturnProcessingService
         ?float $firstItemFee,
         ?float $additionalItemFee,
         ?User $actor,
-        int $binNumber
+        int $binId
     ): ClientAccountReturn {
         if ($return->status !== ClientAccountReturn::STATUS_DRAFT) {
             throw ValidationException::withMessages([
@@ -86,7 +86,7 @@ class ReturnProcessingService
             ]);
         }
 
-        return DB::transaction(function () use ($return, $normalizedLines, $returnType, $warehouseNote, $firstItemFee, $additionalItemFee, $actor, $binNumber) {
+        return DB::transaction(function () use ($return, $normalizedLines, $returnType, $warehouseNote, $firstItemFee, $additionalItemFee, $actor, $binId) {
             if ($returnType !== null && $returnType !== '') {
                 $return->return_type = $returnType;
             }
@@ -103,9 +103,9 @@ class ReturnProcessingService
 
             $this->persistAdminLines($return, $normalizedLines);
             $this->finalizeProcessedReturn($return, $actor);
-            $this->bins->assignReturnToBin($return->fresh(['lines']), $binNumber);
+            $this->bins->assignReturnToBin($return->fresh(['lines']), $binId);
 
-            return $return->fresh(['lines', 'clientAccount', 'returnBill']);
+            return $return->fresh(['lines', 'clientAccount', 'returnBill', 'returnBin']);
         });
     }
 

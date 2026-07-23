@@ -1650,7 +1650,7 @@ class InvoiceService
                 $receiving[$key]['qty'] += $qty;
                 $receiving[$key]['total'] += $total;
             } elseif ($category === InvoiceLineCategory::AD_HOC || $category === 'ad hoc') {
-                $rawName = $this->oldBetaDisplayName($item, 'Ad Hoc');
+                $rawName = $this->oldBetaDisplayName($item, 'Custom Bill');
                 $key = strtolower($rawName);
                 if (! isset($adHoc[$key])) {
                     $adHoc[$key] = ['name' => $rawName, 'items' => [], 'qty' => 0.0, 'total' => 0];
@@ -1661,7 +1661,7 @@ class InvoiceService
                 if ($unitRate === 0 && $qty != 0.0 && $total !== 0) {
                     $unitRate = (int) round($total / $qty);
                 }
-                $adHoc[$key]['items'][] = $this->detailLeafRow($item, 'Ad Hoc', $rawName, $unitRate, $total);
+                $adHoc[$key]['items'][] = $this->detailLeafRow($item, 'Custom Bill', $rawName, $unitRate, $total);
                 $adHoc[$key]['qty'] += $qty;
                 $adHoc[$key]['total'] += $total;
             } elseif ($category === InvoiceLineCategory::RETURNS) {
@@ -1846,7 +1846,7 @@ class InvoiceService
             $rows[] = [
                 'id' => 'adhoc-'.$key,
                 'name' => $agg['name'],
-                'type' => 'Ad Hoc',
+                'type' => 'Custom Bill',
                 'qty' => $qty,
                 'price_cents' => $qty != 0.0 ? (int) round($total / $qty) : 0,
                 'total_cents' => $total,
@@ -2358,7 +2358,7 @@ class InvoiceService
             case InvoiceLineCategory::ON_DEMAND:
                 return 'Product (On-Demand)';
             case InvoiceLineCategory::AD_HOC:
-                return 'Ad Hoc';
+                return 'Custom Bill';
             case InvoiceLineCategory::STORAGE:
                 return 'Storage';
             case InvoiceLineCategory::RECEIVING:

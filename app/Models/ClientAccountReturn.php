@@ -43,8 +43,10 @@ class ClientAccountReturn extends Model
 
     public const UNKNOWN_SKU = 'Unknown SKU';
 
+    /** @deprecated Prefer return_bin_id / ReturnBin records. */
     public const RETURN_BIN_MIN = 1;
 
+    /** @deprecated Prefer return_bin_id / ReturnBin records. */
     public const RETURN_BIN_MAX = 20;
 
     public const RETURN_TYPES = [
@@ -77,6 +79,7 @@ class ClientAccountReturn extends Model
         'processed_at',
         'processed_by_user_id',
         'return_bin_number',
+        'return_bin_id',
     ];
 
     protected $casts = [
@@ -90,11 +93,17 @@ class ClientAccountReturn extends Model
         'fees_locked_at' => 'datetime',
         'processed_at' => 'datetime',
         'return_bin_number' => 'integer',
+        'return_bin_id' => 'integer',
     ];
 
     public function clientAccount(): BelongsTo
     {
         return $this->belongsTo(ClientAccount::class, 'client_account_id');
+    }
+
+    public function returnBin(): BelongsTo
+    {
+        return $this->belongsTo(ReturnBin::class, 'return_bin_id');
     }
 
     public function lines(): HasMany

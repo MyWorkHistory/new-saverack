@@ -310,8 +310,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/non-compliant', [AdminReturnController::class, 'storeNonCompliant'])->middleware('can:returns.create');
         Route::post('/third-party', [AdminReturnController::class, 'storeThirdParty'])->middleware('can:returns.create');
         Route::get('/bins', [AdminReturnController::class, 'listReturnBins'])->middleware('can:returns.view');
-        Route::get('/bins/{binNumber}/items', [AdminReturnController::class, 'listReturnBinItems'])->middleware('can:returns.view');
-        Route::post('/bins/{binNumber}/transfer', [AdminReturnController::class, 'transferReturnBinItem'])->middleware('can:returns.update');
+        Route::post('/bins', [AdminReturnController::class, 'storeReturnBin'])->middleware('can:returns.update');
+        Route::patch('/bins/{returnBin}', [AdminReturnController::class, 'updateReturnBin'])->middleware('can:returns.update');
+        Route::post('/bins/{returnBin}/clear', [AdminReturnController::class, 'clearReturnBin'])->middleware('can:returns.update');
+        Route::delete('/bins/{returnBin}', [AdminReturnController::class, 'destroyReturnBin'])->middleware('can:returns.update');
+        Route::get('/bins/{returnBin}/items', [AdminReturnController::class, 'listReturnBinItems'])->middleware('can:returns.view');
+        Route::post('/bins/{returnBin}/transfer', [AdminReturnController::class, 'transferReturnBinItem'])->middleware('can:returns.update');
         Route::post('/{clientAccountReturn}/lines', [AdminReturnController::class, 'storeLine'])->middleware('can:returns.create');
         Route::patch('/{clientAccountReturn}/lines/{line}', [AdminReturnController::class, 'updateLine'])->middleware('can:returns.update');
         Route::delete('/{clientAccountReturn}/lines/{line}', [AdminReturnController::class, 'destroyLine'])->middleware('can:returns.delete');

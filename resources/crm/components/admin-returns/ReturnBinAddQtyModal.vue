@@ -6,10 +6,11 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   busy: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
+  binName: { type: String, default: "" },
   sku: { type: String, default: "" },
   name: { type: String, default: "" },
   availableQty: { type: Number, default: 0 },
-  transferType: { type: String, default: "current" },
+  destinationMode: { type: String, default: "current" },
   toLocationId: { type: String, default: "" },
   toLocation: { type: String, default: "" },
   quantity: { type: String, default: "" },
@@ -19,7 +20,7 @@ const props = defineProps({
 const emit = defineEmits([
   "close",
   "submit",
-  "update:transferType",
+  "update:destinationMode",
   "update:toLocationId",
   "update:toLocation",
   "update:quantity",
@@ -27,14 +28,28 @@ const emit = defineEmits([
 ]);
 
 const showForm = computed(() => !props.loading && props.availableQty > 0);
+
+function locationOptionLabel(loc) {
+  const name = loc?.location_name || loc?.location_id || "—";
+  const qty = Number(loc?.quantity ?? 0);
+  return `${name} (QTY: ${qty.toLocaleString()})`;
+}
+
+function setDestinationMode(mode) {
+  if (props.destinationMode === mode) {
+    emit("update:destinationMode", "current");
+    return;
+  }
+  emit("update:destinationMode", mode);
+}
 </script>
 
 <template>
   <Teleport to="body">
     <div v-if="open" class="crm-vx-modal-overlay" @click.self="emit('close')">
-      <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
-        <header class="crm-vx-modal__head">
-          <h2 class="crm-vx-modal__title">Transfer QTY</h2>
+      <div class="crm-vx-modal crm-vx-modal--sm restock-xfer-modal" @click.stop>
+        <header class="crm-vx-modal__head restock-xfer-modal__head">
+          <h2 class="crm-vx-modal__title restock-xfer-modal__title">Transfer QTY</h2>
         </header>
         <div class="crm-vx-modal__body">
           <div v-if="loading" class="py-4">
@@ -42,47 +57,61 @@ const showForm = computed(() => !props.loading && props.availableQty > 0);
           </div>
           <template v-else-if="showForm">
             <p class="small text-secondary mb-1">SKU: {{ sku || "—" }}</p>
-            <p class="small text-secondary mb-1">{{ name || "—" }}</p>
-            <p class="small text-secondary mb-3">QTY in bin: {{ availableQty.toLocaleString() }}</p>
-            <label class="form-label small" for="return-bin-transfer-type">Transfer Type</label>
-            <select
-              id="return-bin-transfer-type"
-              :value="transferType"
-              class="form-select mb-3"
-              :disabled="busy"
-              @change="emit('update:transferType', $event.target.value)"
-            >
-              <option value="current">Current Locations</option>
-              <option value="new">Transfer New</option>
-            </select>
-            <label class="form-label small" for="return-bin-transfer-to">Transfer To</label>
-            <select
-              v-if="transferType === 'current'"
-              id="return-bin-transfer-to"
-              :value="toLocationId"
-              class="form-select mb-3"
-              :disabled="busy"
-              @change="emit('update:toLocationId', $event.target.value)"
-            >
-              <option value="">Select location</option>
-              <option
-                v-for="dest in destinationOptions"
-                :key="`${dest.warehouse_id}-${dest.location_id}`"
-                :value="dest.location_id"
-              >
-                {{ dest.location_name || dest.location_id }}
-              </option>
-            </select>
+            <p class="small text-secondary mb-3">{{ name || "—" }}</p>
+
+            <label class="form-label small" for="return-bin-xfer-from">Transfer From</label>
             <input
-              v-else
-              id="return-bin-transfer-to"
-              :value="toLocation"
+              id="return-bin-xfer-from"
               type="text"
               class="form-control mb-3"
-              placeholder="Type location name"
-              :disabled="busy"
-              @input="emit('update:toLocation', $event.target.value)"
+              :value="binName || '—'"
+              disabled
+              readonly
             />
+
+            <label class="form-label small" for="return-bin-xfer-to">Transfer To</label>
+            <select
+              id="return-bin-xfer-to"
+              :value="destinationMode === 'current' ? toLocationId : ''"
+              class="form-select mb-3"
+              :disabled="busy || destinationMode !== 'current'"
+              @change="emit('update:toLocationId', $event.target.value)"
+            >
+              <option value="">Select pick location</option>
+              <option
+                v-for="dest in destinationOptions"
+                :key="`pick-${dest.warehouse_id}-${dest.location_id}`"
+                :value="dest.location_id"
+              >
+                {{ locationOptionLabel(dest) }}
+              </option>
+            </select>
+
+            <div class="restock-xfer-modal__mode-row mb-3">
+              <button
+                type="button"
+                class="restock-xfer-modal__mode-btn"
+                :class="{ 'is-active': destinationMode === 'new' }"
+                :disabled="busy"
+                @click="setDestinationMode('new')"
+              >
+                New Location
+              </button>
+            </div>
+
+            <template v-if="destinationMode === 'new'">
+              <label class="form-label small" for="return-bin-xfer-new">New Location</label>
+              <input
+                id="return-bin-xfer-new"
+                :value="toLocation"
+                type="text"
+                class="form-control mb-3"
+                placeholder="Enter location name"
+                :disabled="busy"
+                @input="emit('update:toLocation', $event.target.value)"
+              />
+            </template>
+
             <div class="row g-2 align-items-end mb-3">
               <div class="col-6">
                 <label class="form-label small" for="return-bin-transfer-qty">QTY</label>
@@ -99,14 +128,15 @@ const showForm = computed(() => !props.loading && props.availableQty > 0);
               <div class="col-6">
                 <button
                   type="button"
-                  class="btn inventory-transfer-modal__transfer-all-btn w-100"
-                  :disabled="busy"
+                  class="btn restock-xfer-modal__transfer-all-btn w-100"
+                  :disabled="busy || availableQty <= 0"
                   @click="emit('transfer-all')"
                 >
                   Transfer All
                 </button>
               </div>
             </div>
+
             <label class="form-label small">Reason</label>
             <input type="text" class="form-control" value="Return" disabled readonly />
           </template>
@@ -136,15 +166,48 @@ const showForm = computed(() => !props.loading && props.availableQty > 0);
 </template>
 
 <style scoped>
-.inventory-transfer-modal__transfer-all-btn {
+.restock-xfer-modal__head {
+  padding-bottom: 0.25rem;
+}
+
+.restock-xfer-modal__title {
+  font-size: 1.125rem;
+}
+
+.restock-xfer-modal__mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.restock-xfer-modal__mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  color: #334155;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.75rem;
+}
+
+.restock-xfer-modal__mode-btn.is-active {
+  border-color: rgba(37, 99, 235, 0.45);
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+}
+
+.restock-xfer-modal__transfer-all-btn {
   border: 1px solid rgba(15, 23, 42, 0.12);
   background: #fff;
   color: #334155;
   font-weight: 600;
 }
 
-.inventory-transfer-modal__transfer-all-btn:hover:not(:disabled),
-.inventory-transfer-modal__transfer-all-btn:focus-visible {
+.restock-xfer-modal__transfer-all-btn:hover:not(:disabled),
+.restock-xfer-modal__transfer-all-btn:focus-visible {
   background: #f8fafc;
   border-color: rgba(15, 23, 42, 0.2);
   color: #0f172a;

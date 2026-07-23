@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountReturnLine;
+use App\Models\ReturnBin;
 use App\Models\User;
 use App\Support\InventoryAdjustmentActor;
 use App\Support\PutAwayRowBuilder;
@@ -23,39 +24,128 @@ class ReturnBinService
     }
 
     /**
-     * @return list<array{bin_number: int, items_count: int}>
+     * @return list<array{id: int, name: string, items_count: int}>
      */
     public function listBins(): array
     {
         $counts = ClientAccountReturnLine::query()
-            ->whereNotNull('return_bin_number')
+            ->whereNotNull('return_bin_id')
             ->where('return_bin_remaining_qty', '>', 0)
-            ->groupBy('return_bin_number')
-            ->selectRaw('return_bin_number, SUM(return_bin_remaining_qty) as items_count')
-            ->pluck('items_count', 'return_bin_number');
+            ->groupBy('return_bin_id')
+            ->selectRaw('return_bin_id, SUM(return_bin_remaining_qty) as items_count')
+            ->pluck('items_count', 'return_bin_id');
 
-        $bins = [];
-        for ($n = ClientAccountReturn::RETURN_BIN_MIN; $n <= ClientAccountReturn::RETURN_BIN_MAX; $n++) {
-            $bins[] = [
-                'bin_number' => $n,
-                'items_count' => (int) ($counts[$n] ?? 0),
-            ];
+        return ReturnBin::query()
+            ->orderBy('name')
+            ->get()
+            ->map(fn (ReturnBin $bin) => $bin->toListArray((int) ($counts[$bin->id] ?? 0)))
+            ->values()
+            ->all();
+    }
+
+    public function createBin(string $name): ReturnBin
+    {
+        $name = $this->normalizeBinName($name);
+
+        if (ReturnBin::query()->where('name', $name)->exists()) {
+            throw ValidationException::withMessages([
+                'name' => ['A return bin with this name already exists.'],
+            ]);
         }
 
-        return $bins;
+        return ReturnBin::query()->create(['name' => $name]);
+    }
+
+    public function renameBin(ReturnBin $bin, string $name): ReturnBin
+    {
+        $name = $this->normalizeBinName($name);
+
+        $duplicate = ReturnBin::query()
+            ->where('name', $name)
+            ->where('id', '!=', $bin->id)
+            ->exists();
+
+        if ($duplicate) {
+            throw ValidationException::withMessages([
+                'name' => ['A return bin with this name already exists.'],
+            ]);
+        }
+
+        $bin->name = $name;
+        $bin->save();
+
+        return $bin->fresh();
+    }
+
+    public function clearBin(ReturnBin $bin): ReturnBin
+    {
+        return DB::transaction(function () use ($bin) {
+            ClientAccountReturnLine::query()
+                ->where('return_bin_id', $bin->id)
+                ->update([
+                    'return_bin_remaining_qty' => 0,
+                    'return_bin_id' => null,
+                    'return_bin_number' => null,
+                ]);
+
+            ClientAccountReturn::query()
+                ->where('return_bin_id', $bin->id)
+                ->update([
+                    'return_bin_id' => null,
+                    'return_bin_number' => null,
+                ]);
+
+            return $bin->fresh();
+        });
+    }
+
+    public function deleteBin(ReturnBin $bin): void
+    {
+        $itemsCount = $this->itemsCountForBin((int) $bin->id);
+        if ($itemsCount > 0) {
+            throw ValidationException::withMessages([
+                'bin' => ['Clear all items from this bin before deleting it.'],
+            ]);
+        }
+
+        DB::transaction(function () use ($bin) {
+            ClientAccountReturnLine::query()
+                ->where('return_bin_id', $bin->id)
+                ->update([
+                    'return_bin_id' => null,
+                    'return_bin_number' => null,
+                ]);
+
+            ClientAccountReturn::query()
+                ->where('return_bin_id', $bin->id)
+                ->update([
+                    'return_bin_id' => null,
+                    'return_bin_number' => null,
+                ]);
+
+            $bin->delete();
+        });
+    }
+
+    public function itemsCountForBin(int $binId): int
+    {
+        return (int) ClientAccountReturnLine::query()
+            ->where('return_bin_id', $binId)
+            ->where('return_bin_remaining_qty', '>', 0)
+            ->sum('return_bin_remaining_qty');
     }
 
     /**
+     * Fast DB-only aggregation — no ShipHero calls.
+     *
      * @return list<array<string, mixed>>
      */
-    public function listBinItems(int $binNumber): array
+    public function listBinItems(ReturnBin $bin): array
     {
-        $this->assertValidBinNumber($binNumber);
-
         $rows = ClientAccountReturnLine::query()
             ->join('client_account_returns', 'client_account_returns.id', '=', 'client_account_return_lines.client_account_return_id')
             ->join('client_accounts', 'client_accounts.id', '=', 'client_account_returns.client_account_id')
-            ->where('client_account_return_lines.return_bin_number', $binNumber)
+            ->where('client_account_return_lines.return_bin_id', $bin->id)
             ->where('client_account_return_lines.return_bin_remaining_qty', '>', 0)
             ->groupBy(
                 'client_account_return_lines.sku',
@@ -65,45 +155,52 @@ class ReturnBinService
             )
             ->selectRaw('client_account_return_lines.sku as sku')
             ->selectRaw('client_account_return_lines.name as name')
+            ->selectRaw('MAX(client_account_return_lines.image_url) as image_url')
+            ->selectRaw('MAX(client_account_return_lines.pick_location) as pick_location')
             ->selectRaw('client_account_returns.client_account_id as client_account_id')
             ->selectRaw('client_accounts.company_name as client_account_company_name')
             ->selectRaw('SUM(client_account_return_lines.return_bin_remaining_qty) as qty')
             ->orderBy('client_account_return_lines.sku')
             ->get();
 
-        $pickCache = [];
-
-        return $rows->map(function ($row) use (&$pickCache) {
-            $sku = (string) $row->sku;
-            $accountId = (int) $row->client_account_id;
-            $cacheKey = $sku.'|'.$accountId;
-            if (! array_key_exists($cacheKey, $pickCache)) {
-                $pickCache[$cacheKey] = $this->resolvePickLocationLabel($sku, $accountId);
-            }
+        return $rows->map(function ($row) {
+            $pick = trim((string) ($row->pick_location ?? ''));
 
             return [
-                'sku' => $sku,
+                'sku' => (string) $row->sku,
                 'name' => (string) $row->name,
+                'image_url' => $row->image_url !== null && trim((string) $row->image_url) !== ''
+                    ? trim((string) $row->image_url)
+                    : null,
                 'qty' => (int) $row->qty,
-                'client_account_id' => $accountId,
+                'client_account_id' => (int) $row->client_account_id,
                 'client_account_company_name' => trim((string) $row->client_account_company_name),
-                'pick_location' => $pickCache[$cacheKey] ?? '—',
+                'pick_location' => $pick !== '' ? $pick : '—',
             ];
         })->values()->all();
     }
 
-    public function assignReturnToBin(ClientAccountReturn $return, int $binNumber): ClientAccountReturn
+    public function assignReturnToBin(ClientAccountReturn $return, int $binId): ClientAccountReturn
     {
         $this->assertReceivedReturn($return);
-        $this->assertValidBinNumber($binNumber);
+        $bin = ReturnBin::query()->find($binId);
+        if (! $bin instanceof ReturnBin) {
+            throw ValidationException::withMessages([
+                'return_bin_id' => ['Select a valid return bin.'],
+            ]);
+        }
 
-        return DB::transaction(function () use ($return, $binNumber) {
-            $return->return_bin_number = $binNumber;
+        return DB::transaction(function () use ($return, $bin) {
+            $return->return_bin_id = $bin->id;
+            $return->return_bin_number = null;
             $return->save();
 
             $lines = ClientAccountReturnLine::query()
                 ->where('client_account_return_id', $return->id)
                 ->get();
+
+            $accountId = (int) $return->client_account_id;
+            $pickCache = [];
 
             foreach ($lines as $line) {
                 if ((int) $line->return_qty <= 0) {
@@ -113,12 +210,24 @@ class ReturnBinService
                     $line->return_bin_remaining_qty = (int) $line->return_qty;
                 }
                 if ((int) $line->return_bin_remaining_qty > 0) {
-                    $line->return_bin_number = $binNumber;
+                    $line->return_bin_id = $bin->id;
+                    $line->return_bin_number = null;
+                    $sku = trim((string) $line->sku);
+                    if ($sku !== '' && (trim((string) ($line->pick_location ?? '')) === '' || $line->pick_location === '—')) {
+                        $cacheKey = $sku.'|'.$accountId;
+                        if (! array_key_exists($cacheKey, $pickCache)) {
+                            $pickCache[$cacheKey] = $this->resolvePickLocationLabel($sku, $accountId);
+                        }
+                        $label = $pickCache[$cacheKey] ?? '—';
+                        if ($label !== '' && $label !== '—') {
+                            $line->pick_location = $label;
+                        }
+                    }
                     $line->save();
                 }
             }
 
-            return $return->fresh(['lines', 'clientAccount']);
+            return $return->fresh(['lines', 'clientAccount', 'returnBin']);
         });
     }
 
@@ -126,10 +235,8 @@ class ReturnBinService
      * @param  array<string, mixed>  $payload
      * @return array{transferred_qty: int, remaining_qty: int}
      */
-    public function transferFromBin(int $binNumber, array $payload, ?User $actor): array
+    public function transferFromBin(ReturnBin $bin, array $payload, ?User $actor): array
     {
-        $this->assertValidBinNumber($binNumber);
-
         $sku = trim((string) ($payload['sku'] ?? ''));
         $clientAccountId = (int) ($payload['client_account_id'] ?? 0);
         $quantity = (int) ($payload['quantity'] ?? 0);
@@ -160,7 +267,7 @@ class ReturnBinService
 
         $available = (int) ClientAccountReturnLine::query()
             ->join('client_account_returns', 'client_account_returns.id', '=', 'client_account_return_lines.client_account_return_id')
-            ->where('client_account_return_lines.return_bin_number', $binNumber)
+            ->where('client_account_return_lines.return_bin_id', $bin->id)
             ->where('client_account_return_lines.return_bin_remaining_qty', '>', 0)
             ->where('client_account_return_lines.sku', $sku)
             ->where('client_account_returns.client_account_id', $clientAccountId)
@@ -180,6 +287,7 @@ class ReturnBinService
             ]);
         }
 
+        $resolvedLocationName = $toLocationName;
         if ($toLocationId === '') {
             $toLocationId = $this->resolveLocationIdByName($sku, $warehouseId, $toLocationName, $customerId);
             if ($toLocationId === '') {
@@ -187,15 +295,18 @@ class ReturnBinService
                     'to_location' => ['Location not found in this warehouse.'],
                 ]);
             }
+        } elseif ($resolvedLocationName === '') {
+            $resolvedLocationName = $this->resolveLocationNameById($sku, $warehouseId, $toLocationId, $customerId);
         }
 
         return DB::transaction(function () use (
-            $binNumber,
+            $bin,
             $sku,
             $clientAccountId,
             $quantity,
             $warehouseId,
             $toLocationId,
+            $resolvedLocationName,
             $customerId,
             $actor
         ) {
@@ -203,7 +314,7 @@ class ReturnBinService
             $transferred = 0;
 
             $lines = ClientAccountReturnLine::query()
-                ->where('return_bin_number', $binNumber)
+                ->where('return_bin_id', $bin->id)
                 ->where('return_bin_remaining_qty', '>', 0)
                 ->where('sku', $sku)
                 ->whereHas('clientAccountReturn', function ($query) use ($clientAccountId) {
@@ -239,6 +350,13 @@ class ReturnBinService
                 );
 
                 $line->return_bin_remaining_qty = $lineRemaining - $chunk;
+                if ($resolvedLocationName !== '') {
+                    $line->pick_location = $resolvedLocationName;
+                }
+                if ((int) $line->return_bin_remaining_qty <= 0) {
+                    $line->return_bin_id = null;
+                    $line->return_bin_number = null;
+                }
                 $line->save();
                 $transferred += $chunk;
                 $remainingToTransfer -= $chunk;
@@ -250,7 +368,7 @@ class ReturnBinService
 
             $remainingAfter = (int) ClientAccountReturnLine::query()
                 ->join('client_account_returns', 'client_account_returns.id', '=', 'client_account_return_lines.client_account_return_id')
-                ->where('client_account_return_lines.return_bin_number', $binNumber)
+                ->where('client_account_return_lines.return_bin_id', $bin->id)
                 ->where('client_account_return_lines.return_bin_remaining_qty', '>', 0)
                 ->where('client_account_return_lines.sku', $sku)
                 ->where('client_account_returns.client_account_id', $clientAccountId)
@@ -270,6 +388,35 @@ class ReturnBinService
             : 'Return Restock RMA# '.trim((string) $return->rma_number);
 
         return InventoryAdjustmentActor::reasonWithActor($prefix, $actor);
+    }
+
+    public function findBinOrFail(int $binId): ReturnBin
+    {
+        $bin = ReturnBin::query()->find($binId);
+        if (! $bin instanceof ReturnBin) {
+            throw ValidationException::withMessages([
+                'bin' => ['Return bin not found.'],
+            ]);
+        }
+
+        return $bin;
+    }
+
+    private function normalizeBinName(string $name): string
+    {
+        $name = trim(preg_replace('/\s+/', ' ', $name) ?? '');
+        if ($name === '') {
+            throw ValidationException::withMessages([
+                'name' => ['Bin name is required.'],
+            ]);
+        }
+        if (mb_strlen($name) > 255) {
+            throw ValidationException::withMessages([
+                'name' => ['Bin name may not be greater than 255 characters.'],
+            ]);
+        }
+
+        return $name;
     }
 
     private function resolvePickLocationLabel(string $sku, int $clientAccountId): string
@@ -352,13 +499,33 @@ class ReturnBinService
         return '';
     }
 
-    private function assertValidBinNumber(int $binNumber): void
-    {
-        if ($binNumber < ClientAccountReturn::RETURN_BIN_MIN || $binNumber > ClientAccountReturn::RETURN_BIN_MAX) {
-            throw ValidationException::withMessages([
-                'bin_number' => ['Return bin must be between '.ClientAccountReturn::RETURN_BIN_MIN.' and '.ClientAccountReturn::RETURN_BIN_MAX.'.'],
-            ]);
+    private function resolveLocationNameById(
+        string $sku,
+        string $warehouseId,
+        string $locationId,
+        string $customerId
+    ): string {
+        try {
+            $product = $this->inventory->getProductDetailBySku($sku, $warehouseId, $customerId);
+        } catch (\Throwable $e) {
+            return '';
         }
+        if (! is_array($product)) {
+            return '';
+        }
+
+        foreach ($this->flattenProductLocations($product) as $loc) {
+            if (trim((string) ($loc['warehouse_id'] ?? '')) !== $warehouseId) {
+                continue;
+            }
+            if (trim((string) ($loc['location_id'] ?? '')) !== $locationId) {
+                continue;
+            }
+
+            return trim((string) ($loc['location_name'] ?? ''));
+        }
+
+        return '';
     }
 
     private function assertReceivedReturn(ClientAccountReturn $return): void

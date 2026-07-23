@@ -163,9 +163,12 @@ class ReturnController extends Controller
      */
     private function serializeReturn(ClientAccountReturn $return): array
     {
-        $return->loadMissing(['lines', 'clientAccount']);
+        $return->loadMissing(['lines', 'clientAccount', 'returnBin']);
         $companyName = $return->clientAccount !== null
             ? trim((string) $return->clientAccount->company_name)
+            : '';
+        $binName = $return->returnBin !== null
+            ? trim((string) $return->returnBin->name)
             : '';
 
         return array_merge([
@@ -190,6 +193,8 @@ class ReturnController extends Controller
             'created_at' => optional($return->created_at)->toIso8601String(),
             'processed_at' => optional($return->processed_at)->toIso8601String(),
             'updated_at' => optional($return->updated_at)->toIso8601String(),
+            'return_bin_id' => $return->return_bin_id,
+            'return_bin_name' => $binName !== '' ? $binName : null,
             'return_bin_number' => $return->return_bin_number,
             'lines' => $return->lines->map(fn (ClientAccountReturnLine $l) => $this->serializeLine($l, $return->created_source, $return))->values()->all(),
             'non_compliant_reasons' => ReturnReasonOptions::nonCompliant(),

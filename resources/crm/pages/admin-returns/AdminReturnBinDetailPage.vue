@@ -18,7 +18,8 @@ const LINE_MENU_H = 120;
 
 const loading = ref(true);
 const rows = ref([]);
-const binNumber = computed(() => Number(route.params.binNumber || 0));
+const binId = computed(() => Number(route.params.binId || 0));
+const binName = ref("");
 
 const lineMenuKey = ref(null);
 const lineMenuRect = ref({ top: 0, left: 0 });
@@ -29,7 +30,7 @@ const transferLoading = ref(false);
 const transferRow = ref(null);
 const transferProduct = ref(null);
 const transferForm = reactive({
-  transfer_type: "current",
+  destination_mode: "current",
   to_location_id: "",
   to_location: "",
   quantity: "",
@@ -60,10 +61,19 @@ function rowKey(row) {
 const transferDestinationOptions = computed(() => {
   const product = transferProduct.value;
   if (!product) return [];
-  return flattenProductLocations(product).filter((loc) => Number(loc.quantity || 0) > 0);
+  const all = flattenProductLocations(product).filter((loc) => Number(loc.quantity || 0) > 0);
+  const pickable = all.filter((loc) => loc.pickable === true);
+  return pickable.length ? pickable : all;
 });
 
 const transferWarehouseId = computed(() => {
+  const selectedId = String(transferForm.to_location_id || "").trim();
+  if (selectedId) {
+    const match = transferDestinationOptions.value.find(
+      (loc) => String(loc.location_id || "") === selectedId,
+    );
+    if (match?.warehouse_id) return String(match.warehouse_id);
+  }
   const opts = transferDestinationOptions.value;
   if (opts.length) return String(opts[0].warehouse_id || "");
   const warehouses = Array.isArray(transferProduct.value?.warehouses)
@@ -116,15 +126,20 @@ function onDocumentClick(event) {
 }
 
 async function load() {
-  if (binNumber.value < 1 || binNumber.value > 20) {
+  if (binId.value <= 0) {
     toast.error("Invalid return bin.");
     router.replace({ name: "admin-return-bins" });
     return;
   }
   loading.value = true;
   try {
-    const { data } = await api.get(`/admin/returns/bins/${binNumber.value}/items`);
+    const { data } = await api.get(`/admin/returns/bins/${binId.value}/items`);
+    binName.value = String(data?.bin?.name || "").trim() || `Bin ${binId.value}`;
     rows.value = Array.isArray(data?.data) ? data.data : [];
+    setCrmPageMeta({
+      title: `Save Rack | ${binName.value}`,
+      description: "Items in a return bin awaiting restock.",
+    });
   } catch (e) {
     toast.errorFrom(e, "Could not load bin items.");
     rows.value = [];
@@ -143,7 +158,7 @@ async function openTransferFromMenu(row) {
   }
   transferRow.value = row;
   transferProduct.value = null;
-  transferForm.transfer_type = "current";
+  transferForm.destination_mode = "current";
   transferForm.to_location_id = "";
   transferForm.to_location = "";
   transferForm.quantity = "";
@@ -178,7 +193,7 @@ async function submitTransfer() {
     toast.error("Enter a valid transfer quantity.");
     return;
   }
-  if (transferForm.transfer_type === "current") {
+  if (transferForm.destination_mode === "current") {
     if (!String(transferForm.to_location_id || "").trim()) {
       toast.error("Select a destination location.");
       return;
@@ -200,16 +215,15 @@ async function submitTransfer() {
       quantity: qty,
       warehouse_id: warehouseId,
     };
-    if (transferForm.transfer_type === "current") {
+    if (transferForm.destination_mode === "current") {
       body.to_location_id = transferForm.to_location_id;
     } else {
       body.to_location = transferForm.to_location.trim();
     }
-    const { data } = await api.post(`/admin/returns/bins/${binNumber.value}/transfer`, body);
+    const { data } = await api.post(`/admin/returns/bins/${binId.value}/transfer`, body);
     rows.value = Array.isArray(data?.data) ? data.data : rows.value;
     transferModalOpen.value = false;
     toast.success("Transferred to inventory.");
-    await load();
   } catch (e) {
     toast.errorFrom(e, "Could not transfer item.");
   } finally {
@@ -219,7 +233,7 @@ async function submitTransfer() {
 
 onMounted(() => {
   setCrmPageMeta({
-    title: `Save Rack | Return Bin ${binNumber.value}`,
+    title: "Save Rack | Return Bin",
     description: "Items in a return bin awaiting restock.",
   });
   document.addEventListener("click", onDocumentClick);
@@ -232,10 +246,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide admin-returns-page">
+  <div class="staff-page staff-page--wide admin-returns-page admin-return-bin-detail-page">
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
       <div>
-        <h1 class="h4 mb-1 fw-semibold text-body">Return Bin {{ binNumber }}</h1>
+        <h1 class="h4 mb-1 fw-semibold text-body">{{ binName || "Return Bin" }}</h1>
         <button
           type="button"
           class="btn btn-link btn-sm text-secondary px-0 py-0 mt-1 text-decoration-none"
@@ -251,27 +265,44 @@ onUnmounted(() => {
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
-              <th class="staff-table-head__th" scope="col">SKU</th>
-              <th class="staff-table-head__th" scope="col">Name</th>
+              <th class="staff-table-head__th" scope="col">Product</th>
               <th class="staff-table-head__th text-center" scope="col">Qty</th>
               <th class="staff-table-head__th" scope="col">Pick Location</th>
-              <th class="staff-table-head__th text-center" scope="col">Action</th>
+              <th class="staff-table-head__th text-center" scope="col">Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="5" class="py-5">
+              <td colspan="4" class="py-5">
                 <div class="d-flex justify-content-center py-3">
                   <CrmLoadingSpinner message="Loading bin items…" />
                 </div>
               </td>
             </tr>
             <tr v-else-if="!rows.length">
-              <td colspan="5" class="text-center text-secondary py-5">No items in this bin.</td>
+              <td colspan="4" class="text-center text-secondary py-5">No items in this bin.</td>
             </tr>
             <tr v-for="row in rows" v-else :key="`${row.sku}-${row.client_account_id}`">
-              <td class="fw-semibold">{{ row.sku || "—" }}</td>
-              <td>{{ row.name || "—" }}</td>
+              <td class="order-detail-page__items-col">
+                <div class="order-detail-page__item-cell">
+                  <img
+                    v-if="row.image_url"
+                    :src="row.image_url"
+                    alt=""
+                    class="asn-line-thumb"
+                    loading="lazy"
+                  />
+                  <div v-else class="asn-line-thumb asn-line-thumb--empty" aria-hidden="true" />
+                  <div class="order-detail-page__item-copy">
+                    <div class="order-detail-page__item-sku fw-semibold" :title="row.sku || undefined">
+                      {{ row.sku || "—" }}
+                    </div>
+                    <div class="order-detail-page__item-name text-secondary small" :title="row.name || undefined">
+                      {{ row.name || "—" }}
+                    </div>
+                  </div>
+                </div>
+              </td>
               <td class="text-center">{{ row.qty ?? 0 }}</td>
               <td class="return-bin-pick-col">
                 <template v-if="splitPickLocations(row.pick_location).length">
@@ -343,10 +374,11 @@ onUnmounted(() => {
       :open="transferModalOpen"
       :busy="transferBusy"
       :loading="transferLoading"
+      :bin-name="binName"
       :sku="transferRow?.sku || ''"
       :name="transferRow?.name || ''"
       :available-qty="Number(transferRow?.qty || 0)"
-      v-model:transfer-type="transferForm.transfer_type"
+      v-model:destination-mode="transferForm.destination_mode"
       v-model:to-location-id="transferForm.to_location_id"
       v-model:to-location="transferForm.to_location"
       v-model:quantity="transferForm.quantity"
@@ -361,5 +393,38 @@ onUnmounted(() => {
 <style scoped>
 .return-bin-pick-col {
   max-width: 14rem;
+}
+
+.admin-return-bin-detail-page .asn-line-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 0.4rem;
+  object-fit: cover;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.admin-return-bin-detail-page .asn-line-thumb--empty {
+  display: block;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.admin-return-bin-detail-page .order-detail-page__item-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.admin-return-bin-detail-page .order-detail-page__item-copy {
+  min-width: 0;
+}
+
+.admin-return-bin-detail-page .order-detail-page__item-sku,
+.admin-return-bin-detail-page .order-detail-page__item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

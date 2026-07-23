@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountReturnLine;
+use App\Models\ReturnBin;
 use App\Models\User;
 use App\Services\ReturnBinService;
 use App\Services\ReturnFeeService;
@@ -187,13 +188,12 @@ class AdminReturnController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function returnBinNumberRules(): array
+    private function returnBinIdRules(): array
     {
         return [
             'required',
             'integer',
-            'min:'.ClientAccountReturn::RETURN_BIN_MIN,
-            'max:'.ClientAccountReturn::RETURN_BIN_MAX,
+            'exists:return_bins,id',
         ];
     }
 
@@ -342,12 +342,15 @@ class AdminReturnController extends Controller
      */
     private function serializeReturnDetail(ClientAccountReturn $return): array
     {
-        $return->loadMissing(['lines', 'clientAccount', 'returnBill', 'processedBy']);
+        $return->loadMissing(['lines', 'clientAccount', 'returnBill', 'processedBy', 'returnBin']);
         $companyName = $return->clientAccount !== null
             ? trim((string) $return->clientAccount->company_name)
             : '';
         $processedByName = $return->processedBy !== null
             ? trim((string) $return->processedBy->name)
+            : '';
+        $binName = $return->returnBin !== null
+            ? trim((string) $return->returnBin->name)
             : '';
 
         $payload = [
@@ -373,6 +376,8 @@ class AdminReturnController extends Controller
             'created_at' => optional($return->created_at)->toIso8601String(),
             'processed_at' => optional($return->processed_at)->toIso8601String(),
             'processed_by_name' => $processedByName !== '' ? $processedByName : null,
+            'return_bin_id' => $return->return_bin_id,
+            'return_bin_name' => $binName !== '' ? $binName : null,
             'return_bin_number' => $return->return_bin_number,
             'lines' => $return->lines->map(fn (ClientAccountReturnLine $l) => $this->serializeLine($l, $return->created_source, $return))->values()->all(),
             'non_compliant_reasons' => ReturnReasonOptions::nonCompliant(),
@@ -613,7 +618,7 @@ class AdminReturnController extends Controller
             'warehouse_private_note' => ['nullable', 'string', 'max:20000'],
             'first_item_fee' => ['nullable', 'numeric', 'min:0'],
             'additional_item_fee' => ['nullable', 'numeric', 'min:0'],
-            'return_bin_number' => $this->returnBinNumberRules(),
+            'return_bin_id' => $this->returnBinIdRules(),
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.sku' => ['required', 'string', 'max:255'],
             'lines.*.name' => ['required', 'string', 'max:512'],
@@ -634,7 +639,7 @@ class AdminReturnController extends Controller
             isset($validated['first_item_fee']) ? (float) $validated['first_item_fee'] : null,
             isset($validated['additional_item_fee']) ? (float) $validated['additional_item_fee'] : null,
             $request->user() instanceof User ? $request->user() : null,
-            (int) $validated['return_bin_number'],
+            (int) $validated['return_bin_id'],
         );
 
         return response()->json($this->serializeReturnDetail($return));
@@ -659,7 +664,7 @@ class AdminReturnController extends Controller
             'first_item_fee' => ['nullable', 'numeric', 'min:0'],
             'additional_item_fee' => ['nullable', 'numeric', 'min:0'],
             'non_compliant_fee' => ['nullable', 'numeric', 'min:0'],
-            'return_bin_number' => $this->returnBinNumberRules(),
+            'return_bin_id' => $this->returnBinIdRules(),
         ]);
 
         $lineIds = array_map('intval', $validated['line_ids']);
@@ -687,7 +692,7 @@ class AdminReturnController extends Controller
             $lineIds,
             $restockMap,
             $request->user() instanceof User ? $request->user() : null,
-            (int) $validated['return_bin_number'],
+            (int) $validated['return_bin_id'],
         );
 
         return response()->json($this->serializeReturnDetail($return));
@@ -1152,14 +1157,71 @@ class AdminReturnController extends Controller
         ]);
     }
 
-    public function listReturnBinItems(Request $request, int $binNumber): JsonResponse
+    public function storeReturnBin(Request $request): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('viewAny', ClientAccountReturn::class);
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $bin = $this->returnBins->createBin((string) $validated['name']);
+
+        return response()->json([
+            'data' => $bin->toListArray(0),
+        ], 201);
+    }
+
+    public function updateReturnBin(Request $request, ReturnBin $returnBin): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('viewAny', ClientAccountReturn::class);
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $bin = $this->returnBins->renameBin($returnBin, (string) $validated['name']);
+
+        return response()->json([
+            'data' => $bin->toListArray($this->returnBins->itemsCountForBin((int) $bin->id)),
+        ]);
+    }
+
+    public function clearReturnBin(Request $request, ReturnBin $returnBin): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('viewAny', ClientAccountReturn::class);
+
+        $bin = $this->returnBins->clearBin($returnBin);
+
+        return response()->json([
+            'data' => $bin->toListArray(0),
+        ]);
+    }
+
+    public function destroyReturnBin(Request $request, ReturnBin $returnBin): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('viewAny', ClientAccountReturn::class);
+
+        $this->returnBins->deleteBin($returnBin);
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function listReturnBinItems(Request $request, ReturnBin $returnBin): JsonResponse
     {
         $this->assertStaff($request);
         Gate::authorize('viewAny', ClientAccountReturn::class);
 
         return response()->json([
-            'bin_number' => $binNumber,
-            'data' => $this->returnBins->listBinItems($binNumber),
+            'bin' => [
+                'id' => (int) $returnBin->id,
+                'name' => (string) $returnBin->name,
+            ],
+            'data' => $this->returnBins->listBinItems($returnBin),
         ]);
     }
 
@@ -1169,23 +1231,18 @@ class AdminReturnController extends Controller
         Gate::authorize('view', $clientAccountReturn);
 
         $validated = $request->validate([
-            'return_bin_number' => [
-                'required',
-                'integer',
-                'min:'.ClientAccountReturn::RETURN_BIN_MIN,
-                'max:'.ClientAccountReturn::RETURN_BIN_MAX,
-            ],
+            'return_bin_id' => $this->returnBinIdRules(),
         ]);
 
         $return = $this->returnBins->assignReturnToBin(
             $clientAccountReturn,
-            (int) $validated['return_bin_number']
+            (int) $validated['return_bin_id']
         );
 
         return response()->json($this->serializeReturnDetail($return));
     }
 
-    public function transferReturnBinItem(Request $request, int $binNumber): JsonResponse
+    public function transferReturnBinItem(Request $request, ReturnBin $returnBin): JsonResponse
     {
         $this->assertStaff($request);
         Gate::authorize('viewAny', ClientAccountReturn::class);
@@ -1201,7 +1258,7 @@ class AdminReturnController extends Controller
 
         try {
             $result = $this->returnBins->transferFromBin(
-                $binNumber,
+                $returnBin,
                 $validated,
                 $request->user() instanceof User ? $request->user() : null
             );
@@ -1220,7 +1277,11 @@ class AdminReturnController extends Controller
         }
 
         return response()->json(array_merge($result, [
-            'data' => $this->returnBins->listBinItems($binNumber),
+            'bin' => [
+                'id' => (int) $returnBin->id,
+                'name' => (string) $returnBin->name,
+            ],
+            'data' => $this->returnBins->listBinItems($returnBin),
         ]));
     }
 }

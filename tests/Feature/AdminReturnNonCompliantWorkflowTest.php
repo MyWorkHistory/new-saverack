@@ -8,6 +8,7 @@ use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountReturnLine;
 use App\Models\Permission;
 use App\Models\ReturnBill;
+use App\Models\ReturnBin;
 use App\Models\User;
 use App\Support\Billing\ReturnBillChargeCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -195,11 +196,12 @@ class AdminReturnNonCompliantWorkflowTest extends TestCase
         ])->assertOk();
 
         $lineId = (int) $lineResponse->json('lines.0.id');
+        $bin = ReturnBin::query()->create(['name' => 'NC Bin 4']);
 
         $this->postJson('/api/admin/returns/'.$returnId.'/process', [
             'line_ids' => [$lineId],
             'restock_by_line_id' => [$lineId => true],
-            'return_bin_number' => 4,
+            'return_bin_id' => $bin->id,
         ])
             ->assertOk()
             ->assertJsonPath('status', ClientAccountReturn::STATUS_RECEIVED)

@@ -626,7 +626,7 @@ const routes = [
     meta: meta.adminReturnBins,
   },
   {
-    path: "/admin/returns/bins/:binNumber",
+    path: "/admin/returns/bins/:binId",
     name: "admin-return-bin-detail",
     component: () => import("../pages/admin-returns/AdminReturnBinDetailPage.vue"),
     props: true,

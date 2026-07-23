@@ -6,6 +6,7 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountReturnLine;
 use App\Models\Permission;
+use App\Models\ReturnBin;
 use App\Models\User;
 use App\Services\ReturnBinService;
 use App\Services\ShipHeroInventoryService;
@@ -47,6 +48,11 @@ class AdminReturnBinWorkflowTest extends TestCase
         ]);
     }
 
+    private function makeBin(string $name = 'Bin A'): ReturnBin
+    {
+        return ReturnBin::query()->create(['name' => $name]);
+    }
+
     private function receivedReturn(ClientAccount $account, array $overrides = []): ClientAccountReturn
     {
         return ClientAccountReturn::query()->create(array_merge([
@@ -72,10 +78,52 @@ class AdminReturnBinWorkflowTest extends TestCase
             'client_account_return_id' => $return->id,
             'sku' => $sku,
             'name' => 'Product '.$sku,
+            'image_url' => 'https://example.com/'.$sku.'.jpg',
             'order_qty' => $qty,
             'return_qty' => $qty,
             'sort_order' => 0,
         ], $overrides));
+    }
+
+    public function test_create_rename_clear_and_delete_bin(): void
+    {
+        Sanctum::actingAs($this->staffUser());
+
+        $create = $this->postJson('/api/admin/returns/bins', ['name' => 'Returns Front'])
+            ->assertCreated()
+            ->assertJsonPath('data.name', 'Returns Front')
+            ->assertJsonPath('data.items_count', 0);
+
+        $binId = (int) $create->json('data.id');
+        $this->assertGreaterThan(0, $binId);
+
+        $this->patchJson('/api/admin/returns/bins/'.$binId, ['name' => 'Returns Back'])
+            ->assertOk()
+            ->assertJsonPath('data.name', 'Returns Back');
+
+        $account = $this->account('crud');
+        $return = $this->receivedReturn($account, ['rma_number' => 'CR0001']);
+        $this->line($return, 'SKU-CR', 2);
+        app(ReturnBinService::class)->assignReturnToBin($return, $binId);
+
+        $this->getJson('/api/admin/returns/bins')
+            ->assertOk()
+            ->assertJsonFragment(['id' => $binId, 'name' => 'Returns Back', 'items_count' => 2]);
+
+        $this->deleteJson('/api/admin/returns/bins/'.$binId)
+            ->assertUnprocessable();
+
+        $this->postJson('/api/admin/returns/bins/'.$binId.'/clear')
+            ->assertOk()
+            ->assertJsonPath('data.items_count', 0);
+
+        $this->assertSame(0, (int) ClientAccountReturnLine::query()->where('sku', 'SKU-CR')->value('return_bin_remaining_qty'));
+        $this->assertNull(ClientAccountReturnLine::query()->where('sku', 'SKU-CR')->value('return_bin_id'));
+
+        $this->deleteJson('/api/admin/returns/bins/'.$binId)
+            ->assertOk();
+
+        $this->assertNull(ReturnBin::query()->find($binId));
     }
 
     public function test_assign_return_bin_on_received_return(): void
@@ -84,19 +132,22 @@ class AdminReturnBinWorkflowTest extends TestCase
         $return = $this->receivedReturn($account);
         $lineA = $this->line($return, 'SKU-A', 2);
         $this->line($return, 'SKU-B', 1, ['sort_order' => 1]);
+        $bin = $this->makeBin('Staging 7');
         Sanctum::actingAs($this->staffUser());
 
         $this->patchJson('/api/admin/returns/'.$return->id.'/return-bin', [
-            'return_bin_number' => 7,
+            'return_bin_id' => $bin->id,
         ])
             ->assertOk()
-            ->assertJsonPath('return_bin_number', 7);
+            ->assertJsonPath('return_bin_id', $bin->id)
+            ->assertJsonPath('return_bin_name', 'Staging 7');
 
         $return->refresh();
-        $this->assertSame(7, $return->return_bin_number);
+        $this->assertSame($bin->id, $return->return_bin_id);
+        $this->assertNull($return->return_bin_number);
 
         $lineA->refresh();
-        $this->assertSame(7, $lineA->return_bin_number);
+        $this->assertSame($bin->id, $lineA->return_bin_id);
         $this->assertSame(2, $lineA->return_bin_remaining_qty);
     }
 
@@ -113,18 +164,20 @@ class AdminReturnBinWorkflowTest extends TestCase
             'items_count' => 1,
         ]);
         $line = $this->line($return, 'SKU-PR', 1);
+        $bin = $this->makeBin('Process Bin');
         Sanctum::actingAs($this->staffUser(['returns.view']));
 
         $this->postJson('/api/admin/returns/'.$return->id.'/process', [
             'line_ids' => [$line->id],
-            'return_bin_number' => 6,
+            'return_bin_id' => $bin->id,
         ])
             ->assertOk()
-            ->assertJsonPath('return_bin_number', 6);
+            ->assertJsonPath('return_bin_id', $bin->id)
+            ->assertJsonPath('return_bin_name', 'Process Bin');
 
         $return->refresh();
-        $this->assertSame(6, $return->return_bin_number);
-        $this->assertSame(6, $line->fresh()->return_bin_number);
+        $this->assertSame($bin->id, $return->return_bin_id);
+        $this->assertSame($bin->id, $line->fresh()->return_bin_id);
     }
 
     public function test_pending_return_cannot_assign_bin(): void
@@ -140,53 +193,64 @@ class AdminReturnBinWorkflowTest extends TestCase
             'items_count' => 1,
         ]);
         $this->line($return, 'SKU-P', 1);
+        $bin = $this->makeBin('Pending Block');
         Sanctum::actingAs($this->staffUser());
 
         $this->patchJson('/api/admin/returns/'.$return->id.'/return-bin', [
-            'return_bin_number' => 3,
+            'return_bin_id' => $bin->id,
         ])->assertUnprocessable();
     }
 
-    public function test_bins_list_returns_twenty_rows_with_counts(): void
+    public function test_bins_list_returns_created_bins_with_counts(): void
     {
         $account = $this->account('list');
         $return = $this->receivedReturn($account, ['rma_number' => 'LS0001']);
         $this->line($return, 'SKU-1', 2);
         $this->line($return, 'SKU-2', 3, ['sort_order' => 1]);
+        $bin = $this->makeBin('List Bin');
+        $empty = $this->makeBin('Empty Bin');
 
-        app(ReturnBinService::class)->assignReturnToBin($return, 4);
+        app(ReturnBinService::class)->assignReturnToBin($return, (int) $bin->id);
 
         Sanctum::actingAs($this->staffUser());
 
         $response = $this->getJson('/api/admin/returns/bins')
             ->assertOk()
-            ->assertJsonCount(20, 'data');
+            ->assertJsonCount(2, 'data');
 
-        $binFour = collect($response->json('data'))->firstWhere('bin_number', 4);
-        $this->assertSame(5, $binFour['items_count']);
-        $binOne = collect($response->json('data'))->firstWhere('bin_number', 1);
-        $this->assertSame(0, $binOne['items_count']);
+        $listed = collect($response->json('data'));
+        $this->assertSame(5, $listed->firstWhere('id', $bin->id)['items_count']);
+        $this->assertSame(0, $listed->firstWhere('id', $empty->id)['items_count']);
     }
 
-    public function test_bin_detail_aggregates_duplicate_skus(): void
+    public function test_bin_detail_aggregates_from_db_without_shiphero(): void
     {
         $account = $this->account('agg');
         $returnA = $this->receivedReturn($account, ['rma_number' => 'AG0001']);
-        $this->line($returnA, 'SKU-SAME', 2);
+        $this->line($returnA, 'SKU-SAME', 2, ['pick_location' => 'A-01']);
         $returnB = $this->receivedReturn($account, ['rma_number' => 'AG0002']);
-        $this->line($returnB, 'SKU-SAME', 3);
+        $this->line($returnB, 'SKU-SAME', 3, ['pick_location' => 'A-01']);
+        $bin = $this->makeBin('Agg Bin');
 
         $service = app(ReturnBinService::class);
-        $service->assignReturnToBin($returnA, 2);
-        $service->assignReturnToBin($returnB, 2);
+        $service->assignReturnToBin($returnA, (int) $bin->id);
+        $service->assignReturnToBin($returnB, (int) $bin->id);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldNotReceive('getProductDetailBySku');
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
 
         Sanctum::actingAs($this->staffUser());
 
-        $this->getJson('/api/admin/returns/bins/2/items')
+        $this->getJson('/api/admin/returns/bins/'.$bin->id.'/items')
             ->assertOk()
+            ->assertJsonPath('bin.id', $bin->id)
+            ->assertJsonPath('bin.name', 'Agg Bin')
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.sku', 'SKU-SAME')
-            ->assertJsonPath('data.0.qty', 5);
+            ->assertJsonPath('data.0.qty', 5)
+            ->assertJsonPath('data.0.image_url', 'https://example.com/SKU-SAME.jpg')
+            ->assertJsonPath('data.0.pick_location', 'A-01');
     }
 
     public function test_transfer_decrements_remaining_and_rejects_over_transfer(): void
@@ -194,7 +258,8 @@ class AdminReturnBinWorkflowTest extends TestCase
         $account = $this->account('xfer');
         $return = $this->receivedReturn($account, ['rma_number' => 'XF0001']);
         $this->line($return, 'SKU-X', 4);
-        app(ReturnBinService::class)->assignReturnToBin($return, 5);
+        $bin = $this->makeBin('Transfer Bin');
+        app(ReturnBinService::class)->assignReturnToBin($return, (int) $bin->id);
 
         $mock = Mockery::mock(ShipHeroInventoryService::class);
         $mock->shouldReceive('getProductDetailBySku')->andReturn([
@@ -227,7 +292,7 @@ class AdminReturnBinWorkflowTest extends TestCase
 
         Sanctum::actingAs($this->staffUser());
 
-        $this->postJson('/api/admin/returns/bins/5/transfer', [
+        $this->postJson('/api/admin/returns/bins/'.$bin->id.'/transfer', [
             'sku' => 'SKU-X',
             'client_account_id' => $account->id,
             'quantity' => 2,
@@ -238,7 +303,7 @@ class AdminReturnBinWorkflowTest extends TestCase
             ->assertJsonPath('transferred_qty', 2)
             ->assertJsonPath('remaining_qty', 2);
 
-        $this->postJson('/api/admin/returns/bins/5/transfer', [
+        $this->postJson('/api/admin/returns/bins/'.$bin->id.'/transfer', [
             'sku' => 'SKU-X',
             'client_account_id' => $account->id,
             'quantity' => 99,
@@ -256,9 +321,11 @@ class AdminReturnBinWorkflowTest extends TestCase
             'non_compliant_reason' => 'unable_to_identify_customer',
         ]);
         $this->line($return, 'SKU-NC', 1);
-        app(ReturnBinService::class)->assignReturnToBin($return, 1);
+        $bin = $this->makeBin('NC Bin');
+        app(ReturnBinService::class)->assignReturnToBin($return, (int) $bin->id);
 
         $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('getProductDetailBySku')->andReturn(null);
         $mock->shouldReceive('addLocationQuantity')
             ->once()
             ->with(
@@ -274,7 +341,7 @@ class AdminReturnBinWorkflowTest extends TestCase
 
         Sanctum::actingAs($this->staffUser());
 
-        $this->postJson('/api/admin/returns/bins/1/transfer', [
+        $this->postJson('/api/admin/returns/bins/'.$bin->id.'/transfer', [
             'sku' => 'SKU-NC',
             'client_account_id' => $account->id,
             'quantity' => 1,

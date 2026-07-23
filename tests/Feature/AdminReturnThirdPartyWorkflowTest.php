@@ -8,6 +8,7 @@ use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountReturnLine;
 use App\Models\Permission;
 use App\Models\ReturnBill;
+use App\Models\ReturnBin;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -195,18 +196,19 @@ class AdminReturnThirdPartyWorkflowTest extends TestCase
         ])->assertOk();
 
         $lineId = (int) $lineResponse->json('lines.0.id');
+        $bin = ReturnBin::query()->create(['name' => 'TP Bin 8']);
 
         $this->postJson('/api/admin/returns/'.$returnId.'/process', [
             'line_ids' => [$lineId],
             'restock_by_line_id' => [$lineId => true],
-            'return_bin_number' => 8,
+            'return_bin_id' => $bin->id,
         ])
             ->assertOk()
             ->assertJsonPath('status', ClientAccountReturn::STATUS_RECEIVED)
             ->assertJsonPath('is_third_party', true)
             ->assertJsonPath('third_party_type_label', 'Amazon')
             ->assertJsonPath('client_account_id', $account->id)
-            ->assertJsonPath('return_bin_number', 8)
+            ->assertJsonPath('return_bin_id', $bin->id)
             ->assertJsonPath('processed_by_name', $staff->name)
             ->assertJsonMissingPath('return_fees.non_compliant');
 
@@ -221,7 +223,7 @@ class AdminReturnThirdPartyWorkflowTest extends TestCase
 
         $processedLine = ClientAccountReturnLine::query()->findOrFail($lineId);
         $this->assertSame('unknown', $processedLine->return_reason);
-        $this->assertSame(8, $processedLine->return_bin_number);
+        $this->assertSame($bin->id, $processedLine->return_bin_id);
     }
 
     public function test_line_crud_rejected_for_compliant_pending_return(): void

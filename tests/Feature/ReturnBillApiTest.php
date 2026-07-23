@@ -10,6 +10,7 @@ use App\Models\Invoice;
 use App\Models\Permission;
 use App\Models\InvoiceItem;
 use App\Models\ReturnBill;
+use App\Models\ReturnBin;
 use App\Models\User;
 use App\Support\Billing\ReturnBillChargeCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -131,10 +132,11 @@ class ReturnBillApiTest extends TestCase
         ]);
 
         Sanctum::actingAs($staff);
+        $bin = ReturnBin::query()->create(['name' => 'Bill Bin 2']);
         $this->postJson('/api/admin/returns/'.$return->id.'/process', [
             'line_ids' => [$return->lines()->first()->id],
             'restock_by_line_id' => [$return->lines()->first()->id => false],
-            'return_bin_number' => 2,
+            'return_bin_id' => $bin->id,
         ])->assertOk();
 
         $return->refresh();

@@ -5,7 +5,7 @@ export const INVOICE_CATEGORY_OPTIONS = [
   { value: "postage", label: "Postage" },
   { value: "packaging", label: "Packaging" },
   { value: "returns", label: "Returns" },
-  { value: "ad_hoc", label: "Ad Hoc" },
+  { value: "ad_hoc", label: "Custom Bill" },
   { value: "bank fee", label: "Bank Fee" },
   { value: "duties & taxes", label: "Duties & Taxes" },
   { value: "storage", label: "Storage" },

@@ -8,6 +8,7 @@ use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountReturnLine;
 use App\Models\Permission;
 use App\Models\ReturnBill;
+use App\Models\ReturnBin;
 use App\Models\User;
 use App\Services\ShipHeroOrderService;
 use App\Support\Billing\ReturnBillChargeCatalog;
@@ -184,7 +185,7 @@ class AdminReturnProcessWorkflowTest extends TestCase
             ->assertJsonPath('data.display_status', 'returned');
     }
 
-    public function test_process_return_requires_return_bin_number(): void
+    public function test_process_return_requires_return_bin_id(): void
     {
         $account = $this->account();
         $this->seedReturnFees($account);
@@ -205,31 +206,33 @@ class AdminReturnProcessWorkflowTest extends TestCase
         $return = $this->returnForAccount($account);
         $lineA = $this->lineForReturn($return, ['sku' => 'A', 'return_qty' => 2]);
         $lineB = $this->lineForReturn($return, ['sku' => 'B', 'return_qty' => 1, 'sort_order' => 1]);
+        $bin = ReturnBin::query()->create(['name' => 'Process Bin 5']);
         $staff = $this->staffUser();
         Sanctum::actingAs($staff);
 
         $this->postJson('/api/admin/returns/'.$return->id.'/process', [
             'line_ids' => [$lineA->id],
             'restock_by_line_id' => [$lineA->id => true],
-            'return_bin_number' => 5,
+            'return_bin_id' => $bin->id,
         ])
             ->assertOk()
             ->assertJsonPath('status', ClientAccountReturn::STATUS_RECEIVED)
             ->assertJsonPath('return_fees.locked', true)
-            ->assertJsonPath('return_bin_number', 5)
+            ->assertJsonPath('return_bin_id', $bin->id)
+            ->assertJsonPath('return_bin_name', 'Process Bin 5')
             ->assertJsonPath('processed_by_name', $staff->name);
 
         $return->refresh();
         $this->assertSame(ClientAccountReturn::STATUS_RECEIVED, $return->status);
         $this->assertNotNull($return->processed_at);
         $this->assertSame($staff->id, $return->processed_by_user_id);
-        $this->assertSame(5, $return->return_bin_number);
+        $this->assertSame($bin->id, $return->return_bin_id);
         $this->assertNotNull($return->fees_locked_at);
         $this->assertNotNull($return->return_bill_id);
         $this->assertSame(2, (int) $return->items_count);
         $this->assertSame(0, (int) $lineB->fresh()->return_qty);
         $this->assertTrue((bool) $lineA->fresh()->restock);
-        $this->assertSame(5, $lineA->fresh()->return_bin_number);
+        $this->assertSame($bin->id, $lineA->fresh()->return_bin_id);
         $this->assertSame(2, $lineA->fresh()->return_bin_remaining_qty);
         $this->assertSame(ReturnBill::STATUS_OPEN, ReturnBill::query()->find($return->return_bill_id)->status);
 
@@ -256,11 +259,12 @@ class AdminReturnProcessWorkflowTest extends TestCase
             'return_fee_first_item' => 3.0,
             'return_fee_additional_item' => 1.0,
         ]);
+        $bin = ReturnBin::query()->create(['name' => 'Draft Bin 3']);
         Sanctum::actingAs($this->staffUser());
 
         $this->postJson('/api/admin/returns/'.$return->id.'/process-from-draft', [
             'return_type' => ClientAccountReturn::TYPE_DIRECT,
-            'return_bin_number' => 3,
+            'return_bin_id' => $bin->id,
             'lines' => [
                 [
                     'sku' => 'SKU-X',
@@ -275,11 +279,12 @@ class AdminReturnProcessWorkflowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('status', ClientAccountReturn::STATUS_RECEIVED)
             ->assertJsonPath('return_fees.locked', true)
-            ->assertJsonPath('return_bin_number', 3);
+            ->assertJsonPath('return_bin_id', $bin->id)
+            ->assertJsonPath('return_bin_name', 'Draft Bin 3');
 
         $return->refresh();
         $this->assertSame(ClientAccountReturn::STATUS_RECEIVED, $return->status);
-        $this->assertSame(3, $return->return_bin_number);
+        $this->assertSame($bin->id, $return->return_bin_id);
         $this->assertNotNull($return->return_bill_id);
         $this->assertSame('unknown', $return->lines()->first()->return_reason);
     }

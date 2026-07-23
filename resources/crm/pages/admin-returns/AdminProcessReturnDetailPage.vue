@@ -48,12 +48,21 @@ const isProcessed = computed(() => {
   return s === "received" || s === "completed";
 });
 
-const returnBinOptions = Array.from({ length: 20 }, (_, i) => i + 1);
+const returnBinOptions = ref([]);
 
 const binAssigning = ref(false);
 const selectedReturnBin = ref("");
 
 const clientAccountId = computed(() => Number(ret.value?.client_account_id || 0));
+
+async function loadReturnBins() {
+  try {
+    const { data } = await api.get("/admin/returns/bins");
+    returnBinOptions.value = Array.isArray(data?.data) ? data.data : [];
+  } catch {
+    returnBinOptions.value = [];
+  }
+}
 
 const lines = computed(() => (Array.isArray(ret.value?.lines) ? ret.value.lines : []));
 
@@ -107,8 +116,8 @@ function applyReturnData(data) {
   ret.value = data;
   returnFees.value = data?.return_fees || {};
   selectedReturnBin.value =
-    data?.return_bin_number != null && data.return_bin_number !== ""
-      ? String(data.return_bin_number)
+    data?.return_bin_id != null && data.return_bin_id !== ""
+      ? String(data.return_bin_id)
       : "";
   const restockMap = {};
   for (const line of Array.isArray(data?.lines) ? data.lines : []) {
@@ -357,7 +366,10 @@ async function submitUnknownSku() {
 async function load() {
   loading.value = true;
   try {
-    const { data } = await api.get(`/returns/${returnId.value}`);
+    const [{ data }] = await Promise.all([
+      api.get(`/returns/${returnId.value}`),
+      loadReturnBins(),
+    ]);
     applyReturnData(data);
     await ensureAccountReturnFees(data);
     setCrmPageMeta({
@@ -379,8 +391,8 @@ async function processReturn() {
     toast.error("Select at least one item to process.");
     return;
   }
-  const binNumber = Number(selectedReturnBin.value);
-  if (!binNumber || binNumber < 1 || binNumber > 20) {
+  const binId = Number(selectedReturnBin.value);
+  if (!binId || binId <= 0) {
     toast.error("Select a return bin before processing.");
     return;
   }
@@ -393,7 +405,7 @@ async function processReturn() {
     const payload = {
       line_ids: lineIds,
       restock_by_line_id: restockByLineId,
-      return_bin_number: binNumber,
+      return_bin_id: binId,
     };
     if (returnFees.value.first_item != null) payload.first_item_fee = returnFees.value.first_item;
     if (returnFees.value.additional_item != null) payload.additional_item_fee = returnFees.value.additional_item;
@@ -410,15 +422,16 @@ async function processReturn() {
 
 async function assignReturnBin() {
   if (!ret.value?.id || !isProcessed.value) return;
-  const binNumber = Number(selectedReturnBin.value);
-  if (!binNumber || binNumber < 1 || binNumber > 20) return;
+  const binId = Number(selectedReturnBin.value);
+  if (!binId || binId <= 0) return;
   binAssigning.value = true;
   try {
     const { data } = await api.patch(`/admin/returns/${ret.value.id}/return-bin`, {
-      return_bin_number: binNumber,
+      return_bin_id: binId,
     });
     applyReturnData(data);
-    toast.success(`Assigned to Return Bin ${binNumber}.`);
+    const name = data?.return_bin_name || selectedReturnBin.value;
+    toast.success(`Assigned to Return Bin ${name}.`);
   } catch (e) {
     toast.errorFrom(e, "Could not assign return bin.");
   } finally {
@@ -471,11 +484,13 @@ onMounted(load);
               id="admin-return-bin-select"
               v-model="selectedReturnBin"
               class="form-select form-select-sm"
-              style="min-width: 8rem"
+              style="min-width: 10rem"
               :disabled="processing"
             >
               <option value="">Select bin…</option>
-              <option v-for="n in returnBinOptions" :key="n" :value="String(n)">{{ n }}</option>
+              <option v-for="bin in returnBinOptions" :key="bin.id" :value="String(bin.id)">
+                {{ bin.name }}
+              </option>
             </select>
             <button
               type="button"
@@ -490,22 +505,25 @@ onMounted(load);
             v-else-if="isProcessed && hasStagedLines"
             class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center"
           >
-            <span v-if="ret.return_bin_number" class="small text-secondary mb-0">
-              Return Bin <span class="fw-semibold text-body">{{ ret.return_bin_number }}</span>
+            <span v-if="ret.return_bin_name || ret.return_bin_id" class="small text-secondary mb-0">
+              Return Bin
+              <span class="fw-semibold text-body">{{ ret.return_bin_name || ret.return_bin_id }}</span>
             </span>
             <label class="small text-secondary mb-0 fw-medium" for="admin-return-bin-change">
-              {{ ret.return_bin_number ? "Change Bin" : "Return Bin" }}
+              {{ ret.return_bin_id ? "Change Bin" : "Return Bin" }}
             </label>
             <select
               id="admin-return-bin-change"
               v-model="selectedReturnBin"
               class="form-select form-select-sm"
-              style="min-width: 8rem"
+              style="min-width: 10rem"
               :disabled="binAssigning"
               @change="assignReturnBin"
             >
               <option value="">Select bin…</option>
-              <option v-for="n in returnBinOptions" :key="n" :value="String(n)">{{ n }}</option>
+              <option v-for="bin in returnBinOptions" :key="bin.id" :value="String(bin.id)">
+                {{ bin.name }}
+              </option>
             </select>
           </div>
         </div>

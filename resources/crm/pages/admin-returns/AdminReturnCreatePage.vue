@@ -23,8 +23,7 @@ const returnFees = ref({});
 const defaultReason = ref("unknown");
 const selected = ref(new Set());
 const selectedReturnBin = ref("");
-
-const returnBinOptions = Array.from({ length: 20 }, (_, i) => i + 1);
+const returnBinOptions = ref([]);
 
 const shipheroOrderId = computed(() => String(route.params.shipheroOrderId || ""));
 const clientAccountId = computed(() => Number(route.query.client_account_id || 0));
@@ -38,6 +37,15 @@ const allSelected = computed(() => {
 const hasReturnQty = computed(() => formLines.value.some((l) => Number(l.return_qty) > 0));
 
 const canProcess = computed(() => hasReturnQty.value && Boolean(selectedReturnBin.value));
+
+async function loadReturnBins() {
+  try {
+    const { data } = await api.get("/admin/returns/bins");
+    returnBinOptions.value = Array.isArray(data?.data) ? data.data : [];
+  } catch {
+    returnBinOptions.value = [];
+  }
+}
 
 function lineKey(idx) {
   return idx;
@@ -128,8 +136,8 @@ async function processReturn() {
     toast.error("Enter a return quantity for at least one item.");
     return;
   }
-  const binNumber = Number(selectedReturnBin.value);
-  if (!binNumber || binNumber < 1 || binNumber > 20) {
+  const binId = Number(selectedReturnBin.value);
+  if (!binId || binId <= 0) {
     toast.error("Select a return bin before processing.");
     return;
   }
@@ -148,7 +156,7 @@ async function processReturn() {
     const payload = {
       return_type: returnType.value,
       warehouse_private_note: warehouseNote.value.trim() || null,
-      return_bin_number: binNumber,
+      return_bin_id: binId,
       lines,
     };
     if (returnFees.value.first_item != null) payload.first_item_fee = returnFees.value.first_item;
@@ -170,9 +178,12 @@ async function init() {
   }
   loading.value = true;
   try {
-    const orderRes = await api.get(`/orders/${encodeURIComponent(shipheroOrderId.value)}`, {
-      params: { client_account_id: clientAccountId.value },
-    });
+    const [orderRes] = await Promise.all([
+      api.get(`/orders/${encodeURIComponent(shipheroOrderId.value)}`, {
+        params: { client_account_id: clientAccountId.value },
+      }),
+      loadReturnBins(),
+    ]);
     const order = orderRes.data?.order;
     if (!order) {
       toast.error("Order not found.");
@@ -249,11 +260,13 @@ onMounted(() => {
               id="admin-return-create-bin"
               v-model="selectedReturnBin"
               class="form-select form-select-sm"
-              style="min-width: 8rem"
+              style="min-width: 10rem"
               :disabled="submitBusy"
             >
               <option value="">Select bin…</option>
-              <option v-for="n in returnBinOptions" :key="n" :value="String(n)">{{ n }}</option>
+              <option v-for="bin in returnBinOptions" :key="bin.id" :value="String(bin.id)">
+                {{ bin.name }}
+              </option>
             </select>
             <button
               type="button"

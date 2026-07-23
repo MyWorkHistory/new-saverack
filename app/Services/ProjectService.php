@@ -604,7 +604,7 @@ class ProjectService
             InvoiceLineCategory::POSTAGE => 'Postage',
             InvoiceLineCategory::PACKAGING => 'Packaging',
             InvoiceLineCategory::RETURNS => 'Returns',
-            InvoiceLineCategory::AD_HOC => 'Ad Hoc',
+            InvoiceLineCategory::AD_HOC => 'Custom Bill',
             'bank fee' => 'Bank Fee',
             'duties & taxes' => 'Duties & Taxes',
             InvoiceLineCategory::STORAGE => 'Storage',

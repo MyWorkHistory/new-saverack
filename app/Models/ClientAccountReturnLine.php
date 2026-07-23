@@ -19,7 +19,9 @@ class ClientAccountReturnLine extends Model
         'restock',
         'sort_order',
         'return_bin_number',
+        'return_bin_id',
         'return_bin_remaining_qty',
+        'pick_location',
     ];
 
     protected $casts = [
@@ -28,11 +30,17 @@ class ClientAccountReturnLine extends Model
         'restock' => 'boolean',
         'sort_order' => 'integer',
         'return_bin_number' => 'integer',
+        'return_bin_id' => 'integer',
         'return_bin_remaining_qty' => 'integer',
     ];
 
     public function clientAccountReturn(): BelongsTo
     {
         return $this->belongsTo(ClientAccountReturn::class, 'client_account_return_id');
+    }
+
+    public function returnBin(): BelongsTo
+    {
+        return $this->belongsTo(ReturnBin::class, 'return_bin_id');
     }
 }

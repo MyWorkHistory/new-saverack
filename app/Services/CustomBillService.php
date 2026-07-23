@@ -507,7 +507,7 @@ class CustomBillService
             case InvoiceLineCategory::RETURNS:
                 return 'Returns';
             case InvoiceLineCategory::AD_HOC:
-                return 'Ad Hoc';
+                return 'Custom Bill';
             case 'bank fee':
                 return 'Bank Fee';
             case 'duties & taxes':

@@ -45,13 +45,20 @@ const showAdminNavSection = computed(
 
 const canViewClients = computed(() => {
   if (crmIsAdmin(props.user) || props.user?.is_crm_owner) return true;
-  return hasPerm("clients.view", "client_users.view", "projects.view", "stores.view");
+  return hasPerm(
+    "clients.view",
+    "client_users.view",
+    "projects.view",
+    "stores.view",
+    "leads.view",
+  );
 });
 
 const canViewClientAccounts = computed(() => hasPerm("clients.view"));
 const canViewClientUsers = computed(() => hasPerm("client_users.view"));
 
 const canViewProjects = computed(() => hasPerm("projects.view"));
+const canViewLeads = computed(() => hasPerm("leads.view"));
 
 const canViewBilling = computed(() => {
   if (isPortal.value) return false;
@@ -268,6 +275,7 @@ function navActive(mode) {
   if (mode === "clients-accounts") return p.startsWith("/admin/clients/accounts");
   if (mode === "clients-users") return p.startsWith("/admin/clients/users");
   if (mode === "clients-projects") return p.startsWith("/admin/clients/projects");
+  if (mode === "clients-leads") return p.startsWith("/admin/clients/leads");
   if (mode === "orders") return p.startsWith("/admin/orders");
   if (mode === "orders-index") return p === "/admin/orders/search";
   if (mode === "orders-by-account") return p.startsWith("/admin/orders/by-account");
@@ -949,6 +957,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Projects
+                  </RouterLink>
+                </li>
+                <li v-if="canViewLeads">
+                  <RouterLink
+                    to="/admin/clients/leads"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('clients-leads') }"
+                    @click="closeMobile"
+                  >
+                    Leads
                   </RouterLink>
                 </li>
               </ul>

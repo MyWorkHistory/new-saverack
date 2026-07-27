@@ -51,6 +51,25 @@ final class CrmActivityPresenter
             return "{$actorName} removed portal user: {$e}";
         }
 
+        if ($action === 'lead.created') {
+            $n = isset($meta['company_name']) ? (string) $meta['company_name'] : 'Lead';
+
+            return "{$actorName} created lead: {$n}";
+        }
+
+        if ($action === 'lead.updated') {
+            $fields = isset($meta['fields']) && is_array($meta['fields']) ? $meta['fields'] : [];
+            $label = $fields !== [] ? implode(', ', $fields) : 'lead';
+
+            return "{$actorName} updated {$label}";
+        }
+
+        if ($action === 'lead.deleted') {
+            $n = isset($meta['company_name']) ? (string) $meta['company_name'] : 'Lead';
+
+            return "{$actorName} deleted lead: {$n}";
+        }
+
         return UserStaffHistory::formatLogLine($log);
     }
 
@@ -64,6 +83,18 @@ final class CrmActivityPresenter
             $summary = ClientAccountHistory::summarizeUpdate($fields, $section);
 
             return 'Updated '.$summary;
+        }
+
+        if ($action === 'lead.updated') {
+            $meta = is_array($log->metadata) ? $log->metadata : [];
+            $fields = isset($meta['fields']) && is_array($meta['fields']) ? $meta['fields'] : [];
+            $label = $fields !== [] ? implode(', ', $fields) : 'lead';
+
+            return 'Updated '.$label;
+        }
+
+        if ($action === 'lead.created') {
+            return 'Created lead';
         }
 
         $actorName = $log->relationLoaded('user') && $log->user

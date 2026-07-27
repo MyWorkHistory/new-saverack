@@ -28,6 +28,8 @@ import ClientAccountHistoryPage from "../pages/clients/ClientAccountHistoryPage.
 import ClientAccountUsersListPage from "../pages/clients/ClientAccountUsersListPage.vue";
 import ProjectsListPage from "../pages/projects/ProjectsListPage.vue";
 import ProjectDetailPage from "../pages/projects/ProjectDetailPage.vue";
+import LeadsListPage from "../pages/clients/LeadsListPage.vue";
+import LeadDetailPage from "../pages/clients/LeadDetailPage.vue";
 import ClientAccountUserDetailPage from "../pages/clients/ClientAccountUserDetailPage.vue";
 import BillingSummaryPage from "../pages/billing/BillingSummaryPage.vue";
 import BillingInvoicesListPage from "../pages/billing/BillingInvoicesListPage.vue";
@@ -115,6 +117,14 @@ const meta = {
   projectDetail: {
     title: "Save Rack | Project",
     description: "Project detail.",
+  },
+  leads: {
+    title: "Save Rack | Leads",
+    description: "Sales leads directory.",
+  },
+  leadDetail: {
+    title: "Save Rack | Lead",
+    description: "Lead detail.",
   },
   clientAccountUserDetail: {
     title: "Save Rack | Client user",
@@ -492,6 +502,19 @@ const routes = [
     component: ProjectDetailPage,
     props: true,
     meta: meta.projectDetail,
+  },
+  {
+    path: "/admin/clients/leads",
+    name: "leads",
+    component: LeadsListPage,
+    meta: meta.leads,
+  },
+  {
+    path: "/admin/clients/leads/:id",
+    name: "lead-detail",
+    component: LeadDetailPage,
+    props: true,
+    meta: meta.leadDetail,
   },
   { path: "/admin/clients", redirect: "/admin/clients/accounts" },
   {
@@ -1061,7 +1084,10 @@ export function setClientsNavFromUser(user) {
   }
   const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
   const canSeeClientsSection =
-    k.includes("clients.view") || k.includes("client_users.view");
+    k.includes("clients.view") ||
+    k.includes("client_users.view") ||
+    k.includes("leads.view") ||
+    k.includes("projects.view");
   clientsNavCache = {
     view: canSeeClientsSection,
     create: k.includes("clients.create"),

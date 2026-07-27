@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\PortalOnboardingController;
 use App\Http\Controllers\Api\PortalProfileController;
 use App\Http\Controllers\Api\PricingFeeTemplateController;
 use App\Http\Controllers\Api\ProjectController;
+use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\TermsOfServiceController;
 use App\Http\Controllers\Api\ClientAccountPaymentMethodController;
 use App\Http\Controllers\Api\ReturnBillController;
@@ -169,6 +170,18 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/{project}/quote-items/{item}', [ProjectController::class, 'updateQuoteItem']);
             Route::delete('/{project}/quote-items/{item}', [ProjectController::class, 'destroyQuoteItem']);
             Route::post('/{project}/create-bill', [ProjectController::class, 'createBill']);
+        });
+
+        Route::prefix('leads')->group(function () {
+            Route::get('/meta', [LeadController::class, 'meta']);
+            Route::get('/', [LeadController::class, 'index']);
+            Route::post('/', [LeadController::class, 'store']);
+            Route::post('/quick-add', [LeadController::class, 'quickAdd']);
+            Route::get('/{lead}', [LeadController::class, 'show']);
+            Route::patch('/{lead}', [LeadController::class, 'update']);
+            Route::delete('/{lead}', [LeadController::class, 'destroy']);
+            Route::patch('/{lead}/fees/{fee}', [LeadController::class, 'updateFee']);
+            Route::get('/{lead}/history', [LeadController::class, 'history']);
         });
 
     Route::prefix('inventory')->group(function () {

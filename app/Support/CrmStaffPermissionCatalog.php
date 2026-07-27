@@ -32,6 +32,7 @@ class CrmStaffPermissionCatalog
             $add($rows, 'client_users.'.$a, ucfirst($a).' client portal users', 'client_users');
             $add($rows, 'stores.'.$a, ucfirst($a).' client stores', 'stores');
             $add($rows, 'projects.'.$a, ucfirst($a).' projects', 'projects');
+            $add($rows, 'leads.'.$a, ucfirst($a).' leads', 'leads');
         }
 
         // Orders subpages — full CRUD (queue mutations, wholesale, create order)

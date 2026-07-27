@@ -79,6 +79,13 @@ const PAGE_META = {
     order: 30,
     rowOrder: 4,
   },
+  leads: {
+    moduleKey: "clients",
+    moduleLabel: "Clients",
+    rowLabel: "Leads",
+    order: 30,
+    rowOrder: 5,
+  },
   billing_summary: {
     moduleKey: "billing",
     moduleLabel: "Billing",

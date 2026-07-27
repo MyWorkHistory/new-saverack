@@ -14,6 +14,7 @@ use App\Models\AsnBill;
 use App\Models\Task;
 use App\Models\Ticket;
 use App\Models\PricingFeeTemplate;
+use App\Models\Lead;
 use App\Models\Project;
 use App\Models\TermsOfService;
 use App\Models\Tutorial;
@@ -29,6 +30,7 @@ use App\Policies\ClientStorePolicy;
 use App\Policies\CustomBillPolicy;
 use App\Policies\InvoicePolicy;
 use App\Policies\PricingFeeTemplatePolicy;
+use App\Policies\LeadPolicy;
 use App\Policies\ProjectPolicy;
 use App\Policies\ReturnBillPolicy;
 use App\Policies\AsnBillPolicy;
@@ -63,6 +65,7 @@ class AuthServiceProvider extends ServiceProvider
         AsnBill::class => AsnBillPolicy::class,
         PricingFeeTemplate::class => PricingFeeTemplatePolicy::class,
         Project::class => ProjectPolicy::class,
+        Lead::class => LeadPolicy::class,
         TermsOfService::class => TermsOfServicePolicy::class,
         Ticket::class => TicketPolicy::class,
         Task::class => TaskPolicy::class,

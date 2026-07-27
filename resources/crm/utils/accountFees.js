@@ -1,6 +1,14 @@
 /**
  * Flat account fee items from API `fees.items` for the pricing-style card grid.
  */
+import { PRICING_CATEGORY_ORDER } from "./pricingFeeUi.js";
+
+function categorySortIndex(category) {
+  const key = String(category || "").trim().toLowerCase();
+  const idx = PRICING_CATEGORY_ORDER.indexOf(key);
+  return idx === -1 ? 999 : idx;
+}
+
 export function normalizeAccountFeeItems(account) {
   const items = account?.fees?.items;
   if (!Array.isArray(items)) return [];
@@ -34,5 +42,10 @@ export function normalizeAccountFeeItems(account) {
 
       return mapped;
     })
-    .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
+    .sort(
+      (a, b) =>
+        categorySortIndex(a.category) - categorySortIndex(b.category) ||
+        a.sort_order - b.sort_order ||
+        a.id - b.id,
+    );
 }

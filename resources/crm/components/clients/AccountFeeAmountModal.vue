@@ -8,9 +8,10 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   fee: { type: Object, default: null },
   saving: { type: Boolean, default: false },
+  removing: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["close", "save"]);
+const emit = defineEmits(["close", "save", "remove"]);
 
 const amount = ref("");
 const cost = ref("");
@@ -41,7 +42,9 @@ const costValid = computed(() => {
   return Number.isFinite(n) && n >= 0;
 });
 
-const canSubmit = computed(() => amountValid.value && costValid.value);
+const busy = computed(() => props.saving || props.removing);
+
+const canSubmit = computed(() => amountValid.value && costValid.value && !busy.value);
 
 function formatAmountForInput(value) {
   if (value == null || value === "") return "";
@@ -87,7 +90,7 @@ function submit() {
 }
 
 function onBackdrop() {
-  if (!props.saving) {
+  if (!busy.value) {
     emit("close");
   }
 }
@@ -109,7 +112,7 @@ function onBackdrop() {
             type="button"
             class="crm-vx-modal__close"
             aria-label="Close"
-            :disabled="saving"
+            :disabled="busy"
             @click="$emit('close')"
           >
             <svg
@@ -151,7 +154,7 @@ function onBackdrop() {
                     :step="amountStep"
                     min="0"
                     class="form-control"
-                    :disabled="saving"
+                    :disabled="busy"
                   />
                 </div>
                 <p class="small text-secondary mt-1 mb-0">
@@ -174,7 +177,7 @@ function onBackdrop() {
                     :step="amountStep"
                     min="0"
                     class="form-control"
-                    :disabled="saving"
+                    :disabled="busy"
                   />
                 </div>
                 <p class="small text-secondary mt-1 mb-0">
@@ -189,23 +192,33 @@ function onBackdrop() {
             </form>
           </div>
 
-          <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+          <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-between flex-wrap align-items-center">
             <button
               type="button"
-              class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-              :disabled="saving"
-              @click="$emit('close')"
+              class="crm-vx-modal-btn crm-vx-modal-btn--danger"
+              :disabled="busy"
+              @click="emit('remove')"
             >
-              Cancel
+              {{ removing ? "Removing…" : "Remove" }}
             </button>
-            <button
-              type="submit"
-              :form="FORM_ID"
-              class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-              :disabled="saving || !canSubmit"
-            >
-              {{ saving ? "Saving…" : "Save Fee" }}
-            </button>
+            <div class="d-flex gap-2 ms-auto">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="busy"
+                @click="$emit('close')"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                :form="FORM_ID"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="!canSubmit"
+              >
+                {{ saving ? "Saving…" : "Save Fee" }}
+              </button>
+            </div>
           </footer>
         </div>
       </div>

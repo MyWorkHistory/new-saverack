@@ -583,7 +583,15 @@ class ClientAccountService
 
                 return PricingFeeTemplate::isAccountScheduleCategory($group);
             })
-            ->sortBy(fn (ClientAccountFee $fee) => [(int) $fee->sort_order, (int) $fee->id])
+            ->sortBy(function (ClientAccountFee $fee) {
+                $group = (string) $fee->fee_group;
+                $categoryIndex = array_search($group, PricingFeeTemplate::CATEGORIES, true);
+                if ($categoryIndex === false) {
+                    $categoryIndex = 999;
+                }
+
+                return [$categoryIndex, (int) $fee->sort_order, (int) $fee->id];
+            })
             ->values();
 
         $flatItems = $feeItems

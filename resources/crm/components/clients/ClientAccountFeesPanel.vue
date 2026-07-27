@@ -29,6 +29,8 @@ const filterMenuOpen = ref(false);
 const editingFee = ref(null);
 const modalOpen = ref(false);
 const saving = ref(false);
+const removing = ref(false);
+const removeConfirmOpen = ref(false);
 const statusMenuOpen = ref(false);
 const statusConfirmOpen = ref(false);
 const statusSaving = ref(false);
@@ -93,9 +95,38 @@ function openEdit(fee) {
 }
 
 function closeModal() {
-  if (!saving.value) {
+  if (!saving.value && !removing.value) {
     modalOpen.value = false;
     editingFee.value = null;
+  }
+}
+
+function requestRemoveFee() {
+  if (!editingFee.value?.id || removing.value || saving.value) return;
+  removeConfirmOpen.value = true;
+}
+
+function closeRemoveConfirm() {
+  if (removing.value) return;
+  removeConfirmOpen.value = false;
+}
+
+async function confirmRemoveFee() {
+  if (!editingFee.value?.id || removing.value) return;
+  removing.value = true;
+  try {
+    const { data } = await api.delete(
+      `/client-accounts/${props.accountId}/fees/${editingFee.value.id}`,
+    );
+    emit("fees-updated", data);
+    removeConfirmOpen.value = false;
+    modalOpen.value = false;
+    editingFee.value = null;
+    toast.success("Fee Removed.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not remove fee.");
+  } finally {
+    removing.value = false;
   }
 }
 
@@ -332,8 +363,26 @@ onUnmounted(() => {
       :open="modalOpen"
       :fee="editingFee"
       :saving="saving"
+      :removing="removing"
       @close="closeModal"
       @save="onSave"
+      @remove="requestRemoveFee"
+    />
+
+    <ConfirmModal
+      :open="removeConfirmOpen"
+      title="Remove Fee"
+      :message="
+        editingFee
+          ? `Remove ${editingFee.name || 'this fee'} from this account? This cannot be undone.`
+          : 'Remove this fee from this account?'
+      "
+      confirm-label="Remove Fee"
+      cancel-label="Cancel"
+      :danger="true"
+      :busy="removing"
+      @close="closeRemoveConfirm"
+      @confirm="confirmRemoveFee"
     />
 
     <ConfirmModal

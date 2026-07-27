@@ -361,12 +361,6 @@ class ClientAccountController extends Controller
             abort(404);
         }
 
-        if ($fee->fee_group !== ClientAccountFee::GROUP_STORAGE) {
-            return response()->json([
-                'message' => 'Only storage fee lines can be removed.',
-            ], 422);
-        }
-
         $fee->delete();
 
         return response()->json($this->clientAccounts->toApiArray($client_account->fresh()));

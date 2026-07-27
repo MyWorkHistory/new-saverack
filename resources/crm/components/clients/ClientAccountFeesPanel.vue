@@ -62,8 +62,8 @@ const downloadFileName = computed(() => {
 
 const statusConfirmMessage = computed(() =>
   pendingStatus.value === "approved"
-    ? "Mark fulfillment pricing as Approved? Clients will see this account's fee schedule in onboarding."
-    : "Set fulfillment pricing back to Pending? Client acceptance will be cleared.",
+    ? "Mark fulfillment pricing as Approved? Clients will see this fee schedule, and it will be marked accepted and verified for the client."
+    : "Set fulfillment pricing back to Pending? Client acceptance and verification will be cleared.",
 );
 
 const allFees = computed(() => normalizeAccountFeeItems(props.account));

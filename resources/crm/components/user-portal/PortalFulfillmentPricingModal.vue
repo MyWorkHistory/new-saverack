@@ -28,6 +28,7 @@ const agreed = ref(false);
 
 const approved = computed(() => !!props.pricing?.approved);
 const accepted = computed(() => props.pricing?.status === "completed" || !!props.pricing?.accepted_at);
+const canVerifyForClient = computed(() => props.adminMode && approved.value && !props.taskVerified);
 const feeItems = computed(() => {
   if (!approved.value) return [];
   return normalizeAccountFeeItems({ fees: { items: props.pricing?.fees || [] } });
@@ -97,7 +98,16 @@ async function onAgree() {
     >
       <div class="min-w-0">
         <h2 v-if="!pageMode" class="crm-vx-modal__title mb-0">Fulfillment Pricing</h2>
-        <p v-if="pageMode && accepted" class="text-secondary small mb-0">
+        <p v-if="adminMode && taskVerified" class="text-secondary small mb-0 mt-1">
+          Fulfillment pricing is verified and accepted for the client.
+        </p>
+        <p v-else-if="adminMode && approved" class="text-secondary small mb-0 mt-1">
+          Fees are Approved. Verify For Client to mark pricing accepted on the user side.
+        </p>
+        <p v-else-if="adminMode" class="text-secondary small mb-0 mt-1">
+          Approve fulfillment pricing on the Fees tab before verifying for the client.
+        </p>
+        <p v-else-if="pageMode && accepted" class="text-secondary small mb-0">
           You have accepted this account's fulfillment pricing schedule.
         </p>
         <p v-else-if="pageMode && approved" class="text-secondary small mb-0">
@@ -164,11 +174,12 @@ async function onAgree() {
         v-else-if="adminMode"
         type="button"
         class="crm-vx-modal-btn crm-vx-modal-btn--secondary me-auto"
-        :disabled="busy || verifying"
+        :disabled="busy || verifying || !canVerifyForClient"
+        :title="!approved ? 'Approve pricing on the Fees tab first.' : undefined"
         @click="emit('verify')"
       >
         <CrmLoadingSpinner v-if="verifying" small class="me-1" />
-        Verify
+        Verify For Client
       </button>
 
       <template v-if="showAgree">

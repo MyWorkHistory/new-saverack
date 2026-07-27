@@ -58,7 +58,7 @@ class ClientAccountActivationOnboardingGateTest extends TestCase
         $response->assertStatus(422);
         $response->assertJsonValidationErrors(['status']);
         $this->assertStringContainsString(
-            'Please complete onboarding to active account.',
+            'Please verify all onboarding tasks to activate this account.',
             (string) collect($response->json('errors.status'))->first()
         );
         $this->assertSame(ClientAccount::STATUS_PENDING, $account->fresh()->status);

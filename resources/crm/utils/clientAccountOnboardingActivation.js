@@ -1,5 +1,5 @@
 export const ONBOARDING_ACTIVATION_BLOCKED_MESSAGE =
-  "Please complete onboarding to active account.";
+  "Please verify all onboarding tasks to activate this account.";
 
 export function isOnboardingReadyForActivation(onboardingPayload) {
   const tasks = Array.isArray(onboardingPayload?.tasks) ? onboardingPayload.tasks : [];
@@ -7,7 +7,7 @@ export function isOnboardingReadyForActivation(onboardingPayload) {
     return false;
   }
 
-  return tasks.every((task) => task?.status === "completed" && task?.verified === true);
+  return tasks.every((task) => task?.verified === true);
 }
 
 export async function checkOnboardingReadyForActivation(api, clientAccountId) {

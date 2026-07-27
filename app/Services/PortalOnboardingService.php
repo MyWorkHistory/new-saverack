@@ -27,7 +27,7 @@ class PortalOnboardingService
 
     public const BILLING_STATUS_FAILED = 'failed';
 
-    public const ACTIVATION_BLOCKED_MESSAGE = 'Please complete onboarding to active account.';
+    public const ACTIVATION_BLOCKED_MESSAGE = 'Please verify all onboarding tasks to activate this account.';
 
     /** @var ClientBrandLogoService */
     protected $brandLogos;
@@ -356,6 +356,22 @@ class PortalOnboardingService
             $isUpload = $account->fulfillment_agreement_method === FulfillmentAgreementPdfService::METHOD_UPLOAD;
             if (! $isUpload) {
                 throw new \InvalidArgumentException('Counter-sign the fulfillment agreement before verifying this task.');
+            }
+        }
+
+        if ($verified && $taskId === 'fulfillment_pricing') {
+            /** @var ClientAccountService $clientAccounts */
+            $clientAccounts = app(ClientAccountService::class);
+            $pricingStatus = $clientAccounts->normalizeFulfillmentPricingStatus(
+                $account->fulfillment_pricing_status
+            );
+            if ($pricingStatus !== ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED) {
+                throw new \InvalidArgumentException(
+                    'Approve fulfillment pricing on the Fees tab before verifying for the client.'
+                );
+            }
+            if ($account->fulfillment_pricing_accepted_at === null) {
+                $account->fulfillment_pricing_accepted_at = now();
             }
         }
 
@@ -862,14 +878,6 @@ class PortalOnboardingService
 
     public function isOnboardingReadyForActivation(ClientAccount $account): bool
     {
-        if ($account->fulfillment_agreement_accepted_at === null) {
-            return false;
-        }
-
-        if ($account->fulfillment_pricing_accepted_at === null) {
-            return false;
-        }
-
         $tasks = $this->adminOnboardingTasks($account);
 
         if ($tasks === []) {
@@ -877,9 +885,6 @@ class PortalOnboardingService
         }
 
         foreach ($tasks as $task) {
-            if (($task['status'] ?? '') !== 'completed') {
-                return false;
-            }
             if (empty($task['verified'])) {
                 return false;
             }

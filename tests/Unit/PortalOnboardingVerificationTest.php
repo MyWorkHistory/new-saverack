@@ -147,7 +147,7 @@ class PortalOnboardingVerificationTest extends TestCase
         $this->assertNotContains('Add Billing Information', $titles);
     }
 
-    public function test_is_onboarding_ready_for_activation_requires_completed_and_verified_tasks(): void
+    public function test_is_onboarding_ready_for_activation_when_all_tasks_verified(): void
     {
         $account = ClientAccount::create([
             'company_name' => 'Activation Gate Co',
@@ -201,7 +201,7 @@ class PortalOnboardingVerificationTest extends TestCase
         }
         $account->refresh();
 
-        $this->assertFalse($service->isOnboardingReadyForActivation($account));
+        $this->assertTrue($service->isOnboardingReadyForActivation($account));
     }
 
     public function test_set_task_field_verified_persists_for_branding_brand_name_only(): void

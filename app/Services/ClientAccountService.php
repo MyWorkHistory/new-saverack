@@ -917,6 +917,10 @@ class ClientAccountService
         $account->fulfillment_pricing_status = $status;
         if ($status === ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED) {
             $account->fulfillment_pricing_approved_at = $account->fulfillment_pricing_approved_at ?? now();
+            // Approving also marks pricing accepted for the client (user-side verification).
+            if ($account->fulfillment_pricing_accepted_at === null) {
+                $account->fulfillment_pricing_accepted_at = now();
+            }
         } else {
             $account->fulfillment_pricing_approved_at = null;
             $account->fulfillment_pricing_accepted_at = null;

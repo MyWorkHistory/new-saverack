@@ -86,7 +86,10 @@ class Lead extends Model
         return $labels[$status] ?? str_replace('_', ' ', ucwords($status, '_'));
     }
 
-    public static function normalizeFollowUpDays(mixed $days): int
+    /**
+     * @param  mixed  $days
+     */
+    public static function normalizeFollowUpDays($days): int
     {
         $value = (int) $days;
         if (! in_array($value, self::FOLLOW_UP_DAY_OPTIONS, true)) {

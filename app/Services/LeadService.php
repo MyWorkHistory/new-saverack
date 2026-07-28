@@ -412,7 +412,10 @@ class LeadService
         return $payload;
     }
 
-    private function normalizeFeeAmount(mixed $amount): ?string
+    /**
+     * @param  mixed  $amount
+     */
+    private function normalizeFeeAmount($amount): ?string
     {
         if ($amount === null || $amount === '') {
             return null;
@@ -424,7 +427,10 @@ class LeadService
         return number_format((float) $amount, 4, '.', '');
     }
 
-    private function nullableTrim(mixed $value): ?string
+    /**
+     * @param  mixed  $value
+     */
+    private function nullableTrim($value): ?string
     {
         if ($value === null) {
             return null;

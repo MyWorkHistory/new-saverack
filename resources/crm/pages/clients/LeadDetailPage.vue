@@ -37,6 +37,35 @@ const canUpdate = computed(() => userHasPerm("leads.update"));
 const TAB_FEES = "fees";
 const TAB_HISTORY = "history";
 
+const leadTabList = [
+  { id: TAB_FEES, label: "Fees" },
+  { id: TAB_HISTORY, label: "History" },
+];
+
+function leadTabIconPath(tabId) {
+  if (tabId === TAB_FEES) {
+    return "M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z";
+  }
+  if (tabId === TAB_HISTORY) {
+    return "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z";
+  }
+  return "M4.5 6.75h15M4.5 12h15m-15 5.25h15";
+}
+
+function statusBadgeClass(status) {
+  const s = String(status || "").toLowerCase();
+  if (s === "open") return "bg-success-subtle text-success";
+  if (s === "contacted") return "bg-primary-subtle text-primary";
+  if (s === "interested") return "bg-warning-subtle text-warning-emphasis";
+  if (s === "future_opportunity") return "bg-info-subtle text-info";
+  if (s === "follow_up") return "bg-danger-subtle text-danger";
+  if (s === "non_responsive" || s === "not_interested") {
+    return "bg-secondary-subtle text-secondary";
+  }
+  if (s === "not_qualified") return "bg-body-secondary text-body-secondary";
+  return "bg-body-secondary text-body-secondary";
+}
+
 const loading = ref(true);
 const lead = ref(null);
 const historyItems = ref([]);
@@ -251,55 +280,73 @@ onMounted(async () => {
     </div>
 
     <template v-else-if="lead">
-      <div
-        class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center gap-3 mb-3"
-      >
-        <div class="min-w-0 flex-grow-1">
-          <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-            <h1 class="h4 mb-0 fw-semibold text-body text-break">{{ lead.company_name }}</h1>
-            <button
-              v-if="canUpdate"
-              type="button"
-              class="btn btn-sm btn-outline-secondary"
-              @click="openStatusModal"
-            >
-              {{ leadStatusLabel(lead.status) }}
-            </button>
-            <span v-else class="badge text-bg-light border">{{ leadStatusLabel(lead.status) }}</span>
-          </div>
-          <p class="text-secondary small mb-0">
-            <a v-if="lead.email" :href="`mailto:${lead.email}`" class="text-decoration-none">
-              {{ lead.email }}
-            </a>
-            <span v-else>—</span>
-          </p>
+      <div class="account-detail-header d-flex flex-row align-items-center gap-3 mb-3">
+        <div class="d-flex flex-wrap align-items-center gap-2 min-w-0 flex-shrink-0">
+          <h1 class="staff-user-view__title account-detail-header__title mb-0 text-break">
+            {{ lead.company_name }}
+          </h1>
+          <button
+            v-if="canUpdate"
+            type="button"
+            class="staff-status-badge"
+            :class="statusBadgeClass(lead.status)"
+            title="Change lead status"
+            @click="openStatusModal"
+          >
+            {{ leadStatusLabel(lead.status) }}
+          </button>
+          <span
+            v-else
+            class="staff-status-badge"
+            :class="statusBadgeClass(lead.status)"
+          >
+            {{ leadStatusLabel(lead.status) }}
+          </span>
         </div>
-
-        <div class="staff-detail-tab-bar-wrap staff-detail-tab-bar-wrap--nav ms-lg-auto flex-grow-1">
+        <div
+          class="staff-detail-tab-bar-wrap staff-detail-tab-bar-wrap--nav ms-lg-auto flex-grow-1"
+          role="presentation"
+        >
           <div class="staff-detail-tab-bar staff-detail-tab-bar--nav" role="tablist">
             <button
+              v-for="t in leadTabList"
+              :key="t.id"
               type="button"
-              class="staff-detail-tab"
+              class="staff-detail-tab-btn"
+              :class="{ 'staff-detail-tab-btn--active': activeTab === t.id }"
               role="tab"
-              :aria-selected="activeTab === TAB_FEES"
-              :class="{ 'staff-detail-tab--active': activeTab === TAB_FEES }"
-              @click="setTab(TAB_FEES)"
+              :aria-selected="activeTab === t.id"
+              :title="t.label"
+              @click="setTab(t.id)"
             >
-              Fees
-            </button>
-            <button
-              type="button"
-              class="staff-detail-tab"
-              role="tab"
-              :aria-selected="activeTab === TAB_HISTORY"
-              :class="{ 'staff-detail-tab--active': activeTab === TAB_HISTORY }"
-              @click="setTab(TAB_HISTORY)"
-            >
-              History
+              <svg
+                class="staff-detail-tab-btn__icon"
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  :d="leadTabIconPath(t.id)"
+                />
+              </svg>
+              <span class="staff-detail-tab-btn__label">{{ t.label }}</span>
             </button>
           </div>
         </div>
       </div>
+
+      <p class="text-secondary small mb-3">
+        <a v-if="lead.email" :href="`mailto:${lead.email}`" class="text-decoration-none">
+          {{ lead.email }}
+        </a>
+        <span v-else>—</span>
+      </p>
 
       <div class="row g-4">
         <div class="col-lg-7">

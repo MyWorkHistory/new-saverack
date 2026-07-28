@@ -127,6 +127,9 @@ class ProjectApiTest extends TestCase
         $pending = $this->getJson('/api/projects?status=pending')->assertOk()->json('data');
         $this->assertCount(1, $pending);
         $this->assertSame((int) $a, (int) $pending[0]['id']);
+
+        $all = $this->getJson('/api/projects')->assertOk()->json('data');
+        $this->assertCount(2, $all);
     }
 
     public function test_add_quote_item_and_note(): void

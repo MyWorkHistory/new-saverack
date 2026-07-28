@@ -40,7 +40,8 @@ const meta = ref({ current_page: 1, last_page: 1, per_page: 25, total: 0 });
 const accounts = ref([]);
 const accountsLoading = ref(false);
 const accountFilter = ref("");
-const statusFilter = ref("pending");
+const statusFilter = ref("all");
+const filterMenuOpen = ref(false);
 const search = ref("");
 const searchDebounced = ref("");
 let searchTimer = null;
@@ -218,6 +219,12 @@ async function submitCreate(payload) {
 
 function onDocClick() {
   manageOpenId.value = null;
+  filterMenuOpen.value = false;
+}
+
+function resetFilters() {
+  statusFilter.value = "all";
+  filterMenuOpen.value = false;
 }
 
 watch(search, (v) => {
@@ -297,6 +304,62 @@ onUnmounted(() => {
               autocomplete="off"
               aria-label="Search PID or project name"
             />
+          </div>
+          <div class="position-relative flex-shrink-0" data-toolbar-filter>
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+              :aria-expanded="filterMenuOpen"
+              @click.stop="filterMenuOpen = !filterMenuOpen"
+            >
+              <svg
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                />
+              </svg>
+              <span class="staff-toolbar-filter-text">Filters</span>
+            </button>
+            <div
+              v-if="filterMenuOpen"
+              class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+              role="dialog"
+              aria-label="Project filters"
+              @click.stop
+            >
+              <div class="staff-toolbar-filter-dropdown__head">
+                <span>Filters</span>
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                  @click="resetFilters"
+                >
+                  Reset
+                </button>
+              </div>
+              <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="project-filter-status">Status</label>
+                <select
+                  id="project-filter-status"
+                  v-model="statusFilter"
+                  class="form-select staff-datatable-filters__select"
+                >
+                  <option value="all">All</option>
+                  <option value="pending">Pending</option>
+                  <option value="in_progress">In-Progress</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
       </div>

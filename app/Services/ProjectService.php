@@ -24,10 +24,17 @@ class ProjectService
     /** @var ProjectCreatedSlackService */
     private $projectCreatedSlack;
 
-    public function __construct(CustomBillService $customBills, ProjectCreatedSlackService $projectCreatedSlack)
-    {
+    /** @var ProjectUpdateSlackService */
+    private $projectUpdateSlack;
+
+    public function __construct(
+        CustomBillService $customBills,
+        ProjectCreatedSlackService $projectCreatedSlack,
+        ProjectUpdateSlackService $projectUpdateSlack
+    ) {
         $this->customBills = $customBills;
         $this->projectCreatedSlack = $projectCreatedSlack;
+        $this->projectUpdateSlack = $projectUpdateSlack;
     }
 
     /**
@@ -174,6 +181,7 @@ class ProjectService
             ]);
         }
 
+        $previousStatus = (string) $project->status;
         $project->status = $status;
         if ($status === Project::STATUS_COMPLETED) {
             $project->completed_at = $project->completed_at ?? now();
@@ -182,7 +190,13 @@ class ProjectService
         }
         $project->save();
 
-        return $this->findOrFail((int) $project->id);
+        $fresh = $this->findOrFail((int) $project->id);
+
+        if ($previousStatus !== $status) {
+            $this->projectUpdateSlack->notifyStatusChange($fresh, $status);
+        }
+
+        return $fresh;
     }
 
     public function delete(Project $project): void

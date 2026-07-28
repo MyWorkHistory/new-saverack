@@ -3,11 +3,6 @@ import { reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
-import {
-  DEFAULT_INVOICE_CATEGORY,
-  INVOICE_CATEGORY_OPTIONS,
-  invoiceCategoryLabel,
-} from "../../constants/invoiceCategoryOptions.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -25,16 +20,6 @@ const form = reactive({
   bill_date: "",
 });
 
-const lineDraft = reactive({
-  line_type: DEFAULT_INVOICE_CATEGORY,
-  name: "",
-  quantity: "1",
-  unit_price: "0.00",
-  sku: "",
-});
-
-const lines = ref([]);
-
 function localDateYmd() {
   const d = new Date();
   const y = d.getFullYear();
@@ -43,19 +28,9 @@ function localDateYmd() {
   return `${y}-${m}-${day}`;
 }
 
-function resetLineDraft() {
-  lineDraft.line_type = DEFAULT_INVOICE_CATEGORY;
-  lineDraft.name = "";
-  lineDraft.quantity = "1";
-  lineDraft.unit_price = "0.00";
-  lineDraft.sku = "";
-}
-
 function reset() {
   form.client_account_id = "";
   form.bill_date = localDateYmd();
-  lines.value = [];
-  resetLineDraft();
   errorMsg.value = "";
 }
 
@@ -75,38 +50,6 @@ function onBackdropClick() {
   close();
 }
 
-function addLine() {
-  if (!lineDraft.line_type) {
-    errorMsg.value = "Select a category.";
-    return;
-  }
-  const name = String(lineDraft.name || "").trim();
-  if (!name) {
-    errorMsg.value = "Enter a name for the line item.";
-    return;
-  }
-  const qty = parseFloat(lineDraft.quantity);
-  if (!Number.isFinite(qty) || qty <= 0) {
-    errorMsg.value = "Quantity must be greater than zero.";
-    return;
-  }
-  errorMsg.value = "";
-  const row = {
-    line_type: lineDraft.line_type,
-    name,
-    quantity: qty,
-    unit_price: parseFloat(lineDraft.unit_price) || 0,
-  };
-  const sku = String(lineDraft.sku || "").trim();
-  if (sku) row.sku = sku;
-  lines.value.push(row);
-  resetLineDraft();
-}
-
-function removeLine(index) {
-  lines.value.splice(index, 1);
-}
-
 async function submit() {
   if (!form.client_account_id) {
     errorMsg.value = "Select an account.";
@@ -122,7 +65,6 @@ async function submit() {
     const payload = {
       client_account_id: Number(form.client_account_id),
       bill_date: form.bill_date,
-      items: lines.value,
     };
     const { data } = await api.post("/custom-bills", payload);
     emit("created", data);
@@ -137,7 +79,6 @@ async function submit() {
       d?.message ||
       d?.errors?.client_account_id?.[0] ||
       d?.errors?.bill_date?.[0] ||
-      d?.errors?.items?.[0] ||
       "Could not create bill.";
   } finally {
     saving.value = false;
@@ -227,113 +168,11 @@ async function submit() {
                   id="cb-drawer-date"
                   v-model="form.bill_date"
                   type="date"
-                  class="form-control mb-4"
+                  class="form-control"
                   :disabled="saving"
                 />
-
-                <div class="border rounded p-3 mb-3 bg-light-subtle">
-                  <h3 class="h6 fw-semibold mb-3">Add Line Item</h3>
-                  <label class="form-label" for="cb-line-category">Category</label>
-                  <select
-                    id="cb-line-category"
-                    v-model="lineDraft.line_type"
-                    class="form-select mb-2"
-                    :disabled="saving"
-                    required
-                  >
-                    <option value="">Select category</option>
-                    <option
-                      v-for="opt in INVOICE_CATEGORY_OPTIONS"
-                      :key="opt.value"
-                      :value="opt.value"
-                    >
-                      {{ opt.label }}
-                    </option>
-                  </select>
-
-                  <label class="form-label" for="cb-line-name">Service / Name</label>
-                  <input
-                    id="cb-line-name"
-                    v-model="lineDraft.name"
-                    type="text"
-                    class="form-control mb-2"
-                    placeholder="Description"
-                    :disabled="saving"
-                  />
-
-                  <div class="row g-2 mb-2">
-                    <div class="col-6">
-                      <label class="form-label" for="cb-line-qty">QTY</label>
-                      <input
-                        id="cb-line-qty"
-                        v-model="lineDraft.quantity"
-                        type="number"
-                        min="0.0001"
-                        step="any"
-                        class="form-control"
-                        :disabled="saving"
-                      />
-                    </div>
-                    <div class="col-6">
-                      <label class="form-label" for="cb-line-price">Unit Price</label>
-                      <input
-                        id="cb-line-price"
-                        v-model="lineDraft.unit_price"
-                        type="number"
-                        step="0.01"
-                        class="form-control"
-                        :disabled="saving"
-                      />
-                    </div>
-                  </div>
-
-                  <label class="form-label" for="cb-line-sku">SKU (optional)</label>
-                  <input
-                    id="cb-line-sku"
-                    v-model="lineDraft.sku"
-                    type="text"
-                    class="form-control mb-3"
-                    :disabled="saving"
-                  />
-
-                  <button
-                    type="button"
-                    class="btn btn-outline-secondary btn-sm w-100"
-                    :disabled="saving"
-                    @click="addLine"
-                  >
-                    Add Line To Bill
-                  </button>
-                </div>
-
-                <div v-if="lines.length" class="mb-2">
-                  <h3 class="h6 fw-semibold mb-2">Lines ({{ lines.length }})</h3>
-                  <ul class="list-group list-group-flush border rounded">
-                    <li
-                      v-for="(line, idx) in lines"
-                      :key="idx"
-                      class="list-group-item d-flex justify-content-between align-items-start gap-2 small"
-                    >
-                      <div class="min-w-0">
-                        <div class="fw-medium">{{ invoiceCategoryLabel(line.line_type) }}</div>
-                        <div class="text-secondary text-truncate">{{ line.name }}</div>
-                        <div class="text-secondary">
-                          Qty {{ line.quantity }} × ${{ Number(line.unit_price).toFixed(2) }}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        class="btn btn-link btn-sm text-danger text-decoration-none p-0 flex-shrink-0"
-                        :disabled="saving"
-                        @click="removeLine(idx)"
-                      >
-                        Remove
-                      </button>
-                    </li>
-                  </ul>
-                </div>
-                <p v-else class="small text-secondary mb-0">
-                  Optional: add line items now, or add them on the bill detail page.
+                <p class="small text-secondary mt-3 mb-0">
+                  Creates a draft bill. Add line items on the bill page, then mark it Open when ready.
                 </p>
               </template>
             </div>

@@ -9,9 +9,18 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class CustomBill extends Model
 {
+    public const STATUS_DRAFT = 'draft';
+
     public const STATUS_OPEN = 'open';
 
     public const STATUS_INVOICED = 'invoiced';
+
+    /** @var list<string> */
+    public const STATUSES = [
+        self::STATUS_DRAFT,
+        self::STATUS_OPEN,
+        self::STATUS_INVOICED,
+    ];
 
     public const FIRST_BILL_NUMBER = 1001;
 
@@ -61,6 +70,11 @@ class CustomBill extends Model
         return $this->hasOne(Project::class, 'custom_bill_id');
     }
 
+    public function isDraft(): bool
+    {
+        return $this->status === self::STATUS_DRAFT;
+    }
+
     public function isOpen(): bool
     {
         return $this->status === self::STATUS_OPEN;
@@ -69,5 +83,25 @@ class CustomBill extends Model
     public function isInvoiced(): bool
     {
         return $this->status === self::STATUS_INVOICED;
+    }
+
+    public function isEditable(): bool
+    {
+        return $this->isDraft() || $this->isOpen();
+    }
+
+    public static function statusLabel(string $status): string
+    {
+        if ($status === self::STATUS_DRAFT) {
+            return 'Draft';
+        }
+        if ($status === self::STATUS_OPEN) {
+            return 'Open';
+        }
+        if ($status === self::STATUS_INVOICED) {
+            return 'Invoiced';
+        }
+
+        return ucfirst(str_replace('_', ' ', $status));
     }
 }

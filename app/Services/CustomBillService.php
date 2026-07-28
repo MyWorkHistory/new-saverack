@@ -97,7 +97,7 @@ class CustomBillService
             $bill = CustomBill::query()->create([
                 'bill_number' => $this->nextBillNumber(),
                 'name' => isset($header['name']) ? (trim((string) $header['name']) ?: null) : null,
-                'status' => CustomBill::STATUS_OPEN,
+                'status' => CustomBill::STATUS_DRAFT,
                 'client_account_id' => (int) $header['client_account_id'],
                 'bill_date' => $header['bill_date'],
                 'total_cents' => 0,
@@ -113,19 +113,17 @@ class CustomBillService
                 $this->insertItem($bill, $order, $row);
             }
             $this->recalculateTotal($bill);
-            $this->logHistory($bill, $actor, 'created', 'Custom bill created.');
+            $this->logHistory($bill, $actor, 'created', 'Custom bill created as draft.');
 
             return $bill->fresh(['items', 'clientAccount', 'histories.user']);
         });
-
-        app(BillCreatedSlackService::class)->notifyCustomBill($bill);
 
         return $bill;
     }
 
     public function updateHeader(CustomBill $bill, array $data, ?User $actor): CustomBill
     {
-        $this->assertOpen($bill);
+        $this->assertEditable($bill);
 
         return DB::transaction(function () use ($bill, $data, $actor) {
             if (isset($data['bill_date'])) {
@@ -140,7 +138,7 @@ class CustomBillService
 
     public function delete(CustomBill $bill, ?User $actor): void
     {
-        $this->assertOpen($bill);
+        $this->assertEditable($bill);
 
         DB::transaction(function () use ($bill) {
             $bill->items()->delete();
@@ -154,7 +152,7 @@ class CustomBillService
      */
     public function addItem(CustomBill $bill, array $row, ?User $actor): CustomBill
     {
-        $this->assertOpen($bill);
+        $this->assertEditable($bill);
 
         return DB::transaction(function () use ($bill, $row, $actor) {
             $order = (int) $bill->items()->max('sort_order') + 1;
@@ -171,7 +169,7 @@ class CustomBillService
      */
     public function updateItem(CustomBill $bill, CustomBillItem $item, array $row, ?User $actor): CustomBill
     {
-        $this->assertOpen($bill);
+        $this->assertEditable($bill);
         if ((int) $item->custom_bill_id !== (int) $bill->id) {
             throw new \InvalidArgumentException('Line item does not belong to this bill.');
         }
@@ -189,7 +187,7 @@ class CustomBillService
 
     public function deleteItem(CustomBill $bill, CustomBillItem $item, ?User $actor): CustomBill
     {
-        $this->assertOpen($bill);
+        $this->assertEditable($bill);
         if ((int) $item->custom_bill_id !== (int) $bill->id) {
             throw new \InvalidArgumentException('Line item does not belong to this bill.');
         }
@@ -209,12 +207,22 @@ class CustomBillService
             throw ValidationException::withMessages(['status' => 'Invalid status.']);
         }
 
-        return DB::transaction(function () use ($bill, $status, $actor) {
-            if ($status === CustomBill::STATUS_OPEN && $bill->isInvoiced()) {
+        $wasDraft = $bill->isDraft();
+        $wasInvoiced = $bill->isInvoiced();
+
+        $fresh = DB::transaction(function () use ($bill, $status, $actor, $wasDraft, $wasInvoiced) {
+            if ($status === CustomBill::STATUS_OPEN && ($wasDraft || $wasInvoiced)) {
                 $bill->status = CustomBill::STATUS_OPEN;
-                $bill->invoice_id = null;
+                if ($wasInvoiced) {
+                    $bill->invoice_id = null;
+                }
                 $bill->save();
-                $this->logHistory($bill, $actor, 'status', 'Bill marked as Open.');
+                $this->logHistory(
+                    $bill,
+                    $actor,
+                    'status',
+                    $wasDraft ? 'Bill opened from draft.' : 'Bill marked as Open.'
+                );
 
                 return $bill->fresh(['items', 'clientAccount', 'histories.user', 'invoice']);
             }
@@ -223,6 +231,12 @@ class CustomBillService
                 'status' => 'Use Add To Invoice to mark a bill as Invoiced.',
             ]);
         });
+
+        if ($wasDraft && $fresh->isOpen()) {
+            app(BillCreatedSlackService::class)->notifyCustomBill($fresh);
+        }
+
+        return $fresh;
     }
 
     /**
@@ -313,7 +327,7 @@ class CustomBillService
             'name' => $bill->name,
             'display_name' => $bill->name ? (string) $bill->name : (string) $bill->bill_number,
             'status' => $bill->status,
-            'status_label' => $bill->isOpen() ? 'Open' : 'Invoiced',
+            'status_label' => CustomBill::statusLabel((string) $bill->status),
             'client_account_id' => $bill->client_account_id,
             'client_account_name' => $bill->clientAccount ? $bill->clientAccount->company_name : '',
             'bill_date' => $bill->bill_date ? $bill->bill_date->format('Y-m-d') : null,
@@ -357,7 +371,7 @@ class CustomBillService
             'name' => $bill->name,
             'display_name' => $bill->name ? (string) $bill->name : (string) $bill->bill_number,
             'status' => $bill->status,
-            'status_label' => $bill->isOpen() ? 'Open' : 'Invoiced',
+            'status_label' => CustomBill::statusLabel((string) $bill->status),
             'client_account_id' => $bill->client_account_id,
             'client_account_name' => $bill->clientAccount ? $bill->clientAccount->company_name : '',
             'bill_date' => $bill->bill_date ? $bill->bill_date->format('Y-m-d') : null,
@@ -477,11 +491,22 @@ class CustomBillService
         $bill->save();
     }
 
+    private function assertEditable(CustomBill $bill): void
+    {
+        if (! $bill->isEditable()) {
+            throw ValidationException::withMessages([
+                'status' => 'This bill is invoiced. Mark it Open before editing.',
+            ]);
+        }
+    }
+
     private function assertOpen(CustomBill $bill): void
     {
         if (! $bill->isOpen()) {
             throw ValidationException::withMessages([
-                'status' => 'This bill is invoiced. Mark it Open before editing.',
+                'status' => $bill->isDraft()
+                    ? 'Open this draft bill before adding it to an invoice.'
+                    : 'This bill is invoiced. Mark it Open before editing.',
             ]);
         }
     }

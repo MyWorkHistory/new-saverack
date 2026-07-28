@@ -92,7 +92,11 @@ const selectedRows = computed(() => {
 });
 
 const selectedCustomOpen = computed(() =>
-  selectedRows.value.filter((r) => r.bill_kind === "custom" && r.status === "open"),
+  selectedRows.value.filter(
+    (r) =>
+      r.bill_kind === "custom" &&
+      (r.status === "open" || r.status === "draft"),
+  ),
 );
 
 const selectedEligibleForInvoice = computed(() =>
@@ -192,7 +196,9 @@ async function fetchRows() {
 }
 
 function statusBadgeClass(status) {
-  return status === "invoiced" ? "bg-success-subtle text-success" : "bg-warning-subtle text-warning";
+  if (status === "invoiced") return "bg-success-subtle text-success";
+  if (status === "draft") return "bg-secondary-subtle text-secondary";
+  return "bg-warning-subtle text-warning";
 }
 
 function detailPath(row) {
@@ -279,7 +285,7 @@ const bulkDeleteMessage = computed(() => {
   if (open === total) {
     return `Delete ${open} selected bill${open === 1 ? "" : "s"}? This cannot be undone.`;
   }
-  return `Delete ${open} open bill${open === 1 ? "" : "s"} from ${total} selected? ASN, Return, and invoiced bills will be skipped.`;
+  return `Delete ${open} draft/open bill${open === 1 ? "" : "s"} from ${total} selected? ASN, Return, and invoiced bills will be skipped.`;
 });
 
 const bulkAddMessage = computed(() => {
@@ -290,7 +296,7 @@ const bulkAddMessage = computed(() => {
   msg +=
     "Custom and ASN bills stay separate on the invoice; Return bills combine under Returns. Bills are processed one by one.";
   if (skipped > 0) {
-    msg += ` ${skipped} selected bill${skipped === 1 ? "" : "s"} will be skipped (invoiced or no lines).`;
+    msg += ` ${skipped} selected bill${skipped === 1 ? "" : "s"} will be skipped (draft, invoiced, or no lines).`;
   }
   return msg;
 });
@@ -485,6 +491,7 @@ onUnmounted(() => {
                 <label class="form-label">Status</label>
                 <select v-model="query.status" class="form-select mb-3">
                   <option value="all">All</option>
+                  <option value="draft">Draft</option>
                   <option value="open">Open</option>
                   <option value="invoiced">Invoiced</option>
                 </select>
@@ -681,7 +688,7 @@ onUnmounted(() => {
                 class="staff-actions-cell text-center billing-custom-bills-actions-col"
               >
                 <div
-                  v-if="row.bill_kind === 'custom' && row.status === 'open'"
+                  v-if="row.bill_kind === 'custom' && (row.status === 'open' || row.status === 'draft')"
                   data-row-actions
                   class="staff-actions-inner staff-actions-inner--single"
                 >
@@ -758,7 +765,7 @@ onUnmounted(() => {
         @click.stop
       >
         <button
-          v-if="canDelete && manageMenuRow.bill_kind === 'custom' && manageMenuRow.status === 'open'"
+          v-if="canDelete && manageMenuRow.bill_kind === 'custom' && (manageMenuRow.status === 'open' || manageMenuRow.status === 'draft')"
           type="button"
           class="staff-row-menu__item staff-row-menu__item--danger"
           role="menuitem"

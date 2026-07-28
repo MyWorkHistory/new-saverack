@@ -91,6 +91,8 @@ const selectedInvoiceId = ref("");
 const reopenBusy = ref(false);
 
 const isOpen = computed(() => bill.value?.status === "open");
+const isDraft = computed(() => bill.value?.status === "draft");
+const isEditable = computed(() => isOpen.value || isDraft.value);
 
 const billTotalSubtext = computed(() => {
   if (!bill.value) return "";
@@ -162,7 +164,9 @@ async function loadBill() {
 }
 
 function statusBadgeClass(status) {
-  return status === "invoiced" ? "bg-success-subtle text-success" : "bg-warning-subtle text-warning";
+  if (status === "invoiced") return "bg-success-subtle text-success";
+  if (status === "draft") return "bg-secondary-subtle text-secondary";
+  return "bg-warning-subtle text-warning";
 }
 
 function unitPriceFromCents(cents) {
@@ -559,6 +563,15 @@ onUnmounted(() => {
         </div>
         <div class="ms-md-auto d-flex flex-wrap align-items-center gap-2">
           <button
+            v-if="isDraft && canUpdate"
+            type="button"
+            class="btn btn-primary btn-sm staff-page-primary fw-semibold"
+            :disabled="reopenBusy"
+            @click="markAsOpen"
+          >
+            {{ reopenBusy ? "Opening…" : "Open Bill" }}
+          </button>
+          <button
             v-if="isOpen && canUpdate"
             type="button"
             class="btn btn-primary btn-sm staff-page-primary fw-semibold"
@@ -632,7 +645,7 @@ onUnmounted(() => {
             >
               <h2 class="h6 mb-0 fw-semibold">Line Items</h2>
               <button
-                v-if="isOpen && canUpdate"
+                v-if="isEditable && canUpdate"
                 type="button"
                 class="btn btn-sm btn-primary staff-page-primary"
                 @click="openAddLineModal"
@@ -650,7 +663,7 @@ onUnmounted(() => {
                     <th class="staff-table-head__th text-end">Price</th>
                     <th class="staff-table-head__th text-end">Total</th>
                     <th
-                      v-if="isOpen && canUpdate"
+                      v-if="isEditable && canUpdate"
                       class="staff-table-head__th text-center billing-custom-bill-lines-actions-col"
                     >
                       Actions
@@ -659,7 +672,7 @@ onUnmounted(() => {
                 </thead>
                 <tbody>
                   <tr v-if="!bill.items?.length">
-                    <td :colspan="isOpen && canUpdate ? 6 : 5" class="text-center text-secondary py-4">
+                    <td :colspan="isEditable && canUpdate ? 6 : 5" class="text-center text-secondary py-4">
                       No line items yet.
                     </td>
                   </tr>
@@ -670,7 +683,7 @@ onUnmounted(() => {
                     <td class="text-end">{{ formatCents(item.unit_price_cents) }}</td>
                     <td class="text-end fw-semibold">{{ formatCents(item.line_total_cents) }}</td>
                     <td
-                      v-if="isOpen && canUpdate"
+                      v-if="isEditable && canUpdate"
                       class="text-center align-middle billing-custom-bill-lines-actions-cell"
                       @click.stop
                     >
@@ -782,7 +795,7 @@ onUnmounted(() => {
         @click.stop
       >
         <button
-          v-if="isOpen && canUpdate"
+          v-if="isEditable && canUpdate"
           type="button"
           class="staff-row-menu__item"
           role="menuitem"
@@ -807,10 +820,10 @@ onUnmounted(() => {
           :disabled="reopenBusy"
           @click="markAsOpen"
         >
-          {{ reopenBusy ? "Updating…" : "Mark As Open" }}
+          {{ reopenBusy ? "Updating…" : isDraft ? "Open Bill" : "Mark As Open" }}
         </button>
         <button
-          v-if="isOpen && canDelete"
+          v-if="isEditable && canDelete"
           type="button"
           class="staff-row-menu__item staff-row-menu__item--danger"
           role="menuitem"

@@ -269,7 +269,9 @@ class BillingBillsService
             'bill_number' => (int) $row->bill_number,
             'display_name' => (string) $row->display_name,
             'status' => $status,
-            'status_label' => $status === 'open' ? 'Open' : 'Invoiced',
+            'status_label' => $status === 'draft'
+                ? 'Draft'
+                : ($status === 'open' ? 'Open' : 'Invoiced'),
             'client_account_id' => $row->client_account_id ? (int) $row->client_account_id : null,
             'client_account_name' => (string) ($row->client_account_name ?? ''),
             'bill_date' => $row->bill_date ? (string) $row->bill_date : null,

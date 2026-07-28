@@ -80,6 +80,21 @@ class CustomBillApiTest extends TestCase
         ]);
     }
 
+    public function test_create_without_items_opens_as_draft(): void
+    {
+        $this->actingWithBilling(['billing.view', 'billing.create']);
+        $client = $this->clientAccount();
+
+        $this->postJson('/api/custom-bills', [
+            'client_account_id' => $client->id,
+            'bill_date' => now()->toDateString(),
+        ])
+            ->assertCreated()
+            ->assertJsonPath('status', CustomBill::STATUS_DRAFT)
+            ->assertJsonPath('total_cents', 0)
+            ->assertJsonCount(0, 'items');
+    }
+
     public function test_guest_cannot_list_custom_bills(): void
     {
         $this->getJson('/api/custom-bills')->assertUnauthorized();
@@ -112,7 +127,7 @@ class CustomBillApiTest extends TestCase
 
         $res->assertCreated()
             ->assertJsonPath('bill_number', 1001)
-            ->assertJsonPath('status', CustomBill::STATUS_OPEN)
+            ->assertJsonPath('status', CustomBill::STATUS_DRAFT)
             ->assertJsonPath('total_cents', 2500)
             ->assertJsonPath('created_by_name', $user->name);
 
@@ -179,6 +194,10 @@ class CustomBillApiTest extends TestCase
 
         $billId = (int) $billRes->json('id');
 
+        $this->patchJson("/api/custom-bills/{$billId}/status", [
+            'status' => CustomBill::STATUS_OPEN,
+        ])->assertOk();
+
         $this->postJson("/api/custom-bills/{$billId}/add-to-invoice", [
             'invoice_id' => $invoice->id,
         ])->assertOk();
@@ -193,6 +212,43 @@ class CustomBillApiTest extends TestCase
         $this->assertNotNull($invoicedHistory);
         $this->assertSame('Added to Invoice', $invoicedHistory['event_label']);
         $this->assertSame($invoice->id, (int) $invoicedHistory['invoice_id']);
+    }
+
+    public function test_draft_bill_cannot_be_added_to_invoice(): void
+    {
+        $this->actingWithBilling(['billing.view', 'billing.create', 'billing.update']);
+        $client = $this->clientAccount();
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-CB-DRAFT',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+        ]);
+
+        $billRes = $this->postJson('/api/custom-bills', [
+            'client_account_id' => $client->id,
+            'bill_date' => now()->toDateString(),
+            'items' => [
+                [
+                    'line_type' => InvoiceLineCategory::AD_HOC,
+                    'name' => 'Fee',
+                    'quantity' => 1,
+                    'unit_price' => 5.00,
+                ],
+            ],
+        ])->assertCreated()->assertJsonPath('status', CustomBill::STATUS_DRAFT);
+
+        $billId = (int) $billRes->json('id');
+
+        $this->postJson("/api/custom-bills/{$billId}/add-to-invoice", [
+            'invoice_id' => $invoice->id,
+        ])->assertStatus(422);
     }
 
     public function test_line_crud_recalculates_total_cents(): void
@@ -271,6 +327,10 @@ class CustomBillApiTest extends TestCase
         ])->assertCreated();
 
         $billId = (int) $billRes->json('id');
+
+        $this->patchJson("/api/custom-bills/{$billId}/status", [
+            'status' => CustomBill::STATUS_OPEN,
+        ])->assertOk();
 
         $this->postJson("/api/custom-bills/{$billId}/add-to-invoice", [
             'invoice_id' => $invoice->id,
@@ -380,6 +440,10 @@ class CustomBillApiTest extends TestCase
         ])->assertCreated();
 
         $billId = (int) $billRes->json('id');
+
+        $this->patchJson("/api/custom-bills/{$billId}/status", [
+            'status' => CustomBill::STATUS_OPEN,
+        ])->assertOk();
 
         $this->postJson("/api/custom-bills/{$billId}/add-to-invoice", [
             'invoice_id' => $invoice->id,

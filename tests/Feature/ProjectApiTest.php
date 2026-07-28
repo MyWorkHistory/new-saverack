@@ -69,7 +69,7 @@ class ProjectApiTest extends TestCase
         $bill = CustomBill::query()->find($res->json('custom_bill_id'));
         $this->assertNotNull($bill);
         $this->assertSame('P-1001', $bill->name);
-        $this->assertSame(CustomBill::STATUS_OPEN, $bill->status);
+        $this->assertSame(CustomBill::STATUS_DRAFT, $bill->status);
         $this->assertSame((int) $account->id, (int) $bill->client_account_id);
     }
 

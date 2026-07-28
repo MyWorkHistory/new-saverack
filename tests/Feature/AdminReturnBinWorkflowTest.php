@@ -312,6 +312,68 @@ class AdminReturnBinWorkflowTest extends TestCase
         ])->assertUnprocessable();
     }
 
+    public function test_transfer_to_new_location_resolves_via_warehouse_catalog(): void
+    {
+        $account = $this->account('xfer-new');
+        $return = $this->receivedReturn($account, ['rma_number' => 'XF0002']);
+        $this->line($return, 'SKU-NEW-LOC', 3);
+        $bin = $this->makeBin('New Loc Bin');
+        app(ReturnBinService::class)->assignReturnToBin($return, (int) $bin->id);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        // SKU has no inventory at E-12-025 yet — old product-only lookup would fail.
+        $mock->shouldReceive('getProductDetailBySku')->andReturn([
+            'warehouses' => [
+                [
+                    'warehouse_id' => 'wh-1',
+                    'locations' => [
+                        [
+                            'location_id' => 'loc-other',
+                            'location_name' => 'A-01',
+                            'quantity' => 1,
+                            'pickable' => true,
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+        $mock->shouldReceive('resolveWarehouseLocation')
+            ->once()
+            ->with('wh-1', 'E-12-025', 'sh-bin-xfer-new')
+            ->andReturn([
+                'id' => 'loc-e12',
+                'name' => 'E-12-025',
+                'type' => 'Bin (Small)',
+                'pickable' => true,
+                'sellable' => true,
+            ]);
+        $mock->shouldReceive('addLocationQuantity')
+            ->once()
+            ->with(
+                'SKU-NEW-LOC',
+                'wh-1',
+                'loc-e12',
+                2,
+                Mockery::type('string'),
+                'sh-bin-xfer-new'
+            )
+            ->andReturn([]);
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        Sanctum::actingAs($this->staffUser());
+
+        $this->postJson('/api/admin/returns/bins/'.$bin->id.'/transfer', [
+            'sku' => 'SKU-NEW-LOC',
+            'client_account_id' => $account->id,
+            'quantity' => 2,
+            'warehouse_id' => 'wh-1',
+            'to_location' => 'E-12-025',
+        ])
+            ->assertOk()
+            ->assertJsonPath('transferred_qty', 2)
+            ->assertJsonPath('remaining_qty', 1);
+    }
+
     public function test_non_compliant_transfer_uses_non_compliant_reason(): void
     {
         $account = $this->account('nc');

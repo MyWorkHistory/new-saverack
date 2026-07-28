@@ -289,11 +289,20 @@ class ReturnBinService
 
         $resolvedLocationName = $toLocationName;
         if ($toLocationId === '') {
-            $toLocationId = $this->resolveLocationIdByName($sku, $warehouseId, $toLocationName, $customerId);
-            if ($toLocationId === '') {
+            $resolved = $this->resolveInventoryLocation(
+                $sku,
+                $warehouseId,
+                $toLocationName,
+                $customerId
+            );
+            if (! is_array($resolved) || trim((string) ($resolved['id'] ?? '')) === '') {
                 throw ValidationException::withMessages([
                     'to_location' => ['Location not found in this warehouse.'],
                 ]);
+            }
+            $toLocationId = trim((string) $resolved['id']);
+            if ($resolvedLocationName === '') {
+                $resolvedLocationName = trim((string) ($resolved['name'] ?? ''));
             }
         } elseif ($resolvedLocationName === '') {
             $resolvedLocationName = $this->resolveLocationNameById($sku, $warehouseId, $toLocationId, $customerId);
@@ -466,37 +475,41 @@ class ReturnBinService
         return $out;
     }
 
-    private function resolveLocationIdByName(
+    /**
+     * Resolve a warehouse location the same way inventory transfers do:
+     * warehouse catalog first, then product locations, then unscoped warehouse lookup.
+     *
+     * @return array{id:string,name:string,type:?string,pickable:?bool,sellable:?bool}|null
+     */
+    private function resolveInventoryLocation(
         string $sku,
         string $warehouseId,
-        string $locationName,
-        string $customerId
-    ): string {
-        $needle = strtolower(trim($locationName));
-        if ($needle === '') {
-            return '';
+        string $locationInput,
+        ?string $customerAccountId
+    ): ?array {
+        $resolved = $this->inventory->resolveWarehouseLocation($warehouseId, $locationInput, $customerAccountId);
+        if (is_array($resolved)) {
+            return $resolved;
         }
 
-        $product = $this->inventory->getProductDetailBySku($sku, $warehouseId, $customerId);
-        if (! is_array($product)) {
-            return '';
+        $resolved = $this->inventory->resolveProductWarehouseLocation(
+            $sku,
+            $warehouseId,
+            $locationInput,
+            $customerAccountId
+        );
+        if (is_array($resolved)) {
+            return $resolved;
         }
 
-        foreach ($this->flattenProductLocations($product) as $loc) {
-            if (trim((string) ($loc['warehouse_id'] ?? '')) !== $warehouseId) {
-                continue;
-            }
-            $name = strtolower(trim((string) ($loc['location_name'] ?? '')));
-            if ($name !== $needle) {
-                continue;
-            }
-            $id = trim((string) ($loc['location_id'] ?? ''));
-            if ($id !== '') {
-                return $id;
+        if (is_string($customerAccountId) && trim($customerAccountId) !== '') {
+            $resolved = $this->inventory->resolveWarehouseLocation($warehouseId, $locationInput, null);
+            if (is_array($resolved)) {
+                return $resolved;
             }
         }
 
-        return '';
+        return null;
     }
 
     private function resolveLocationNameById(

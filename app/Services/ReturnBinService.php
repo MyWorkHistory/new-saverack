@@ -180,18 +180,42 @@ class ReturnBinService
         })->values()->all();
     }
 
-    public function assignReturnToBin(ClientAccountReturn $return, int $binId): ClientAccountReturn
+    /**
+     * Assign each returned line to a bin. Lines may use different bins.
+     *
+     * @param  array<int, int>  $binIdByLineId  line id => return_bin id
+     */
+    public function assignLinesToBins(ClientAccountReturn $return, array $binIdByLineId): ClientAccountReturn
     {
         $this->assertReceivedReturn($return);
-        $bin = ReturnBin::query()->find($binId);
-        if (! $bin instanceof ReturnBin) {
+
+        if ($binIdByLineId === []) {
             throw ValidationException::withMessages([
-                'return_bin_id' => ['Select a valid return bin.'],
+                'return_bin_id' => ['Select a return bin for each returned item.'],
             ]);
         }
 
-        return DB::transaction(function () use ($return, $bin) {
-            $return->return_bin_id = $bin->id;
+        $binIds = array_values(array_unique(array_filter(array_map('intval', $binIdByLineId), function ($id) {
+            return $id > 0;
+        })));
+        if ($binIds === []) {
+            throw ValidationException::withMessages([
+                'return_bin_id' => ['Select a return bin for each returned item.'],
+            ]);
+        }
+
+        $bins = ReturnBin::query()->whereIn('id', $binIds)->get()->keyBy('id');
+        foreach ($binIds as $binId) {
+            if (! $bins->has($binId)) {
+                throw ValidationException::withMessages([
+                    'return_bin_id' => ['Select a valid return bin.'],
+                ]);
+            }
+        }
+
+        return DB::transaction(function () use ($return, $binIdByLineId, $bins, $binIds) {
+            $primaryBinId = (int) $binIds[0];
+            $return->return_bin_id = $primaryBinId;
             $return->return_bin_number = null;
             $return->save();
 
@@ -206,11 +230,19 @@ class ReturnBinService
                 if ((int) $line->return_qty <= 0) {
                     continue;
                 }
+                $lineId = (int) $line->id;
+                $binId = (int) ($binIdByLineId[$lineId] ?? 0);
+                if ($binId <= 0 || ! $bins->has($binId)) {
+                    throw ValidationException::withMessages([
+                        'return_bin_id' => ['Select a return bin for each returned item.'],
+                    ]);
+                }
+
                 if ($line->return_bin_remaining_qty === null) {
                     $line->return_bin_remaining_qty = (int) $line->return_qty;
                 }
                 if ((int) $line->return_bin_remaining_qty > 0) {
-                    $line->return_bin_id = $bin->id;
+                    $line->return_bin_id = $binId;
                     $line->return_bin_number = null;
                     $sku = trim((string) $line->sku);
                     if ($sku !== '' && (trim((string) ($line->pick_location ?? '')) === '' || $line->pick_location === '—')) {
@@ -229,6 +261,21 @@ class ReturnBinService
 
             return $return->fresh(['lines', 'clientAccount', 'returnBin']);
         });
+    }
+
+    public function assignReturnToBin(ClientAccountReturn $return, int $binId): ClientAccountReturn
+    {
+        $lines = ClientAccountReturnLine::query()
+            ->where('client_account_return_id', $return->id)
+            ->where('return_qty', '>', 0)
+            ->pluck('id');
+
+        $binIdByLineId = [];
+        foreach ($lines as $lineId) {
+            $binIdByLineId[(int) $lineId] = $binId;
+        }
+
+        return $this->assignLinesToBins($return, $binIdByLineId);
     }
 
     /**

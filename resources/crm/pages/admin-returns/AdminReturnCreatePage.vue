@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -21,22 +21,29 @@ const warehouseNote = ref("");
 const reasonOptions = ref({});
 const returnFees = ref({});
 const defaultReason = ref("unknown");
-const selected = ref(new Set());
-const selectedReturnBin = ref("");
+const selectedKeys = ref([]);
+const defaultReturnBin = ref("");
 const returnBinOptions = ref([]);
 
 const shipheroOrderId = computed(() => String(route.params.shipheroOrderId || ""));
 const clientAccountId = computed(() => Number(route.query.client_account_id || 0));
 
-const selectedCount = computed(() => selected.value.size);
+const selectedCount = computed(() => selectedKeys.value.length);
 const allSelected = computed(() => {
   if (!formLines.value.length) return false;
-  return formLines.value.every((_, idx) => selected.value.has(idx));
+  return formLines.value.every((_, idx) => selectedKeys.value.includes(idx));
 });
 
 const hasReturnQty = computed(() => formLines.value.some((l) => Number(l.return_qty) > 0));
 
-const canProcess = computed(() => hasReturnQty.value && Boolean(selectedReturnBin.value));
+const allReturnedLinesHaveBin = computed(() =>
+  formLines.value.every((row) => {
+    if (Number(row.return_qty) <= 0) return true;
+    return Boolean(String(row.return_bin_id || "").trim());
+  }),
+);
+
+const canProcess = computed(() => hasReturnQty.value && allReturnedLinesHaveBin.value);
 
 async function loadReturnBins() {
   try {
@@ -53,23 +60,41 @@ function lineKey(idx) {
 
 function toggleAll() {
   if (allSelected.value) {
-    selected.value = new Set();
+    selectedKeys.value = [];
   } else {
-    selected.value = new Set(formLines.value.map((_, i) => i));
+    selectedKeys.value = formLines.value.map((_, i) => i);
   }
 }
 
 function toggleOne(idx) {
-  const next = new Set(selected.value);
-  if (next.has(idx)) next.delete(idx);
-  else next.add(idx);
-  selected.value = next;
+  if (selectedKeys.value.includes(idx)) {
+    selectedKeys.value = selectedKeys.value.filter((k) => k !== idx);
+  } else {
+    selectedKeys.value = [...selectedKeys.value, idx];
+  }
+}
+
+function applyDefaultBinToAll() {
+  const binId = String(defaultReturnBin.value || "").trim();
+  if (!binId) {
+    toast.error("Select a default return bin first.");
+    return;
+  }
+  formLines.value = formLines.value.map((row) => ({
+    ...row,
+    return_bin_id: binId,
+  }));
 }
 
 function returnAllSelected() {
+  const binId = String(defaultReturnBin.value || "").trim();
   formLines.value = formLines.value.map((row, idx) => {
-    if (!selected.value.has(idx)) return row;
-    return { ...row, return_qty: Number(row.order_qty) || 0 };
+    if (!selectedKeys.value.includes(idx)) return row;
+    return {
+      ...row,
+      return_qty: Number(row.order_qty) || 0,
+      return_bin_id: row.return_bin_id || binId,
+    };
   });
 }
 
@@ -79,7 +104,21 @@ function clampReturnQty(row) {
   if (q < 0) q = 0;
   if (q > max) q = max;
   row.return_qty = q;
+  if (q > 0 && !String(row.return_bin_id || "").trim() && defaultReturnBin.value) {
+    row.return_bin_id = String(defaultReturnBin.value);
+  }
 }
+
+watch(defaultReturnBin, (binId) => {
+  const id = String(binId || "").trim();
+  if (!id) return;
+  formLines.value = formLines.value.map((row) => {
+    if (Number(row.return_qty) > 0 && !String(row.return_bin_id || "").trim()) {
+      return { ...row, return_bin_id: id };
+    }
+    return row;
+  });
+});
 
 function orderCustomerName(order) {
   const ship = order?.shipping_address || order?.ship_to || {};
@@ -136,9 +175,8 @@ async function processReturn() {
     toast.error("Enter a return quantity for at least one item.");
     return;
   }
-  const binId = Number(selectedReturnBin.value);
-  if (!binId || binId <= 0) {
-    toast.error("Select a return bin before processing.");
+  if (!allReturnedLinesHaveBin.value) {
+    toast.error("Select a return bin for each returned item.");
     return;
   }
   submitBusy.value = true;
@@ -152,15 +190,21 @@ async function processReturn() {
       return_qty: Number(row.return_qty) || 0,
       return_reason: Number(row.return_qty) > 0 ? row.return_reason || defaultReason.value : null,
       restock: row.restock !== false,
+      return_bin_id:
+        Number(row.return_qty) > 0 && row.return_bin_id ? Number(row.return_bin_id) : null,
     }));
     const payload = {
       return_type: returnType.value,
       warehouse_private_note: warehouseNote.value.trim() || null,
-      return_bin_id: binId,
       lines,
     };
+    if (defaultReturnBin.value) {
+      payload.return_bin_id = Number(defaultReturnBin.value);
+    }
     if (returnFees.value.first_item != null) payload.first_item_fee = returnFees.value.first_item;
-    if (returnFees.value.additional_item != null) payload.additional_item_fee = returnFees.value.additional_item;
+    if (returnFees.value.additional_item != null) {
+      payload.additional_item_fee = returnFees.value.additional_item;
+    }
     const { data } = await api.post(`/admin/returns/${ret.value.id}/process-from-draft`, payload);
     toast.success("Return processed.");
     router.push({ name: "admin-process-return-detail", params: { id: String(data.id) } });
@@ -214,6 +258,7 @@ async function init() {
       return_qty: 0,
       return_reason: defaultReason.value,
       restock: true,
+      return_bin_id: "",
     }));
   } catch (e) {
     toast.errorFrom(e, "Could not start return.");
@@ -237,7 +282,10 @@ onMounted(() => {
     <CrmLoadingSpinner message="Preparing return…" :center="true" />
   </div>
 
-  <div v-else-if="ret" class="staff-page staff-page--wide user-return-page user-return-detail-page order-detail-page">
+  <div
+    v-else-if="ret"
+    class="staff-page staff-page--wide user-return-page user-return-detail-page order-detail-page"
+  >
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white user-return-page__header-shell mb-4">
       <div class="p-4 pb-3">
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
@@ -255,10 +303,12 @@ onMounted(() => {
             </button>
           </div>
           <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
-            <label class="small text-secondary mb-0 fw-medium" for="admin-return-create-bin">Return Bin</label>
+            <label class="small text-secondary mb-0 fw-medium" for="admin-return-create-bin">
+              Default Bin
+            </label>
             <select
               id="admin-return-create-bin"
-              v-model="selectedReturnBin"
+              v-model="defaultReturnBin"
               class="form-select form-select-sm"
               style="min-width: 10rem"
               :disabled="submitBusy"
@@ -268,6 +318,15 @@ onMounted(() => {
                 {{ bin.name }}
               </option>
             </select>
+            <button
+              type="button"
+              class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn"
+              :disabled="submitBusy || !defaultReturnBin"
+              title="Apply default bin to every line"
+              @click="applyDefaultBinToAll"
+            >
+              Apply To All
+            </button>
             <button
               type="button"
               class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn"
@@ -299,7 +358,11 @@ onMounted(() => {
             <h2 class="h6 mb-0 fw-semibold">Return Items</h2>
             <div class="d-flex align-items-center gap-2">
               <label class="small text-secondary mb-0" for="return-type-select">Type</label>
-              <select id="return-type-select" v-model="returnType" class="form-select form-select-sm user-return-page__type-select">
+              <select
+                id="return-type-select"
+                v-model="returnType"
+                class="form-select form-select-sm user-return-page__type-select"
+              >
                 <option value="direct">Direct</option>
                 <option value="amazon">Amazon</option>
                 <option value="nordstrom">Nordstrom</option>
@@ -338,6 +401,7 @@ onMounted(() => {
                   <th class="staff-table-head__th order-detail-page__items-col" scope="col">Item</th>
                   <th class="staff-table-head__th text-center" scope="col">Order Qty</th>
                   <th class="staff-table-head__th text-center" scope="col">Return Items</th>
+                  <th class="staff-table-head__th" scope="col">Return Bin</th>
                   <th class="staff-table-head__th" scope="col">Reason</th>
                   <th class="staff-table-head__th text-center" scope="col">Restock</th>
                 </tr>
@@ -348,7 +412,7 @@ onMounted(() => {
                     <input
                       type="checkbox"
                       class="form-check-input staff-table-head__check m-0"
-                      :checked="selected.has(idx)"
+                      :checked="selectedKeys.includes(idx)"
                       :aria-label="`Select ${row.sku}`"
                       @change="toggleOne(idx)"
                     />
@@ -365,7 +429,12 @@ onMounted(() => {
                         loading="lazy"
                       />
                       <div class="min-w-0 order-detail-page__item-copy">
-                        <div class="order-detail-page__item-name fw-semibold" :title="row.name || undefined">{{ row.name || "—" }}</div>
+                        <div
+                          class="order-detail-page__item-name fw-semibold"
+                          :title="row.name || undefined"
+                        >
+                          {{ row.name || "—" }}
+                        </div>
                         <div class="order-detail-page__item-sku small text-secondary">{{ row.sku }}</div>
                       </div>
                     </div>
@@ -381,9 +450,32 @@ onMounted(() => {
                       @change="clampReturnQty(row)"
                     />
                   </td>
+                  <td class="user-return-page__bin-col">
+                    <select
+                      v-model="row.return_bin_id"
+                      class="form-select form-select-sm"
+                      :disabled="!row.return_qty || submitBusy"
+                      :aria-label="`Return bin for ${row.sku}`"
+                    >
+                      <option value="">Select bin…</option>
+                      <option
+                        v-for="bin in returnBinOptions"
+                        :key="`line-${idx}-bin-${bin.id}`"
+                        :value="String(bin.id)"
+                      >
+                        {{ bin.name }}
+                      </option>
+                    </select>
+                  </td>
                   <td class="user-return-page__reason-col">
-                    <select v-model="row.return_reason" class="form-select form-select-sm" :disabled="!row.return_qty">
-                      <option v-for="(label, key) in reasonOptions" :key="key" :value="key">{{ label }}</option>
+                    <select
+                      v-model="row.return_reason"
+                      class="form-select form-select-sm"
+                      :disabled="!row.return_qty"
+                    >
+                      <option v-for="(label, key) in reasonOptions" :key="key" :value="key">
+                        {{ label }}
+                      </option>
                     </select>
                   </td>
                   <td class="text-center">
@@ -397,7 +489,7 @@ onMounted(() => {
                   </td>
                 </tr>
                 <tr v-if="!formLines.length">
-                  <td colspan="6" class="text-center text-secondary py-4">No line items on this order.</td>
+                  <td colspan="7" class="text-center text-secondary py-4">No line items on this order.</td>
                 </tr>
               </tbody>
             </table>
@@ -412,7 +504,9 @@ onMounted(() => {
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
             <h3 class="h6 fw-semibold mb-0">RMA #</h3>
-            <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold" @click="copyRma">Copy</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold" @click="copyRma">
+              Copy
+            </button>
           </div>
           <div class="user-return-page__rma-display">{{ ret.rma_number }}</div>
           <p class="small text-secondary mb-0 mt-2">{{ formatRmaLabel(ret.rma_number) }}</p>
@@ -456,6 +550,10 @@ onMounted(() => {
 .user-return-page__qty-col {
   width: 5.5rem;
 }
+.user-return-page__bin-col {
+  width: 9.5rem;
+  min-width: 0;
+}
 .user-return-page__reason-col {
   width: 9rem;
   min-width: 0;
@@ -477,7 +575,7 @@ onMounted(() => {
 }
 
 .user-return-detail-page .order-detail-page__items-col {
-  width: 36%;
+  width: 28%;
   min-width: 0;
   vertical-align: middle;
 }
@@ -509,7 +607,5 @@ onMounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 0.8125rem;
-  line-height: 1.3;
 }
 </style>

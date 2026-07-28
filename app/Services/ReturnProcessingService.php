@@ -73,7 +73,7 @@ class ReturnProcessingService
         ?float $firstItemFee,
         ?float $additionalItemFee,
         ?User $actor,
-        int $binId
+        ?int $binId = null
     ): ClientAccountReturn {
         if ($return->status !== ClientAccountReturn::STATUS_DRAFT) {
             throw ValidationException::withMessages([
@@ -86,7 +86,9 @@ class ReturnProcessingService
             ]);
         }
 
-        return DB::transaction(function () use ($return, $normalizedLines, $returnType, $warehouseNote, $firstItemFee, $additionalItemFee, $actor, $binId) {
+        $normalizedLines = $this->resolveLineBinIds($normalizedLines, $binId);
+
+        return DB::transaction(function () use ($return, $normalizedLines, $returnType, $warehouseNote, $firstItemFee, $additionalItemFee, $actor) {
             if ($returnType !== null && $returnType !== '') {
                 $return->return_type = $returnType;
             }
@@ -103,7 +105,17 @@ class ReturnProcessingService
 
             $this->persistAdminLines($return, $normalizedLines);
             $this->finalizeProcessedReturn($return, $actor);
-            $this->bins->assignReturnToBin($return->fresh(['lines']), $binId);
+
+            $fresh = $return->fresh(['lines']);
+            $binIdByLineId = [];
+            $lines = $fresh->lines->values();
+            foreach ($lines as $index => $line) {
+                if ((int) $line->return_qty <= 0) {
+                    continue;
+                }
+                $binIdByLineId[(int) $line->id] = (int) ($normalizedLines[$index]['return_bin_id'] ?? 0);
+            }
+            $this->bins->assignLinesToBins($fresh, $binIdByLineId);
 
             return $return->fresh(['lines', 'clientAccount', 'returnBill', 'returnBin']);
         });
@@ -148,6 +160,7 @@ class ReturnProcessingService
                 continue;
             }
             $restock = array_key_exists('restock', $row) ? (bool) $row['restock'] : true;
+            $lineBinId = isset($row['return_bin_id']) ? (int) $row['return_bin_id'] : 0;
             $normalized[] = [
                 'shiphero_line_item_id' => isset($row['shiphero_line_item_id']) ? trim((string) $row['shiphero_line_item_id']) : null,
                 'sku' => $sku,
@@ -157,6 +170,7 @@ class ReturnProcessingService
                 'return_qty' => $returnQty,
                 'return_reason' => $reason,
                 'restock' => $restock,
+                'return_bin_id' => $lineBinId > 0 ? $lineBinId : null,
                 'sort_order' => $order++,
             ];
         }
@@ -167,6 +181,35 @@ class ReturnProcessingService
         }
 
         return $normalized;
+    }
+
+    /**
+     * Apply header bin fallback and require a bin on every returned line.
+     *
+     * @param  array<int, array<string, mixed>>  $normalizedLines
+     * @return array<int, array<string, mixed>>
+     */
+    private function resolveLineBinIds(array $normalizedLines, ?int $headerBinId): array
+    {
+        $fallback = $headerBinId !== null && $headerBinId > 0 ? $headerBinId : 0;
+        foreach ($normalizedLines as $i => $row) {
+            if ((int) ($row['return_qty'] ?? 0) <= 0) {
+                $normalizedLines[$i]['return_bin_id'] = null;
+                continue;
+            }
+            $binId = (int) ($row['return_bin_id'] ?? 0);
+            if ($binId <= 0) {
+                $binId = $fallback;
+            }
+            if ($binId <= 0) {
+                throw ValidationException::withMessages([
+                    'return_bin_id' => ['Select a return bin for each returned item.'],
+                ]);
+            }
+            $normalizedLines[$i]['return_bin_id'] = $binId;
+        }
+
+        return $normalizedLines;
     }
 
     /**

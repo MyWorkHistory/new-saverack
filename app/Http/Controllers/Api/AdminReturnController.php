@@ -618,7 +618,7 @@ class AdminReturnController extends Controller
             'warehouse_private_note' => ['nullable', 'string', 'max:20000'],
             'first_item_fee' => ['nullable', 'numeric', 'min:0'],
             'additional_item_fee' => ['nullable', 'numeric', 'min:0'],
-            'return_bin_id' => $this->returnBinIdRules(),
+            'return_bin_id' => ['nullable', 'integer', 'exists:return_bins,id'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.sku' => ['required', 'string', 'max:255'],
             'lines.*.name' => ['required', 'string', 'max:512'],
@@ -628,9 +628,11 @@ class AdminReturnController extends Controller
             'lines.*.image_url' => ['nullable', 'string', 'max:2048'],
             'lines.*.return_reason' => ['nullable', 'string', 'max:64'],
             'lines.*.restock' => ['nullable', 'boolean'],
+            'lines.*.return_bin_id' => ['nullable', 'integer', 'exists:return_bins,id'],
         ]);
 
         $normalized = $this->processing->validateAndNormalizeAdminLines($validated['lines']);
+        $headerBinId = isset($validated['return_bin_id']) ? (int) $validated['return_bin_id'] : null;
         $return = $this->processing->processFromDraft(
             $clientAccountReturn,
             $normalized,
@@ -639,7 +641,7 @@ class AdminReturnController extends Controller
             isset($validated['first_item_fee']) ? (float) $validated['first_item_fee'] : null,
             isset($validated['additional_item_fee']) ? (float) $validated['additional_item_fee'] : null,
             $request->user() instanceof User ? $request->user() : null,
-            (int) $validated['return_bin_id'],
+            $headerBinId && $headerBinId > 0 ? $headerBinId : null,
         );
 
         return response()->json($this->serializeReturnDetail($return));

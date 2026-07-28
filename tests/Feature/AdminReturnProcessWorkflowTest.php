@@ -289,6 +289,63 @@ class AdminReturnProcessWorkflowTest extends TestCase
         $this->assertSame('unknown', $return->lines()->first()->return_reason);
     }
 
+    public function test_process_from_draft_allows_different_bins_per_line(): void
+    {
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Multi Bin Co',
+            'email' => 'multibin@example.test',
+            'shiphero_customer_account_id' => 'sh-multi-bin',
+        ]);
+        $return = ClientAccountReturn::query()->create([
+            'client_account_id' => $account->id,
+            'rma_number' => 'AD0002',
+            'status' => ClientAccountReturn::STATUS_DRAFT,
+            'created_source' => ClientAccountReturn::SOURCE_ADMIN,
+            'return_type' => ClientAccountReturn::TYPE_DIRECT,
+            'shiphero_order_id' => 'order-admin-2',
+            'order_number' => '90002',
+            'customer_name' => 'Admin Customer',
+            'items_count' => 0,
+            'return_fee_first_item' => 3.0,
+            'return_fee_additional_item' => 1.0,
+        ]);
+        $binA = ReturnBin::query()->create(['name' => 'Bin A']);
+        $binB = ReturnBin::query()->create(['name' => 'Bin B']);
+        Sanctum::actingAs($this->staffUser());
+
+        $this->postJson('/api/admin/returns/'.$return->id.'/process-from-draft', [
+            'return_type' => ClientAccountReturn::TYPE_DIRECT,
+            'lines' => [
+                [
+                    'sku' => 'SKU-A',
+                    'name' => 'Product A',
+                    'order_qty' => 1,
+                    'return_qty' => 1,
+                    'return_reason' => 'unknown',
+                    'restock' => true,
+                    'return_bin_id' => $binA->id,
+                ],
+                [
+                    'sku' => 'SKU-B',
+                    'name' => 'Product B',
+                    'order_qty' => 1,
+                    'return_qty' => 1,
+                    'return_reason' => 'unknown',
+                    'restock' => true,
+                    'return_bin_id' => $binB->id,
+                ],
+            ],
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', ClientAccountReturn::STATUS_RECEIVED);
+
+        $lines = $return->fresh()->lines()->orderBy('sort_order')->get();
+        $this->assertCount(2, $lines);
+        $this->assertSame($binA->id, (int) $lines[0]->return_bin_id);
+        $this->assertSame($binB->id, (int) $lines[1]->return_bin_id);
+    }
+
     public function test_processed_return_appears_in_returned_orders_and_items(): void
     {
         $account = $this->account();

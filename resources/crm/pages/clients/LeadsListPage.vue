@@ -3,7 +3,7 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
-import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
@@ -240,24 +240,53 @@ async function confirmDelete() {
   }
 }
 
+const MENU_W = 200;
+const MENU_H = 140;
+
+function statusBadgeClass(status) {
+  const s = String(status || "").toLowerCase();
+  if (s === "open") return "bg-success-subtle text-success";
+  if (s === "contacted") return "bg-primary-subtle text-primary";
+  if (s === "interested") return "bg-warning-subtle text-warning-emphasis";
+  if (s === "future_opportunity") return "bg-info-subtle text-info";
+  if (s === "follow_up") return "bg-danger-subtle text-danger";
+  if (s === "non_responsive") return "bg-secondary-subtle text-secondary";
+  if (s === "not_interested") return "bg-secondary-subtle text-secondary";
+  if (s === "not_qualified") return "bg-body-secondary text-body-secondary";
+  return "bg-body-secondary text-body-secondary";
+}
+
+function placeManageMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+  if (top + MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - MENU_H - 4);
+  }
+  manageMenuRect.value = { top, left };
+}
+
 function closeManageMenu() {
   manageOpenId.value = null;
 }
 
-function toggleManageMenu(row, event) {
-  if (manageOpenId.value === row.id) {
+async function toggleManageMenu(rowId, e) {
+  e.stopPropagation();
+  if (manageOpenId.value === rowId) {
     closeManageMenu();
     return;
   }
-  const btn = event?.currentTarget;
-  if (btn?.getBoundingClientRect) {
-    const rect = btn.getBoundingClientRect();
-    manageMenuRect.value = {
-      top: rect.bottom + 4,
-      left: Math.max(8, rect.right - 160),
-    };
-  }
-  manageOpenId.value = row.id;
+  const btn = e.currentTarget;
+  manageOpenId.value = rowId;
+  await nextTick();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (manageOpenId.value !== rowId) return;
+      if (btn instanceof HTMLElement) placeManageMenu(btn);
+    });
+  });
 }
 
 function onDocClick() {
@@ -344,7 +373,7 @@ onUnmounted(() => {
         <button
           v-if="canCreate"
           type="button"
-          class="btn btn-outline-secondary fw-semibold"
+          class="btn btn-outline-primary staff-page-primary fw-semibold"
           @click="quickAddOpen = true"
         >
           Quick Add
@@ -382,56 +411,71 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="table-responsive">
-        <table class="table staff-table mb-0 align-middle">
-          <thead>
+      <div v-if="loading" class="p-5 d-flex justify-content-center">
+        <CrmLoadingSpinner message="Loading leads…" />
+      </div>
+      <div v-else class="table-responsive staff-table-wrap">
+        <table class="table table-hover align-middle mb-0 staff-data-table">
+          <thead class="table-light staff-table-head">
             <tr>
-              <th scope="col">Status</th>
-              <th scope="col">Company Name</th>
-              <th scope="col">Email</th>
-              <th scope="col">Website</th>
-              <th scope="col">Follow Up</th>
-              <th scope="col">Date Created</th>
-              <th scope="col" class="text-end">Action</th>
+              <th class="staff-table-head__th" scope="col">Status</th>
+              <th class="staff-table-head__th" scope="col">Company Name</th>
+              <th class="staff-table-head__th" scope="col">Email</th>
+              <th class="staff-table-head__th" scope="col">Website</th>
+              <th class="staff-table-head__th text-center" scope="col">Follow Up</th>
+              <th class="staff-table-head__th text-center" scope="col">Date Created</th>
+              <th class="staff-table-head__th staff-actions-col text-center" scope="col">Action</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="loading">
-              <td colspan="7" class="text-center py-5 text-secondary">
-                <CrmLoadingSpinner class="me-2" />
-                Loading…
-              </td>
+            <tr v-if="!rows.length">
+              <td colspan="7" class="px-4 py-5 text-center text-secondary">No leads found.</td>
             </tr>
-            <tr v-else-if="!rows.length">
-              <td colspan="7" class="text-center py-5 text-secondary">No leads found.</td>
-            </tr>
-            <tr v-for="row in rows" :key="row.id">
+            <tr v-for="row in rows" :key="row.id" class="align-middle">
               <td>
                 <button
                   v-if="canUpdate"
                   type="button"
-                  class="btn btn-sm btn-outline-secondary text-nowrap"
-                  @click="openStatusModal(row)"
+                  class="staff-status-badge"
+                  :class="statusBadgeClass(row.status)"
+                  title="Change lead status"
+                  @click.stop="openStatusModal(row)"
                 >
                   {{ leadStatusLabel(row.status) }}
                 </button>
-                <span v-else class="small">{{ leadStatusLabel(row.status) }}</span>
+                <span
+                  v-else
+                  class="staff-status-badge"
+                  :class="statusBadgeClass(row.status)"
+                >
+                  {{ leadStatusLabel(row.status) }}
+                </span>
               </td>
               <td>
                 <RouterLink
                   :to="{ name: 'lead-detail', params: { id: row.id } }"
-                  class="fw-semibold text-decoration-none"
+                  class="fw-semibold text-decoration-none text-body"
                 >
                   {{ row.company_name }}
                 </RouterLink>
               </td>
-              <td>
-                <a v-if="row.email" :href="`mailto:${row.email}`" class="text-decoration-none">
+              <td
+                class="text-body staff-table-cell__meta text-truncate"
+                style="max-width: 14rem"
+              >
+                <a
+                  v-if="row.email"
+                  :href="`mailto:${row.email}`"
+                  class="text-decoration-none text-body"
+                >
                   {{ row.email }}
                 </a>
                 <span v-else class="text-secondary">—</span>
               </td>
-              <td>
+              <td
+                class="text-body staff-table-cell__meta text-truncate"
+                style="max-width: 12rem"
+              >
                 <a
                   v-if="row.website"
                   :href="websiteHref(row.website)"
@@ -443,17 +487,29 @@ onUnmounted(() => {
                 </a>
                 <span v-else class="text-secondary">—</span>
               </td>
-              <td>{{ formatFollowUpDays(row.follow_up_days) }}</td>
-              <td>{{ formatDateUs(row.created_at) }}</td>
-              <td class="text-end">
-                <button
-                  type="button"
-                  class="btn btn-sm btn-light border-0"
-                  aria-label="Actions"
-                  @click.stop="toggleManageMenu(row, $event)"
+              <td class="text-center text-body staff-table-cell__meta text-nowrap">
+                {{ formatFollowUpDays(row.follow_up_days) }}
+              </td>
+              <td class="text-center text-body staff-table-cell__meta text-nowrap">
+                {{ formatDateUs(row.created_at) }}
+              </td>
+              <td class="staff-actions-cell text-center">
+                <div
+                  data-row-actions
+                  class="staff-actions-inner staff-actions-inner--single justify-content-center"
                 >
-                  <CrmIconRowActions />
-                </button>
+                  <button
+                    type="button"
+                    class="staff-action-btn staff-action-btn--more"
+                    :class="{ 'is-open': manageOpenId === row.id }"
+                    :aria-expanded="manageOpenId === row.id"
+                    aria-haspopup="true"
+                    aria-label="Row actions"
+                    @click="toggleManageMenu(row.id, $event)"
+                  >
+                    <CrmIconRowActions variant="horizontal" />
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -462,15 +518,15 @@ onUnmounted(() => {
 
       <div
         v-if="meta.last_page > 1"
-        class="d-flex align-items-center justify-content-between gap-2 px-3 py-2 border-top"
+        class="staff-table-footer card-footer d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-2"
       >
         <span class="small text-secondary">
           Page {{ meta.current_page }} of {{ meta.last_page }} ({{ meta.total }} total)
         </span>
-        <div class="d-flex gap-2">
+        <div class="btn-group btn-group-sm ms-sm-auto">
           <button
             type="button"
-            class="btn btn-sm btn-outline-secondary"
+            class="btn btn-outline-secondary"
             :disabled="meta.current_page <= 1 || loading"
             @click="query.page = meta.current_page - 1"
           >
@@ -478,7 +534,7 @@ onUnmounted(() => {
           </button>
           <button
             type="button"
-            class="btn btn-sm btn-outline-secondary"
+            class="btn btn-outline-secondary"
             :disabled="meta.current_page >= meta.last_page || loading"
             @click="query.page = meta.current_page + 1"
           >
@@ -489,44 +545,59 @@ onUnmounted(() => {
     </div>
 
     <Teleport to="body">
-      <div
-        v-if="manageMenuRow"
-        class="staff-row-menu dropdown-menu show shadow"
-        :style="{
-          position: 'fixed',
-          top: `${manageMenuRect.top}px`,
-          left: `${manageMenuRect.left}px`,
-          zIndex: 1300,
-        }"
-        @click.stop
+      <Transition
+        enter-active-class="transition ease-out duration-100"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition ease-in duration-75"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
       >
-        <RouterLink
-          class="dropdown-item"
-          :to="{ name: 'lead-detail', params: { id: manageMenuRow.id } }"
-          @click="closeManageMenu"
+        <div
+          v-if="manageMenuRow"
+          data-row-actions
+          class="staff-row-menu fixed z-[300]"
+          role="menu"
+          :style="{
+            top: `${manageMenuRect.top}px`,
+            left: `${manageMenuRect.left}px`,
+            minWidth: '200px',
+          }"
+          @click.stop
         >
-          View
-        </RouterLink>
-        <button
-          v-if="canUpdate"
-          type="button"
-          class="dropdown-item"
-          @click="
-            openStatusModal(manageMenuRow);
-            closeManageMenu();
-          "
-        >
-          Update Status
-        </button>
-        <button
-          v-if="canDelete"
-          type="button"
-          class="dropdown-item text-danger"
-          @click="openDelete(manageMenuRow)"
-        >
-          Delete
-        </button>
-      </div>
+          <RouterLink
+            class="staff-row-menu__item"
+            role="menuitem"
+            :to="{ name: 'lead-detail', params: { id: manageMenuRow.id } }"
+            @click="closeManageMenu"
+          >
+            View
+          </RouterLink>
+          <hr v-if="canUpdate || canDelete" class="staff-row-menu__divider" />
+          <button
+            v-if="canUpdate"
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            @click="
+              openStatusModal(manageMenuRow);
+              closeManageMenu();
+            "
+          >
+            Update Status
+          </button>
+          <hr v-if="canUpdate && canDelete" class="staff-row-menu__divider" />
+          <button
+            v-if="canDelete"
+            type="button"
+            class="staff-row-menu__item staff-row-menu__item--danger"
+            role="menuitem"
+            @click="openDelete(manageMenuRow)"
+          >
+            Delete
+          </button>
+        </div>
+      </Transition>
     </Teleport>
   </div>
 </template>

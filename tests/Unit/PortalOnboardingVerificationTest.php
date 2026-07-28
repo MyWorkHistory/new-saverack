@@ -124,6 +124,49 @@ class PortalOnboardingVerificationTest extends TestCase
         $this->assertSame(PortalOnboardingService::BILLING_METHOD_ACH, $account->onboarding_billing_method);
     }
 
+    public function test_sync_onboarding_billing_from_manual_credit_card_and_ach_defaults(): void
+    {
+        $service = new PortalOnboardingService(Mockery::mock(ClientBrandLogoService::class));
+
+        $manual = ClientAccount::create([
+            'company_name' => 'Manual Sync Co',
+            'status' => ClientAccount::STATUS_PENDING,
+            'email' => 'manual-sync@test.com',
+            'default_payment_type' => 'Manual',
+            'onboarding_billing_status' => null,
+            'onboarding_billing_method' => null,
+        ]);
+        $this->assertTrue($service->syncOnboardingBillingFromAccountPaymentState($manual));
+        $manual->refresh();
+        $this->assertSame(PortalOnboardingService::BILLING_METHOD_MANUAL, $manual->onboarding_billing_method);
+        $this->assertSame(PortalOnboardingService::BILLING_STATUS_COMPLETED, $manual->onboarding_billing_status);
+
+        $card = ClientAccount::create([
+            'company_name' => 'Card Sync Co',
+            'status' => ClientAccount::STATUS_PENDING,
+            'email' => 'card-sync@test.com',
+            'default_payment_type' => 'Credit Card',
+            'onboarding_billing_status' => PortalOnboardingService::BILLING_STATUS_NOT_STARTED,
+        ]);
+        $this->assertTrue($service->syncOnboardingBillingFromAccountPaymentState($card));
+        $card->refresh();
+        $this->assertSame(PortalOnboardingService::BILLING_METHOD_CREDIT_CARD, $card->onboarding_billing_method);
+        $this->assertSame(PortalOnboardingService::BILLING_STATUS_COMPLETED, $card->onboarding_billing_status);
+
+        $ach = ClientAccount::create([
+            'company_name' => 'Ach Sync Co',
+            'status' => ClientAccount::STATUS_PENDING,
+            'email' => 'ach-sync@test.com',
+            'default_payment_type' => 'ACH',
+            'onboarding_billing_status' => PortalOnboardingService::BILLING_STATUS_NOT_STARTED,
+        ]);
+        $this->assertTrue($service->syncOnboardingBillingFromAccountPaymentState($ach));
+        $ach->refresh();
+        $this->assertSame(PortalOnboardingService::BILLING_METHOD_ACH, $ach->onboarding_billing_method);
+        $this->assertSame(PortalOnboardingService::BILLING_STATUS_COMPLETED, $ach->onboarding_billing_status);
+        $this->assertFalse($service->syncOnboardingBillingFromAccountPaymentState($ach->fresh()));
+    }
+
     public function test_task_titles_use_account_and_billing_information_labels(): void
     {
         $account = ClientAccount::create([

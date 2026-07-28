@@ -177,6 +177,12 @@ class ClientAccountService
 
         $account = $account->fresh(['accountManager']);
 
+        if (array_key_exists('default_payment_type', $data)) {
+            app(PortalOnboardingService::class)
+                ->syncOnboardingBillingFromAccountPaymentState($account, false);
+            $account = $account->fresh(['accountManager']) ?? $account;
+        }
+
         if ($actor !== null && $data !== []) {
             $this->activityLog->log($actor, 'client_account.updated', $account, null, [
                 'fields' => array_keys($data),

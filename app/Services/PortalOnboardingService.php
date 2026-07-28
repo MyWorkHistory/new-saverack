@@ -89,6 +89,9 @@ class PortalOnboardingService
      */
     public function buildOnboardingPayload(?User $user, ClientAccount $account): array
     {
+        $this->syncOnboardingBillingFromAccountPaymentState($account, true);
+        $account = $account->fresh() ?? $account;
+
         $profile = $this->serializeProfile($user, $account);
         $tasks = $this->buildTasks($user, $account);
         $completedCount = 0;
@@ -623,7 +626,105 @@ class PortalOnboardingService
             return 'processing';
         }
 
+        // Treat Manual / Credit Card / ACH defaults as completed even before backfill persists.
+        $paymentType = strtolower(trim((string) ($account->default_payment_type ?? '')));
+        if (in_array($paymentType, ['manual', 'credit card', 'ach'], true)) {
+            return 'completed';
+        }
+
         return 'not_completed';
+    }
+
+    /**
+     * Mark billing onboarding completed from account payment defaults or Stripe methods on file.
+     * Manual → method manual + completed; Credit Card / card on file → credit_card; ACH / bank on file → ach.
+     *
+     * @return bool True when account fields were updated
+     */
+    public function syncOnboardingBillingFromAccountPaymentState(ClientAccount $account, bool $checkStripe = false): bool
+    {
+        $paymentType = strtolower(trim((string) ($account->default_payment_type ?? '')));
+        $desiredMethod = null;
+
+        if ($paymentType === 'manual') {
+            $desiredMethod = self::BILLING_METHOD_MANUAL;
+        } elseif ($paymentType === 'credit card') {
+            $desiredMethod = self::BILLING_METHOD_CREDIT_CARD;
+        } elseif ($paymentType === 'ach') {
+            $desiredMethod = self::BILLING_METHOD_ACH;
+        }
+
+        if ($desiredMethod === null && $checkStripe) {
+            $desiredMethod = $this->inferOnboardingBillingMethodFromStripe($account);
+        }
+
+        if ($desiredMethod === null) {
+            return false;
+        }
+
+        $currentStatus = trim((string) ($account->onboarding_billing_status ?? ''));
+        $currentMethod = trim((string) ($account->onboarding_billing_method ?? ''));
+
+        if (
+            $currentStatus === self::BILLING_STATUS_COMPLETED
+            && $currentMethod === $desiredMethod
+        ) {
+            return false;
+        }
+
+        $account->onboarding_billing_method = $desiredMethod;
+        $account->onboarding_billing_status = self::BILLING_STATUS_COMPLETED;
+
+        if ($desiredMethod === self::BILLING_METHOD_MANUAL && $paymentType !== 'manual') {
+            $account->default_payment_type = 'Manual';
+        } elseif ($desiredMethod === self::BILLING_METHOD_CREDIT_CARD && $paymentType !== 'credit card') {
+            $account->default_payment_type = 'Credit Card';
+        } elseif ($desiredMethod === self::BILLING_METHOD_ACH && $paymentType !== 'ach') {
+            $account->default_payment_type = 'ACH';
+        }
+
+        $account->save();
+
+        return true;
+    }
+
+    private function inferOnboardingBillingMethodFromStripe(ClientAccount $account): ?string
+    {
+        $customerId = trim((string) ($account->stripe_customer_id ?? ''));
+        if ($customerId === '') {
+            return null;
+        }
+
+        try {
+            /** @var StripeInvoicePaymentService $stripePayments */
+            $stripePayments = app(StripeInvoicePaymentService::class);
+            $methods = $stripePayments->listPaymentMethodsForAccount($account);
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        $hasCard = false;
+        $hasBank = false;
+        foreach ($methods as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $type = strtolower(trim((string) ($row['type'] ?? '')));
+            if ($type === 'card') {
+                $hasCard = true;
+            } elseif ($type === 'us_bank_account') {
+                $hasBank = true;
+            }
+        }
+
+        if ($hasCard) {
+            return self::BILLING_METHOD_CREDIT_CARD;
+        }
+        if ($hasBank) {
+            return self::BILLING_METHOD_ACH;
+        }
+
+        return null;
     }
 
     public function completeManualBilling(ClientAccount $account): ClientAccount

@@ -115,11 +115,12 @@ class PortalFulfillmentPricingApiTest extends TestCase
         $approve->assertOk();
         $approve->assertJsonPath('fulfillment_pricing_status', 'approved');
         $this->assertNotNull($account->fresh()->fulfillment_pricing_approved_at);
-        $this->assertNotNull($account->fresh()->fulfillment_pricing_accepted_at);
+        $this->assertNull($account->fresh()->fulfillment_pricing_accepted_at);
         $verifications = $account->fresh()->onboarding_verifications;
-        $this->assertIsArray($verifications);
-        $this->assertArrayHasKey('fulfillment_pricing', $verifications);
-        $this->assertNotEmpty($verifications['fulfillment_pricing']['verified_at'] ?? null);
+        $this->assertTrue(
+            ! is_array($verifications)
+            || empty($verifications['fulfillment_pricing']['verified_at'] ?? null)
+        );
 
         $pdfAdmin = $this->get('/api/client-accounts/'.$account->id.'/onboarding/fulfillment-pricing.pdf');
         $pdfAdmin->assertOk();
@@ -130,6 +131,8 @@ class PortalFulfillmentPricingApiTest extends TestCase
         $show = $this->getJson('/api/portal/onboarding');
         $show->assertOk();
         $show->assertJsonPath('fulfillment_pricing.approved', true);
+        $show->assertJsonPath('fulfillment_pricing.status', 'not_completed');
+        $show->assertJsonPath('tasks.2.status', 'not_completed');
         $this->assertNotEmpty($show->json('fulfillment_pricing.fees'));
         $portalCategories = [];
         foreach ($show->json('fulfillment_pricing.fees') as $feeRow) {

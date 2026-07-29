@@ -62,7 +62,7 @@ const downloadFileName = computed(() => {
 
 const statusConfirmMessage = computed(() =>
   pendingStatus.value === "approved"
-    ? "Mark fulfillment pricing as Approved? Clients will see this fee schedule, and it will be marked accepted and verified for the client."
+    ? "Mark fulfillment pricing as Approved? Clients will see this fee schedule and can accept it on onboarding."
     : "Set fulfillment pricing back to Pending? Client acceptance and verification will be cleared.",
 );
 

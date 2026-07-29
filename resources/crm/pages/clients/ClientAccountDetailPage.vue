@@ -66,6 +66,8 @@ const canDeleteStores = computed(() => userHasPerm("stores.delete"));
 const loading = ref(true);
 const errorMsg = ref("");
 const account = ref(null);
+const onboardingPanelRef = ref(null);
+const onboardingReloadKey = ref(0);
 const storesLoading = ref(false);
 const storesImporting = ref(false);
 const stores = ref([]);
@@ -690,6 +692,12 @@ async function saveAccountStatusFromModal() {
 
 function onAccountFeesUpdated(payload) {
   account.value = payload;
+  onboardingReloadKey.value += 1;
+  onboardingPanelRef.value?.reload?.();
+}
+
+function onOpenFeesFromOnboarding() {
+  setActiveTab(TAB_FEES);
 }
 
 async function loadHistory() {
@@ -2025,9 +2033,12 @@ onUnmounted(() => {
                 head-class="mb-3"
               />
               <ClientAccountOnboardingPanel
+                :key="onboardingReloadKey"
+                ref="onboardingPanelRef"
                 :client-account-id="account.id"
                 :can-edit="canUpdateAccount"
                 @account-updated="onOnboardingAccountUpdated"
+                @open-fees="onOpenFeesFromOnboarding"
               />
             </div>
           </template>

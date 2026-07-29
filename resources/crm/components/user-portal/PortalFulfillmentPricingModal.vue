@@ -19,7 +19,7 @@ const props = defineProps({
   verifying: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["update:open", "accepted", "verify", "unverify"]);
+const emit = defineEmits(["update:open", "accepted", "verify", "unverify", "open-fees"]);
 
 const toast = useToast();
 const busy = ref(false);
@@ -56,6 +56,12 @@ watch(
 
 function close() {
   if (!busy.value && !props.verifying && !props.pageMode) emit("update:open", false);
+}
+
+function openFeesTab() {
+  if (!props.adminMode || busy.value || props.verifying) return;
+  emit("open-fees");
+  if (!props.pageMode) emit("update:open", false);
 }
 
 async function downloadPdf() {
@@ -147,7 +153,20 @@ async function onAgree() {
         v-if="!approved"
         class="portal-fulfillment-pricing-modal__empty text-center text-secondary py-5 px-3"
       >
-        Quoted pricing has not been set for this account
+        <p class="mb-2 fw-semibold text-body">Fulfillment pricing is not approved yet</p>
+        <p class="mb-0 mx-auto" style="max-width: 28rem">
+          Review and Approve the account fee schedule on the Fees tab. After approval, return here
+          to Verify For Client.
+        </p>
+        <button
+          v-if="adminMode"
+          type="button"
+          class="crm-vx-modal-btn crm-vx-modal-btn--primary mt-4"
+          :disabled="busy || verifying"
+          @click="openFeesTab"
+        >
+          Open Fees Tab
+        </button>
       </div>
       <PricingFeeList
         v-else
@@ -171,7 +190,7 @@ async function onAgree() {
         Remove Verification
       </button>
       <button
-        v-else-if="adminMode"
+        v-else-if="adminMode && approved"
         type="button"
         class="crm-vx-modal-btn crm-vx-modal-btn--secondary me-auto"
         :disabled="busy || verifying || !canVerifyForClient"

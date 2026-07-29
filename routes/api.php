@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\PortalProfileController;
 use App\Http\Controllers\Api\PricingFeeTemplateController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\LeadController;
+use App\Http\Controllers\Api\EmailTemplateController;
 use App\Http\Controllers\Api\TermsOfServiceController;
 use App\Http\Controllers\Api\ClientAccountPaymentMethodController;
 use App\Http\Controllers\Api\ReturnBillController;
@@ -113,6 +114,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('settings/terms-of-service')->group(function () {
         Route::get('/', [TermsOfServiceController::class, 'show']);
         Route::put('/', [TermsOfServiceController::class, 'update']);
+    });
+
+    Route::prefix('settings/email-templates')->group(function () {
+        Route::get('/', [EmailTemplateController::class, 'index']);
+        Route::post('/', [EmailTemplateController::class, 'store']);
+        Route::get('/{emailTemplate}', [EmailTemplateController::class, 'show']);
+        Route::patch('/{emailTemplate}', [EmailTemplateController::class, 'update']);
+        Route::delete('/{emailTemplate}', [EmailTemplateController::class, 'destroy']);
     });
 
         Route::prefix('return-bills')->group(function () {

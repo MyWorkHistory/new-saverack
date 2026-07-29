@@ -19,7 +19,7 @@ const props = defineProps({
   canEdit: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["account-updated"]);
+const emit = defineEmits(["account-updated", "open-fees"]);
 
 const toast = useToast();
 const loading = ref(true);
@@ -231,6 +231,10 @@ async function toggleFieldVerification({ fieldKey, checked }) {
 }
 
 loadOnboarding();
+
+defineExpose({
+  reload: loadOnboarding,
+});
 </script>
 
 <template>
@@ -356,6 +360,7 @@ loadOnboarding();
       @accepted="onSaved"
       @verify="verifyActiveTask"
       @unverify="unverifyActiveTask"
+      @open-fees="emit('open-fees')"
     />
   </div>
 </template>

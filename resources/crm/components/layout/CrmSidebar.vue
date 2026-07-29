@@ -270,6 +270,7 @@ function navActive(mode) {
   if (mode === "settings") return p.startsWith("/admin/settings");
   if (mode === "settings-pricing") return p.startsWith("/admin/settings/pricing");
   if (mode === "settings-terms") return p.startsWith("/admin/settings/terms");
+  if (mode === "settings-email-templates") return p.startsWith("/admin/settings/email-templates");
   if (mode === "webmaster") return p.startsWith("/admin/webmaster");
   if (mode === "clients") return p.startsWith("/admin/clients");
   if (mode === "clients-accounts") return p.startsWith("/admin/clients/accounts");
@@ -1288,6 +1289,16 @@ function collapseNav() {
                   @click="closeMobile"
                 >
                   Terms of Service
+                </RouterLink>
+              </li>
+              <li>
+                <RouterLink
+                  to="/admin/settings/email-templates"
+                  class="vx-nav-link vx-nav-sublink"
+                  :class="{ 'vx-nav-link--active': navActive('settings-email-templates') }"
+                  @click="closeMobile"
+                >
+                  Email Templates
                 </RouterLink>
               </li>
             </ul>

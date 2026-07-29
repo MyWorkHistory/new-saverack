@@ -1,9 +1,10 @@
 <script setup>
-import { computed, inject, onMounted, ref, watch } from "vue";
+import { computed, inject, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import AccountDetailSectionHead from "../../components/clients/AccountDetailSectionHead.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import EmailTemplatesGroupedList from "../../components/settings/EmailTemplatesGroupedList.vue";
 import LeadFeesPanel from "../../components/leads/LeadFeesPanel.vue";
 import LeadStatusUpdateModal from "../../components/leads/LeadStatusUpdateModal.vue";
 import {
@@ -12,6 +13,7 @@ import {
   formatFollowUpDays,
   leadStatusLabel,
 } from "../../constants/leads.js";
+import { EMAIL_TEMPLATE_CATEGORIES } from "../../constants/emailTemplates.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
@@ -118,6 +120,19 @@ const historyItems = ref([]);
 const historyLoading = ref(false);
 const followUpSaving = ref(false);
 
+const emailTemplateGroups = ref([]);
+const emailTemplatesLoading = ref(false);
+const emailTemplatesLoaded = ref(false);
+const emailTemplatesCollapsed = reactive({});
+EMAIL_TEMPLATE_CATEGORIES.forEach((cat) => {
+  emailTemplatesCollapsed[cat] = false;
+});
+
+const emailHighlightCategory = computed(() => {
+  const status = String(lead.value?.status || "").toLowerCase();
+  return EMAIL_TEMPLATE_CATEGORIES.includes(status) ? status : "";
+});
+
 const statusModalOpen = ref(false);
 const statusModalStatus = ref("open");
 const statusModalFollowUpDays = ref(1);
@@ -210,6 +225,36 @@ async function loadHistory() {
   }
 }
 
+function syncEmailTemplateCollapse(highlight) {
+  const key = String(highlight || "").toLowerCase();
+  EMAIL_TEMPLATE_CATEGORIES.forEach((cat) => {
+    emailTemplatesCollapsed[cat] = key ? cat !== key : false;
+  });
+}
+
+async function loadEmailTemplates(force = false) {
+  if (emailTemplatesLoading.value) return;
+  if (emailTemplatesLoaded.value && !force) return;
+  emailTemplatesLoading.value = true;
+  try {
+    const { data } = await api.get("/settings/email-templates", {
+      params: { grouped: 1 },
+    });
+    emailTemplateGroups.value = Array.isArray(data?.groups) ? data.groups : [];
+    emailTemplatesLoaded.value = true;
+    syncEmailTemplateCollapse(emailHighlightCategory.value);
+  } catch (e) {
+    toast.errorFrom(e, "Could not load email templates.");
+    emailTemplateGroups.value = [];
+  } finally {
+    emailTemplatesLoading.value = false;
+  }
+}
+
+function toggleEmailTemplateGroup(category) {
+  emailTemplatesCollapsed[category] = !emailTemplatesCollapsed[category];
+}
+
 async function saveFollowUpDays(event) {
   if (!canUpdate.value || !lead.value?.id || followUpSaving.value) return;
   const days = Number(event?.target?.value ?? lead.value.follow_up_days);
@@ -272,15 +317,29 @@ watch(
   () => props.id,
   async () => {
     historyItems.value = [];
+    emailTemplateGroups.value = [];
+    emailTemplatesLoaded.value = false;
     syncTabFromRoute();
     await loadLead();
     await loadHistory();
+    if (activeTab.value === TAB_EMAIL_TEMPLATES) {
+      await loadEmailTemplates(true);
+    }
   },
 );
+
+watch(emailHighlightCategory, (cat) => {
+  if (emailTemplatesLoaded.value) {
+    syncEmailTemplateCollapse(cat);
+  }
+});
 
 watch(activeTab, async (tab) => {
   if (tab === TAB_HISTORY && !historyItems.value.length && !historyLoading.value) {
     await loadHistory();
+  }
+  if (tab === TAB_EMAIL_TEMPLATES) {
+    await loadEmailTemplates();
   }
 });
 
@@ -299,6 +358,9 @@ onMounted(async () => {
   }
   await loadLead();
   await loadHistory();
+  if (activeTab.value === TAB_EMAIL_TEMPLATES) {
+    await loadEmailTemplates();
+  }
 });
 </script>
 
@@ -714,12 +776,19 @@ onMounted(async () => {
                   icon="notes"
                   head-class="mb-3"
                 />
-                <textarea
-                  class="form-control"
-                  rows="16"
-                  placeholder="Email templates coming soon…"
-                  disabled
-                  aria-label="Email Templates"
+                <p class="text-secondary small mb-3">
+                  Templates from Settings, grouped by lead status. The group for this lead's
+                  current status is expanded by default.
+                </p>
+                <div v-if="emailTemplatesLoading" class="d-flex justify-content-center py-5">
+                  <CrmLoadingSpinner />
+                </div>
+                <EmailTemplatesGroupedList
+                  v-else
+                  :groups="emailTemplateGroups"
+                  :collapsed="emailTemplatesCollapsed"
+                  :highlight-category="emailHighlightCategory"
+                  @toggle-group="toggleEmailTemplateGroup"
                 />
               </div>
             </template>

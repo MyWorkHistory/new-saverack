@@ -21,6 +21,7 @@ import WebmasterTasksPage from "../pages/webmaster/WebmasterTasksPage.vue";
 import WebmasterTaskDetailPage from "../pages/webmaster/WebmasterTaskDetailPage.vue";
 import SettingsPricingPage from "../pages/settings/SettingsPricingPage.vue";
 import SettingsTermsPage from "../pages/settings/SettingsTermsPage.vue";
+import SettingsEmailTemplatesPage from "../pages/settings/SettingsEmailTemplatesPage.vue";
 import ClientAccountTermsPage from "../pages/clients/ClientAccountTermsPage.vue";
 import ClientAccountsListPage from "../pages/clients/ClientAccountsListPage.vue";
 import ClientAccountDetailPage from "../pages/clients/ClientAccountDetailPage.vue";
@@ -93,6 +94,10 @@ const meta = {
   settingsTerms: {
     title: "Save Rack | Terms of Service",
     description: "Default Terms of Service for client accounts.",
+  },
+  settingsEmailTemplates: {
+    title: "Save Rack | Email Templates",
+    description: "Manage email templates by lead status category.",
   },
   clientAccountTerms: {
     title: "Save Rack | Account Terms",
@@ -864,6 +869,12 @@ const routes = [
     name: "settings-terms",
     component: SettingsTermsPage,
     meta: meta.settingsTerms,
+  },
+  {
+    path: "/admin/settings/email-templates",
+    name: "settings-email-templates",
+    component: SettingsEmailTemplatesPage,
+    meta: meta.settingsEmailTemplates,
   },
   {
     path: "/admin/webmaster",

@@ -423,8 +423,11 @@ class ShipHeroOrderQueueIndexService
                 }
             } while ($hasNext && $after !== null && $pages < $maxPages);
 
-            // Drop rows that left this queue since the last full (non-truncated) sync pass.
-            if (! $truncated) {
+            // Drop rows that left this queue only on an explicit full rebuild (purgeStale).
+            // Incremental sync must not purge — incomplete shipped pagination used to report
+            // truncated=false and wipe today's shipments down to a handful of rows.
+            $didPurge = false;
+            if ($purgeStale && ! $truncated) {
                 ShipHeroOrderQueueIndex::query()
                     ->where('client_account_id', $clientAccountId)
                     ->where('queue_kind', $tab)
@@ -433,6 +436,7 @@ class ShipHeroOrderQueueIndexService
                             ->orWhere('last_seen_at', '<', $syncStarted);
                     })
                     ->delete();
+                $didPurge = true;
             }
 
             if ($updateAccountSyncStatus) {
@@ -445,7 +449,7 @@ class ShipHeroOrderQueueIndexService
                 'pages' => $pages,
                 'rows_upserted' => $rowsUpserted,
                 'truncated' => $truncated,
-                'purged_stale' => ! $truncated,
+                'purged_stale' => $didPurge,
             ]);
 
             return [

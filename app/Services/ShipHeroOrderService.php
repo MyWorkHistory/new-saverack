@@ -790,8 +790,10 @@ GQL;
         $hasNextPage = false;
         $endCursor = null;
         $seenShipmentIds = [];
+        $shipmentPagesScanned = 0;
 
         for ($page = 0; $page < $maxShipmentPages; $page++) {
+            $shipmentPagesScanned++;
             $json = $this->client->query($graphql, [
                 'customer_account_id' => $customerAccountId,
                 'date_from' => $dateFrom,
@@ -842,6 +844,9 @@ GQL;
                 ? $parsed['pageInfo']['endCursor']
                 : null;
 
+            // Stop once we have enough unique orders for this batch. Keep every order found on
+            // the shipment pages we already consumed — do not array_slice leftovers away while
+            // advancing the shipment cursor (that permanently skipped orders and undercounted).
             if (count($orderSequence) >= $targetFirst || ! $hasNextPage || $endCursor === null || $endCursor === '') {
                 break;
             }
@@ -859,11 +864,13 @@ GQL;
             ];
         }
 
-        $pageOrderIds = array_slice($orderSequence, 0, $targetFirst);
-        $hydrated = $this->fetchOrdersByIdsForList($customerAccountId, $pageOrderIds);
+        // Return all unique orders discovered on consumed shipment pages (not just $targetFirst).
+        $pageOrderIds = $orderSequence;
         $hydratedById = [];
-        foreach ($hydrated as $row) {
-            $hydratedById[(string) ($row['id'] ?? '')] = $row;
+        foreach (array_chunk($pageOrderIds, 100) as $chunk) {
+            foreach ($this->fetchOrdersByIdsForList($customerAccountId, $chunk) as $row) {
+                $hydratedById[(string) ($row['id'] ?? '')] = $row;
+            }
         }
 
         $rows = [];
@@ -897,6 +904,19 @@ GQL;
         $hasMoreShipments = $hasNextPage
             && is_string($endCursor)
             && $endCursor !== '';
+
+        if (
+            $hasMoreShipments
+            && $shipmentPagesScanned >= $maxShipmentPages
+            && count($orderSequence) < $targetFirst
+        ) {
+            Log::warning('shiphero.shipped_orders.shipment_page_cap', [
+                'customer_account_id' => $customerAccountId,
+                'orders_found' => count($orderSequence),
+                'target_first' => $targetFirst,
+                'max_shipment_pages' => $maxShipmentPages,
+            ]);
+        }
 
         return [
             'rows' => $rows,

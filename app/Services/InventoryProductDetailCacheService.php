@@ -90,14 +90,17 @@ class InventoryProductDetailCacheService
     /**
      * @return array{rows: list<array<string, mixed>>, truncated: bool, message: ?string}|null
      */
-    public function getCachedOrders(int $clientAccountId, string $sku, string $mode): ?array
+    public function getCachedOrders(int $clientAccountId, string $sku, string $mode, bool $allowStale = false): ?array
     {
         $row = $this->findRow($clientAccountId, $sku);
         if ($row === null) {
             return null;
         }
         $syncedAt = $mode === 'backorder' ? $row->backorder_orders_synced_at : $row->allocated_orders_synced_at;
-        if (! $this->isFresh($syncedAt)) {
+        if (! $allowStale && ! $this->isFresh($syncedAt)) {
+            return null;
+        }
+        if ($syncedAt === null || $syncedAt === '') {
             return null;
         }
         $json = $mode === 'backorder' ? $row->backorder_orders_json : $row->allocated_orders_json;

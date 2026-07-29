@@ -877,6 +877,11 @@ class InventoryController extends Controller
         $clientAccountId = (int) $validated['client_account_id'];
         $refresh = (bool) ($validated['refresh'] ?? false);
 
+        // Keep under Cloudflare/php-fpm origin limits; service also enforces a short wall clock.
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(45);
+        }
+
         try {
             if (! $refresh) {
                 $cached = $this->detailCache->getCachedOrders($clientAccountId, $sku, $mode);
@@ -898,18 +903,42 @@ class InventoryController extends Controller
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 502);
+            return $this->productOrdersFailureResponse($clientAccountId, $sku, $mode, $e);
         } catch (Throwable $e) {
             report($e);
 
-            $label = $mode === 'backorder' ? 'backorder orders' : 'allocated orders';
-
-            return response()->json([
-                'message' => config('app.debug')
-                    ? $e->getMessage()
-                    : 'Could not load '.$label.' from ShipHero.',
-            ], 502);
+            return $this->productOrdersFailureResponse($clientAccountId, $sku, $mode, $e);
         }
+    }
+
+    /**
+     * Prefer stale cached rows over a hard 502 so Cloudflare always gets a complete JSON body.
+     *
+     * @return JsonResponse
+     */
+    private function productOrdersFailureResponse(int $clientAccountId, string $sku, string $mode, Throwable $e)
+    {
+        $stale = $this->detailCache->getCachedOrders($clientAccountId, $sku, $mode, true);
+        if ($stale !== null) {
+            $fallbackNote = 'Live refresh failed; showing last saved results.';
+            $existing = isset($stale['message']) && is_string($stale['message']) && $stale['message'] !== ''
+                ? $stale['message'].' '
+                : '';
+
+            return response()->json(array_merge($stale, [
+                'cached' => true,
+                'stale' => true,
+                'message' => $existing.$fallbackNote,
+            ]));
+        }
+
+        $label = $mode === 'backorder' ? 'backorder orders' : 'allocated orders';
+
+        return response()->json([
+            'message' => config('app.debug')
+                ? $e->getMessage()
+                : 'Could not load '.$label.' from ShipHero.',
+        ], 502);
     }
 
     public function list(Request $request): JsonResponse

@@ -7,6 +7,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Throwable;
 
 class ShipHeroOrderService
 {
@@ -4492,6 +4493,8 @@ GQL;
     /**
      * Uses ShipHero {@see orders} `sku` filter with inline `line_items` (one request per page).
      * Avoids per-order line-item fetches that caused Cloudflare 524 timeouts.
+     * Wall-clock budget stays well under typical PHP-FPM / Cloudflare origin limits (~60–100s)
+     * so refresh cannot leave Cloudflare with an incomplete response (502).
      *
      * @param  'allocated'|'backorder'  $mode
      * @return array{rows: list<array<string, mixed>>, truncated: bool, message: ?string}
@@ -4513,26 +4516,48 @@ GQL;
 
         $out = [];
         $truncated = false;
-        $maxPages = $mode === 'backorder' ? 5 : 6;
-        $perPage = 50;
+        // Cap hard: each ShipHero page can take ~6–25s (+ retries). Keep total well under origin timeout.
+        $maxPages = $mode === 'backorder' ? 2 : 3;
+        $perPage = $mode === 'backorder' ? 25 : 40;
         $after = null;
         $startedAt = microtime(true);
-        $deadline = microtime(true) + 55.0;
+        $budgetSeconds = $mode === 'backorder' ? 14.0 : 18.0;
+        $deadline = $startedAt + $budgetSeconds;
+        // Need enough time left for one GraphQL round-trip before starting another page.
+        $minSecondsForNextPage = 7.0;
 
         for ($page = 0; $page < $maxPages; $page++) {
-            if (microtime(true) >= $deadline) {
+            $remaining = $deadline - microtime(true);
+            if ($remaining < $minSecondsForNextPage) {
                 $truncated = true;
                 break;
             }
-            $pagePayload = $this->fetchOrdersForProductSkuPage(
-                $customer,
-                $skuTrim,
-                $mode,
-                $from,
-                $to,
-                $perPage,
-                $after
-            );
+            try {
+                $pagePayload = $this->fetchOrdersForProductSkuPage(
+                    $customer,
+                    $skuTrim,
+                    $mode,
+                    $from,
+                    $to,
+                    $perPage,
+                    $after
+                );
+            } catch (Throwable $e) {
+                // Prefer a partial JSON response over killing the request mid-flight (CF 502).
+                if (count($out) > 0) {
+                    $truncated = true;
+                    Log::warning('shiphero.inventory.product_orders.page_failed_partial', [
+                        'customer_account_id' => $customer,
+                        'sku' => $skuTrim,
+                        'mode' => $mode,
+                        'page' => $page,
+                        'rows_so_far' => count($out),
+                        'message' => mb_substr($e->getMessage(), 0, 400),
+                    ]);
+                    break;
+                }
+                throw $e;
+            }
 
             foreach ($pagePayload['orders'] as $order) {
                 if (! is_array($order)) {

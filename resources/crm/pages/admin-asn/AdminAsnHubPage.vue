@@ -55,7 +55,7 @@ const meta = ref({ current_page: 1, last_page: 1, per_page: 25, total: 0 });
 const accounts = ref([]);
 const accountsLoading = ref(false);
 const accountFilter = ref("");
-const statusFilter = ref("pending");
+const statusFilter = ref("all");
 const filterMenuOpen = ref(false);
 const search = ref("");
 const searchDebounced = ref("");
@@ -232,7 +232,7 @@ function setStatusCard(status) {
 }
 
 function resetStatusFilter() {
-  statusFilter.value = "pending";
+  statusFilter.value = "all";
   filterMenuOpen.value = false;
 }
 
@@ -496,7 +496,7 @@ onMounted(async () => {
   if (route.query.status) {
     statusFilter.value = String(route.query.status);
   } else {
-    statusFilter.value = "pending";
+    statusFilter.value = "all";
   }
   document.addEventListener("click", onDocClick);
   window.addEventListener("scroll", onWindowCloseManageMenu, true);

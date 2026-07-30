@@ -136,6 +136,22 @@ const emailHighlightCategory = computed(() => {
 
 const templateUsages = computed(() => lead.value?.template_usages || {});
 
+const emailTemplateGroupsForLead = computed(() =>
+  (emailTemplateGroups.value || []).map((g) => {
+    const templates = (g.templates || []).filter((t) => {
+      const id = Number(t?.id || 0);
+      if (!id) return true;
+      const usage = templateUsages.value?.[id] || templateUsages.value?.[String(id)];
+      return !usage?.last_sent_at;
+    });
+    return {
+      ...g,
+      templates,
+      count: templates.length,
+    };
+  }),
+);
+
 const statusModalOpen = ref(false);
 const statusModalStatus = ref("open");
 const statusModalFollowUpDays = ref(1);
@@ -169,11 +185,6 @@ const statusEvents = computed(() =>
 );
 const leadComments = computed(() =>
   Array.isArray(lead.value?.comments) ? lead.value.comments : [],
-);
-const templatesUsedStatuses = computed(() =>
-  Array.isArray(lead.value?.templates_used_statuses)
-    ? lead.value.templates_used_statuses
-    : [],
 );
 
 const followUpSelect = computed({
@@ -566,7 +577,7 @@ onMounted(async () => {
       :statuses="statuses"
       :follow-up-day-options="followUpDayOptions"
       :templates="emailTemplatesFlat"
-      :templates-used-statuses="templatesUsedStatuses"
+      :template-usages="templateUsages"
       :busy="statusBusy"
       @save="saveStatusFromModal"
     />
@@ -961,14 +972,15 @@ onMounted(async () => {
                 />
                 <p class="text-secondary small mb-3">
                   Manage and track email templates for this lead. Templates are maintained in
-                  Settings; expand a row to read the body. Sent status reflects usage on this lead.
+                  Settings; expand a row to read the body. Templates already sent on this lead are
+                  hidden here.
                 </p>
                 <div v-if="emailTemplatesLoading" class="d-flex justify-content-center py-5">
                   <CrmLoadingSpinner />
                 </div>
                 <EmailTemplatesGroupedList
                   v-else
-                  :groups="emailTemplateGroups"
+                  :groups="emailTemplateGroupsForLead"
                   :collapsed="emailTemplatesCollapsed"
                   :highlight-category="emailHighlightCategory"
                   :usages="templateUsages"

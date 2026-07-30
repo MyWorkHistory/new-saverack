@@ -64,7 +64,7 @@ const query = ref({
 
 const statusModalTemplateId = ref("custom");
 const emailTemplatesFlat = ref([]);
-const templatesUsedStatuses = ref([]);
+const templateUsages = ref({});
 
 const directorySummaryActiveStatus = computed(() => {
   const s = String(query.value.status || "all");
@@ -192,9 +192,9 @@ function openStatusModal(row) {
       ? null
       : Number(row.follow_up_days);
   statusModalTemplateId.value = "custom";
-  templatesUsedStatuses.value = Array.isArray(row.templates_used_statuses)
-    ? row.templates_used_statuses
-    : [];
+  templateUsages.value = row.template_usages && typeof row.template_usages === "object"
+    ? row.template_usages
+    : {};
   statusModalOpen.value = true;
   loadEmailTemplatesFlat();
   // Fetch detail for accurate template usage when opening from list.
@@ -202,9 +202,10 @@ function openStatusModal(row) {
     .get(`/leads/${row.id}`)
     .then(({ data }) => {
       if (statusModalRow.value?.id === row.id) {
-        templatesUsedStatuses.value = Array.isArray(data?.templates_used_statuses)
-          ? data.templates_used_statuses
-          : [];
+        templateUsages.value =
+          data?.template_usages && typeof data.template_usages === "object"
+            ? data.template_usages
+            : {};
       }
     })
     .catch(() => {});
@@ -414,7 +415,7 @@ onUnmounted(() => {
       :statuses="statuses"
       :follow-up-day-options="followUpDayOptions"
       :templates="emailTemplatesFlat"
-      :templates-used-statuses="templatesUsedStatuses"
+      :template-usages="templateUsages"
       :busy="statusPickerBusy"
       @save="saveStatusFromModal"
     />

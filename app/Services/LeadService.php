@@ -298,9 +298,9 @@ class LeadService
                 ]);
             }
             $eventStatus = $lead->status;
-            if ($this->hasTemplateUsageForStatus($lead, (string) $eventStatus)) {
+            if ($this->hasTemplateUsageForTemplate($lead, (int) $template->id)) {
                 throw ValidationException::withMessages([
-                    'email_template_id' => ['A template was already used for this status.'],
+                    'email_template_id' => ['This template was already used for this lead.'],
                 ]);
             }
             if ((string) $template->category !== (string) $eventStatus) {
@@ -459,6 +459,18 @@ class LeadService
             ->where('lead_id', $lead->id)
             ->where('status', $status)
             ->whereNotNull('email_template_id')
+            ->exists();
+    }
+
+    public function hasTemplateUsageForTemplate(Lead $lead, int $emailTemplateId): bool
+    {
+        if ($emailTemplateId <= 0) {
+            return false;
+        }
+
+        return LeadStatusEvent::query()
+            ->where('lead_id', $lead->id)
+            ->where('email_template_id', $emailTemplateId)
             ->exists();
     }
 

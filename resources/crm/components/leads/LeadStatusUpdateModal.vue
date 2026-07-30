@@ -21,8 +21,12 @@ const props = defineProps({
   },
   /** Templates for the selected status category (from settings). */
   templates: { type: Array, default: () => [] },
-  /** Statuses that already have a template usage on this lead. */
-  templatesUsedStatuses: { type: Array, default: () => [] },
+  /**
+   * Per-template usage on this lead keyed by id:
+   * { [id]: { last_sent_at: string|null } }
+   * Sent templates are omitted from the status dropdown.
+   */
+  templateUsages: { type: Object, default: () => ({}) },
 });
 
 const open = defineModel("open", { type: Boolean, default: false });
@@ -51,16 +55,18 @@ const followUpModel = computed({
 
 const showTemplateField = computed(() => {
   const st = String(status.value || "").toLowerCase();
-  if (!EMAIL_TEMPLATE_CATEGORIES.includes(st)) return false;
-  const used = (props.templatesUsedStatuses || []).map((s) => String(s).toLowerCase());
-  return !used.includes(st);
+  return EMAIL_TEMPLATE_CATEGORIES.includes(st);
 });
 
 const templatesForStatus = computed(() => {
   const st = String(status.value || "").toLowerCase();
-  return (props.templates || []).filter(
-    (t) => String(t.category || "").toLowerCase() === st,
-  );
+  return (props.templates || []).filter((t) => {
+    if (String(t.category || "").toLowerCase() !== st) return false;
+    const id = Number(t.id || 0);
+    if (!id) return false;
+    const usage = props.templateUsages?.[id] || props.templateUsages?.[String(id)];
+    return !usage?.last_sent_at;
+  });
 });
 
 const selectedTemplate = computed(() => {

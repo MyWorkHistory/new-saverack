@@ -8,11 +8,13 @@ const props = defineProps({
   clickable: { type: Boolean, default: false },
   showDescription: { type: Boolean, default: false },
   priceLabelFor: { type: Function, default: null },
+  /** Override category sort order (e.g. portal: Fulfillment last). */
+  categoryOrder: { type: Array, default: null },
 });
 
 const emit = defineEmits(["select"]);
 
-const sections = computed(() => groupFeesByCategory(props.fees));
+const sections = computed(() => groupFeesByCategory(props.fees, props.categoryOrder));
 
 function priceLabel(fee) {
   if (typeof props.priceLabelFor === "function") {

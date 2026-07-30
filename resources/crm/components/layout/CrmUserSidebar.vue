@@ -3,10 +3,13 @@ import { computed, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
+import { crmPortalNeedsWelcome } from "../../utils/crmUser.js";
 
 const props = defineProps({
   user: { type: Object, required: true },
 });
+
+const emit = defineEmits(["blocked-nav"]);
 
 const route = useRoute();
 const ordersGroupOpen = ref(route.path.startsWith("/users/orders"));
@@ -17,6 +20,8 @@ const inventoryGroupOpen = ref(
     route.path.startsWith("/users/ltl"),
 );
 const myAccountGroupOpen = ref(route.path.startsWith("/users/my-account"));
+
+const needsWelcome = computed(() => crmPortalNeedsWelcome(props.user));
 
 const accountNavLabel = computed(() => {
   const name = String(props.user?.client_account_company_name || "").trim();
@@ -83,6 +88,18 @@ function collapseNav() {
     toggleSidebar();
   }
 }
+
+/** Block WMS nav while account is still pending onboarding. */
+function onNavClick(event) {
+  if (!needsWelcome.value) {
+    closeMobile();
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  closeMobile();
+  emit("blocked-nav");
+}
 </script>
 
 <template>
@@ -92,7 +109,7 @@ function collapseNav() {
         v-if="isExpanded"
         to="/users/dashboard"
         class="vx-sidebar__brand-link"
-        @click="closeMobile"
+        @click="onNavClick"
       >
         <img :src="markSrc" alt="" class="crm-vertical-nav__brand-logo" width="40" height="40" />
         <span class="crm-vertical-nav__brand-text text-truncate">Save Rack</span>
@@ -101,7 +118,7 @@ function collapseNav() {
         v-else
         to="/users/dashboard"
         class="vx-sidebar__brand-link justify-content-center w-100"
-        @click="closeMobile"
+        @click="onNavClick"
       >
         <img :src="markSrc" alt="" class="crm-vertical-nav__brand-logo" width="40" height="40" />
       </RouterLink>
@@ -128,7 +145,7 @@ function collapseNav() {
             class="vx-nav-link"
             :class="{ 'vx-nav-link--active': navActive('dashboard') }"
             :title="!isExpanded ? 'Home' : undefined"
-            @click="closeMobile"
+            @click="onNavClick"
           >
             <svg
               fill="none"
@@ -182,17 +199,17 @@ function collapseNav() {
               </svg>
             </button>
             <ul v-show="ordersGroupOpen" class="list-unstyled mb-0 mt-1">
-              <li><RouterLink to="/users/orders" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-index') }" @click="closeMobile">All</RouterLink></li>
-              <li><RouterLink to="/users/orders/ready-to-ship" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-awaiting') }" @click="closeMobile">Ready To Ship</RouterLink></li>
-              <li><RouterLink to="/users/orders/on-hold" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-on-hold') }" @click="closeMobile">On-Hold</RouterLink></li>
-              <li><RouterLink to="/users/orders/backorder" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-backorder') }" @click="closeMobile">Backorder</RouterLink></li>
-              <li><RouterLink to="/users/orders/shipped" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-shipped') }" @click="closeMobile">Shipped</RouterLink></li>
+              <li><RouterLink to="/users/orders" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-index') }" @click="onNavClick">All</RouterLink></li>
+              <li><RouterLink to="/users/orders/ready-to-ship" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-awaiting') }" @click="onNavClick">Ready To Ship</RouterLink></li>
+              <li><RouterLink to="/users/orders/on-hold" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-on-hold') }" @click="onNavClick">On-Hold</RouterLink></li>
+              <li><RouterLink to="/users/orders/backorder" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-backorder') }" @click="onNavClick">Backorder</RouterLink></li>
+              <li><RouterLink to="/users/orders/shipped" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-shipped') }" @click="onNavClick">Shipped</RouterLink></li>
               <li>
                 <RouterLink
                   to="/users/orders/create"
                   class="vx-nav-link vx-nav-sublink"
                   :class="{ 'vx-nav-link--active': navActive('orders-create') }"
-                  @click="closeMobile"
+                  @click="onNavClick"
                 >
                   Create Order
                 </RouterLink>
@@ -204,7 +221,7 @@ function collapseNav() {
             to="/users/orders"
             class="vx-nav-link"
             title="Orders"
-            @click="closeMobile"
+            @click="onNavClick"
           >
             <svg
               fill="none"
@@ -256,7 +273,7 @@ function collapseNav() {
                   to="/users/returns/orders"
                   class="vx-nav-link vx-nav-sublink"
                   :class="{ 'vx-nav-link--active': navActive('returns-orders') }"
-                  @click="closeMobile"
+                  @click="onNavClick"
                 >
                   Return Orders
                 </RouterLink>
@@ -266,7 +283,7 @@ function collapseNav() {
                   to="/users/returns/items"
                   class="vx-nav-link vx-nav-sublink"
                   :class="{ 'vx-nav-link--active': navActive('returns-items') }"
-                  @click="closeMobile"
+                  @click="onNavClick"
                 >
                   Return Items
                 </RouterLink>
@@ -276,7 +293,7 @@ function collapseNav() {
                   to="/users/returns/create"
                   class="vx-nav-link vx-nav-sublink"
                   :class="{ 'vx-nav-link--active': navActive('returns-create') }"
-                  @click="closeMobile"
+                  @click="onNavClick"
                 >
                   Create Return
                 </RouterLink>
@@ -288,7 +305,7 @@ function collapseNav() {
             to="/users/returns/orders"
             class="vx-nav-link"
             title="Returns"
-            @click="closeMobile"
+            @click="onNavClick"
           >
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
               <path
@@ -340,7 +357,7 @@ function collapseNav() {
                   to="/users/inventory"
                   class="vx-nav-link vx-nav-sublink"
                   :class="{ 'vx-nav-link--active': navActive('inventory-products') }"
-                  @click="closeMobile"
+                  @click="onNavClick"
                 >
                   Products
                 </RouterLink>
@@ -350,7 +367,7 @@ function collapseNav() {
                   to="/users/inventory/out-of-stock"
                   class="vx-nav-link vx-nav-sublink"
                   :class="{ 'vx-nav-link--active': navActive('inventory-out-of-stock') }"
-                  @click="closeMobile"
+                  @click="onNavClick"
                 >
                   Out of Stock
                 </RouterLink>
@@ -360,7 +377,7 @@ function collapseNav() {
                   to="/users/asn"
                   class="vx-nav-link vx-nav-sublink"
                   :class="{ 'vx-nav-link--active': navActive('inventory-asn') }"
-                  @click="closeMobile"
+                  @click="onNavClick"
                 >
                   ASN
                 </RouterLink>
@@ -370,7 +387,7 @@ function collapseNav() {
                   to="/users/ltl"
                   class="vx-nav-link vx-nav-sublink"
                   :class="{ 'vx-nav-link--active': navActive('inventory-ltl') }"
-                  @click="closeMobile"
+                  @click="onNavClick"
                 >
                   LTL
                 </RouterLink>
@@ -382,7 +399,7 @@ function collapseNav() {
             to="/users/inventory"
             class="vx-nav-link"
             title="Inventory"
-            @click="closeMobile"
+            @click="onNavClick"
           >
             <svg
               fill="none"
@@ -404,7 +421,7 @@ function collapseNav() {
             class="vx-nav-link"
             :class="{ 'vx-nav-link--active': navActive('billing') }"
             :title="!isExpanded ? 'Billing' : undefined"
-            @click="closeMobile"
+            @click="onNavClick"
           >
             <svg
               fill="none"
@@ -470,7 +487,7 @@ function collapseNav() {
                   to="/users/my-account/pricing"
                   class="vx-nav-link vx-nav-sublink"
                   :class="{ 'vx-nav-link--active': navActive('my-account-pricing') }"
-                  @click="closeMobile"
+                  @click="onNavClick"
                 >
                   Pricing
                 </RouterLink>
@@ -480,7 +497,7 @@ function collapseNav() {
                   to="/users/my-account/fulfillment-agreement"
                   class="vx-nav-link vx-nav-sublink"
                   :class="{ 'vx-nav-link--active': navActive('my-account-agreement') }"
-                  @click="closeMobile"
+                  @click="onNavClick"
                 >
                   Fulfillment Agreement
                 </RouterLink>
@@ -493,7 +510,7 @@ function collapseNav() {
             class="vx-nav-link"
             :class="{ 'vx-nav-link--active': navActive('my-account') }"
             title="My Account"
-            @click="closeMobile"
+            @click="onNavClick"
           >
             <svg
               fill="none"

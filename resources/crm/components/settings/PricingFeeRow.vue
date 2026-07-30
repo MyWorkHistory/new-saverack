@@ -129,12 +129,10 @@ function onKeydown(e) {
     </div>
 
     <div class="pricing-fee-row__body min-w-0 flex-grow-1">
-      <div class="d-flex flex-wrap align-items-center gap-2">
-        <h3 class="pricing-fee-row__name mb-0">{{ fee.name }}</h3>
-        <span :class="categoryBadgeClass(fee.category)">
-          {{ fee.category_label || fee.category }}
-        </span>
-      </div>
+      <h3 class="pricing-fee-row__name mb-0">{{ fee.name }}</h3>
+      <span :class="categoryBadgeClass(fee.category)" class="mt-1">
+        {{ fee.category_label || fee.category }}
+      </span>
       <template v-if="showDescription">
         <p v-if="fee.description" class="pricing-fee-row__description mb-0 mt-1">
           {{ fee.description }}
@@ -211,6 +209,13 @@ function onKeydown(e) {
   justify-content: center;
   width: 100%;
   height: 100%;
+}
+
+.pricing-fee-row__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
 }
 
 .pricing-fee-row__name {

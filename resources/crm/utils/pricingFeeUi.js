@@ -78,6 +78,12 @@ export const PRICING_CATEGORY_ORDER = PRICING_CATEGORY_OPTIONS.filter((o) => o.v
   (o) => o.value,
 );
 
+/** Portal fee lists: Fulfillment section last. */
+export const PORTAL_PRICING_CATEGORY_ORDER = [
+  ...PRICING_CATEGORY_ORDER.filter((c) => c !== "fulfillment"),
+  "fulfillment",
+];
+
 export function categoryMeta(category) {
   const key = String(category || "").trim().toLowerCase();
   return (
@@ -92,9 +98,10 @@ export function categoryMeta(category) {
 
 /**
  * @param {Array<{ category?: string }>} fees
+ * @param {string[]|null} [categoryOrder]
  * @returns {Array<{ category: string, meta: ReturnType<typeof categoryMeta>, fees: typeof fees }>}
  */
-export function groupFeesByCategory(fees) {
+export function groupFeesByCategory(fees, categoryOrder = null) {
   const list = Array.isArray(fees) ? fees : [];
   const buckets = new Map();
   for (const fee of list) {
@@ -103,8 +110,12 @@ export function groupFeesByCategory(fees) {
     buckets.get(cat).push(fee);
   }
 
+  const order = Array.isArray(categoryOrder) && categoryOrder.length
+    ? categoryOrder
+    : PRICING_CATEGORY_ORDER;
+
   const ordered = [];
-  for (const cat of PRICING_CATEGORY_ORDER) {
+  for (const cat of order) {
     if (buckets.has(cat)) {
       ordered.push({ category: cat, meta: categoryMeta(cat), fees: buckets.get(cat) });
       buckets.delete(cat);

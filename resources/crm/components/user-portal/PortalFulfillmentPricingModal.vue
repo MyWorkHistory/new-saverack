@@ -1,12 +1,19 @@
 <script setup>
-import { computed, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import api from "../../services/api";
 import PortalOnboardingModalShell from "./PortalOnboardingModalShell.vue";
 import PricingFeeList from "../settings/PricingFeeList.vue";
+import PricingFeeInfoModal from "../settings/PricingFeeInfoModal.vue";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
 import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
 import { normalizeAccountFeeItems } from "../../utils/accountFees.js";
+import {
+  CLIENT_VISIBLE_PRICING_CATEGORY_OPTIONS,
+  feeMatchesCategory,
+  feeMatchesSearch,
+  PORTAL_PRICING_CATEGORY_ORDER,
+} from "../../utils/pricingFeeUi.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -26,13 +33,25 @@ const busy = ref(false);
 const downloading = ref(false);
 const agreed = ref(false);
 
+const search = ref("");
+const categoryFilter = ref("all");
+const filterMenuOpen = ref(false);
+const infoOpen = ref(false);
+const selectedFee = ref(null);
+
 const approved = computed(() => !!props.pricing?.approved);
 const accepted = computed(() => props.pricing?.status === "completed" || !!props.pricing?.accepted_at);
 const canVerifyForClient = computed(() => props.adminMode && approved.value && !props.taskVerified);
-const feeItems = computed(() => {
+const allFeeItems = computed(() => {
   if (!approved.value) return [];
   return normalizeAccountFeeItems({ fees: { items: props.pricing?.fees || [] } });
 });
+
+const filteredFeeItems = computed(() =>
+  allFeeItems.value.filter(
+    (fee) => feeMatchesSearch(fee, search.value) && feeMatchesCategory(fee, categoryFilter.value),
+  ),
+);
 
 const downloadPath = computed(() => {
   if (props.adminMode && props.clientAccountId) {
@@ -45,11 +64,16 @@ const showAgree = computed(
   () => !props.adminMode && approved.value && !accepted.value,
 );
 
+const showSearchFilter = computed(() => props.pageMode && approved.value);
+const showClickHint = computed(() => approved.value && !props.adminMode);
+
 watch(
   () => props.open,
   (isOpen) => {
     if (!props.pageMode && !isOpen) {
       agreed.value = false;
+      infoOpen.value = false;
+      selectedFee.value = null;
     }
   },
 );
@@ -63,6 +87,32 @@ function openFeesTab() {
   emit("open-fees");
   if (!props.pageMode) emit("update:open", false);
 }
+
+function resetFilters() {
+  categoryFilter.value = "all";
+  filterMenuOpen.value = false;
+}
+
+function onSelectFee(fee) {
+  if (props.adminMode) return;
+  selectedFee.value = fee;
+  infoOpen.value = true;
+}
+
+function onDocClick(e) {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  if (t.closest("[data-toolbar-filter]")) return;
+  filterMenuOpen.value = false;
+}
+
+onMounted(() => {
+  document.addEventListener("click", onDocClick);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClick);
+});
 
 async function downloadPdf() {
   if (downloading.value) return;
@@ -168,11 +218,104 @@ async function onAgree() {
           Open Fees Tab
         </button>
       </div>
-      <PricingFeeList
-        v-else
-        :fees="feeItems"
-        :clickable="false"
-      />
+
+      <template v-else>
+        <p
+          v-if="showClickHint"
+          class="portal-fulfillment-pricing-modal__hint text-center mb-3"
+        >
+          Click on price for more info about the charges
+        </p>
+
+        <div v-if="showSearchFilter" class="staff-table-toolbar mb-3 px-0">
+          <div class="staff-table-toolbar--row">
+            <input
+              v-model="search"
+              type="search"
+              class="form-control staff-toolbar-search staff-toolbar-search--inline"
+              placeholder="Search fee name or description"
+              aria-label="Search fees"
+              autocomplete="off"
+            />
+            <div class="position-relative flex-shrink-0" data-toolbar-filter>
+              <button
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+                :aria-expanded="filterMenuOpen"
+                aria-haspopup="true"
+                @click.stop="filterMenuOpen = !filterMenuOpen"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                  />
+                </svg>
+                <span class="staff-toolbar-filter-text">Filters</span>
+              </button>
+              <div
+                v-if="filterMenuOpen"
+                class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+                role="dialog"
+                aria-label="Fee filters"
+                @click.stop
+              >
+                <div class="staff-toolbar-filter-dropdown__head">
+                  <span>Filters</span>
+                  <button
+                    type="button"
+                    class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                    @click="resetFilters"
+                  >
+                    Reset
+                  </button>
+                </div>
+                <div class="staff-toolbar-filter-dropdown__body">
+                  <label class="form-label" for="portal-pricing-filter-category">Category</label>
+                  <select
+                    id="portal-pricing-filter-category"
+                    v-model="categoryFilter"
+                    class="form-select"
+                  >
+                    <option
+                      v-for="opt in CLIENT_VISIBLE_PRICING_CATEGORY_OPTIONS"
+                      :key="opt.value"
+                      :value="opt.value"
+                    >
+                      {{ opt.label }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-if="!filteredFeeItems.length"
+          class="text-center text-secondary py-5 px-3"
+        >
+          <p class="mb-0">
+            {{ allFeeItems.length ? "No fees match your filters." : "No fees are configured yet." }}
+          </p>
+        </div>
+        <PricingFeeList
+          v-else
+          :fees="filteredFeeItems"
+          :clickable="!adminMode"
+          :category-order="PORTAL_PRICING_CATEGORY_ORDER"
+          @select="onSelectFee"
+        />
+      </template>
     </div>
 
     <footer
@@ -237,6 +380,8 @@ async function onAgree() {
         Close
       </button>
     </footer>
+
+    <PricingFeeInfoModal v-model:open="infoOpen" :fee="selectedFee" />
   </component>
 </template>
 
@@ -248,6 +393,12 @@ async function onAgree() {
 
 .portal-fulfillment-pricing-modal__empty {
   font-size: 0.95rem;
+}
+
+.portal-fulfillment-pricing-modal__hint {
+  color: #dc2626;
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 .portal-pricing-page-panel__head,

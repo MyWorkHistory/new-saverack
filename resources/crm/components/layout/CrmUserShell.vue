@@ -1,9 +1,10 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useRoute } from "vue-router";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
 import CrmHeader from "./CrmHeader.vue";
 import CrmUserSidebar from "./CrmUserSidebar.vue";
+import PortalOnboardingAccessModal from "../user-portal/PortalOnboardingAccessModal.vue";
 
 defineProps({
   user: { type: Object, required: true },
@@ -13,6 +14,7 @@ defineEmits(["logout", "refresh-user"]);
 
 const route = useRoute();
 const { isMobileOpen, toggleMobileSidebar, mainWrapClass } = useCrmSidebar();
+const accessModalOpen = ref(false);
 
 const useWideCrmContent = computed(
   () =>
@@ -20,6 +22,7 @@ const useWideCrmContent = computed(
     route.path === "/users/dashboard" ||
     route.path.startsWith("/users/inventory") ||
     route.path.startsWith("/users/asn") ||
+    route.path.startsWith("/users/ltl") ||
     route.path.startsWith("/users/returns") ||
     route.path === "/users/account-settings" ||
     route.path === "/users/support" ||
@@ -39,7 +42,7 @@ const crmContentClass = computed(() =>
 
 <template>
   <div class="crm-app-shell">
-    <CrmUserSidebar :user="user" />
+    <CrmUserSidebar :user="user" @blocked-nav="accessModalOpen = true" />
 
     <div
       v-if="isMobileOpen"
@@ -58,5 +61,7 @@ const crmContentClass = computed(() =>
         <slot />
       </div>
     </div>
+
+    <PortalOnboardingAccessModal v-model:open="accessModalOpen" />
   </div>
 </template>

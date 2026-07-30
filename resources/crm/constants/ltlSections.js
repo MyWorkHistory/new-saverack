@@ -38,5 +38,15 @@ export function formatLtlMoney(cents) {
 
 export function ltlStatusBadgeClass(status) {
   const tone = LTL_STATUSES[status]?.tone || "secondary";
-  return `badge text-bg-${tone === "warning" ? "warning" : tone === "info" ? "info" : tone === "success" ? "success" : tone === "primary" ? "primary" : "secondary"}`;
+  const bg =
+    tone === "warning"
+      ? "text-bg-warning"
+      : tone === "info"
+        ? "text-bg-info"
+        : tone === "success"
+          ? "text-bg-success"
+          : tone === "primary"
+            ? "text-bg-primary"
+            : "text-bg-secondary";
+  return `badge rounded-pill fw-medium ${bg}`;
 }

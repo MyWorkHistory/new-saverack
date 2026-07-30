@@ -85,7 +85,7 @@ class ShippedDaySnapshotService
         $accounts = ClientAccount::query()
             ->operationalForOrderDashboards()
             ->orderBy('company_name')
-            ->get(['id', 'company_name', 'status', 'shiphero_customer_account_id', 'timezone']);
+            ->get(['id', 'company_name', 'status', 'shiphero_customer_account_id']);
 
         $rows = [];
         $total = 0;

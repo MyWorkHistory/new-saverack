@@ -40,7 +40,6 @@ class ShippedDashboardApiTest extends TestCase
             'company_name' => $name,
             'email' => strtolower(str_replace(' ', '-', $name)).'@example.test',
             'shiphero_customer_account_id' => $customerId,
-            'timezone' => PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE,
         ]);
     }
 

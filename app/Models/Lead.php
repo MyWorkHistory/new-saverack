@@ -56,18 +56,29 @@ class Lead extends Model
         'website',
         'name',
         'comment',
+        'logo_path',
         'follow_up_days',
         'follow_up_at',
+        'created_at',
     ];
 
     protected $casts = [
-        'follow_up_days' => 'integer',
         'follow_up_at' => 'date',
     ];
 
     public function feeItems(): HasMany
     {
         return $this->hasMany(LeadFee::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    public function comments(): HasMany
+    {
+        return $this->hasMany(LeadComment::class)->orderByDesc('id');
+    }
+
+    public function statusEvents(): HasMany
+    {
+        return $this->hasMany(LeadStatusEvent::class)->orderByDesc('id');
     }
 
     public static function statusLabel(string $status): string
@@ -87,15 +98,49 @@ class Lead extends Model
     }
 
     /**
+     * Normalize follow-up days. Null / empty / "off" => Off (null).
+     *
      * @param  mixed  $days
      */
-    public static function normalizeFollowUpDays($days): int
+    public static function normalizeFollowUpDays($days): ?int
     {
+        if ($days === null || $days === '' || $days === 'off' || $days === 'Off') {
+            return null;
+        }
+
         $value = (int) $days;
         if (! in_array($value, self::FOLLOW_UP_DAY_OPTIONS, true)) {
             return self::DEFAULT_FOLLOW_UP_DAYS;
         }
 
         return $value;
+    }
+
+    /**
+     * Remaining-days label for UI (e.g. "2 days", "Due", "Overdue", "—").
+     */
+    public static function followUpRemainingLabel($followUpAt, $followUpDays): string
+    {
+        if ($followUpDays === null || $followUpDays === null || $followUpAt === '') {
+            return '—';
+        }
+
+        try {
+            $target = \Illuminate\Support\Carbon::parse($followUpAt)->startOfDay();
+        } catch (\Throwable $e) {
+            return '—';
+        }
+
+        $today = now()->startOfDay();
+        if ($target->lt($today)) {
+            return 'Overdue';
+        }
+        if ($target->equalTo($today)) {
+            return 'Due';
+        }
+
+        $days = (int) $today->diffInDays($target);
+
+        return $days === 1 ? '1 day' : $days.' days';
     }
 }

@@ -5,12 +5,20 @@ import api from "../../services/api";
 import AccountDetailSectionHead from "../../components/clients/AccountDetailSectionHead.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import EmailTemplatesGroupedList from "../../components/settings/EmailTemplatesGroupedList.vue";
+import LeadEditModal from "../../components/leads/LeadEditModal.vue";
 import LeadFeesPanel from "../../components/leads/LeadFeesPanel.vue";
+import LeadNotesPanel from "../../components/leads/LeadNotesPanel.vue";
+import LeadStatusTimeline from "../../components/leads/LeadStatusTimeline.vue";
 import LeadStatusUpdateModal from "../../components/leads/LeadStatusUpdateModal.vue";
 import {
   LEAD_FOLLOW_UP_DAY_OPTIONS,
+  LEAD_FOLLOW_UP_OFF,
   LEAD_STATUSES,
+  followUpPayloadValue,
+  followUpSelectValue,
   formatFollowUpDays,
+  formatFollowUpRemaining,
+  leadInitials,
   leadStatusLabel,
 } from "../../constants/leads.js";
 import { EMAIL_TEMPLATE_CATEGORIES } from "../../constants/emailTemplates.js";
@@ -103,24 +111,17 @@ function avatarClassForEmail(email) {
   return classes[hash] || classes[0];
 }
 
-function initials(name) {
-  const parts = String(name || "")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (!parts.length) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
-}
-
 const loading = ref(true);
 const errorMsg = ref("");
 const lead = ref(null);
 const historyItems = ref([]);
 const historyLoading = ref(false);
 const followUpSaving = ref(false);
+const logoUploading = ref(false);
+const logoInputRef = ref(null);
 
 const emailTemplateGroups = ref([]);
+const emailTemplatesFlat = ref([]);
 const emailTemplatesLoading = ref(false);
 const emailTemplatesLoaded = ref(false);
 const emailTemplatesCollapsed = reactive({});
@@ -133,10 +134,29 @@ const emailHighlightCategory = computed(() => {
   return EMAIL_TEMPLATE_CATEGORIES.includes(status) ? status : "";
 });
 
+const templateUsages = computed(() => lead.value?.template_usages || {});
+
 const statusModalOpen = ref(false);
 const statusModalStatus = ref("open");
 const statusModalFollowUpDays = ref(1);
+const statusModalTemplateId = ref("custom");
 const statusBusy = ref(false);
+
+const editModalOpen = ref(false);
+const editBusy = ref(false);
+const editForm = ref({
+  created_at: "",
+  email: "",
+  website: "",
+  name: "",
+  company_name: "",
+});
+
+const noteBody = ref("");
+const noteFile = ref(null);
+const noteSubmitting = ref(false);
+const noteImagePreviews = reactive({});
+const notesPanelRef = ref(null);
 
 const statuses = ref([...LEAD_STATUSES]);
 const followUpDayOptions = ref([...LEAD_FOLLOW_UP_DAY_OPTIONS]);
@@ -144,6 +164,24 @@ const followUpDayOptions = ref([...LEAD_FOLLOW_UP_DAY_OPTIONS]);
 const activeTab = ref(TAB_LEAD_INFO);
 
 const timelinePreview = computed(() => historyItems.value.slice(0, 5));
+const statusEvents = computed(() =>
+  Array.isArray(lead.value?.status_events) ? lead.value.status_events : [],
+);
+const leadComments = computed(() =>
+  Array.isArray(lead.value?.comments) ? lead.value.comments : [],
+);
+const templatesUsedStatuses = computed(() =>
+  Array.isArray(lead.value?.templates_used_statuses)
+    ? lead.value.templates_used_statuses
+    : [],
+);
+
+const followUpSelect = computed({
+  get() {
+    return followUpSelectValue(lead.value?.follow_up_days);
+  },
+  set() {},
+});
 
 setCrmPageMeta({
   title: "Save Rack | Lead",
@@ -193,6 +231,31 @@ function timelineActorAvatarUrl(row) {
   return row?.actor_avatar_url || null;
 }
 
+function isImageMime(mime) {
+  return String(mime || "").startsWith("image/");
+}
+
+async function loadCommentImagePreviews(comments) {
+  Object.keys(noteImagePreviews).forEach((k) => {
+    delete noteImagePreviews[k];
+  });
+  const list = Array.isArray(comments) ? comments : [];
+  await Promise.all(
+    list.map(async (c) => {
+      if (!c?.attachment || !isImageMime(c.attachment.mime)) return;
+      try {
+        const { data } = await api.get(
+          `/leads/${props.id}/comments/${c.id}/attachment`,
+          { responseType: "blob" },
+        );
+        noteImagePreviews[c.id] = URL.createObjectURL(data);
+      } catch {
+        /* ignore */
+      }
+    }),
+  );
+}
+
 async function loadLead() {
   loading.value = true;
   errorMsg.value = "";
@@ -203,6 +266,7 @@ async function loadLead() {
       title: `Save Rack | ${data.company_name || "Lead"}`,
       description: "Lead detail.",
     });
+    await loadCommentImagePreviews(data.comments);
   } catch (e) {
     toast.errorFrom(e, "Could not load lead.");
     lead.value = null;
@@ -241,11 +305,17 @@ async function loadEmailTemplates(force = false) {
       params: { grouped: 1 },
     });
     emailTemplateGroups.value = Array.isArray(data?.groups) ? data.groups : [];
+    const flat = [];
+    emailTemplateGroups.value.forEach((g) => {
+      (g.templates || []).forEach((t) => flat.push(t));
+    });
+    emailTemplatesFlat.value = flat;
     emailTemplatesLoaded.value = true;
     syncEmailTemplateCollapse(emailHighlightCategory.value);
   } catch (e) {
     toast.errorFrom(e, "Could not load email templates.");
     emailTemplateGroups.value = [];
+    emailTemplatesFlat.value = [];
   } finally {
     emailTemplatesLoading.value = false;
   }
@@ -257,12 +327,14 @@ function toggleEmailTemplateGroup(category) {
 
 async function saveFollowUpDays(event) {
   if (!canUpdate.value || !lead.value?.id || followUpSaving.value) return;
-  const days = Number(event?.target?.value ?? lead.value.follow_up_days);
-  if (days === Number(lead.value.follow_up_days)) return;
+  const next = followUpPayloadValue(event?.target?.value);
+  const current = lead.value.follow_up_days ?? null;
+  if (next === current || (next === null && current === null)) return;
+  if (next !== null && Number(next) === Number(current)) return;
   followUpSaving.value = true;
   try {
     const { data } = await api.patch(`/leads/${lead.value.id}`, {
-      follow_up_days: days,
+      follow_up_days: next,
     });
     lead.value = data;
     toast.success("Follow up updated.");
@@ -277,18 +349,32 @@ async function saveFollowUpDays(event) {
 function openStatusModal() {
   if (!canUpdate.value || !lead.value) return;
   statusModalStatus.value = lead.value.status || "open";
-  statusModalFollowUpDays.value = Number(lead.value.follow_up_days || 1);
+  statusModalFollowUpDays.value =
+    lead.value.follow_up_days === null || lead.value.follow_up_days === undefined
+      ? null
+      : Number(lead.value.follow_up_days);
+  statusModalTemplateId.value = "custom";
   statusModalOpen.value = true;
+  loadEmailTemplates();
 }
 
 async function saveStatusFromModal() {
   if (!lead.value?.id || statusBusy.value) return;
   statusBusy.value = true;
   try {
-    const { data } = await api.patch(`/leads/${lead.value.id}`, {
+    const payload = {
       status: statusModalStatus.value,
-      follow_up_days: Number(statusModalFollowUpDays.value),
-    });
+      follow_up_days: followUpPayloadValue(statusModalFollowUpDays.value),
+      record_status_event: true,
+    };
+    if (
+      statusModalTemplateId.value !== "custom" &&
+      statusModalTemplateId.value !== null &&
+      statusModalTemplateId.value !== ""
+    ) {
+      payload.email_template_id = Number(statusModalTemplateId.value);
+    }
+    const { data } = await api.patch(`/leads/${lead.value.id}`, payload);
     lead.value = data;
     statusModalOpen.value = false;
     toast.success("Lead updated.");
@@ -297,6 +383,110 @@ async function saveStatusFromModal() {
     toast.errorFrom(e, "Could not update lead.");
   } finally {
     statusBusy.value = false;
+  }
+}
+
+function openEditModal() {
+  if (!canUpdate.value || !lead.value) return;
+  editModalOpen.value = true;
+}
+
+async function saveEditModal() {
+  if (!lead.value?.id || editBusy.value) return;
+  editBusy.value = true;
+  try {
+    const { data } = await api.patch(`/leads/${lead.value.id}`, {
+      company_name: String(editForm.value.company_name || "").trim(),
+      email: String(editForm.value.email || "").trim(),
+      website: String(editForm.value.website || "").trim() || null,
+      name: String(editForm.value.name || "").trim() || null,
+      created_at: editForm.value.created_at || undefined,
+    });
+    lead.value = data;
+    editModalOpen.value = false;
+    toast.success("Lead updated.");
+    await loadHistory();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update lead.");
+  } finally {
+    editBusy.value = false;
+  }
+}
+
+function triggerLogoUpload() {
+  if (!canUpdate.value || logoUploading.value) return;
+  logoInputRef.value?.click();
+}
+
+async function onLogoSelected(e) {
+  const file = e?.target?.files?.[0];
+  if (!file || !lead.value?.id) return;
+  logoUploading.value = true;
+  try {
+    const fd = new FormData();
+    fd.append("logo", file);
+    const { data } = await api.post(`/leads/${lead.value.id}/logo`, fd);
+    lead.value = data;
+    toast.success("Logo updated.");
+  } catch (err) {
+    toast.errorFrom(err, "Could not upload logo.");
+  } finally {
+    logoUploading.value = false;
+    if (logoInputRef.value) logoInputRef.value.value = "";
+  }
+}
+
+async function submitNote() {
+  if (!lead.value?.id || noteSubmitting.value) return;
+  const text = String(noteBody.value || "").trim();
+  if (!text) return;
+  noteSubmitting.value = true;
+  try {
+    const fd = new FormData();
+    fd.append("body", text);
+    if (noteFile.value) fd.append("attachment", noteFile.value);
+    const { data } = await api.post(`/leads/${lead.value.id}/comments`, fd);
+    const comments = [data, ...(lead.value.comments || [])];
+    lead.value = { ...lead.value, comments };
+    noteBody.value = "";
+    noteFile.value = null;
+    notesPanelRef.value?.clearFileInput?.();
+    await loadCommentImagePreviews(comments);
+    toast.success("Note added.");
+    await loadHistory();
+  } catch (e) {
+    toast.errorFrom(e, "Could not add note.");
+  } finally {
+    noteSubmitting.value = false;
+  }
+}
+
+async function deleteNote(comment) {
+  if (!lead.value?.id || !comment?.id) return;
+  try {
+    await api.delete(`/leads/${lead.value.id}/comments/${comment.id}`);
+    const comments = (lead.value.comments || []).filter((c) => c.id !== comment.id);
+    lead.value = { ...lead.value, comments };
+    toast.success("Note deleted.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete note.");
+  }
+}
+
+async function downloadNoteAttachment(commentId) {
+  try {
+    const { data } = await api.get(
+      `/leads/${props.id}/comments/${commentId}/attachment`,
+      { responseType: "blob" },
+    );
+    const url = URL.createObjectURL(data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "attachment";
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    toast.errorFrom(e, "Could not download attachment.");
   }
 }
 
@@ -318,6 +508,7 @@ watch(
   async () => {
     historyItems.value = [];
     emailTemplateGroups.value = [];
+    emailTemplatesFlat.value = [];
     emailTemplatesLoaded.value = false;
     syncTabFromRoute();
     await loadLead();
@@ -358,6 +549,7 @@ onMounted(async () => {
   }
   await loadLead();
   await loadHistory();
+  await loadEmailTemplates();
   if (activeTab.value === TAB_EMAIL_TEMPLATES) {
     await loadEmailTemplates();
   }
@@ -370,10 +562,20 @@ onMounted(async () => {
       v-model:open="statusModalOpen"
       v-model:status="statusModalStatus"
       v-model:follow-up-days="statusModalFollowUpDays"
+      v-model:email-template-id="statusModalTemplateId"
       :statuses="statuses"
       :follow-up-day-options="followUpDayOptions"
+      :templates="emailTemplatesFlat"
+      :templates-used-statuses="templatesUsedStatuses"
       :busy="statusBusy"
       @save="saveStatusFromModal"
+    />
+    <LeadEditModal
+      v-model:open="editModalOpen"
+      v-model:form="editForm"
+      :lead="lead"
+      :busy="editBusy"
+      @save="saveEditModal"
     />
 
     <div class="account-detail-page-head">
@@ -448,17 +650,55 @@ onMounted(async () => {
         <div class="col-12 col-xl-4">
           <aside class="staff-user-profile">
             <div class="staff-user-profile__avatar-wrap">
-              <span
-                class="staff-user-profile__avatar staff-user-profile__avatar--initials"
-                :class="avatarClassForEmail(lead.email || lead.company_name)"
+              <input
+                ref="logoInputRef"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                class="d-none"
+                @change="onLogoSelected"
+              />
+              <button
+                v-if="canUpdate"
+                type="button"
+                class="staff-user-profile__avatar-btn border-0 bg-transparent p-0"
+                :disabled="logoUploading"
+                title="Upload logo"
+                @click="triggerLogoUpload"
               >
-                {{ initials(lead.company_name) }}
-              </span>
+                <img
+                  v-if="lead.logo_url"
+                  :src="lead.logo_url"
+                  alt=""
+                  class="staff-user-profile__avatar object-fit-cover"
+                />
+                <span
+                  v-else
+                  class="staff-user-profile__avatar staff-user-profile__avatar--initials"
+                  :class="avatarClassForEmail(lead.email || lead.company_name)"
+                >
+                  {{ leadInitials(lead.company_name) }}
+                </span>
+              </button>
+              <template v-else>
+                <img
+                  v-if="lead.logo_url"
+                  :src="lead.logo_url"
+                  alt=""
+                  class="staff-user-profile__avatar object-fit-cover"
+                />
+                <span
+                  v-else
+                  class="staff-user-profile__avatar staff-user-profile__avatar--initials"
+                  :class="avatarClassForEmail(lead.email || lead.company_name)"
+                >
+                  {{ leadInitials(lead.company_name) }}
+                </span>
+              </template>
             </div>
             <h2 class="staff-user-profile__name">
               {{ lead.company_name }}
             </h2>
-            <div class="text-center mb-3">
+            <div class="text-center mb-3 d-flex flex-column align-items-center gap-2">
               <button
                 v-if="canUpdate"
                 type="button"
@@ -476,6 +716,14 @@ onMounted(async () => {
               >
                 {{ leadStatusLabel(lead.status) }}
               </span>
+              <button
+                v-if="canUpdate"
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                @click="openEditModal"
+              >
+                Edit
+              </button>
             </div>
 
             <AccountDetailSectionHead
@@ -496,24 +744,30 @@ onMounted(async () => {
               <div>
                 <dt class="staff-user-profile__dt">Follow Up</dt>
                 <dd class="staff-user-profile__dd text-end">
-                  <select
-                    v-if="canUpdate"
-                    class="form-select form-select-sm ms-auto"
-                    style="max-width: 8.5rem"
-                    :value="lead.follow_up_days"
-                    :disabled="followUpSaving"
-                    aria-label="Follow Up Days"
-                    @change="saveFollowUpDays"
-                  >
-                    <option
-                      v-for="days in followUpDayOptions"
-                      :key="days"
-                      :value="days"
+                  <div class="d-flex flex-column align-items-end gap-1">
+                    <select
+                      v-if="canUpdate"
+                      class="form-select form-select-sm"
+                      style="max-width: 8.5rem"
+                      :value="followUpSelect"
+                      :disabled="followUpSaving"
+                      aria-label="Follow Up Days"
+                      @change="saveFollowUpDays"
                     >
-                      {{ formatFollowUpDays(days) }}
-                    </option>
-                  </select>
-                  <span v-else>{{ formatFollowUpDays(lead.follow_up_days) }}</span>
+                      <option :value="LEAD_FOLLOW_UP_OFF">Off</option>
+                      <option
+                        v-for="days in followUpDayOptions"
+                        :key="days"
+                        :value="days"
+                      >
+                        {{ formatFollowUpDays(days) }}
+                      </option>
+                    </select>
+                    <span v-else>{{ formatFollowUpDays(lead.follow_up_days) }}</span>
+                    <span class="small text-secondary">
+                      {{ formatFollowUpRemaining(lead) }}
+                    </span>
+                  </div>
                 </dd>
               </div>
               <div>
@@ -628,90 +882,25 @@ onMounted(async () => {
             <template v-if="activeTab === TAB_LEAD_INFO">
               <div class="staff-surface p-3 p-md-4 mb-4">
                 <AccountDetailSectionHead
-                  title="Personal Information"
-                  icon="personal"
+                  title="Lead Status Timeline"
+                  icon="activity"
                   head-class="mb-3"
                 />
-                <div class="row g-3">
-                  <div class="col-md-6">
-                    <dl class="mb-0 small">
-                      <dt
-                        class="text-secondary text-uppercase fw-semibold mb-1"
-                        style="font-size: 0.65rem"
-                      >
-                        Company
-                      </dt>
-                      <dd class="mb-0 fw-semibold text-body">
-                        {{ display(lead.company_name) }}
-                      </dd>
-                    </dl>
-                  </div>
-                  <div class="col-md-6">
-                    <dl class="mb-0 small">
-                      <dt
-                        class="text-secondary text-uppercase fw-semibold mb-1"
-                        style="font-size: 0.65rem"
-                      >
-                        Email
-                      </dt>
-                      <dd class="mb-0 fw-semibold text-body text-break">
-                        {{ display(lead.email) }}
-                      </dd>
-                    </dl>
-                  </div>
-                  <div class="col-md-6">
-                    <dl class="mb-0 small">
-                      <dt
-                        class="text-secondary text-uppercase fw-semibold mb-1"
-                        style="font-size: 0.65rem"
-                      >
-                        Name
-                      </dt>
-                      <dd class="mb-0 fw-semibold text-body">
-                        {{ display(lead.name) }}
-                      </dd>
-                    </dl>
-                  </div>
-                  <div class="col-md-6">
-                    <dl class="mb-0 small">
-                      <dt
-                        class="text-secondary text-uppercase fw-semibold mb-1"
-                        style="font-size: 0.65rem"
-                      >
-                        Website
-                      </dt>
-                      <dd class="mb-0 fw-semibold text-body text-break">
-                        <a
-                          v-if="lead.website"
-                          :href="websiteHref(lead.website)"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="text-decoration-none"
-                        >
-                          {{ lead.website }}
-                        </a>
-                        <span v-else>{{ display(lead.website) }}</span>
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
+                <LeadStatusTimeline :events="statusEvents" />
               </div>
 
-              <div class="staff-surface p-3 p-md-4 mb-4">
-                <AccountDetailSectionHead
-                  title="Comment"
-                  icon="notes"
-                  head-class="mb-3"
-                />
-                <p
-                  v-if="lead.comment"
-                  class="mb-0 small text-body"
-                  style="white-space: pre-wrap"
-                >
-                  {{ lead.comment }}
-                </p>
-                <p v-else class="mb-0 small text-secondary">No comment yet.</p>
-              </div>
+              <LeadNotesPanel
+                ref="notesPanelRef"
+                v-model:body="noteBody"
+                v-model:file="noteFile"
+                :comments="leadComments"
+                :can-update="canUpdate"
+                :submitting="noteSubmitting"
+                :image-preview-urls="noteImagePreviews"
+                @submit="submitNote"
+                @delete="deleteNote"
+                @download="downloadNoteAttachment"
+              />
             </template>
 
             <template v-else-if="activeTab === TAB_FEES">
@@ -777,8 +966,8 @@ onMounted(async () => {
                   head-class="mb-3"
                 />
                 <p class="text-secondary small mb-3">
-                  Templates from Settings, grouped by lead status. The group for this lead's
-                  current status is expanded by default.
+                  Manage and track email templates for this lead. Templates are maintained in
+                  Settings; expand a row to read the body. Sent status reflects usage on this lead.
                 </p>
                 <div v-if="emailTemplatesLoading" class="d-flex justify-content-center py-5">
                   <CrmLoadingSpinner />
@@ -788,6 +977,9 @@ onMounted(async () => {
                   :groups="emailTemplateGroups"
                   :collapsed="emailTemplatesCollapsed"
                   :highlight-category="emailHighlightCategory"
+                  :usages="templateUsages"
+                  expandable
+                  read-only-actions
                   @toggle-group="toggleEmailTemplateGroup"
                 />
               </div>

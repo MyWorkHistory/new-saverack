@@ -164,6 +164,70 @@ TEXT;
         $this->assertSame(15, (int) $lead->follow_up_days);
     }
 
+    public function test_can_set_follow_up_off(): void
+    {
+        $this->staffWithLeads(['view', 'update']);
+
+        $lead = Lead::query()->create([
+            'status' => Lead::STATUS_OPEN,
+            'company_name' => 'Off Co',
+            'email' => 'off@test.com',
+            'follow_up_days' => 3,
+            'follow_up_at' => now()->addDays(3)->toDateString(),
+        ]);
+
+        $response = $this->patchJson('/api/leads/'.$lead->id, [
+            'follow_up_days' => null,
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('follow_up_days', null);
+        $response->assertJsonPath('follow_up_at', null);
+        $response->assertJsonPath('follow_up_label', '—');
+
+        $lead->refresh();
+        $this->assertNull($lead->follow_up_days);
+        $this->assertNull($lead->follow_up_at);
+    }
+
+    public function test_create_seeds_open_status_event(): void
+    {
+        $this->staffWithLeads();
+
+        $response = $this->postJson('/api/leads', [
+            'company_name' => 'Event Co',
+            'email' => 'event@test.com',
+        ]);
+
+        $response->assertCreated();
+        $events = $response->json('status_events');
+        $this->assertIsArray($events);
+        $this->assertNotEmpty($events);
+        $this->assertSame(Lead::STATUS_OPEN, $events[0]['status']);
+        $this->assertSame('Lead created', $events[0]['note']);
+    }
+
+    public function test_can_update_created_at(): void
+    {
+        $this->staffWithLeads(['view', 'update']);
+
+        $lead = Lead::query()->create([
+            'status' => Lead::STATUS_OPEN,
+            'company_name' => 'Date Co',
+            'email' => 'date@test.com',
+            'follow_up_days' => 1,
+            'follow_up_at' => now()->addDay()->toDateString(),
+        ]);
+
+        $response = $this->patchJson('/api/leads/'.$lead->id, [
+            'created_at' => '2024-01-15',
+        ]);
+
+        $response->assertOk();
+        $lead->refresh();
+        $this->assertSame('2024-01-15', $lead->created_at->toDateString());
+    }
+
     public function test_view_permission_required(): void
     {
         $user = User::factory()->create(['client_account_id' => null]);

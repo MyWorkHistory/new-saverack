@@ -65,12 +65,7 @@ function submit() {
           class="form-control font-monospace"
           rows="14"
           :disabled="busy"
-          placeholder="Company: Blue Ridge Exotics
-Website: blueridgeexotics.com
-Email: sales@blueridgeexotics.com
-
-Email Thread:
-Can you send over some details on what this would look like for us?"
+          placeholder="Paste company, website, email, and any email thread…"
         />
       </div>
     </div>

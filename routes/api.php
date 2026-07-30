@@ -202,6 +202,10 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/quick-add', [LeadController::class, 'quickAdd']);
             Route::get('/{lead}', [LeadController::class, 'show']);
             Route::patch('/{lead}', [LeadController::class, 'update']);
+            Route::post('/{lead}/logo', [LeadController::class, 'uploadLogo']);
+            Route::post('/{lead}/comments', [LeadController::class, 'storeComment']);
+            Route::delete('/{lead}/comments/{comment}', [LeadController::class, 'destroyComment']);
+            Route::get('/{lead}/comments/{comment}/attachment', [LeadController::class, 'downloadCommentAttachment']);
             Route::delete('/{lead}', [LeadController::class, 'destroy']);
             Route::patch('/{lead}/fees/{fee}', [LeadController::class, 'updateFee']);
             Route::get('/{lead}/history', [LeadController::class, 'history']);

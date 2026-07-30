@@ -16,7 +16,9 @@ import LeadSummaryCards from "../../components/leads/LeadSummaryCards.vue";
 import {
   LEAD_FOLLOW_UP_DAY_OPTIONS,
   LEAD_STATUSES,
-  formatFollowUpDays,
+  followUpPayloadValue,
+  formatFollowUpRemaining,
+  leadInitials,
   leadStatusLabel,
 } from "../../constants/leads.js";
 
@@ -56,9 +58,13 @@ const query = ref({
   status: "all",
   page: 1,
   per_page: 25,
-  sort_by: "created_at",
-  sort_dir: "desc",
+  sort_by: "follow_up_at",
+  sort_dir: "asc",
 });
+
+const statusModalTemplateId = ref("custom");
+const emailTemplatesFlat = ref([]);
+const templatesUsedStatuses = ref([]);
 
 const directorySummaryActiveStatus = computed(() => {
   const s = String(query.value.status || "all");
@@ -145,12 +151,63 @@ function setDirectoryStatFilter(status) {
   query.value = { ...query.value, status: next, page: 1 };
 }
 
+function avatarClassForEmail(email) {
+  const s = String(email || "");
+  let hash = 0;
+  for (let i = 0; i < s.length; i += 1) {
+    hash = (hash + s.charCodeAt(i) * (i + 1)) % 5;
+  }
+  const classes = [
+    "bg-primary-subtle text-primary",
+    "bg-success-subtle text-success",
+    "bg-warning-subtle text-warning",
+    "bg-info-subtle text-info",
+    "bg-secondary-subtle text-secondary",
+  ];
+  return classes[hash] || classes[0];
+}
+
+async function loadEmailTemplatesFlat() {
+  if (emailTemplatesFlat.value.length) return;
+  try {
+    const { data } = await api.get("/settings/email-templates", {
+      params: { grouped: 1 },
+    });
+    const flat = [];
+    (Array.isArray(data?.groups) ? data.groups : []).forEach((g) => {
+      (g.templates || []).forEach((t) => flat.push(t));
+    });
+    emailTemplatesFlat.value = flat;
+  } catch {
+    emailTemplatesFlat.value = [];
+  }
+}
+
 function openStatusModal(row) {
   if (!canUpdate.value || !row) return;
   statusModalRow.value = row;
   statusModalStatus.value = row.status || "open";
-  statusModalFollowUpDays.value = Number(row.follow_up_days || 1);
+  statusModalFollowUpDays.value =
+    row.follow_up_days === null || row.follow_up_days === undefined
+      ? null
+      : Number(row.follow_up_days);
+  statusModalTemplateId.value = "custom";
+  templatesUsedStatuses.value = Array.isArray(row.templates_used_statuses)
+    ? row.templates_used_statuses
+    : [];
   statusModalOpen.value = true;
+  loadEmailTemplatesFlat();
+  // Fetch detail for accurate template usage when opening from list.
+  api
+    .get(`/leads/${row.id}`)
+    .then(({ data }) => {
+      if (statusModalRow.value?.id === row.id) {
+        templatesUsedStatuses.value = Array.isArray(data?.templates_used_statuses)
+          ? data.templates_used_statuses
+          : [];
+      }
+    })
+    .catch(() => {});
 }
 
 async function saveStatusFromModal() {
@@ -158,10 +215,19 @@ async function saveStatusFromModal() {
   if (!row?.id || statusPickerBusy.value) return;
   statusPickerBusy.value = true;
   try {
-    const { data } = await api.patch(`/leads/${row.id}`, {
+    const payload = {
       status: statusModalStatus.value,
-      follow_up_days: Number(statusModalFollowUpDays.value),
-    });
+      follow_up_days: followUpPayloadValue(statusModalFollowUpDays.value),
+      record_status_event: true,
+    };
+    if (
+      statusModalTemplateId.value !== "custom" &&
+      statusModalTemplateId.value !== null &&
+      statusModalTemplateId.value !== ""
+    ) {
+      payload.email_template_id = Number(statusModalTemplateId.value);
+    }
+    const { data } = await api.patch(`/leads/${row.id}`, payload);
     const idx = rows.value.findIndex((r) => r.id === row.id);
     if (idx !== -1) {
       rows.value[idx] = { ...rows.value[idx], ...data };
@@ -171,6 +237,8 @@ async function saveStatusFromModal() {
     toast.success("Lead updated.");
     await loadMeta();
     if (query.value.status !== "all" && data.status !== query.value.status) {
+      await fetchRows();
+    } else {
       await fetchRows();
     }
   } catch (e) {
@@ -342,8 +410,11 @@ onUnmounted(() => {
       v-model:open="statusModalOpen"
       v-model:status="statusModalStatus"
       v-model:follow-up-days="statusModalFollowUpDays"
+      v-model:email-template-id="statusModalTemplateId"
       :statuses="statuses"
       :follow-up-day-options="followUpDayOptions"
+      :templates="emailTemplatesFlat"
+      :templates-used-statuses="templatesUsedStatuses"
       :busy="statusPickerBusy"
       @save="saveStatusFromModal"
     />
@@ -419,6 +490,7 @@ onUnmounted(() => {
           <thead class="table-light staff-table-head">
             <tr>
               <th class="staff-table-head__th" scope="col">Status</th>
+              <th class="staff-table-head__th" scope="col" style="width: 3rem"></th>
               <th class="staff-table-head__th" scope="col">Company Name</th>
               <th class="staff-table-head__th" scope="col">Email</th>
               <th class="staff-table-head__th" scope="col">Website</th>
@@ -429,7 +501,7 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr v-if="!rows.length">
-              <td colspan="7" class="px-4 py-5 text-center text-secondary">No leads found.</td>
+              <td colspan="8" class="px-4 py-5 text-center text-secondary">No leads found.</td>
             </tr>
             <tr v-for="row in rows" :key="row.id" class="align-middle">
               <td>
@@ -450,6 +522,23 @@ onUnmounted(() => {
                 >
                   {{ leadStatusLabel(row.status) }}
                 </span>
+              </td>
+              <td>
+                <img
+                  v-if="row.logo_url"
+                  :src="row.logo_url"
+                  alt=""
+                  class="rounded-circle object-fit-cover"
+                  width="32"
+                  height="32"
+                />
+                <span
+                  v-else
+                  class="rounded-circle d-inline-flex align-items-center justify-content-center small fw-semibold"
+                  style="width: 32px; height: 32px; font-size: 0.65rem"
+                  :class="avatarClassForEmail(row.email || row.company_name)"
+                  aria-hidden="true"
+                >{{ leadInitials(row.company_name) }}</span>
               </td>
               <td>
                 <RouterLink
@@ -488,7 +577,7 @@ onUnmounted(() => {
                 <span v-else class="text-secondary">—</span>
               </td>
               <td class="text-center text-body staff-table-cell__meta text-nowrap">
-                {{ formatFollowUpDays(row.follow_up_days) }}
+                {{ formatFollowUpRemaining(row) }}
               </td>
               <td class="text-center text-body staff-table-cell__meta text-nowrap">
                 {{ formatDateUs(row.created_at) }}

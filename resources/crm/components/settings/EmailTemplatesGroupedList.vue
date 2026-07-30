@@ -1,11 +1,12 @@
 <script setup>
-import { computed } from "vue";
+import { computed, reactive } from "vue";
 import CrmIconRowActions from "../common/CrmIconRowActions.vue";
 import {
   EMAIL_TEMPLATE_CATEGORIES,
   emailTemplateCategoryLabel,
   emailTemplateCategoryMeta,
 } from "../../constants/emailTemplates.js";
+import { formatDateTimeUs } from "../../utils/formatUserDates.js";
 
 const props = defineProps({
   groups: { type: Array, default: () => [] },
@@ -14,9 +15,19 @@ const props = defineProps({
   manageOpenId: { type: [Number, String], default: null },
   manageMenuRect: { type: Object, default: () => ({ top: 0, left: 0 }) },
   highlightCategory: { type: String, default: "" },
+  /** When true, rows expand to show template body. */
+  expandable: { type: Boolean, default: false },
+  /**
+   * Per-template usage keyed by id:
+   * { [id]: { last_sent_at: string|null } }
+   */
+  usages: { type: Object, default: () => ({}) },
+  readOnlyActions: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["toggle-group", "open-manage", "edit", "delete"]);
+
+const expandedRows = reactive({});
 
 const displayGroups = computed(() => {
   if (Array.isArray(props.groups) && props.groups.length) {
@@ -63,6 +74,33 @@ const manageMenuRow = computed(() => {
   }
   return null;
 });
+
+function usageFor(row) {
+  const id = Number(row?.id || 0);
+  if (!id) return null;
+  return props.usages?.[id] || props.usages?.[String(id)] || null;
+}
+
+function statusLabelFor(row) {
+  const usage = usageFor(row);
+  if (usage?.last_sent_at) return "Sent";
+  return row.status_label || "Ready";
+}
+
+function lastSentFor(row) {
+  const usage = usageFor(row);
+  if (usage?.last_sent_at) return formatDateTimeUs(usage.last_sent_at);
+  return "—";
+}
+
+function isRowExpanded(id) {
+  return !!expandedRows[id];
+}
+
+function toggleRow(id) {
+  if (!props.expandable) return;
+  expandedRows[id] = !expandedRows[id];
+}
 </script>
 
 <template>
@@ -142,76 +180,107 @@ const manageMenuRow = computed(() => {
                   No templates in this category yet.
                 </td>
               </tr>
-              <tr v-for="row in group.templates || []" :key="row.id">
-                <td>
-                  <div class="d-flex align-items-start gap-2 min-w-0">
-                    <span class="email-templates-list__row-icon flex-shrink-0" aria-hidden="true">
-                      <svg
-                        width="16"
-                        height="16"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.75"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
-                        />
-                      </svg>
-                    </span>
-                    <div class="min-w-0">
-                      <div class="fw-semibold text-body text-break">{{ row.name }}</div>
-                      <div class="small text-secondary text-break">
-                        {{ row.description || "—" }}
+              <template v-for="row in group.templates || []" :key="row.id">
+                <tr
+                  :class="{ 'email-templates-list__row--clickable': expandable }"
+                  @click="expandable ? toggleRow(row.id) : undefined"
+                >
+                  <td>
+                    <div class="d-flex align-items-start gap-2 min-w-0">
+                      <span class="email-templates-list__row-icon flex-shrink-0" aria-hidden="true">
+                        <svg
+                          width="16"
+                          height="16"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.75"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
+                          />
+                        </svg>
+                      </span>
+                      <div class="min-w-0">
+                        <div class="fw-semibold text-body text-break d-flex align-items-center gap-1">
+                          <span>{{ row.name }}</span>
+                          <svg
+                            v-if="expandable"
+                            class="email-templates-list__row-chevron flex-shrink-0"
+                            :class="{ 'is-expanded': isRowExpanded(row.id) }"
+                            width="14"
+                            height="14"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                          >
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                        <div class="small text-secondary text-break">
+                          {{ row.description || "—" }}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </td>
-                <td>
-                  <span
-                    class="email-templates-list__pill"
-                    :style="{
-                      background: emailTemplateCategoryMeta(row.category).softBg,
-                      color: emailTemplateCategoryMeta(row.category).softText,
-                    }"
-                  >
-                    {{ row.category_label || emailTemplateCategoryLabel(row.category) }}
-                  </span>
-                </td>
-                <td>
-                  <span class="email-templates-list__status">
-                    <span class="email-templates-list__status-dot" aria-hidden="true">
-                      <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                      </svg>
-                    </span>
-                    {{ row.status_label || "Ready" }}
-                  </span>
-                </td>
-                <td class="text-secondary small">—</td>
-                <td class="staff-actions-cell text-center" @click.stop>
-                  <div
-                    v-if="canManage"
-                    data-email-template-actions
-                    class="staff-actions-inner staff-actions-inner--single justify-content-center"
-                  >
-                    <button
-                      type="button"
-                      class="staff-action-btn staff-action-btn--more"
-                      :class="{ 'is-open': manageOpenId === row.id }"
-                      :aria-expanded="manageOpenId === row.id"
-                      aria-haspopup="true"
-                      aria-label="Row actions"
-                      @click="(e) => emit('open-manage', row, e)"
+                  </td>
+                  <td>
+                    <span
+                      class="email-templates-list__pill"
+                      :style="{
+                        background: emailTemplateCategoryMeta(row.category).softBg,
+                        color: emailTemplateCategoryMeta(row.category).softText,
+                      }"
                     >
-                      <CrmIconRowActions variant="horizontal" />
-                    </button>
-                  </div>
-                  <span v-else class="text-secondary">—</span>
-                </td>
-              </tr>
+                      {{ row.category_label || emailTemplateCategoryLabel(row.category) }}
+                    </span>
+                  </td>
+                  <td>
+                    <span
+                      class="email-templates-list__status"
+                      :class="{
+                        'email-templates-list__status--sent': !!usageFor(row)?.last_sent_at,
+                      }"
+                    >
+                      <span class="email-templates-list__status-dot" aria-hidden="true">
+                        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                        </svg>
+                      </span>
+                      {{ statusLabelFor(row) }}
+                    </span>
+                  </td>
+                  <td class="text-secondary small">{{ lastSentFor(row) }}</td>
+                  <td class="staff-actions-cell text-center" @click.stop>
+                    <div
+                      v-if="canManage && !readOnlyActions"
+                      data-email-template-actions
+                      class="staff-actions-inner staff-actions-inner--single justify-content-center"
+                    >
+                      <button
+                        type="button"
+                        class="staff-action-btn staff-action-btn--more"
+                        :class="{ 'is-open': manageOpenId === row.id }"
+                        :aria-expanded="manageOpenId === row.id"
+                        aria-haspopup="true"
+                        aria-label="Row actions"
+                        @click="(e) => emit('open-manage', row, e)"
+                      >
+                        <CrmIconRowActions variant="horizontal" />
+                      </button>
+                    </div>
+                    <span v-else class="text-secondary">—</span>
+                  </td>
+                </tr>
+                <tr v-if="expandable && isRowExpanded(row.id)">
+                  <td colspan="5" class="email-templates-list__body-cell">
+                    <pre class="email-templates-list__body mb-0">{{ row.body || "—" }}</pre>
+                  </td>
+                </tr>
+              </template>
             </template>
           </template>
         </tbody>
@@ -332,5 +401,40 @@ const manageMenuRow = computed(() => {
   border-radius: 999px;
   background: #16a34a;
   color: #fff;
+}
+
+.email-templates-list__status--sent {
+  color: #1d4ed8;
+}
+
+.email-templates-list__status--sent .email-templates-list__status-dot {
+  background: #2563eb;
+}
+
+.email-templates-list__row--clickable {
+  cursor: pointer;
+}
+
+.email-templates-list__row-chevron {
+  color: #64748b;
+  transition: transform 0.15s ease;
+}
+
+.email-templates-list__row-chevron.is-expanded {
+  transform: rotate(180deg);
+}
+
+.email-templates-list__body-cell {
+  background: #f8fafc;
+  padding: 0.85rem 1rem 1rem 3.5rem !important;
+}
+
+.email-templates-list__body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  color: #334155;
+  line-height: 1.5;
 }
 </style>

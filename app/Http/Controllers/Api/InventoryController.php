@@ -573,7 +573,7 @@ class InventoryController extends Controller
                 $cached = $this->detailCache->getCachedProduct($clientAccountId, $sku);
                 if ($cached !== null) {
                     return response()->json([
-                        'product' => $cached,
+                        'product' => $this->withOpenAsnMetric($cached, $clientAccountId, $sku),
                         'cached' => true,
                     ]);
                 }
@@ -595,6 +595,7 @@ class InventoryController extends Controller
             }
             if ($clientAccountId > 0) {
                 $this->detailCache->putProduct($clientAccountId, $sku, $product);
+                $product = $this->withOpenAsnMetric($product, $clientAccountId, $sku);
             }
 
             return response()->json(['product' => $product, 'cached' => false]);
@@ -1997,6 +1998,40 @@ class InventoryController extends Controller
             'customer_account_id' => is_string($customerAccountId) ? trim($customerAccountId) : null,
             'credential_source' => $credentialSource,
         ]);
+    }
+
+    /**
+     * Overlay inventory metrics.asn with expected qty from ASNs that are not completed.
+     *
+     * @param  array<string, mixed>  $product
+     * @return array<string, mixed>
+     */
+    private function withOpenAsnMetric(array $product, int $clientAccountId, string $sku): array
+    {
+        $metrics = is_array($product['metrics'] ?? null) ? $product['metrics'] : [];
+        $metrics['asn'] = $this->openAsnExpectedQtyForSku($clientAccountId, $sku);
+        $product['metrics'] = $metrics;
+
+        return $product;
+    }
+
+    /**
+     * Sum expected_qty for this SKU across all account ASNs that are not completed.
+     */
+    private function openAsnExpectedQtyForSku(int $clientAccountId, string $sku): int
+    {
+        $skuLower = mb_strtolower(trim($sku));
+        if ($clientAccountId <= 0 || $skuLower === '') {
+            return 0;
+        }
+
+        return (int) ClientAccountAsnLine::query()
+            ->whereRaw('LOWER(sku) = ?', [$skuLower])
+            ->whereHas('asn', function ($q) use ($clientAccountId) {
+                $q->where('client_account_id', $clientAccountId)
+                    ->where('status', '!=', ClientAccountAsn::STATUS_COMPLETED);
+            })
+            ->sum('expected_qty');
     }
 
     /**

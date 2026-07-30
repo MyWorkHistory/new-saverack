@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
 use App\Models\LtlShipment;
+use App\Models\LtlShipmentComment;
 use App\Models\LtlShipmentPallet;
 use App\Services\LtlShipmentService;
 use Illuminate\Http\JsonResponse;
@@ -67,7 +68,7 @@ class LtlShipmentController extends Controller
 
         return response()->json([
             'data' => collect($rows->items())->map(function (LtlShipment $s) {
-                return $this->ltl->toApiArray($s);
+                return $this->ltl->toApiArray($s, false);
             })->values()->all(),
             'meta' => [
                 'current_page' => $rows->currentPage(),
@@ -244,6 +245,44 @@ class LtlShipmentController extends Controller
         return response()->json([
             'message' => 'Pallet removed.',
             'shipment' => $this->ltl->toApiArray($ltlShipment->fresh(['clientAccount', 'pallets'])),
+        ]);
+    }
+
+    public function storeComment(Request $request, LtlShipment $ltlShipment): JsonResponse
+    {
+        $this->authorize('update', $ltlShipment);
+        $validated = $request->validate([
+            'body' => ['required', 'string', 'max:10000'],
+        ]);
+        $user = $request->user();
+        if ($user === null) {
+            abort(401);
+        }
+        $comment = $this->ltl->addComment($ltlShipment, $user, trim((string) $validated['body']));
+
+        return response()->json([
+            'message' => 'Note added.',
+            'comment' => $this->ltl->commentToApiArray($comment),
+            'shipment' => $this->ltl->toApiArray($ltlShipment->fresh()),
+        ], 201);
+    }
+
+    public function destroyComment(Request $request, LtlShipment $ltlShipment, LtlShipmentComment $comment): JsonResponse
+    {
+        $this->authorize('update', $ltlShipment);
+        if ((int) $comment->ltl_shipment_id !== (int) $ltlShipment->id) {
+            abort(404);
+        }
+        $user = $request->user();
+        $isPortal = $user !== null && (int) ($user->client_account_id ?? 0) > 0;
+        if ($isPortal && (int) $comment->user_id !== (int) $user->id) {
+            abort(403);
+        }
+        $comment->delete();
+
+        return response()->json([
+            'message' => 'Note deleted.',
+            'shipment' => $this->ltl->toApiArray($ltlShipment->fresh()),
         ]);
     }
 

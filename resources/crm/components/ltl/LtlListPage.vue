@@ -1,18 +1,16 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
+import ConfirmModal from "../common/ConfirmModal.vue";
 import CrmIconRowActions from "../common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
 import LtlCreateDrawer from "./LtlCreateDrawer.vue";
+import LtlStatusChip from "./LtlStatusChip.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
-import {
-  formatLtlMoney,
-  ltlStatusBadgeClass,
-  LTL_STATUSES,
-} from "../../constants/ltlSections.js";
+import { formatLtlMoney, LTL_STATUSES } from "../../constants/ltlSections.js";
 
 const props = defineProps({
   /** admin | portal */
@@ -21,10 +19,10 @@ const props = defineProps({
 
 const toast = useToast();
 const router = useRouter();
+const crmUser = inject("crmUser", ref(null));
 const isPortal = computed(() => props.mode === "portal");
 const apiBase = computed(() => (isPortal.value ? "/ltl-shipments" : "/admin/ltl-shipments"));
 const detailRoute = computed(() => (isPortal.value ? "user-ltl-detail" : "admin-ltl-detail"));
-const detailPath = computed(() => (isPortal.value ? "/users/ltl" : "/admin/receiving/ltl"));
 
 const loading = ref(true);
 const rows = ref([]);
@@ -46,7 +44,27 @@ const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
 const manageMenuRow = computed(() => rows.value.find((r) => r.id === manageOpenId.value) ?? null);
 
+const deleteOpen = ref(false);
+const deleteBusy = ref(false);
+const deleteTarget = ref(null);
+
 const tableColspan = computed(() => (isPortal.value ? 6 : 7));
+
+const permissionKeys = computed(() => {
+  const keys = crmUser.value?.permission_keys;
+  return Array.isArray(keys) ? keys : [];
+});
+
+function canDeleteRow(row) {
+  if (!row) return false;
+  if (isPortal.value) {
+    return String(row.status || "") === "draft";
+  }
+  return (
+    permissionKeys.value.includes("receiving_ltl.delete") ||
+    permissionKeys.value.includes("receiving.update")
+  );
+}
 
 async function loadAccounts() {
   if (isPortal.value) return;
@@ -151,6 +169,29 @@ function openManage(row, event) {
     left: Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8)),
   };
   manageOpenId.value = row.id;
+}
+
+function askDelete(row) {
+  closeManageMenu();
+  if (!canDeleteRow(row)) return;
+  deleteTarget.value = row;
+  deleteOpen.value = true;
+}
+
+async function confirmDelete() {
+  if (!deleteTarget.value) return;
+  deleteBusy.value = true;
+  try {
+    await api.delete(`${apiBase.value}/${deleteTarget.value.id}`);
+    toast.success("LTL deleted.");
+    deleteOpen.value = false;
+    deleteTarget.value = null;
+    await load(meta.value.current_page || 1);
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete LTL.");
+  } finally {
+    deleteBusy.value = false;
+  }
 }
 
 function onDocClick(e) {
@@ -328,7 +369,7 @@ onUnmounted(() => {
               @click="openDetail(row)"
             >
               <td class="text-center">
-                <span :class="ltlStatusBadgeClass(row.status)">{{ row.status_label || row.status }}</span>
+                <LtlStatusChip :status="row.status" />
               </td>
               <td class="text-center">
                 <RouterLink
@@ -345,6 +386,7 @@ onUnmounted(() => {
               <td class="text-center">{{ formatLtlMoney(row.quote_amount_cents) }}</td>
               <td class="staff-actions-cell text-center" @click.stop>
                 <div
+                  v-if="canDeleteRow(row)"
                   data-row-actions
                   class="staff-actions-inner staff-actions-inner--single justify-content-center"
                 >
@@ -360,6 +402,7 @@ onUnmounted(() => {
                     <CrmIconRowActions variant="horizontal" />
                   </button>
                 </div>
+                <span v-else class="text-secondary">—</span>
               </td>
             </tr>
           </tbody>
@@ -408,16 +451,30 @@ onUnmounted(() => {
         }"
         @click.stop
       >
-        <RouterLink
-          class="staff-row-menu__item"
+        <button
+          type="button"
+          class="staff-row-menu__item staff-row-menu__item--danger"
           role="menuitem"
-          :to="`${detailPath}/${manageMenuRow.id}`"
-          @click="closeManageMenu"
+          @click="askDelete(manageMenuRow)"
         >
-          View
-        </RouterLink>
+          Delete
+        </button>
       </div>
     </Teleport>
+
+    <ConfirmModal
+      :open="deleteOpen"
+      title="Delete LTL?"
+      :message="
+        deleteTarget
+          ? `Delete ${deleteTarget.number}? This cannot be undone.`
+          : ''
+      "
+      confirm-label="Delete"
+      :busy="deleteBusy"
+      @close="deleteOpen = false"
+      @confirm="confirmDelete"
+    />
 
     <LtlCreateDrawer
       v-model:open="createOpen"

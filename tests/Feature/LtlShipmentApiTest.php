@@ -264,4 +264,27 @@ class LtlShipmentApiTest extends TestCase
             'status' => LtlShipment::STATUS_QUOTED,
         ])->assertNotFound();
     }
+
+    public function test_staff_can_add_and_delete_notes(): void
+    {
+        $account = $this->account('notes');
+        Sanctum::actingAs($this->staffUser());
+
+        $create = $this->postJson('/api/admin/ltl-shipments', $this->createPayload($account->id));
+        $id = (int) $create->json('shipment.id');
+
+        $add = $this->postJson('/api/admin/ltl-shipments/'.$id.'/comments', [
+            'body' => 'must pick up by 5pm',
+        ]);
+        $add->assertCreated()
+            ->assertJsonPath('comment.body', 'must pick up by 5pm')
+            ->assertJsonPath('shipment.comments.0.body', 'must pick up by 5pm');
+
+        $commentId = (int) $add->json('comment.id');
+        $this->assertGreaterThan(0, $commentId);
+
+        $this->deleteJson('/api/admin/ltl-shipments/'.$id.'/comments/'.$commentId)
+            ->assertOk()
+            ->assertJsonPath('shipment.comments', []);
+    }
 }

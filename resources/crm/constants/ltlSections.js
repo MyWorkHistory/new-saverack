@@ -1,9 +1,9 @@
 export const LTL_STATUSES = {
-  draft: { label: "Draft", tone: "warning" },
-  pending: { label: "Pending", tone: "info" },
-  quoted: { label: "Quoted", tone: "success" },
-  scheduled: { label: "Scheduled", tone: "primary" },
-  in_transit: { label: "In-Transit", tone: "secondary" },
+  draft: { label: "Draft" },
+  pending: { label: "Pending" },
+  quoted: { label: "Quoted" },
+  scheduled: { label: "Scheduled" },
+  in_transit: { label: "In-Transit" },
 };
 
 export const LTL_DIRECTIONS = [
@@ -36,17 +36,12 @@ export function formatLtlMoney(cents) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(n / 100);
 }
 
+/** @deprecated Prefer LtlStatusChip / ltlStatusDisplay. Kept for any residual callers. */
 export function ltlStatusBadgeClass(status) {
-  const tone = LTL_STATUSES[status]?.tone || "secondary";
-  const bg =
-    tone === "warning"
-      ? "text-bg-warning"
-      : tone === "info"
-        ? "text-bg-info"
-        : tone === "success"
-          ? "text-bg-success"
-          : tone === "primary"
-            ? "text-bg-primary"
-            : "text-bg-secondary";
-  return `badge rounded-pill fw-medium ${bg}`;
+  const key = String(status || "").toLowerCase();
+  if (key === "draft") return "bg-warning-subtle text-warning-emphasis";
+  if (key === "pending") return "bg-primary-subtle text-primary-emphasis";
+  if (key === "quoted") return "bg-success-subtle text-success-emphasis";
+  if (key === "scheduled") return "bg-primary-subtle text-primary-emphasis";
+  return "bg-body-secondary text-body-secondary";
 }

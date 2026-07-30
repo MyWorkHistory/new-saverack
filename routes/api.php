@@ -432,6 +432,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{ltlShipment}/pallets', [LtlShipmentController::class, 'storePallet'])->middleware('can:receiving_ltl.update');
         Route::patch('/{ltlShipment}/pallets/{pallet}', [LtlShipmentController::class, 'updatePallet'])->middleware('can:receiving_ltl.update');
         Route::delete('/{ltlShipment}/pallets/{pallet}', [LtlShipmentController::class, 'destroyPallet'])->middleware('can:receiving_ltl.update');
+        Route::post('/{ltlShipment}/comments', [LtlShipmentController::class, 'storeComment'])->middleware('can:receiving_ltl.update');
+        Route::delete('/{ltlShipment}/comments/{comment}', [LtlShipmentController::class, 'destroyComment'])->middleware('can:receiving_ltl.update');
     });
 
     Route::prefix('ltl-shipments')->group(function () {
@@ -445,6 +447,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{ltlShipment}/pallets', [LtlShipmentController::class, 'storePallet'])->middleware('can:inventory.view');
         Route::patch('/{ltlShipment}/pallets/{pallet}', [LtlShipmentController::class, 'updatePallet'])->middleware('can:inventory.view');
         Route::delete('/{ltlShipment}/pallets/{pallet}', [LtlShipmentController::class, 'destroyPallet'])->middleware('can:inventory.view');
+        Route::post('/{ltlShipment}/comments', [LtlShipmentController::class, 'storeComment'])->middleware('can:inventory.view');
+        Route::delete('/{ltlShipment}/comments/{comment}', [LtlShipmentController::class, 'destroyComment'])->middleware('can:inventory.view');
     });
 
     Route::prefix('asns')->group(function () {

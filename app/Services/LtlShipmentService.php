@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ClientAccount;
 use App\Models\LtlShipment;
+use App\Models\LtlShipmentComment;
 use App\Models\LtlShipmentPallet;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -257,9 +258,57 @@ class LtlShipmentService
     /**
      * @return array<string, mixed>
      */
-    public function toApiArray(LtlShipment $shipment): array
+    public function addComment(LtlShipment $shipment, User $user, string $body): LtlShipmentComment
+    {
+        $comment = LtlShipmentComment::query()->create([
+            'ltl_shipment_id' => $shipment->id,
+            'user_id' => $user->id,
+            'body' => $body,
+        ]);
+        $comment->load(['user:id,name,email', 'user.profile:id,user_id,avatar_path']);
+
+        return $comment;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function commentToApiArray(LtlShipmentComment $comment): array
+    {
+        $comment->loadMissing(['user:id,name,email', 'user.profile:id,user_id,avatar_path']);
+        $u = $comment->user;
+        $avatarUrl = null;
+        if ($u !== null && $u->relationLoaded('profile') && $u->profile !== null) {
+            $avatarUrl = $u->profile->avatar_url;
+        }
+
+        return [
+            'id' => $comment->id,
+            'user_id' => $comment->user_id,
+            'body' => $comment->body,
+            'created_at' => $comment->created_at !== null ? $comment->created_at->toIso8601String() : null,
+            'updated_at' => $comment->updated_at !== null ? $comment->updated_at->toIso8601String() : null,
+            'user' => $u !== null
+                ? [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'email' => $u->email,
+                    'avatar_url' => $avatarUrl,
+                ]
+                : null,
+        ];
+    }
+
+    /**
+     * @param  bool  $includeComments
+     * @return array<string, mixed>
+     */
+    public function toApiArray(LtlShipment $shipment, bool $includeComments = true): array
     {
         $shipment->loadMissing(['clientAccount', 'pallets']);
+        if ($includeComments) {
+            $shipment->loadMissing(['comments.user.profile']);
+        }
         $account = $shipment->clientAccount;
 
         return [
@@ -289,6 +338,11 @@ class LtlShipmentService
             'load_requirement' => $shipment->load_requirement,
             'pickup_type' => $shipment->pickup_type,
             'notes' => $shipment->notes,
+            'comments' => $includeComments
+                ? $shipment->comments->map(function (LtlShipmentComment $c) {
+                    return $this->commentToApiArray($c);
+                })->values()->all()
+                : [],
             'quote_amount_cents' => $shipment->quote_amount_cents,
             'quote_carrier' => $shipment->quote_carrier,
             'quote_transit_time' => $shipment->quote_transit_time,

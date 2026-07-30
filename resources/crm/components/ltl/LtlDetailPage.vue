@@ -1,11 +1,13 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, inject, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../common/ConfirmModal.vue";
 import CrmIconRowActions from "../common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
+import CrmNoteAuthorAvatar from "../common/CrmNoteAuthorAvatar.vue";
 import CrmRightDrawer from "../common/CrmRightDrawer.vue";
+import LtlStatusChip from "./LtlStatusChip.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import {
@@ -15,7 +17,6 @@ import {
 } from "../../constants/dialogFooter.js";
 import {
   formatLtlMoney,
-  ltlStatusBadgeClass,
   LTL_DIRECTIONS,
   LTL_LOAD_OPTIONS,
   LTL_PICKUP_TYPES,
@@ -23,6 +24,8 @@ import {
   LTL_STATUSES,
   LTL_TIME_MODES,
 } from "../../constants/ltlSections.js";
+import { noteAuthorFromRecord } from "../../utils/noteAuthor.js";
+import { formatDateTimeUs } from "../../utils/formatUserDates.js";
 
 const props = defineProps({
   mode: { type: String, default: "admin" },
@@ -31,6 +34,7 @@ const props = defineProps({
 const toast = useToast();
 const route = useRoute();
 const router = useRouter();
+const crmUser = inject("crmUser", ref(null));
 const isPortal = computed(() => props.mode === "portal");
 const apiBase = computed(() => (isPortal.value ? "/ltl-shipments" : "/admin/ltl-shipments"));
 const listRoute = computed(() => (isPortal.value ? "user-ltl-list" : "admin-ltl-list"));
@@ -50,14 +54,24 @@ const addressForm = ref({});
 const quoteForm = ref({});
 const palletForm = ref({});
 const reqForm = ref({ load_requirement: "", pickup_type: "" });
-const notesDraft = ref("");
+
+const noteBody = ref("");
+const noteSubmitting = ref(false);
 
 const statusMenuOpen = ref(false);
+const actionsMenuOpen = ref(false);
 const palletMenuOpenId = ref(null);
 const palletMenuRect = ref({ top: 0, left: 0 });
 const deletePalletOpen = ref(false);
 const deletePalletBusy = ref(false);
 const deletePalletTarget = ref(null);
+const deleteShipmentOpen = ref(false);
+const deleteShipmentBusy = ref(false);
+
+const permissionKeys = computed(() => {
+  const keys = crmUser.value?.permission_keys;
+  return Array.isArray(keys) ? keys : [];
+});
 
 const canEdit = computed(() => {
   if (!shipment.value) return false;
@@ -67,6 +81,23 @@ const canEdit = computed(() => {
 
 const canGetQuote = computed(() => shipment.value?.status === "draft" && canEdit.value);
 const canChangeStatus = computed(() => !isPortal.value);
+const canDeleteShipment = computed(() => {
+  if (!shipment.value) return false;
+  if (isPortal.value) return shipment.value.status === "draft";
+  return (
+    permissionKeys.value.includes("receiving_ltl.delete") ||
+    permissionKeys.value.includes("receiving.update")
+  );
+});
+
+const sortedComments = computed(() => {
+  const list = Array.isArray(shipment.value?.comments) ? [...shipment.value.comments] : [];
+  return list.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+});
+
+function noteAuthor(comment) {
+  return noteAuthorFromRecord(comment);
+}
 
 const loadLabel = computed(() => {
   const v = shipment.value?.load_requirement;
@@ -129,7 +160,6 @@ function applyShipment(data) {
     load_requirement: data.load_requirement || "",
     pickup_type: data.pickup_type || "",
   };
-  notesDraft.value = data.notes || "";
   setCrmPageMeta({
     title: `Save Rack | ${data.number}`,
     description: "LTL shipment detail.",
@@ -257,8 +287,33 @@ async function saveRequirements() {
   }
 }
 
-async function saveNotes() {
-  await patch({ notes: notesDraft.value || null }, "Notes saved.");
+async function submitNote() {
+  const body = noteBody.value.trim();
+  if (!body || !shipment.value) return;
+  noteSubmitting.value = true;
+  try {
+    const { data } = await api.post(`${apiBase.value}/${shipment.value.id}/comments`, { body });
+    applyShipment(data.shipment);
+    noteBody.value = "";
+    toast.success("Note added.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not add note.");
+  } finally {
+    noteSubmitting.value = false;
+  }
+}
+
+async function deleteNote(comment) {
+  if (!comment?.id || !shipment.value) return;
+  try {
+    const { data } = await api.delete(
+      `${apiBase.value}/${shipment.value.id}/comments/${comment.id}`,
+    );
+    applyShipment(data.shipment);
+    toast.success("Note deleted.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete note.");
+  }
 }
 
 async function saveQuote() {
@@ -354,6 +409,27 @@ async function setStatus(status) {
   }
 }
 
+function askDeleteShipment() {
+  actionsMenuOpen.value = false;
+  if (!canDeleteShipment.value) return;
+  deleteShipmentOpen.value = true;
+}
+
+async function confirmDeleteShipment() {
+  if (!shipment.value) return;
+  deleteShipmentBusy.value = true;
+  try {
+    await api.delete(`${apiBase.value}/${shipment.value.id}`);
+    toast.success("LTL deleted.");
+    deleteShipmentOpen.value = false;
+    router.push({ name: listRoute.value });
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete LTL.");
+  } finally {
+    deleteShipmentBusy.value = false;
+  }
+}
+
 function togglePalletMenu(p, event) {
   const btn = event?.currentTarget;
   if (!(btn instanceof HTMLElement)) return;
@@ -374,11 +450,13 @@ function onDocClick(e) {
   const t = e.target;
   if (!(t instanceof Element)) return;
   if (!t.closest("[data-ltl-status-menu]")) statusMenuOpen.value = false;
+  if (!t.closest("[data-ltl-actions-menu]")) actionsMenuOpen.value = false;
   if (!t.closest("[data-row-actions]")) palletMenuOpenId.value = null;
 }
 
 function onWindowCloseMenus() {
   statusMenuOpen.value = false;
+  actionsMenuOpen.value = false;
   palletMenuOpenId.value = null;
 }
 
@@ -428,7 +506,39 @@ onUnmounted(() => {
           <div class="min-w-0">
             <div class="d-flex flex-wrap align-items-center gap-2">
               <h1 class="h4 mb-0 fw-bold text-body">{{ shipment.number }}</h1>
-              <span :class="ltlStatusBadgeClass(shipment.status)">{{ shipment.status_label }}</span>
+              <div v-if="canChangeStatus" class="position-relative" data-ltl-status-menu>
+                <button
+                  type="button"
+                  class="btn btn-link p-0 border-0 text-decoration-none"
+                  :disabled="saving"
+                  :aria-expanded="statusMenuOpen"
+                  aria-haspopup="true"
+                  aria-label="Change Status"
+                  @click.stop="statusMenuOpen = !statusMenuOpen"
+                >
+                  <LtlStatusChip :status="shipment.status" caret />
+                </button>
+                <div
+                  v-if="statusMenuOpen"
+                  class="dropdown-menu show shadow border py-1 mt-1"
+                  style="min-width: 11rem"
+                  role="menu"
+                  @click.stop
+                >
+                  <button
+                    v-for="(meta, key) in LTL_STATUSES"
+                    :key="key"
+                    type="button"
+                    class="dropdown-item"
+                    :disabled="shipment.status === key || saving"
+                    role="menuitem"
+                    @click="setStatus(key)"
+                  >
+                    {{ meta.label }}
+                  </button>
+                </div>
+              </div>
+              <LtlStatusChip v-else :status="shipment.status" />
             </div>
             <p class="small text-secondary mb-0 mt-2">
               <template v-if="!isPortal && shipment.account_name">
@@ -456,34 +566,33 @@ onUnmounted(() => {
           >
             Get Quote
           </button>
-          <div v-if="canChangeStatus" class="position-relative" data-ltl-status-menu>
+          <div v-if="canDeleteShipment" class="position-relative" data-ltl-actions-menu>
             <button
               type="button"
               class="btn btn-outline-secondary fw-semibold orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
               :disabled="saving"
-              :aria-expanded="statusMenuOpen"
-              @click.stop="statusMenuOpen = !statusMenuOpen"
+              :aria-expanded="actionsMenuOpen"
+              aria-haspopup="true"
+              @click.stop="actionsMenuOpen = !actionsMenuOpen"
             >
-              Update Status
+              Actions
               <span aria-hidden="true">▾</span>
             </button>
             <div
-              v-if="statusMenuOpen"
+              v-if="actionsMenuOpen"
               class="dropdown-menu dropdown-menu-end show shadow border py-1 mt-1"
               style="min-width: 11rem"
               role="menu"
               @click.stop
             >
               <button
-                v-for="(meta, key) in LTL_STATUSES"
-                :key="key"
                 type="button"
-                class="dropdown-item"
-                :disabled="shipment.status === key || saving"
+                class="dropdown-item text-danger"
                 role="menuitem"
-                @click="setStatus(key)"
+                :disabled="saving"
+                @click="askDeleteShipment"
               >
-                {{ meta.label }}
+                Delete
               </button>
             </div>
           </div>
@@ -594,25 +703,57 @@ onUnmounted(() => {
             </span>
             <div class="min-w-0">
               <h2 class="h6 mb-0 fw-semibold">Notes</h2>
-              <p class="small text-secondary mb-0">Optional note for this shipment</p>
+              <p class="small text-secondary mb-0">Internal notes for this shipment</p>
             </div>
           </div>
-          <textarea
-            v-model="notesDraft"
-            class="form-control mb-3"
-            rows="4"
-            placeholder="Add a note…"
-            :disabled="!canEdit || saving"
-          />
-          <button
-            v-if="canEdit"
-            type="button"
-            class="btn btn-primary btn-sm staff-page-primary fw-semibold"
-            :disabled="saving"
-            @click="saveNotes"
-          >
-            {{ saving ? "Saving…" : "Save Notes" }}
-          </button>
+
+          <ul v-if="sortedComments.length" class="list-unstyled mb-0 pb-4 border-bottom">
+            <li v-for="c in sortedComments" :key="c.id" class="d-flex gap-3 mb-4">
+              <CrmNoteAuthorAvatar
+                :name="noteAuthor(c).name"
+                :email="noteAuthor(c).email"
+                :avatar-url="noteAuthor(c).avatarUrl"
+              />
+              <div class="min-w-0 flex-grow-1">
+                <div class="d-flex flex-wrap align-items-baseline gap-2 mb-1">
+                  <span class="small fw-medium text-body">{{ noteAuthor(c).name }}</span>
+                  <span class="small text-secondary">{{ formatDateTimeUs(c.created_at) }}</span>
+                  <button
+                    v-if="canEdit"
+                    type="button"
+                    class="btn btn-link btn-sm text-danger p-0 ms-auto"
+                    @click="deleteNote(c)"
+                  >
+                    Delete
+                  </button>
+                </div>
+                <p class="mt-1 mb-0 small text-body notes-pre-wrap">{{ c.body }}</p>
+              </div>
+            </li>
+          </ul>
+          <p v-else class="text-secondary small border-bottom pb-4 mb-0">No notes yet.</p>
+
+          <div v-if="canEdit" class="pt-4">
+            <label class="form-label small text-secondary" for="ltl-add-note">Add Note</label>
+            <textarea
+              id="ltl-add-note"
+              v-model="noteBody"
+              rows="3"
+              class="form-control"
+              placeholder="Write an update…"
+              :disabled="noteSubmitting"
+            />
+            <div class="mt-3">
+              <button
+                type="button"
+                class="btn btn-primary staff-page-primary text-nowrap"
+                :disabled="noteSubmitting || !noteBody.trim()"
+                @click="submitNote"
+              >
+                {{ noteSubmitting ? "Adding…" : "Add Note" }}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -805,6 +946,16 @@ onUnmounted(() => {
       :busy="deletePalletBusy"
       @close="deletePalletOpen = false"
       @confirm="confirmRemovePallet"
+    />
+
+    <ConfirmModal
+      :open="deleteShipmentOpen"
+      title="Delete LTL?"
+      :message="shipment ? `Delete ${shipment.number}? This cannot be undone.` : ''"
+      confirm-label="Delete"
+      :busy="deleteShipmentBusy"
+      @close="deleteShipmentOpen = false"
+      @confirm="confirmDeleteShipment"
     />
 
     <CrmRightDrawer
@@ -1052,5 +1203,10 @@ onUnmounted(() => {
   letter-spacing: -0.02em;
   color: #16a34a;
   margin: 0;
+}
+
+.notes-pre-wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>

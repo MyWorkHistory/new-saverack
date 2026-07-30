@@ -93,6 +93,11 @@ class LtlShipment extends Model
         return $this->hasMany(LtlShipmentPallet::class, 'ltl_shipment_id')->orderBy('sort_order')->orderBy('id');
     }
 
+    public function comments(): HasMany
+    {
+        return $this->hasMany(LtlShipmentComment::class, 'ltl_shipment_id')->orderByDesc('id');
+    }
+
     public function isDraft(): bool
     {
         return $this->status === self::STATUS_DRAFT;

@@ -33,6 +33,8 @@ import LeadsListPage from "../pages/clients/LeadsListPage.vue";
 import LeadDetailPage from "../pages/clients/LeadDetailPage.vue";
 import ClientAccountUserDetailPage from "../pages/clients/ClientAccountUserDetailPage.vue";
 import BillingSummaryPage from "../pages/billing/BillingSummaryPage.vue";
+import BillingWeekByWeekPage from "../pages/billing/BillingWeekByWeekPage.vue";
+import BillingEarningsPage from "../pages/billing/BillingEarningsPage.vue";
 import BillingInvoicesListPage from "../pages/billing/BillingInvoicesListPage.vue";
 import BillingInvoiceDetailPage from "../pages/billing/BillingInvoiceDetailPage.vue";
 import BillingCustomBillsListPage from "../pages/billing/BillingCustomBillsListPage.vue";
@@ -47,6 +49,7 @@ import OrdersListPage from "../pages/orders/OrdersListPage.vue";
 import OrderDetailPage from "../pages/orders/OrderDetailPage.vue";
 import OrderDetailIframePage from "../pages/orders/OrderDetailIframePage.vue";
 import FulfillmentPage from "../pages/orders/FulfillmentPage.vue";
+import ShippedOrdersDashboardPage from "../pages/orders/ShippedOrdersDashboardPage.vue";
 import UserDashboardPage from "../pages/user-portal/UserDashboardPage.vue";
 import PortalPendingWelcomePage from "../pages/user-portal/PortalPendingWelcomePage.vue";
 
@@ -139,6 +142,14 @@ const meta = {
     title: "Save Rack | Revenue",
     description: "Weekly revenue overview.",
   },
+  billingWeekByWeek: {
+    title: "Save Rack | Week by Week",
+    description: "Breakdown by charge type across generated weeks.",
+  },
+  billingEarnings: {
+    title: "Save Rack | Earnings",
+    description: "Weekly earnings from invoice charges minus account costs.",
+  },
   billingInvoices: {
     title: "Save Rack | Invoices",
     description: "Client invoices.",
@@ -230,7 +241,7 @@ const meta = {
   },
   ordersShipped: {
     title: "Save Rack | Orders | Shipped",
-    description: "ShipHero shipped orders.",
+    description: "Shipped totals by day and account.",
   },
   ordersFulfillment: {
     title: "Save Rack | Orders | Fulfillment",
@@ -527,6 +538,18 @@ const routes = [
     name: "billing-revenue",
     component: BillingSummaryPage,
     meta: meta.billingSummary,
+  },
+  {
+    path: "/admin/billing/revenue/week-by-week",
+    name: "billing-week-by-week",
+    component: BillingWeekByWeekPage,
+    meta: meta.billingWeekByWeek,
+  },
+  {
+    path: "/admin/billing/earnings",
+    name: "billing-earnings",
+    component: BillingEarningsPage,
+    meta: meta.billingEarnings,
   },
   {
     path: "/admin/billing/summary",
@@ -837,6 +860,12 @@ const routes = [
   {
     path: "/admin/orders/shipped",
     name: "orders-shipped",
+    component: ShippedOrdersDashboardPage,
+    meta: meta.ordersShipped,
+  },
+  {
+    path: "/admin/orders/shipped/orders",
+    name: "orders-shipped-orders",
     component: OrdersListPage,
     meta: { ...meta.ordersShipped, orderTab: "shipped" },
   },
@@ -1655,7 +1684,11 @@ async function ensureBillingRouteAccess(path) {
   }
   if (path === "/admin/billing" || path.startsWith("/admin/billing/")) {
     const pages = billingNavCache.pages || {};
-    if (path.startsWith("/admin/billing/revenue") || path.startsWith("/admin/billing/summary")) {
+    if (
+      path.startsWith("/admin/billing/revenue") ||
+      path.startsWith("/admin/billing/summary") ||
+      path.startsWith("/admin/billing/earnings")
+    ) {
       return pages.summary === true;
     }
     if (path.startsWith("/admin/billing/invoices")) return pages.invoices === true;

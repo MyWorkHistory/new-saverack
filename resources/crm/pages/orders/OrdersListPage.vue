@@ -66,6 +66,7 @@ function applyOrdersRouteQuery() {
   const presetFromRoute = String(route.query.date_preset || "").trim();
   if (
     presetFromRoute === "today"
+    || presetFromRoute === "yesterday"
     || presetFromRoute === "all"
     || presetFromRoute === "last_7"
     || presetFromRoute === "last_30"
@@ -534,6 +535,12 @@ function dateRangeFromPreset() {
   if (query.datePreset === "since_may_1") return { from: RTS_ORDER_DATE_FROM, to: today };
   if (query.datePreset === "since_feb_1") return { from: ON_HOLD_ORDER_DATE_FROM, to: today };
   if (query.datePreset === "today") return { from: today, to: today };
+  if (query.datePreset === "yesterday") {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 1);
+    const y = toDateInput(d);
+    return { from: y, to: y };
+  }
   if (query.datePreset === "last_7") {
     const d = new Date(now);
     d.setDate(d.getDate() - 6);
@@ -1543,6 +1550,7 @@ onUnmounted(() => {
                       <option v-if="tabKey === 'backorder'" value="since_feb_1">Since Feb 1 (Dashboard)</option>
                       <option value="all">Any Order Date</option>
                       <option value="today">Today</option>
+                      <option value="yesterday">Yesterday</option>
                       <option value="last_7">Last 7 Days</option>
                       <option value="last_30">Last 30 Days</option>
                       <option value="custom">Custom Range</option>

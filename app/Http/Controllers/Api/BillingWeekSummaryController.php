@@ -37,6 +37,27 @@ class BillingWeekSummaryController extends Controller
         return response()->json($this->summaries->dashboardPayload($weekStart));
     }
 
+    public function weeks(Request $request): JsonResponse
+    {
+        $this->authorize('viewAny', Invoice::class);
+
+        $validated = $request->validate([
+            'from' => ['sometimes', 'nullable', 'date'],
+            'to' => ['sometimes', 'nullable', 'date'],
+        ]);
+
+        $from = null;
+        $to = null;
+        if (! empty($validated['from'])) {
+            $from = Carbon::parse((string) $validated['from'])->startOfDay();
+        }
+        if (! empty($validated['to'])) {
+            $to = Carbon::parse((string) $validated['to'])->startOfDay();
+        }
+
+        return response()->json($this->summaries->listWeeks($from, $to));
+    }
+
     public function generate(Request $request): JsonResponse
     {
         $this->authorize('viewAny', Invoice::class);

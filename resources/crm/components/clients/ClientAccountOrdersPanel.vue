@@ -27,7 +27,7 @@ const QUEUE_ROUTE_BY_TAB = {
   awaiting: "orders-awaiting",
   on_hold: "orders-on-hold-old",
   backorder: "orders-backorder-list",
-  shipped: "orders-shipped",
+  shipped: "orders-shipped-orders",
 };
 
 const activeTabTitle = computed(() => {

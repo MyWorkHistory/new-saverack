@@ -150,6 +150,90 @@ class BillingWeekSummaryService
     }
 
     /**
+     * List generated week snapshots in a Mon–Sun inclusive window (by week_start).
+     * When both bounds are null, defaults to the last 8 completed weeks (or all if fewer).
+     *
+     * @return array{
+     *     weeks: list<array<string, mixed>>,
+     *     totals: array{
+     *         total_billed_cents: int,
+     *         fulfillment_cents: int,
+     *         postage_cents: int,
+     *         materials_cents: int,
+     *         returns_cents: int,
+     *         custom_work_cents: int,
+     *         wholesale_cents: int,
+     *         invoice_count: int,
+     *         week_count: int
+     *     },
+     *     from: string,
+     *     to: string
+     * }
+     */
+    public function listWeeks(?Carbon $from = null, ?Carbon $to = null): array
+    {
+        $defaultEnd = $this->defaultCompletedWeekStart();
+        $defaultStart = $defaultEnd->copy()->subWeeks(7);
+
+        if ($from === null && $to === null) {
+            $fromMonday = $defaultStart;
+            $toMonday = $defaultEnd;
+        } else {
+            $fromMonday = $from !== null
+                ? $this->mondayOfWeek($from)
+                : $defaultStart;
+            $toMonday = $to !== null
+                ? $this->mondayOfWeek($to)
+                : $defaultEnd;
+            if ($fromMonday->gt($toMonday)) {
+                $tmp = $fromMonday;
+                $fromMonday = $toMonday;
+                $toMonday = $tmp;
+            }
+        }
+
+        $rows = BillingWeekSummary::query()
+            ->whereDate('week_start', '>=', $fromMonday->toDateString())
+            ->whereDate('week_start', '<=', $toMonday->toDateString())
+            ->orderBy('week_start')
+            ->get();
+
+        $weeks = [];
+        $totals = [
+            'total_billed_cents' => 0,
+            'fulfillment_cents' => 0,
+            'postage_cents' => 0,
+            'materials_cents' => 0,
+            'returns_cents' => 0,
+            'custom_work_cents' => 0,
+            'wholesale_cents' => 0,
+            'invoice_count' => 0,
+            'week_count' => 0,
+        ];
+
+        foreach ($rows as $summary) {
+            $payload = $this->toApiArray($summary);
+            $weeks[] = $payload;
+            $totals['total_billed_cents'] += (int) $payload['total_billed_cents'];
+            $totals['fulfillment_cents'] += (int) $payload['fulfillment_cents'];
+            $totals['postage_cents'] += (int) $payload['postage_cents'];
+            $totals['materials_cents'] += (int) $payload['materials_cents'];
+            $totals['returns_cents'] += (int) $payload['returns_cents'];
+            $totals['custom_work_cents'] += (int) $payload['custom_work_cents'];
+            $totals['wholesale_cents'] += (int) $payload['wholesale_cents'];
+            $totals['invoice_count'] += (int) $payload['invoice_count'];
+            $totals['week_count']++;
+        }
+
+        return [
+            'weeks' => $weeks,
+            'totals' => $totals,
+            'from' => $fromMonday->toDateString(),
+            'to' => $toMonday->toDateString(),
+        ];
+    }
+
+    /**
      * Latest snapshot by week_start, plus the prior calendar week if stored.
      *
      * @return array{

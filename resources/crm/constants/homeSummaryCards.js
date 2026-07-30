@@ -37,7 +37,7 @@ export const HOME_SUMMARY_CARDS = [
     iconStyle: { background: "#dcfce7", color: "#166534" },
     valueSource: "totals",
     valueKey: "shipped",
-    to: { name: "orders-fulfillment" },
+    to: { name: "orders-shipped" },
   },
   {
     key: "paused",

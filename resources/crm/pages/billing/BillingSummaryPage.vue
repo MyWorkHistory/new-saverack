@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import api from "../../services/api";
 import BillingDollarStatIcon from "../../components/billing/BillingDollarStatIcon.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
@@ -9,6 +10,7 @@ import { useToast } from "../../composables/useToast";
 import { formatCents } from "../../utils/formatMoney.js";
 
 const toast = useToast();
+const route = useRoute();
 const loading = ref(true);
 const generating = ref(false);
 const errorMsg = ref("");
@@ -280,8 +282,36 @@ onMounted(() => {
     title: "Save Rack | Revenue",
     description: "Weekly overview of charges and comparisons.",
   });
+  const qs = String(route.query.week_start || "").trim();
+  if (qs) {
+    try {
+      weekStartInput.value = mondayIso(new Date(`${qs}T12:00:00`));
+      load(weekStartInput.value);
+      return;
+    } catch {
+      /* fall through */
+    }
+  }
   load();
 });
+
+watch(
+  () => route.query.week_start,
+  async (next) => {
+    const qs = String(next || "").trim();
+    if (!qs) return;
+    try {
+      const monday = mondayIso(new Date(`${qs}T12:00:00`));
+      if (monday === weekStartInput.value && current.value?.week_start === monday) {
+        return;
+      }
+      weekStartInput.value = monday;
+      await load(monday);
+    } catch {
+      /* ignore invalid */
+    }
+  },
+);
 </script>
 
 <template>

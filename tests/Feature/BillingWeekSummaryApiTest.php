@@ -73,6 +73,7 @@ class BillingWeekSummaryApiTest extends TestCase
     public function test_guest_cannot_access_week_summaries(): void
     {
         $this->getJson('/api/billing/week-summaries')->assertUnauthorized();
+        $this->getJson('/api/billing/week-summaries/weeks')->assertUnauthorized();
         $this->postJson('/api/billing/week-summaries/generate')->assertUnauthorized();
     }
 
@@ -259,6 +260,113 @@ class BillingWeekSummaryApiTest extends TestCase
             ->assertJsonPath('previous.total_billed_cents', 10000)
             ->assertJsonPath('comparison.delta_cents', 5000)
             ->assertJsonPath('comparison.percent', 50);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_weeks_list_returns_generated_weeks_in_range_with_totals(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-27 12:00:00'));
+        $this->actingBillingStaff();
+
+        $service = app(BillingWeekSummaryService::class);
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'List Weeks Co',
+            'email' => 'list-weeks@example.test',
+        ]);
+
+        $this->makeInvoiceWithItem(
+            $account,
+            Invoice::STATUS_SENT,
+            '2026-07-06',
+            '2026-07-12',
+            InvoiceLineCategory::FULFILLMENT,
+            10000
+        );
+        $this->makeInvoiceWithItem(
+            $account,
+            Invoice::STATUS_SENT,
+            '2026-07-13',
+            '2026-07-19',
+            InvoiceLineCategory::POSTAGE,
+            2000
+        );
+        $this->makeInvoiceWithItem(
+            $account,
+            Invoice::STATUS_SENT,
+            '2026-07-20',
+            '2026-07-26',
+            InvoiceLineCategory::WHOLESALE,
+            5000
+        );
+
+        $service->generateWeek(Carbon::parse('2026-07-06'));
+        $service->generateWeek(Carbon::parse('2026-07-13'));
+        $service->generateWeek(Carbon::parse('2026-07-20'));
+
+        $response = $this->getJson('/api/billing/week-summaries/weeks?from=2026-07-06&to=2026-07-13');
+        $response->assertOk()
+            ->assertJsonPath('from', '2026-07-06')
+            ->assertJsonPath('to', '2026-07-13')
+            ->assertJsonPath('totals.week_count', 2)
+            ->assertJsonPath('totals.fulfillment_cents', 10000)
+            ->assertJsonPath('totals.postage_cents', 2000)
+            ->assertJsonPath('totals.total_billed_cents', 12000)
+            ->assertJsonCount(2, 'weeks')
+            ->assertJsonPath('weeks.0.week_start', '2026-07-06')
+            ->assertJsonPath('weeks.1.week_start', '2026-07-13');
+
+        Carbon::setTestNow();
+    }
+
+    public function test_weeks_list_updates_after_regenerate(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-20 12:00:00'));
+        $this->actingBillingStaff();
+
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Regen List Co',
+            'email' => 'regen-list@example.test',
+        ]);
+
+        $this->makeInvoiceWithItem(
+            $account,
+            Invoice::STATUS_SENT,
+            '2026-07-13',
+            '2026-07-19',
+            InvoiceLineCategory::POSTAGE,
+            1000
+        );
+
+        $this->postJson('/api/billing/week-summaries/generate', [
+            'week_start' => '2026-07-13',
+        ])->assertOk();
+
+        $this->getJson('/api/billing/week-summaries/weeks?from=2026-07-13&to=2026-07-13')
+            ->assertOk()
+            ->assertJsonPath('weeks.0.postage_cents', 1000)
+            ->assertJsonPath('totals.postage_cents', 1000);
+
+        $this->makeInvoiceWithItem(
+            $account,
+            Invoice::STATUS_SENT,
+            '2026-07-13',
+            '2026-07-19',
+            InvoiceLineCategory::POSTAGE,
+            500
+        );
+
+        $this->postJson('/api/billing/week-summaries/generate', [
+            'week_start' => '2026-07-13',
+        ])->assertOk()->assertJsonPath('generated.postage_cents', 1500);
+
+        $this->getJson('/api/billing/week-summaries/weeks?from=2026-07-13&to=2026-07-13')
+            ->assertOk()
+            ->assertJsonCount(1, 'weeks')
+            ->assertJsonPath('weeks.0.postage_cents', 1500)
+            ->assertJsonPath('totals.postage_cents', 1500);
 
         Carbon::setTestNow();
     }

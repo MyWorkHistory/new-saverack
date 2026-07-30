@@ -55,6 +55,10 @@ class Kernel extends ConsoleKernel
         $schedule->command('orders:refresh-home-dashboard --sync')
             ->dailyAt('07:05')
             ->timezone('America/New_York');
+        $schedule->command('orders:snapshot-shipped-day')
+            ->dailyAt('23:00')
+            ->timezone('America/New_York')
+            ->withoutOverlapping(120);
     }
 
     /**

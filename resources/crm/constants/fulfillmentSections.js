@@ -21,7 +21,7 @@ export const FULFILLMENT_SECTIONS = [
     icon: "truck",
     titleColor: "#16a34a",
     iconStyle: { background: "#dcfce7", color: "#16a34a" },
-    routeName: "orders-shipped",
+    routeName: "orders-shipped-orders",
     metaSuffix: "(today)",
     pillVariant: "success",
     emptyMessage: "No shipments in snapshot for today.",

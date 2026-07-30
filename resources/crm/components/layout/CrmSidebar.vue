@@ -320,6 +320,12 @@ function navActive(mode) {
   if (mode === "billing-summary") {
     return p === "/admin/billing/revenue" || p === "/admin/billing/summary";
   }
+  if (mode === "billing-week-by-week") {
+    return p.startsWith("/admin/billing/revenue/week-by-week");
+  }
+  if (mode === "billing-earnings") {
+    return p.startsWith("/admin/billing/earnings");
+  }
   if (mode === "billing-invoices") return p.startsWith("/admin/billing/invoices");
   if (mode === "billing-custom-bills") {
     return (
@@ -1042,6 +1048,26 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Revenue
+                  </RouterLink>
+                </li>
+                <li v-if="canViewBillingSummary">
+                  <RouterLink
+                    to="/admin/billing/revenue/week-by-week"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('billing-week-by-week') }"
+                    @click="closeMobile"
+                  >
+                    Week by Week
+                  </RouterLink>
+                </li>
+                <li v-if="canViewBillingSummary">
+                  <RouterLink
+                    to="/admin/billing/earnings"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('billing-earnings') }"
+                    @click="closeMobile"
+                  >
+                    Earnings
                   </RouterLink>
                 </li>
                 <li v-if="canViewBillingInvoices">

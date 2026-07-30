@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\ReturnController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BillingSummaryController;
 use App\Http\Controllers\Api\BillingWeekSummaryController;
+use App\Http\Controllers\Api\BillingWeekEarningsController;
 use App\Http\Controllers\Api\BillingBillsController;
 use App\Http\Controllers\Api\CustomBillController;
 use App\Http\Controllers\Api\ClientAccountController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\Api\ClientAccountUserController;
 use App\Http\Controllers\Api\ClientAccountShipHeroStoreController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\HomeDashboardController;
+use App\Http\Controllers\Api\ShippedDashboardController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\TicketController;
 use App\Http\Controllers\Api\InvoiceController;
@@ -97,8 +99,19 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('billing.summary');
     Route::get('/billing/week-summaries', [BillingWeekSummaryController::class, 'index'])
         ->name('billing.week-summaries.index');
+    Route::get('/billing/week-summaries/weeks', [BillingWeekSummaryController::class, 'weeks'])
+        ->name('billing.week-summaries.weeks');
     Route::post('/billing/week-summaries/generate', [BillingWeekSummaryController::class, 'generate'])
         ->name('billing.week-summaries.generate');
+
+    Route::get('/billing/week-earnings', [BillingWeekEarningsController::class, 'index'])
+        ->name('billing.week-earnings.index');
+    Route::post('/billing/week-earnings/generate', [BillingWeekEarningsController::class, 'generate'])
+        ->name('billing.week-earnings.generate');
+    Route::get('/billing/week-earnings/{weekEarning}', [BillingWeekEarningsController::class, 'show'])
+        ->name('billing.week-earnings.show');
+    Route::get('/billing/week-earnings/{weekEarning}/unmatched', [BillingWeekEarningsController::class, 'unmatched'])
+        ->name('billing.week-earnings.unmatched');
 
     Route::get('/billing/bills', [BillingBillsController::class, 'index'])
         ->name('billing.bills');
@@ -441,6 +454,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('orders')->group(function () {
         Route::get('/summary', [OrderController::class, 'summary'])
+            ->middleware('can:orders.view');
+        Route::get('/shipped-dashboard', [ShippedDashboardController::class, 'show'])
+            ->middleware('can:orders.view');
+        Route::post('/shipped-dashboard/refresh', [ShippedDashboardController::class, 'refresh'])
             ->middleware('can:orders.view');
         Route::get('/queue-counts/snapshot', [OrderController::class, 'queueCountsSnapshot'])
             ->middleware('can:orders.view');

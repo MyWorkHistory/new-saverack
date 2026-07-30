@@ -9,6 +9,8 @@ const props = defineProps({
   fee: { type: Object, default: null },
   saving: { type: Boolean, default: false },
   removing: { type: Boolean, default: false },
+  /** When false, hide Remove (e.g. lead fees have no delete API). */
+  showRemove: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["close", "save", "remove"]);
@@ -204,6 +206,7 @@ function onBackdrop() {
 
           <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-between flex-wrap align-items-center">
             <button
+              v-if="showRemove"
               type="button"
               class="crm-vx-modal-btn crm-vx-modal-btn--danger"
               :disabled="busy"

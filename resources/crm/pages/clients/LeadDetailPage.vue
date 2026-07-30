@@ -230,6 +230,40 @@ function websiteHref(website) {
   return `https://${raw}`;
 }
 
+function gmailComposeHref(email, companyName, contactName) {
+  const to = String(email || "").trim();
+  if (!to) return "";
+  const company = String(companyName || "").trim() || "Account";
+  const name = String(contactName || "").trim();
+  const params = new URLSearchParams({
+    view: "cm",
+    fs: "1",
+    to,
+    su: `Fulfillment for ${company}`,
+  });
+  if (name) {
+    params.set("body", `Hi ${name},`);
+  }
+  return `https://mail.google.com/mail/?${params.toString()}`;
+}
+
+function gmailSearchHref(email) {
+  const q = String(email || "").trim();
+  if (!q) return "";
+  return `https://mail.google.com/mail/#search/${encodeURIComponent(q)}`;
+}
+
+async function copyLeadEmail() {
+  const email = String(lead.value?.email || "").trim();
+  if (!email) return;
+  try {
+    await navigator.clipboard.writeText(email);
+    toast.success("Email copied.");
+  } catch {
+    toast.error("Could not copy email.");
+  }
+}
+
 function avatarClassForTimelineActor(label) {
   return avatarClassForEmail(label);
 }
@@ -777,14 +811,68 @@ onMounted(async () => {
               </div>
               <div>
                 <dt class="staff-user-profile__dt">Email</dt>
-                <dd class="staff-user-profile__dd text-end text-break">
-                  <a
+                <dd class="staff-user-profile__dd text-end">
+                  <div
                     v-if="lead.email"
-                    :href="`mailto:${lead.email}`"
-                    class="link-primary text-decoration-none text-break"
+                    class="d-inline-flex align-items-center justify-content-end gap-1 flex-wrap"
                   >
-                    {{ lead.email }}
-                  </a>
+                    <a
+                      :href="gmailComposeHref(lead.email, lead.company_name, lead.name)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="link-primary text-decoration-none text-break"
+                      title="Compose in Gmail"
+                    >
+                      {{ lead.email }}
+                    </a>
+                    <a
+                      :href="gmailSearchHref(lead.email)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="btn btn-link btn-sm p-0 text-secondary lead-email-action"
+                      title="Search in Gmail"
+                      aria-label="Search email in Gmail"
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+                        />
+                      </svg>
+                    </a>
+                    <button
+                      type="button"
+                      class="btn btn-link btn-sm p-0 text-secondary lead-email-action"
+                      title="Copy Email"
+                      aria-label="Copy email"
+                      @click="copyLeadEmail"
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.75"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                        />
+                      </svg>
+                    </button>
+                  </div>
                   <template v-else>{{ display(lead.email) }}</template>
                 </dd>
               </div>
@@ -909,7 +997,7 @@ onMounted(async () => {
             </template>
 
             <template v-else-if="activeTab === TAB_FEES">
-              <div class="staff-surface p-3 p-md-4">
+              <div class="p-3 p-md-4">
                 <LeadFeesPanel
                   :lead-id="lead.id"
                   :lead="lead"

@@ -1066,8 +1066,8 @@ class InventoryController extends Controller
             abort(401);
         }
 
-        Gate::forUser($user)->authorize('view', $account);
-
+        // CRM-only status: portal users may update their own account; staff are gated by
+        // inventory.crm-status.update (do not require clients.view — inventory staff often lack it).
         $portalAccountId = (int) ($user->client_account_id ?? 0);
         if ($portalAccountId > 0 && $clientAccountId !== $portalAccountId) {
             abort(403);

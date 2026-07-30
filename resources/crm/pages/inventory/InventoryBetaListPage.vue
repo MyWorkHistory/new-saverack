@@ -3,6 +3,7 @@ import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watc
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { exportPortalInventoryCsv } from "../../utils/portalInventoryExport.js";
@@ -50,6 +51,10 @@ const statusModalOpen = ref(false);
 const statusModalRow = ref(null);
 const statusModalActive = ref(true);
 const statusModalSaving = ref(false);
+
+const rowActionKey = ref(null);
+const rowActionRow = ref(null);
+const rowActionMenuRect = ref({ top: 0, left: 0 });
 
 const searchDraft = ref("");
 const searchCommitted = ref("");
@@ -127,7 +132,11 @@ const canLoadInventory = computed(() => {
 
 const showAccountColumn = computed(() => isStaffPickerMode.value);
 
-const tableColspan = computed(() => (showAccountColumn.value ? 10 : 9));
+const tableColspan = computed(() => {
+  let n = showAccountColumn.value ? 10 : 9;
+  if (canEditCrmStatus.value) n += 1;
+  return n;
+});
 
 const accountOptions = computed(() =>
   (accounts.value || [])
@@ -756,6 +765,68 @@ async function runBulkSetActive(active) {
   await bulkSetActive(active);
 }
 
+function placeRowActionMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const rect = anchorEl.getBoundingClientRect();
+  const width = 168;
+  const height = 96;
+  let top = rect.bottom + 4;
+  let left = rect.right - width;
+  left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+  if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 4);
+  rowActionMenuRect.value = { top, left };
+}
+
+async function toggleRowActionMenu(row, e) {
+  e.stopPropagation();
+  const key = rowKey(row);
+  if (rowActionKey.value === key) {
+    closeRowActionMenu();
+    return;
+  }
+  const btn = e.currentTarget;
+  rowActionKey.value = key;
+  rowActionRow.value = row;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (rowActionKey.value === key && btn instanceof HTMLElement) placeRowActionMenu(btn);
+  });
+}
+
+function closeRowActionMenu() {
+  rowActionKey.value = null;
+  rowActionRow.value = null;
+}
+
+async function setRowCrmActive(row, active) {
+  closeRowActionMenu();
+  if (!canEditCrmStatus.value || !row) return;
+  const sku = String(row.sku || "").trim();
+  const accountIdVal = effectiveRowAccountId(row);
+  if (!sku || accountIdVal <= 0) {
+    toast.error("Could not resolve account for this product.");
+    return;
+  }
+  if (active === (row.crm_active !== false)) {
+    toast.success(`Already ${active ? "Active" : "Inactive"}.`);
+    return;
+  }
+  bulkBusy.value = true;
+  try {
+    await api.patch("/inventory/products/bulk-crm-active", {
+      client_account_id: accountIdVal,
+      active,
+      skus: [sku],
+    });
+    toast.success(`Status set to ${active ? "Active" : "Inactive"}.`);
+    await loadRows(true);
+  } catch (e) {
+    toast.errorFrom(e, "Could not update status.");
+  } finally {
+    bulkBusy.value = false;
+  }
+}
+
 function syncSelectAllCheckbox() {
   const el = selectAllCheckboxRef.value;
   if (!el || !(el instanceof HTMLInputElement)) return;
@@ -773,6 +844,9 @@ function onDocClick(e) {
   }
   if (!e.target?.closest?.("[data-bulk-edit-menu]")) {
     bulkEditMenuOpen.value = false;
+  }
+  if (!e.target?.closest?.("[data-row-actions]")) {
+    closeRowActionMenu();
   }
 }
 
@@ -1289,6 +1363,14 @@ onUnmounted(() => {
                   <span v-if="sortIndicator('backorder')" class="staff-sort-ind">{{ sortIndicator("backorder") }}</span>
                 </button>
               </th>
+              <th
+                v-if="canEditCrmStatus"
+                class="staff-table-head__th staff-actions-col text-center"
+                scope="col"
+                aria-sort="none"
+              >
+                Action
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -1385,6 +1467,22 @@ onUnmounted(() => {
               <td class="text-center user-inv-table__num-col">{{ Number(row.on_hand || 0) }}</td>
               <td class="text-center user-inv-table__num-col">{{ Number(row.allocated || 0) }}</td>
               <td class="text-center user-inv-table__num-col">{{ Number(row.backorder || 0) }}</td>
+              <td v-if="canEditCrmStatus" class="staff-actions-cell text-center">
+                <div data-row-actions class="staff-actions-inner staff-actions-inner--single justify-content-center">
+                  <button
+                    type="button"
+                    class="staff-action-btn staff-action-btn--more"
+                    :class="{ 'is-open': rowActionKey === rowKey(row) }"
+                    :aria-expanded="rowActionKey === rowKey(row)"
+                    aria-haspopup="true"
+                    aria-label="Row actions"
+                    :disabled="bulkBusy || effectiveRowAccountId(row) <= 0"
+                    @click="toggleRowActionMenu(row, $event)"
+                  >
+                    <CrmIconRowActions variant="horizontal" />
+                  </button>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -1409,6 +1507,36 @@ onUnmounted(() => {
       </div>
     </div>
   </div>
+
+  <Teleport to="body">
+    <div
+      v-if="rowActionKey !== null && rowActionRow"
+      data-row-actions
+      class="staff-row-menu fixed z-[300] overflow-hidden"
+      :style="{ top: rowActionMenuRect.top + 'px', left: rowActionMenuRect.left + 'px' }"
+      role="menu"
+      @click.stop
+    >
+      <button
+        type="button"
+        class="staff-row-menu__item"
+        role="menuitem"
+        :disabled="bulkBusy || rowActionRow.crm_active !== false"
+        @click="setRowCrmActive(rowActionRow, true)"
+      >
+        Set Active
+      </button>
+      <button
+        type="button"
+        class="staff-row-menu__item staff-row-menu__item--danger"
+        role="menuitem"
+        :disabled="bulkBusy || rowActionRow.crm_active === false"
+        @click="setRowCrmActive(rowActionRow, false)"
+      >
+        Set Inactive
+      </button>
+    </div>
+  </Teleport>
 
   <Teleport to="body">
     <div

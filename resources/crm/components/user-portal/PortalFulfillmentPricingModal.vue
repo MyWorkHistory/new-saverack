@@ -310,6 +310,7 @@ async function onAgree() {
         </div>
         <PricingFeeList
           v-else
+          variant="schedule"
           :fees="filteredFeeItems"
           :clickable="!adminMode"
           :category-order="PORTAL_PRICING_CATEGORY_ORDER"

@@ -192,6 +192,30 @@ class InventoryCrmStatusApiTest extends TestCase
         ])->assertForbidden();
     }
 
+    public function test_staff_with_inventory_update_can_bulk_crm_active_without_clients_view(): void
+    {
+        $account = $this->makeAccountWithShipHero();
+        $user = User::factory()->create(['client_account_id' => null]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        $user->permissions()->attach($this->inventoryUpdatePermission()->id);
+        Sanctum::actingAs($user);
+
+        $this->seedIndexRow($account, 'STAFF-SKU', true);
+
+        $this->patchJson('/api/inventory/products/bulk-crm-active', [
+            'client_account_id' => $account->id,
+            'active' => false,
+            'skus' => ['STAFF-SKU'],
+        ])->assertOk()
+            ->assertJsonPath('updated', 1);
+
+        $this->assertDatabaseHas('inventory_product_crm_status', [
+            'client_account_id' => $account->id,
+            'sku' => 'STAFF-SKU',
+            'crm_active' => false,
+        ]);
+    }
+
     public function test_bulk_crm_active_sets_status_without_changing_shiphero_index_flags(): void
     {
         $account = $this->makeAccountWithShipHero();

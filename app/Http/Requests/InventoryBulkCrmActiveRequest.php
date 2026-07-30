@@ -8,7 +8,7 @@ class InventoryBulkCrmActiveRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user() !== null && $this->user()->can('inventory.update');
+        return $this->user() !== null && $this->user()->can('inventory.crm-status.update');
     }
 
     public function rules(): array

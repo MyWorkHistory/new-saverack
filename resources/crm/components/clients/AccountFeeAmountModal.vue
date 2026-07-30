@@ -143,6 +143,16 @@ function onBackdrop() {
                   {{ fee.category_label }}
                 </p>
               </div>
+              <div v-if="fee?.description" class="mb-3">
+                <label class="form-label">Description</label>
+                <p class="account-fee-amount-modal__description mb-0">
+                  {{ fee.description }}
+                </p>
+              </div>
+              <div v-else class="mb-3">
+                <label class="form-label">Description</label>
+                <p class="small text-secondary fst-italic mb-0">No description</p>
+              </div>
               <div class="mb-3">
                 <label class="form-label" for="account-fee-amount">Price</label>
                 <div class="input-group">
@@ -225,3 +235,17 @@ function onBackdrop() {
     </Transition>
   </Teleport>
 </template>
+
+<style scoped>
+.account-fee-amount-modal__description {
+  font-size: 0.875rem;
+  color: var(--bs-body-color);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f8fafc;
+  border: 1px solid #e8e7ed;
+  border-radius: 0.5rem;
+  padding: 0.75rem 0.85rem;
+}
+</style>

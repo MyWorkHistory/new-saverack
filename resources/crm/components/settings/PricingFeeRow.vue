@@ -6,6 +6,8 @@ const props = defineProps({
   fee: { type: Object, required: true },
   priceLabel: { type: String, default: "" },
   clickable: { type: Boolean, default: false },
+  /** When true, show description under the fee name (default: hidden). */
+  showDescription: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["select"]);
@@ -27,7 +29,10 @@ function onKeydown(e) {
 <template>
   <article
     class="pricing-fee-row"
-    :class="{ 'pricing-fee-row--clickable': clickable }"
+    :class="{
+      'pricing-fee-row--clickable': clickable,
+      'pricing-fee-row--with-desc': showDescription,
+    }"
     :role="clickable ? 'button' : undefined"
     :tabindex="clickable ? 0 : undefined"
     @click="onClick"
@@ -124,20 +129,28 @@ function onKeydown(e) {
     </div>
 
     <div class="pricing-fee-row__body min-w-0 flex-grow-1">
-      <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+      <div class="d-flex flex-wrap align-items-center gap-2">
         <h3 class="pricing-fee-row__name mb-0">{{ fee.name }}</h3>
         <span :class="categoryBadgeClass(fee.category)">
           {{ fee.category_label || fee.category }}
         </span>
       </div>
-      <p v-if="fee.description" class="pricing-fee-row__description mb-0">
-        {{ fee.description }}
-      </p>
-      <p v-else class="pricing-fee-row__description mb-0 fst-italic text-secondary">No description</p>
+      <template v-if="showDescription">
+        <p v-if="fee.description" class="pricing-fee-row__description mb-0 mt-1">
+          {{ fee.description }}
+        </p>
+        <p v-else class="pricing-fee-row__description mb-0 mt-1 fst-italic text-secondary">
+          No description
+        </p>
+      </template>
     </div>
 
+    <div class="pricing-fee-row__divider" aria-hidden="true" />
+
     <div class="pricing-fee-row__price flex-shrink-0">
-      <div>{{ priceLabel || formatPrice(fee.amount, fee.category) }}</div>
+      <div class="pricing-fee-row__amount">
+        {{ priceLabel || formatPrice(fee.amount, fee.category) }}
+      </div>
       <div
         v-if="Object.prototype.hasOwnProperty.call(fee, 'cost') && fee.cost != null"
         class="pricing-fee-row__cost"
@@ -151,33 +164,38 @@ function onKeydown(e) {
 <style scoped>
 .pricing-fee-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 1rem;
-  padding: 1rem 1.125rem;
+  padding: 0.9rem 1.125rem;
   border: 1px solid #e8e7ed;
-  border-radius: 0.5rem;
+  border-radius: 0.65rem;
   background: #fff;
   box-shadow: none;
 }
 
+.pricing-fee-row--with-desc {
+  align-items: flex-start;
+}
+
 .pricing-fee-row--clickable {
   cursor: pointer;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .pricing-fee-row--clickable:hover {
-  border-color: #d8d6de;
+  border-color: #c7d2fe;
+  box-shadow: 0 0.125rem 0.5rem rgba(37, 99, 235, 0.08);
 }
 
 .pricing-fee-row--clickable:focus-visible {
-  outline: 2px solid rgba(115, 103, 240, 0.5);
+  outline: 2px solid rgba(37, 99, 235, 0.45);
   outline-offset: 2px;
 }
 
 .pricing-fee-row__icon-wrap {
-  width: 4rem;
-  height: 4rem;
-  background: var(--bs-secondary-bg);
+  width: 3.75rem;
+  height: 3.75rem;
+  background: #f8fafc;
   overflow: hidden;
 }
 
@@ -197,7 +215,7 @@ function onKeydown(e) {
 
 .pricing-fee-row__name {
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 650;
   color: var(--bs-body-color);
 }
 
@@ -209,13 +227,26 @@ function onKeydown(e) {
   word-break: break-word;
 }
 
+.pricing-fee-row__divider {
+  width: 1px;
+  align-self: stretch;
+  background: #e8e7ed;
+  flex-shrink: 0;
+  margin: 0.15rem 0;
+}
+
 .pricing-fee-row__price {
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: var(--bs-body-color);
-  padding-top: 0.125rem;
   text-align: right;
-  min-width: 4.5rem;
+  min-width: 5.5rem;
+  padding-left: 0.25rem;
+}
+
+.pricing-fee-row__amount {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #2563eb;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
 
 .pricing-fee-row__cost {
@@ -292,6 +323,10 @@ function onKeydown(e) {
 @media (max-width: 575.98px) {
   .pricing-fee-row {
     flex-wrap: wrap;
+  }
+
+  .pricing-fee-row__divider {
+    display: none;
   }
 
   .pricing-fee-row__price {

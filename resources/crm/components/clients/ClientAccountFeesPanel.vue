@@ -268,7 +268,7 @@ onUnmounted(() => {
         </button>
       </div>
       <p class="small text-secondary mb-0">
-        Pricing for this account. Click a fee to set an account-specific price.
+        Pricing for this account. Click a fee to view the description and set an account-specific price.
       </p>
     </header>
 

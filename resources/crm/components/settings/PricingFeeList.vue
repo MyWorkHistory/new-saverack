@@ -6,6 +6,7 @@ import { groupFeesByCategory } from "../../utils/pricingFeeUi.js";
 const props = defineProps({
   fees: { type: Array, default: () => [] },
   clickable: { type: Boolean, default: false },
+  showDescription: { type: Boolean, default: false },
   priceLabelFor: { type: Function, default: null },
 });
 
@@ -32,16 +33,18 @@ function onSelect(fee) {
       :key="section.category"
       class="pricing-fee-list__section"
     >
-      <header class="pricing-fee-list__section-head">
+      <header
+        class="pricing-fee-list__banner"
+        :style="{ background: section.meta.accent }"
+      >
         <div
-          class="pricing-fee-list__section-icon rounded d-flex align-items-center justify-content-center flex-shrink-0"
-          :style="{ background: section.meta.headerBg, color: section.meta.accent }"
+          class="pricing-fee-list__banner-icon rounded d-flex align-items-center justify-content-center flex-shrink-0"
           aria-hidden="true"
         >
           <svg
             v-if="section.category === 'fulfillment'"
-            width="18"
-            height="18"
+            width="20"
+            height="20"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -55,8 +58,8 @@ function onSelect(fee) {
           </svg>
           <svg
             v-else-if="section.category === 'returns'"
-            width="18"
-            height="18"
+            width="20"
+            height="20"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -69,9 +72,36 @@ function onSelect(fee) {
             />
           </svg>
           <svg
+            v-else-if="section.category === 'storage'"
+            width="20"
+            height="20"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="1.75"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M4 7.5A2.5 2.5 0 016.5 5h11A2.5 2.5 0 0120 7.5v9A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5v-9Z"
+            />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8 10h8M8 14h5" />
+          </svg>
+          <svg
+            v-else-if="section.category === 'receiving'"
+            width="20"
+            height="20"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="1.75"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 12h16m0 0-4-4m4 4-4 4" />
+          </svg>
+          <svg
             v-else
-            width="18"
-            height="18"
+            width="20"
+            height="20"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -85,13 +115,10 @@ function onSelect(fee) {
           </svg>
         </div>
         <div class="min-w-0">
-          <h2
-            class="pricing-fee-list__section-title mb-0"
-            :style="{ color: section.meta.accent }"
-          >
-            {{ section.meta.label.toUpperCase() }}
+          <h2 class="pricing-fee-list__banner-title mb-0">
+            {{ section.meta.label.toUpperCase() }} FEES
           </h2>
-          <p v-if="section.meta.subtitle" class="pricing-fee-list__section-sub mb-0">
+          <p v-if="section.meta.subtitle" class="pricing-fee-list__banner-sub mb-0">
             {{ section.meta.subtitle }}
           </p>
         </div>
@@ -104,6 +131,7 @@ function onSelect(fee) {
           :fee="fee"
           :price-label="priceLabel(fee)"
           :clickable="clickable"
+          :show-description="showDescription"
           @select="onSelect"
         />
       </div>
@@ -118,27 +146,54 @@ function onSelect(fee) {
   gap: 1.75rem;
 }
 
-.pricing-fee-list__section-head {
+.pricing-fee-list__banner {
   display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  margin-bottom: 0.875rem;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1rem 1.15rem;
+  border-radius: 0.65rem;
+  color: #fff;
+  margin-bottom: 0.75rem;
+  position: relative;
+  overflow: hidden;
 }
 
-.pricing-fee-list__section-icon {
-  width: 2.25rem;
-  height: 2.25rem;
+.pricing-fee-list__banner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    115deg,
+    transparent 45%,
+    rgba(255, 255, 255, 0.08) 45%,
+    rgba(255, 255, 255, 0.08) 55%,
+    transparent 55%
+  );
+  pointer-events: none;
 }
 
-.pricing-fee-list__section-title {
-  font-size: 0.8125rem;
-  font-weight: 700;
+.pricing-fee-list__banner-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  position: relative;
+  z-index: 1;
+}
+
+.pricing-fee-list__banner-title {
+  font-size: 0.95rem;
+  font-weight: 800;
   letter-spacing: 0.04em;
+  position: relative;
+  z-index: 1;
 }
 
-.pricing-fee-list__section-sub {
+.pricing-fee-list__banner-sub {
   font-size: 0.8125rem;
-  color: var(--bs-secondary-color);
-  margin-top: 0.125rem;
+  opacity: 0.92;
+  margin-top: 0.15rem;
+  position: relative;
+  z-index: 1;
 }
 </style>

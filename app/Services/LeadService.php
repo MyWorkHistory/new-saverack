@@ -29,14 +29,19 @@ class LeadService
     /** @var LeadLogoService */
     protected $logos;
 
+    /** @var WebsiteScreenshotService */
+    protected $screenshots;
+
     public function __construct(
         ActivityLogService $activityLog,
         PricingFeeIconService $icons,
-        LeadLogoService $logos
+        LeadLogoService $logos,
+        WebsiteScreenshotService $screenshots
     ) {
         $this->activityLog = $activityLog;
         $this->icons = $icons;
         $this->logos = $logos;
+        $this->screenshots = $screenshots;
     }
 
     /**
@@ -346,6 +351,27 @@ class LeadService
         if ($actor !== null) {
             $this->activityLog->log($actor, 'lead.updated', $lead, null, [
                 'fields' => ['logo'],
+            ]);
+        }
+
+        return $lead->fresh(['feeItems.pricingTemplate']) ?? $lead;
+    }
+
+    public function captureWebsiteThumbnail(Lead $lead, ?User $actor = null): Lead
+    {
+        $website = trim((string) ($lead->website ?? ''));
+        if ($website === '') {
+            throw ValidationException::withMessages([
+                'website' => ['Add a website on this lead before generating a thumbnail.'],
+            ]);
+        }
+
+        $bytes = $this->screenshots->captureImageBytes($website);
+        $this->logos->replaceFromBytes($lead, $bytes, 'png');
+
+        if ($actor !== null) {
+            $this->activityLog->log($actor, 'lead.updated', $lead, null, [
+                'fields' => ['logo', 'website_thumbnail'],
             ]);
         }
 

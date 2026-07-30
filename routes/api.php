@@ -203,6 +203,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/{lead}', [LeadController::class, 'show']);
             Route::patch('/{lead}', [LeadController::class, 'update']);
             Route::post('/{lead}/logo', [LeadController::class, 'uploadLogo']);
+            Route::post('/{lead}/website-thumbnail', [LeadController::class, 'captureWebsiteThumbnail']);
             Route::post('/{lead}/comments', [LeadController::class, 'storeComment']);
             Route::delete('/{lead}/comments/{comment}', [LeadController::class, 'destroyComment']);
             Route::get('/{lead}/comments/{comment}/attachment', [LeadController::class, 'downloadCommentAttachment']);

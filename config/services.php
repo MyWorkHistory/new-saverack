@@ -104,4 +104,13 @@ return [
         'chat_id' => env('WHATSAPP_GROUP_ID'),
     ],
 
+    /*
+    | Lead website thumbnails (Microlink screenshot API).
+    | Free tier: api.microlink.io (no key). Pro: set MICROLINK_API_KEY → pro.microlink.io.
+    */
+    'microlink' => [
+        'api_key' => env('MICROLINK_API_KEY'),
+        'api_url' => env('MICROLINK_API_URL'),
+    ],
+
 ];

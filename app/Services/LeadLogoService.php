@@ -13,18 +13,26 @@ class LeadLogoService
 
     public function replaceForLead(Lead $lead, UploadedFile $file): string
     {
+        $ext = $this->normalizeExtension($file);
+        $contents = (string) file_get_contents($file->getRealPath());
+
+        return $this->replaceFromBytes($lead, $contents, $ext);
+    }
+
+    public function replaceFromBytes(Lead $lead, string $bytes, string $ext = 'png'): string
+    {
+        $ext = $this->normalizeExtString($ext);
         $disk = Storage::disk('public');
         $dir = 'lead-logos/'.$lead->id;
         if (! $disk->exists($dir)) {
             $disk->makeDirectory($dir);
         }
 
-        $ext = $this->normalizeExtension($file);
         $filename = Str::uuid()->toString().'.'.$ext;
         $relative = $dir.'/'.$filename;
 
         $previous = $lead->logo_path;
-        $imageBytes = $this->processUpload($file, $ext);
+        $imageBytes = $this->processRawBytes($bytes, $ext);
         $disk->put($relative, $imageBytes);
         $lead->logo_path = $relative;
         $lead->save();
@@ -53,20 +61,29 @@ class LeadLogoService
     private function normalizeExtension(UploadedFile $file): string
     {
         $ext = strtolower($file->getClientOriginalExtension() ?: 'png');
-        if (! in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+
+        return $this->normalizeExtString($ext);
+    }
+
+    private function normalizeExtString(string $ext): string
+    {
+        $ext = strtolower(trim($ext));
+        if ($ext === 'jpeg') {
+            $ext = 'jpg';
+        }
+        if (! in_array($ext, ['jpg', 'png', 'webp'], true)) {
             return 'png';
         }
 
-        return $ext === 'jpeg' ? 'jpg' : $ext;
+        return $ext;
     }
 
-    private function processUpload(UploadedFile $file, string $ext): string
+    private function processRawBytes(string $contents, string $ext): string
     {
-        if (! function_exists('imagecreatefromstring')) {
-            return (string) file_get_contents($file->getRealPath());
+        if (! function_exists('imagecreatefromstring') || $contents === '') {
+            return $contents;
         }
 
-        $contents = (string) file_get_contents($file->getRealPath());
         $source = @imagecreatefromstring($contents);
         if ($source === false) {
             return $contents;

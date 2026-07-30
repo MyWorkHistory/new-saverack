@@ -118,6 +118,7 @@ const historyItems = ref([]);
 const historyLoading = ref(false);
 const followUpSaving = ref(false);
 const logoUploading = ref(false);
+const thumbnailGenerating = ref(false);
 const logoInputRef = ref(null);
 
 const emailTemplateGroups = ref([]);
@@ -459,8 +460,29 @@ async function saveEditModal() {
 }
 
 function triggerLogoUpload() {
-  if (!canUpdate.value || logoUploading.value) return;
+  if (!canUpdate.value || logoUploading.value || thumbnailGenerating.value) return;
   logoInputRef.value?.click();
+}
+
+async function captureWebsiteThumbnail() {
+  if (!canUpdate.value || !lead.value?.id || logoUploading.value || thumbnailGenerating.value) {
+    return;
+  }
+  const website = String(lead.value.website || "").trim();
+  if (!website) {
+    toast.error("Add a website first.");
+    return;
+  }
+  thumbnailGenerating.value = true;
+  try {
+    const { data } = await api.post(`/leads/${lead.value.id}/website-thumbnail`);
+    lead.value = data;
+    toast.success("Website thumbnail generated.");
+  } catch (err) {
+    toast.errorFrom(err, "Could not generate website thumbnail.");
+  } finally {
+    thumbnailGenerating.value = false;
+  }
 }
 
 async function onLogoSelected(e) {
@@ -694,7 +716,7 @@ onMounted(async () => {
       <div class="row g-3">
         <div class="col-12 col-xl-4">
           <aside class="staff-user-profile">
-            <div class="staff-user-profile__avatar-wrap">
+            <div class="staff-user-profile__avatar-wrap position-relative">
               <input
                 ref="logoInputRef"
                 type="file"
@@ -706,9 +728,13 @@ onMounted(async () => {
                 v-if="canUpdate"
                 type="button"
                 class="staff-user-profile__avatar-btn border-0 bg-transparent p-0"
-                :disabled="logoUploading"
-                title="Upload logo"
-                @click="triggerLogoUpload"
+                :disabled="logoUploading || thumbnailGenerating"
+                :title="
+                  lead.website
+                    ? 'Generate website thumbnail'
+                    : 'Add a website to generate a thumbnail'
+                "
+                @click="captureWebsiteThumbnail"
               >
                 <img
                   v-if="lead.logo_url"
@@ -722,6 +748,13 @@ onMounted(async () => {
                   :class="avatarClassForEmail(lead.email || lead.company_name)"
                 >
                   {{ leadInitials(lead.company_name) }}
+                </span>
+                <span
+                  v-if="thumbnailGenerating || logoUploading"
+                  class="lead-avatar-busy"
+                  aria-hidden="true"
+                >
+                  <CrmLoadingSpinner small />
                 </span>
               </button>
               <template v-else>
@@ -739,6 +772,31 @@ onMounted(async () => {
                   {{ leadInitials(lead.company_name) }}
                 </span>
               </template>
+              <button
+                v-if="canUpdate"
+                type="button"
+                class="btn btn-sm btn-light border lead-avatar-upload-btn"
+                title="Upload logo"
+                aria-label="Upload logo"
+                :disabled="logoUploading || thumbnailGenerating"
+                @click.stop="triggerLogoUpload"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
+                  />
+                </svg>
+              </button>
             </div>
             <h2 class="staff-user-profile__name">
               {{ lead.company_name }}
@@ -1084,3 +1142,35 @@ onMounted(async () => {
     </template>
   </div>
 </template>
+
+<style scoped>
+.lead-avatar-busy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.staff-user-profile__avatar-btn {
+  position: relative;
+  display: inline-block;
+}
+
+.lead-avatar-upload-btn {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+  z-index: 1;
+}
+</style>

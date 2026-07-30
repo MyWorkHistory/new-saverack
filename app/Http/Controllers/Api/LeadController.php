@@ -136,6 +136,27 @@ class LeadController extends Controller
         return response()->json($this->leads->toDetailArray($lead));
     }
 
+    public function captureWebsiteThumbnail(Request $request, Lead $lead): JsonResponse
+    {
+        Gate::authorize('update', $lead);
+
+        try {
+            $lead = $this->leads->captureWebsiteThumbnail($lead, $request->user());
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => $e->getMessage() !== ''
+                    ? $e->getMessage()
+                    : 'Could not generate website thumbnail.',
+            ], 502);
+        }
+
+        return response()->json($this->leads->toDetailArray($lead));
+    }
+
     public function storeComment(Request $request, Lead $lead): JsonResponse
     {
         Gate::authorize('update', $lead);

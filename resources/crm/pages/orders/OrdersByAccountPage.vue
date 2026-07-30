@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarButton.vue";
 import CrmSyncToolbar from "../../components/common/CrmSyncToolbar.vue";
@@ -36,6 +37,7 @@ const HOLD_BREAKDOWN = [
     description: "Orders manually placed on hold by warehouse staff",
     tone: "red",
     icon: "operator",
+    holdReason: "operator",
   },
   {
     key: "hold_address",
@@ -43,6 +45,7 @@ const HOLD_BREAKDOWN = [
     description: "Invalid or incomplete address",
     tone: "pink",
     icon: "address",
+    holdReason: "address",
   },
   {
     key: "hold_fraud",
@@ -50,6 +53,7 @@ const HOLD_BREAKDOWN = [
     description: "Awaiting fraud review",
     tone: "blue",
     icon: "fraud",
+    holdReason: "fraud",
   },
   {
     key: "hold_payment",
@@ -57,6 +61,7 @@ const HOLD_BREAKDOWN = [
     description: "Payment issue detected",
     tone: "orange",
     icon: "payment",
+    holdReason: "payment",
   },
   {
     key: "hold_user",
@@ -64,6 +69,7 @@ const HOLD_BREAKDOWN = [
     description: "Hold placed by client",
     tone: "purple",
     icon: "user",
+    holdReason: "user",
   },
   {
     key: "paused",
@@ -72,9 +78,17 @@ const HOLD_BREAKDOWN = [
     tone: "gray",
     icon: "paused",
   },
+  {
+    key: "hold_backorder",
+    label: "Backorders",
+    description: "Orders on hold due to inventory shortage",
+    tone: "violet",
+    icon: "backorder",
+  },
 ];
 
 const toast = useToast();
+const router = useRouter();
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
 const { loading, refreshing, sections, load, refreshSection } = useAdminHomeDashboard({
@@ -98,7 +112,7 @@ function sectionData(key) {
   );
 }
 
-/** Merge RTS + shipped + on-hold + hold-type accounts from cached dashboard snapshots. */
+/** Merge RTS + shipped + on-hold + hold-type + backorder accounts from cached dashboard snapshots. */
 const allAccounts = computed(() => {
   const byId = new Map();
 
@@ -115,6 +129,7 @@ const allAccounts = computed(() => {
         shipped_count: 0,
         on_hold_count: 0,
         paused_rts_count: 0,
+        backorder_count: 0,
         holds: {
           hold_operator: 0,
           hold_address: 0,
@@ -171,17 +186,26 @@ const allAccounts = computed(() => {
     }
   }
 
+  for (const row of sectionData("hold_backorder").accounts || []) {
+    const entry = ensure(row);
+    if (!entry) continue;
+    entry.backorder_count = Math.max(entry.backorder_count, Number(row.orders_count || 0));
+  }
+
   return [...byId.values()]
     .map((a) => {
       const holdSum = Object.values(a.holds).reduce((s, n) => s + Number(n || 0), 0);
       const onHoldTotal = a.on_hold_count > 0 ? a.on_hold_count : holdSum;
+      const backorderCount = Number(a.backorder_count || 0);
       const totalOrders =
         Number(a.ready_to_ship_count || 0) +
         Number(a.shipped_count || 0) +
-        Number(onHoldTotal || 0);
+        Number(onHoldTotal || 0) +
+        backorderCount;
       return {
         ...a,
         on_hold_total: onHoldTotal,
+        backorder_count: backorderCount,
         total_orders: totalOrders,
       };
     })
@@ -251,10 +275,14 @@ const breakdownRows = computed(() => {
   const account = selectedAccount.value;
   if (!account) return [];
   return HOLD_BREAKDOWN.map((meta) => {
-    const orders =
-      meta.key === "paused"
-        ? Number(account.paused_rts_count || 0)
-        : Number(account.holds?.[meta.key] || 0);
+    let orders = 0;
+    if (meta.key === "paused") {
+      orders = Number(account.paused_rts_count || 0);
+    } else if (meta.key === "hold_backorder") {
+      orders = Number(account.backorder_count || 0);
+    } else {
+      orders = Number(account.holds?.[meta.key] || 0);
+    }
     return { ...meta, orders };
   });
 });
@@ -276,6 +304,7 @@ const lastSyncedLabel = computed(() => {
     "ready_to_ship",
     "shipped",
     "on_hold",
+    "hold_backorder",
     ...HOLD_TYPE_SECTIONS.map((h) => h.key),
   ];
   let latestMs = null;
@@ -291,6 +320,54 @@ const lastSyncedLabel = computed(() => {
 
 function selectAccount(accountId) {
   selectedAccountId.value = Number(accountId);
+}
+
+function breakdownRoute(rowKey) {
+  const account = selectedAccount.value;
+  if (!account?.account_id) return null;
+  const accountId = String(account.account_id);
+
+  if (rowKey === "ready_to_ship") {
+    return {
+      name: "orders-awaiting",
+      query: { client_account_id: accountId, date_preset: "since_may_1" },
+    };
+  }
+  if (rowKey === "shipped") {
+    return {
+      name: "orders-shipped-orders",
+      query: { client_account_id: accountId, date_preset: "today" },
+    };
+  }
+  if (rowKey === "hold_backorder") {
+    return {
+      name: "orders-backorder-list",
+      query: { client_account_id: accountId },
+    };
+  }
+  if (rowKey === "paused") {
+    return {
+      name: "orders-on-hold-old",
+      query: { client_account_id: accountId },
+    };
+  }
+  const hold = HOLD_BREAKDOWN.find((h) => h.key === rowKey);
+  if (hold?.holdReason) {
+    return {
+      name: "orders-on-hold-old",
+      query: {
+        client_account_id: accountId,
+        hold_reason: hold.holdReason,
+      },
+    };
+  }
+  return null;
+}
+
+function openBreakdown(rowKey) {
+  const to = breakdownRoute(rowKey);
+  if (!to) return;
+  router.push(to);
 }
 
 function toggleSort() {
@@ -549,7 +626,15 @@ onMounted(async () => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="row in queueRows" :key="row.key">
+                  <tr
+                    v-for="row in queueRows"
+                    :key="row.key"
+                    class="oba-breakdown-row"
+                    role="link"
+                    tabindex="0"
+                    @click="openBreakdown(row.key)"
+                    @keydown.enter.prevent="openBreakdown(row.key)"
+                  >
                     <td>
                       <div class="oba-hold-type">
                         <span
@@ -567,7 +652,7 @@ onMounted(async () => {
                         <span class="oba-hold-type__label">{{ row.label }}</span>
                       </div>
                     </td>
-                    <td class="text-end fw-semibold">{{ nf.format(row.orders) }}</td>
+                    <td class="text-end fw-semibold oba-orders">{{ nf.format(row.orders) }}</td>
                     <td class="text-secondary">{{ row.description }}</td>
                   </tr>
                 </tbody>
@@ -592,7 +677,15 @@ onMounted(async () => {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="row in breakdownRows" :key="row.key">
+                    <tr
+                      v-for="row in breakdownRows"
+                      :key="row.key"
+                      class="oba-breakdown-row"
+                      role="link"
+                      tabindex="0"
+                      @click="openBreakdown(row.key)"
+                      @keydown.enter.prevent="openBreakdown(row.key)"
+                    >
                       <td>
                         <div class="oba-hold-type">
                           <span
@@ -615,6 +708,9 @@ onMounted(async () => {
                             <svg v-else-if="row.icon === 'user'" fill="currentColor" viewBox="0 0 24 24">
                               <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
                             </svg>
+                            <svg v-else-if="row.icon === 'backorder'" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4zM6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
+                            </svg>
                             <svg v-else fill="currentColor" viewBox="0 0 24 24">
                               <path d="M6 19h4V5H6zm8-14v14h4V5z" />
                             </svg>
@@ -622,7 +718,7 @@ onMounted(async () => {
                           <span class="oba-hold-type__label">{{ row.label }}</span>
                         </div>
                       </td>
-                      <td class="text-end fw-semibold">{{ nf.format(row.orders) }}</td>
+                      <td class="text-end fw-semibold oba-orders">{{ nf.format(row.orders) }}</td>
                       <td class="text-secondary">{{ row.description }}</td>
                     </tr>
                   </tbody>
@@ -965,9 +1061,26 @@ onMounted(async () => {
   background: #f3f4f6;
   color: #6b7280;
 }
+.oba-hold-type__icon--violet {
+  background: #ede9fe;
+  color: #7c3aed;
+}
 
 .oba-hold-type__label {
   font-weight: 650;
   color: var(--oba-text);
+}
+
+.oba-breakdown-row {
+  cursor: pointer;
+}
+
+.oba-breakdown-row:hover {
+  background: #f8fafc;
+}
+
+.oba-breakdown-row:focus-visible {
+  outline: 2px solid var(--oba-blue);
+  outline-offset: -2px;
 }
 </style>

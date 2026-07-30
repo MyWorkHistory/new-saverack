@@ -351,6 +351,7 @@ onUnmounted(() => {
       <div v-else class="staff-table-wrap">
         <div class="p-3 p-md-4">
           <PricingFeeList
+            variant="schedule"
             :fees="filteredFees"
             :clickable="canEdit"
             @select="openEdit"

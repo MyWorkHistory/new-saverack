@@ -6,8 +6,10 @@ const props = defineProps({
   fee: { type: Object, required: true },
   priceLabel: { type: String, default: "" },
   clickable: { type: Boolean, default: false },
-  /** When true, show description under the fee name (default: hidden). */
-  showDescription: { type: Boolean, default: false },
+  /** When true, show description under the fee name. */
+  showDescription: { type: Boolean, default: true },
+  /** Account/lead schedule: larger blue price + divider. */
+  emphasizePrice: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["select"]);
@@ -32,6 +34,7 @@ function onKeydown(e) {
     :class="{
       'pricing-fee-row--clickable': clickable,
       'pricing-fee-row--with-desc': showDescription,
+      'pricing-fee-row--emphasize': emphasizePrice,
     }"
     :role="clickable ? 'button' : undefined"
     :tabindex="clickable ? 0 : undefined"
@@ -129,21 +132,23 @@ function onKeydown(e) {
     </div>
 
     <div class="pricing-fee-row__body min-w-0 flex-grow-1">
-      <h3 class="pricing-fee-row__name mb-0">{{ fee.name }}</h3>
-      <span :class="categoryBadgeClass(fee.category)" class="mt-1">
-        {{ fee.category_label || fee.category }}
-      </span>
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+        <h3 class="pricing-fee-row__name mb-0">{{ fee.name }}</h3>
+        <span :class="categoryBadgeClass(fee.category)">
+          {{ fee.category_label || fee.category }}
+        </span>
+      </div>
       <template v-if="showDescription">
-        <p v-if="fee.description" class="pricing-fee-row__description mb-0 mt-1">
+        <p v-if="fee.description" class="pricing-fee-row__description mb-0">
           {{ fee.description }}
         </p>
-        <p v-else class="pricing-fee-row__description mb-0 mt-1 fst-italic text-secondary">
+        <p v-else class="pricing-fee-row__description mb-0 fst-italic text-secondary">
           No description
         </p>
       </template>
     </div>
 
-    <div class="pricing-fee-row__divider" aria-hidden="true" />
+    <div v-if="emphasizePrice" class="pricing-fee-row__divider" aria-hidden="true" />
 
     <div class="pricing-fee-row__price flex-shrink-0">
       <div class="pricing-fee-row__amount">
@@ -162,16 +167,22 @@ function onKeydown(e) {
 <style scoped>
 .pricing-fee-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 1rem;
-  padding: 0.9rem 1.125rem;
+  padding: 1rem 1.125rem;
   border: 1px solid #e8e7ed;
-  border-radius: 0.65rem;
+  border-radius: 0.5rem;
   background: #fff;
   box-shadow: none;
 }
 
-.pricing-fee-row--with-desc {
+.pricing-fee-row--emphasize {
+  align-items: center;
+  padding: 0.9rem 1.125rem;
+  border-radius: 0.65rem;
+}
+
+.pricing-fee-row--with-desc.pricing-fee-row--emphasize {
   align-items: flex-start;
 }
 
@@ -181,20 +192,34 @@ function onKeydown(e) {
 }
 
 .pricing-fee-row--clickable:hover {
+  border-color: #d8d6de;
+}
+
+.pricing-fee-row--emphasize.pricing-fee-row--clickable:hover {
   border-color: #c7d2fe;
   box-shadow: 0 0.125rem 0.5rem rgba(37, 99, 235, 0.08);
 }
 
 .pricing-fee-row--clickable:focus-visible {
-  outline: 2px solid rgba(37, 99, 235, 0.45);
+  outline: 2px solid rgba(115, 103, 240, 0.5);
   outline-offset: 2px;
 }
 
+.pricing-fee-row--emphasize.pricing-fee-row--clickable:focus-visible {
+  outline-color: rgba(37, 99, 235, 0.45);
+}
+
 .pricing-fee-row__icon-wrap {
+  width: 4rem;
+  height: 4rem;
+  background: var(--bs-secondary-bg);
+  overflow: hidden;
+}
+
+.pricing-fee-row--emphasize .pricing-fee-row__icon-wrap {
   width: 3.75rem;
   height: 3.75rem;
   background: #f8fafc;
-  overflow: hidden;
 }
 
 .pricing-fee-row__icon-img {
@@ -220,8 +245,12 @@ function onKeydown(e) {
 
 .pricing-fee-row__name {
   font-size: 1rem;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--bs-body-color);
+}
+
+.pricing-fee-row--emphasize .pricing-fee-row__name {
+  font-weight: 650;
 }
 
 .pricing-fee-row__description {
@@ -241,17 +270,29 @@ function onKeydown(e) {
 }
 
 .pricing-fee-row__price {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--bs-body-color);
+  padding-top: 0.125rem;
   text-align: right;
+  min-width: 4.5rem;
+}
+
+.pricing-fee-row--emphasize .pricing-fee-row__price {
   min-width: 5.5rem;
   padding-left: 0.25rem;
+  padding-top: 0;
 }
 
 .pricing-fee-row__amount {
+  line-height: 1.15;
+}
+
+.pricing-fee-row--emphasize .pricing-fee-row__amount {
   font-size: 1.35rem;
   font-weight: 800;
   color: #2563eb;
   letter-spacing: -0.02em;
-  line-height: 1.15;
 }
 
 .pricing-fee-row__cost {

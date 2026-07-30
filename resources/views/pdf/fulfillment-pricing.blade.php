@@ -97,13 +97,13 @@
         }
         .fee-heading {
             margin: 0;
-            white-space: nowrap;
         }
         .fee-name {
+            display: block;
             font-size: 12px;
             font-weight: 600;
             color: #1f2430;
-            margin-right: 6px;
+            margin: 0 0 4px;
         }
         .fee-divider-cell {
             width: 12px;
@@ -128,7 +128,7 @@
             font-weight: 800;
         }
         .fee-category {
-            display: inline;
+            display: inline-block;
             padding: 2px 6px;
             border: 1px solid #cbd5e1;
             border-radius: 8px;

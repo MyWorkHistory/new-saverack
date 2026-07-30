@@ -7,8 +7,8 @@ const props = defineProps({
   fees: { type: Array, default: () => [] },
   clickable: { type: Boolean, default: false },
   /**
-   * default — Settings catalog (soft section headers, descriptions on rows)
-   * schedule — Account fees / user pricing (banner headers, compact rows)
+   * default — legacy soft headers + descriptions (kept for one-off embeds)
+   * schedule — Account fees / Settings / portal / leads (banner headers, compact rows)
    */
   variant: {
     type: String,

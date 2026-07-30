@@ -132,19 +132,27 @@ function onKeydown(e) {
     </div>
 
     <div class="pricing-fee-row__body min-w-0 flex-grow-1">
-      <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+      <template v-if="emphasizePrice">
         <h3 class="pricing-fee-row__name mb-0">{{ fee.name }}</h3>
-        <span :class="categoryBadgeClass(fee.category)">
+        <span class="pricing-fee-row__badge mt-1" :class="categoryBadgeClass(fee.category)">
           {{ fee.category_label || fee.category }}
         </span>
-      </div>
-      <template v-if="showDescription">
-        <p v-if="fee.description" class="pricing-fee-row__description mb-0">
-          {{ fee.description }}
-        </p>
-        <p v-else class="pricing-fee-row__description mb-0 fst-italic text-secondary">
-          No description
-        </p>
+      </template>
+      <template v-else>
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+          <h3 class="pricing-fee-row__name mb-0">{{ fee.name }}</h3>
+          <span :class="categoryBadgeClass(fee.category)">
+            {{ fee.category_label || fee.category }}
+          </span>
+        </div>
+        <template v-if="showDescription">
+          <p v-if="fee.description" class="pricing-fee-row__description mb-0">
+            {{ fee.description }}
+          </p>
+          <p v-else class="pricing-fee-row__description mb-0 fst-italic text-secondary">
+            No description
+          </p>
+        </template>
       </template>
     </div>
 
@@ -251,6 +259,11 @@ function onKeydown(e) {
 
 .pricing-fee-row--emphasize .pricing-fee-row__name {
   font-weight: 650;
+}
+
+.pricing-fee-row__badge {
+  display: inline-flex;
+  align-items: center;
 }
 
 .pricing-fee-row__description {

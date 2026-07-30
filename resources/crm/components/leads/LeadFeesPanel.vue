@@ -80,6 +80,7 @@ watch(
     </div>
     <PricingFeeList
       v-else
+      variant="schedule"
       :fees="feeItems"
       :clickable="canUpdate"
       @select="openFee"

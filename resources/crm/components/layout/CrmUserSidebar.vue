@@ -13,7 +13,8 @@ const ordersGroupOpen = ref(route.path.startsWith("/users/orders"));
 const returnsGroupOpen = ref(route.path.startsWith("/users/returns"));
 const inventoryGroupOpen = ref(
   route.path.startsWith("/users/inventory") ||
-    route.path.startsWith("/users/asn"),
+    route.path.startsWith("/users/asn") ||
+    route.path.startsWith("/users/ltl"),
 );
 const myAccountGroupOpen = ref(route.path.startsWith("/users/my-account"));
 
@@ -29,7 +30,7 @@ watch(
   (p) => {
     if (p.startsWith("/users/orders")) ordersGroupOpen.value = true;
     if (p.startsWith("/users/returns")) returnsGroupOpen.value = true;
-    if (p.startsWith("/users/inventory") || p.startsWith("/users/asn")) {
+    if (p.startsWith("/users/inventory") || p.startsWith("/users/asn") || p.startsWith("/users/ltl")) {
       inventoryGroupOpen.value = true;
     }
     if (p.startsWith("/users/my-account")) myAccountGroupOpen.value = true;
@@ -52,7 +53,8 @@ function navActive(mode) {
   if (mode === "inventory" || mode === "products") {
     return (
       p.startsWith("/users/inventory") ||
-      p.startsWith("/users/asn")
+      p.startsWith("/users/asn") ||
+      p.startsWith("/users/ltl")
     );
   }
   if (mode === "inventory-products" || mode === "products-inventory") {
@@ -63,6 +65,7 @@ function navActive(mode) {
     return p === "/users/inventory/out-of-stock";
   }
   if (mode === "inventory-asn" || mode === "products-asn") return p.startsWith("/users/asn");
+  if (mode === "inventory-ltl") return p.startsWith("/users/ltl");
   if (mode === "returns") return p.startsWith("/users/returns");
   if (mode === "returns-orders") return p === "/users/returns/orders";
   if (mode === "returns-items") return p === "/users/returns/items";
@@ -360,6 +363,16 @@ function collapseNav() {
                   @click="closeMobile"
                 >
                   ASN
+                </RouterLink>
+              </li>
+              <li>
+                <RouterLink
+                  to="/users/ltl"
+                  class="vx-nav-link vx-nav-sublink"
+                  :class="{ 'vx-nav-link--active': navActive('inventory-ltl') }"
+                  @click="closeMobile"
+                >
+                  LTL
                 </RouterLink>
               </li>
             </ul>

@@ -637,6 +637,25 @@ const routes = [
     component: () => import("../pages/admin-put-away/PutAwayDetailPage.vue"),
     meta: meta.adminPutAwayDetail,
   },
+  {
+    path: "/admin/receiving/ltl",
+    name: "admin-ltl-list",
+    component: () => import("../pages/admin-ltl/AdminLtlListPage.vue"),
+    meta: {
+      title: "Save Rack | LTL",
+      description: "LTL freight quotes and shipments.",
+    },
+  },
+  {
+    path: "/admin/receiving/ltl/:id",
+    name: "admin-ltl-detail",
+    component: () => import("../pages/admin-ltl/AdminLtlDetailPage.vue"),
+    props: true,
+    meta: {
+      title: "Save Rack | LTL",
+      description: "LTL shipment detail.",
+    },
+  },
   { path: "/admin/receiving", redirect: "/admin/receiving/asn" },
   {
     path: "/admin/returns/process",
@@ -997,6 +1016,27 @@ const routes = [
     }),
   },
   { path: "/users/asn", name: "user-asn-list", component: () => import("../pages/user-asn/UserAsnListPage.vue"), meta: { ...meta.userAsnList, userPortal: true } },
+  {
+    path: "/users/ltl",
+    name: "user-ltl-list",
+    component: () => import("../pages/user-ltl/UserLtlListPage.vue"),
+    meta: {
+      title: "Save Rack | LTL",
+      description: "Your LTL freight quotes.",
+      userPortal: true,
+    },
+  },
+  {
+    path: "/users/ltl/:id",
+    name: "user-ltl-detail",
+    component: () => import("../pages/user-ltl/UserLtlDetailPage.vue"),
+    props: true,
+    meta: {
+      title: "Save Rack | LTL",
+      description: "LTL shipment detail.",
+      userPortal: true,
+    },
+  },
   { path: "/users/asn/:id", name: "user-asn-detail", component: () => import("../pages/user-asn/UserAsnDetailPage.vue"), props: true, meta: { ...meta.userAsnDetail, userPortal: true } },
   { path: "/users/asn/:id/print-shipping-label", name: "user-asn-print-shipping-label", component: () => import("../pages/user-asn/UserAsnPrintShippingLabelPage.vue"), props: true, meta: { title: "Save Rack | Print Shipping Label", description: "4x6 shipping label.", userPortal: true, bareLayout: true } },
   { path: "/users/asn/:id/print-packing-slip", name: "user-asn-print-packing-slip", component: () => import("../pages/user-asn/UserAsnPrintPackingSlipPage.vue"), props: true, meta: { title: "Save Rack | Packing Slip", description: "ASN packing slip.", userPortal: true, bareLayout: true } },
@@ -1398,7 +1438,7 @@ export function setReceivingNavFromUser(user) {
     receivingNavCache = {
       view: true,
       update: true,
-      pages: { asn: true, putAway: true },
+      pages: { asn: true, putAway: true, ltl: true },
     };
     return;
   }
@@ -1406,7 +1446,7 @@ export function setReceivingNavFromUser(user) {
     receivingNavCache = {
       view: false,
       update: false,
-      pages: { asn: false, putAway: false },
+      pages: { asn: false, putAway: false, ltl: false },
     };
     return;
   }
@@ -1415,13 +1455,16 @@ export function setReceivingNavFromUser(user) {
     k.includes("receiving_asn.view") || k.includes("receiving.view");
   const putAway =
     k.includes("receiving_put_away.view") || k.includes("receiving.view");
+  const ltl =
+    k.includes("receiving_ltl.view") || k.includes("receiving.view");
   receivingNavCache = {
-    view: asn || putAway,
+    view: asn || putAway || ltl,
     update:
       k.includes("receiving_asn.update") ||
       k.includes("receiving_put_away.update") ||
+      k.includes("receiving_ltl.update") ||
       k.includes("receiving.update"),
-    pages: { asn, putAway },
+    pages: { asn, putAway, ltl },
   };
 }
 
@@ -1850,6 +1893,9 @@ async function ensureReceivingRouteAccess(path) {
   if (path.startsWith("/admin/receiving")) {
     if (path.startsWith("/admin/receiving/put-away")) {
       return receivingNavCache.pages?.putAway === true;
+    }
+    if (path.startsWith("/admin/receiving/ltl")) {
+      return receivingNavCache.pages?.ltl === true;
     }
     // ASN hub and detail (default receiving section)
     return receivingNavCache.pages?.asn === true;

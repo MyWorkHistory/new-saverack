@@ -51,8 +51,12 @@ class CrmStaffPermissionCatalog
             }
         }
 
-        // Receiving — ASN create/receive/delete; Put Away stock edits
-        foreach (['receiving_asn' => 'ASN', 'receiving_put_away' => 'put away'] as $mod => $label) {
+        // Receiving — ASN create/receive/delete; Put Away stock edits; LTL freight
+        foreach ([
+            'receiving_asn' => 'ASN',
+            'receiving_put_away' => 'put away',
+            'receiving_ltl' => 'LTL',
+        ] as $mod => $label) {
             foreach (['view', 'create', 'update', 'delete'] as $a) {
                 $add($rows, $mod.'.'.$a, ucfirst($a).' '.$label, $mod);
             }
@@ -173,6 +177,7 @@ class CrmStaffPermissionCatalog
             'receiving' => [
                 'receiving_asn',
                 'receiving_put_away',
+                'receiving_ltl',
             ],
             'returns' => [
                 'returns_process',

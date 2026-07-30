@@ -163,7 +163,7 @@ const canViewInventoryLocationLabels = computed(() =>
 
 const canViewReceiving = computed(() => {
   if (isPortal.value) return false;
-  return hasAnyView(["receiving_asn", "receiving_put_away", "receiving"]);
+  return hasAnyView(["receiving_asn", "receiving_put_away", "receiving_ltl", "receiving"]);
 });
 
 const canViewReceivingAsn = computed(() =>
@@ -171,6 +171,9 @@ const canViewReceivingAsn = computed(() =>
 );
 const canViewReceivingPutAway = computed(() =>
   hasPerm("receiving_put_away.view", "receiving.view"),
+);
+const canViewReceivingLtl = computed(() =>
+  hasPerm("receiving_ltl.view", "receiving.view"),
 );
 
 const canViewOrders = computed(() => {
@@ -292,6 +295,7 @@ function navActive(mode) {
   if (mode === "receiving") return p.startsWith("/admin/receiving");
   if (mode === "receiving-asn") return p.startsWith("/admin/receiving/asn");
   if (mode === "receiving-put-away") return p.startsWith("/admin/receiving/put-away");
+  if (mode === "receiving-ltl") return p.startsWith("/admin/receiving/ltl");
   if (mode === "returns") return p.startsWith("/admin/returns");
   if (mode === "returns-process") return p.startsWith("/admin/returns/process");
   if (mode === "returns-orders") return p === "/admin/returns/orders";
@@ -650,6 +654,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Put Away
+                  </RouterLink>
+                </li>
+                <li v-if="canViewReceivingLtl">
+                  <RouterLink
+                    to="/admin/receiving/ltl"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('receiving-ltl') }"
+                    @click="closeMobile"
+                  >
+                    LTL
                   </RouterLink>
                 </li>
               </ul>

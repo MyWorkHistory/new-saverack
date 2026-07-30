@@ -22,8 +22,10 @@ use App\Models\Tutorial;
 use App\Models\ResourceCalendarEvent;
 use App\Models\ResourcePhoto;
 use App\Models\User;
+use App\Models\LtlShipment;
 use App\Models\WholesaleOrder;
 use App\Policies\ClientAccountAsnPolicy;
+use App\Policies\LtlShipmentPolicy;
 use App\Policies\ClientAccountReturnPolicy;
 use App\Policies\ClientAccountOnDemandProductPolicy;
 use App\Policies\ClientAccountPolicy;
@@ -76,6 +78,7 @@ class AuthServiceProvider extends ServiceProvider
         ResourcePhoto::class => ResourcePhotoPolicy::class,
         ResourceCalendarEvent::class => ResourceCalendarEventPolicy::class,
         WholesaleOrder::class => WholesaleOrderPolicy::class,
+        LtlShipment::class => LtlShipmentPolicy::class,
     ];
 
     /**
@@ -330,6 +333,19 @@ class AuthServiceProvider extends ServiceProvider
             return $user->hasPermission('receiving_put_away.delete');
         });
 
+        foreach (['view', 'create', 'update', 'delete'] as $action) {
+            Gate::define('receiving_ltl.'.$action, function ($user) use ($action) {
+                if (! $user) {
+                    return false;
+                }
+                if ($user->isAdministrator() || $user->isCrmOwner()) {
+                    return true;
+                }
+
+                return $user->hasPermission('receiving_ltl.'.$action);
+            });
+        }
+
         Gate::define('returns.create', function ($user) {
             if (! $user) {
                 return false;
@@ -456,7 +472,18 @@ class AuthServiceProvider extends ServiceProvider
                 return true;
             }
 
-            foreach (['inventory.view', 'orders.view', 'receiving.view', 'returns.view', 'clients.view', 'billing.view', 'projects.view'] as $perm) {
+            foreach ([
+                'inventory.view',
+                'orders.view',
+                'receiving.view',
+                'receiving_asn.view',
+                'receiving_put_away.view',
+                'receiving_ltl.view',
+                'returns.view',
+                'clients.view',
+                'billing.view',
+                'projects.view',
+            ] as $perm) {
                 if ($user->hasPermission($perm)) {
                     return true;
                 }

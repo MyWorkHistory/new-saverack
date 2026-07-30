@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\ClientAccountShipHeroStoreController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\HomeDashboardController;
 use App\Http\Controllers\Api\ShippedDashboardController;
+use App\Http\Controllers\Api\LtlShipmentController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\TicketController;
 use App\Http\Controllers\Api\InvoiceController;
@@ -417,6 +418,33 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [PutAwayController::class, 'index'])->middleware('can:receiving_put_away.view');
         Route::get('/products/{sku}', [PutAwayController::class, 'show'])->middleware('can:receiving_put_away.view');
         Route::post('/refresh', [PutAwayController::class, 'refresh'])->middleware('can:receiving_put_away.update');
+    });
+
+    Route::prefix('admin/ltl-shipments')->group(function () {
+        Route::get('/meta', [LtlShipmentController::class, 'meta'])->middleware('can:receiving_ltl.view');
+        Route::get('/', [LtlShipmentController::class, 'index'])->middleware('can:receiving_ltl.view');
+        Route::post('/', [LtlShipmentController::class, 'store'])->middleware('can:receiving_ltl.create');
+        Route::get('/{ltlShipment}', [LtlShipmentController::class, 'show'])->middleware('can:receiving_ltl.view');
+        Route::patch('/{ltlShipment}', [LtlShipmentController::class, 'update'])->middleware('can:receiving_ltl.update');
+        Route::delete('/{ltlShipment}', [LtlShipmentController::class, 'destroy'])->middleware('can:receiving_ltl.delete');
+        Route::post('/{ltlShipment}/request-quote', [LtlShipmentController::class, 'requestQuote'])->middleware('can:receiving_ltl.update');
+        Route::patch('/{ltlShipment}/status', [LtlShipmentController::class, 'updateStatus'])->middleware('can:receiving_ltl.update');
+        Route::post('/{ltlShipment}/pallets', [LtlShipmentController::class, 'storePallet'])->middleware('can:receiving_ltl.update');
+        Route::patch('/{ltlShipment}/pallets/{pallet}', [LtlShipmentController::class, 'updatePallet'])->middleware('can:receiving_ltl.update');
+        Route::delete('/{ltlShipment}/pallets/{pallet}', [LtlShipmentController::class, 'destroyPallet'])->middleware('can:receiving_ltl.update');
+    });
+
+    Route::prefix('ltl-shipments')->group(function () {
+        Route::get('/meta', [LtlShipmentController::class, 'meta'])->middleware('can:inventory.view');
+        Route::get('/', [LtlShipmentController::class, 'index'])->middleware('can:inventory.view');
+        Route::post('/', [LtlShipmentController::class, 'store'])->middleware('can:inventory.view');
+        Route::get('/{ltlShipment}', [LtlShipmentController::class, 'show'])->middleware('can:inventory.view');
+        Route::patch('/{ltlShipment}', [LtlShipmentController::class, 'update'])->middleware('can:inventory.view');
+        Route::delete('/{ltlShipment}', [LtlShipmentController::class, 'destroy'])->middleware('can:inventory.view');
+        Route::post('/{ltlShipment}/request-quote', [LtlShipmentController::class, 'requestQuote'])->middleware('can:inventory.view');
+        Route::post('/{ltlShipment}/pallets', [LtlShipmentController::class, 'storePallet'])->middleware('can:inventory.view');
+        Route::patch('/{ltlShipment}/pallets/{pallet}', [LtlShipmentController::class, 'updatePallet'])->middleware('can:inventory.view');
+        Route::delete('/{ltlShipment}/pallets/{pallet}', [LtlShipmentController::class, 'destroyPallet'])->middleware('can:inventory.view');
     });
 
     Route::prefix('asns')->group(function () {

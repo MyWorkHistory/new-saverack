@@ -34,9 +34,7 @@ return new class extends Migration
 
         Schema::create('billing_week_earning_unmatched_items', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('billing_week_earning_id')
-                ->constrained('billing_week_earnings')
-                ->cascadeOnDelete();
+            $table->unsignedBigInteger('billing_week_earning_id');
             $table->foreignId('client_account_id')->constrained('client_accounts')->cascadeOnDelete();
             $table->foreignId('invoice_id')->nullable()->constrained('invoices')->nullOnDelete();
             $table->unsignedBigInteger('invoice_item_id')->nullable();
@@ -47,6 +45,10 @@ return new class extends Migration
             $table->string('reason', 32);
             $table->timestamps();
 
+            $table->foreign('billing_week_earning_id', 'bwe_unmatched_earning_fk')
+                ->references('id')
+                ->on('billing_week_earnings')
+                ->cascadeOnDelete();
             $table->index(['billing_week_earning_id', 'reason'], 'bwe_unmatched_earning_reason_idx');
             $table->index('client_account_id');
         });

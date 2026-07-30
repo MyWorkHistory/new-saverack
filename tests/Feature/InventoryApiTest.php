@@ -215,6 +215,7 @@ class InventoryApiTest extends TestCase
         $detail = [
             'id' => 'gid://product/1',
             'shiphero_legacy_id' => 520926306,
+            'shiphero_product_info_legacy_id' => 12345,
             'sku' => 'SKU-LEGACY',
             'name' => 'Legacy Widget',
             'barcode' => '999',

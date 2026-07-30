@@ -221,6 +221,8 @@ query ShipHeroInventoryRows($customer_account_id: String, $first: Int!, $after: 
             position
           }
           warehouse_products {
+            id
+            legacy_id
             warehouse_id
             on_hand
             allocated
@@ -2760,6 +2762,8 @@ query ShipHeroProductBySkuBasic($sku: String!) {
         length
       }
       warehouse_products {
+        id
+        legacy_id
         warehouse_id
         warehouse_identifier
         on_hand
@@ -2805,6 +2809,8 @@ query ShipHeroProductBySkuBasic($sku: String!, $customer_account_id: String) {
         length
       }
       warehouse_products {
+        id
+        legacy_id
         warehouse_id
         warehouse_identifier
         on_hand
@@ -2858,6 +2864,8 @@ query ShipHeroProductByBarcodeBasic($barcode: String!) {
         length
       }
       warehouse_products {
+        id
+        legacy_id
         warehouse_id
         warehouse_identifier
         on_hand
@@ -2903,6 +2911,8 @@ query ShipHeroProductByBarcodeBasic($barcode: String!, $customer_account_id: Str
         length
       }
       warehouse_products {
+        id
+        legacy_id
         warehouse_id
         warehouse_identifier
         on_hand
@@ -4687,6 +4697,8 @@ query ShipHeroProductBySku($sku: String!) {
         name
       }
       warehouse_products {
+        id
+        legacy_id
         warehouse_id
         warehouse_identifier
         on_hand
@@ -4762,6 +4774,8 @@ query ShipHeroProductBySku($sku: String!, $customer_account_id: String) {
         name
       }
       warehouse_products {
+        id
+        legacy_id
         warehouse_id
         warehouse_identifier
         on_hand
@@ -4846,6 +4860,8 @@ query ShipHeroProductByBarcode($barcode: String!) {
         name
       }
       warehouse_products {
+        id
+        legacy_id
         warehouse_id
         warehouse_identifier
         on_hand
@@ -4921,6 +4937,8 @@ query ShipHeroProductByBarcode($barcode: String!, $customer_account_id: String) 
         name
       }
       warehouse_products {
+        id
+        legacy_id
         warehouse_id
         warehouse_identifier
         on_hand
@@ -5001,6 +5019,8 @@ query ShipHeroProductById($id: String!, $customer_account_id: String) {
       dropship
       created_at
       warehouse_products {
+        id
+        legacy_id
         warehouse_id
         warehouse_identifier
         on_hand
@@ -5167,13 +5187,17 @@ GQL;
         }
 
         $legacyRaw = $data['legacy_id'] ?? null;
-        $shipheroLegacyId = is_int($legacyRaw)
+        $productInfoLegacyId = is_int($legacyRaw)
             ? $legacyRaw
             : (is_numeric($legacyRaw) ? (int) $legacyRaw : null);
+        // Dashboard URLs need warehouse_products.legacy_id (Product:N). product.legacy_id is
+        // ProductInfo and often opens "invalid product" in ShipHero.
+        $shipheroLegacyId = $this->resolveShipHeroDashboardProductLegacyId($wps, $warehouseFilter);
 
         return [
             'id' => isset($data['id']) && is_string($data['id']) ? $data['id'] : null,
             'shiphero_legacy_id' => $shipheroLegacyId,
+            'shiphero_product_info_legacy_id' => $productInfoLegacyId,
             'sku' => isset($data['sku']) && is_string($data['sku']) ? $data['sku'] : '',
             'name' => isset($data['name']) && is_string($data['name']) ? $data['name'] : null,
             'barcode' => isset($data['barcode']) && is_string($data['barcode']) ? $data['barcode'] : null,
@@ -5200,6 +5224,83 @@ GQL;
             'parent_kits' => $this->normalizeParentKits($data['parent_kits'] ?? null),
             'warehouses' => $warehousesOut,
         ];
+    }
+
+    /**
+     * ShipHero dashboard product URLs use warehouse_products.legacy_id (GraphQL Product:N),
+     * not product.legacy_id (ProductInfo:N).
+     *
+     * @param  list<mixed>  $warehouseProducts
+     */
+    private function resolveShipHeroDashboardProductLegacyId(array $warehouseProducts, ?string $warehouseFilter): ?int
+    {
+        $candidates = [];
+        foreach ($warehouseProducts as $wp) {
+            if (! is_array($wp)) {
+                continue;
+            }
+            $wid = isset($wp['warehouse_id']) && is_string($wp['warehouse_id']) ? $wp['warehouse_id'] : '';
+            if (is_string($warehouseFilter) && $warehouseFilter !== '' && $wid !== '' && $wid !== $warehouseFilter) {
+                continue;
+            }
+            $legacy = $this->warehouseProductDashboardLegacyId($wp);
+            if ($legacy === null || $legacy <= 0) {
+                continue;
+            }
+            $onHand = $this->toIntNumber($wp['on_hand'] ?? 0);
+            $candidates[] = [
+                'legacy_id' => $legacy,
+                'on_hand' => max(0, $onHand),
+                'matches_filter' => is_string($warehouseFilter) && $warehouseFilter !== '' && $wid === $warehouseFilter,
+            ];
+        }
+
+        if ($candidates === []) {
+            return null;
+        }
+
+        usort($candidates, static function (array $a, array $b): int {
+            if ($a['matches_filter'] !== $b['matches_filter']) {
+                return $a['matches_filter'] ? -1 : 1;
+            }
+            if ($a['on_hand'] !== $b['on_hand']) {
+                return $b['on_hand'] <=> $a['on_hand'];
+            }
+
+            return $a['legacy_id'] <=> $b['legacy_id'];
+        });
+
+        return (int) $candidates[0]['legacy_id'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $warehouseProduct
+     */
+    private function warehouseProductDashboardLegacyId(array $warehouseProduct): ?int
+    {
+        $legacyRaw = $warehouseProduct['legacy_id'] ?? null;
+        if (is_int($legacyRaw) && $legacyRaw > 0) {
+            return $legacyRaw;
+        }
+        if (is_numeric($legacyRaw) && (int) $legacyRaw > 0) {
+            return (int) $legacyRaw;
+        }
+
+        $graphqlId = isset($warehouseProduct['id']) && is_string($warehouseProduct['id'])
+            ? trim($warehouseProduct['id'])
+            : '';
+        if ($graphqlId === '') {
+            return null;
+        }
+        if (preg_match('/^Product:(\d+)$/i', $graphqlId, $m) === 1) {
+            return (int) $m[1];
+        }
+        $decoded = base64_decode($graphqlId, true);
+        if (is_string($decoded) && preg_match('/^Product:(\d+)$/i', trim($decoded), $m) === 1) {
+            return (int) $m[1];
+        }
+
+        return null;
     }
 
     /**

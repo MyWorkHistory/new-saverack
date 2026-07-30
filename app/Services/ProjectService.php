@@ -85,7 +85,7 @@ class ProjectService
     }
 
     /**
-     * @return array{pending: int, in_progress: int, completed: int}
+     * @return array{draft: int, pending: int, in_progress: int, review: int, completed: int}
      */
     public function summary(): array
     {
@@ -97,8 +97,10 @@ class ProjectService
             ->all();
 
         return [
+            'draft' => (int) ($counts[Project::STATUS_DRAFT] ?? 0),
             'pending' => (int) ($counts[Project::STATUS_PENDING] ?? 0),
             'in_progress' => (int) ($counts[Project::STATUS_IN_PROGRESS] ?? 0),
+            'review' => (int) ($counts[Project::STATUS_REVIEW] ?? 0),
             'completed' => (int) ($counts[Project::STATUS_COMPLETED] ?? 0),
         ];
     }
@@ -125,7 +127,7 @@ class ProjectService
                 'description' => isset($data['description'])
                     ? (trim((string) $data['description']) ?: null)
                     : null,
-                'status' => Project::STATUS_PENDING,
+                'status' => Project::STATUS_DRAFT,
                 'custom_bill_id' => null,
                 'created_by_user_id' => $actor ? $actor->id : null,
                 'completed_at' => null,
@@ -601,12 +603,18 @@ class ProjectService
     private function statusLabel(string $status): string
     {
         switch ($status) {
+            case Project::STATUS_DRAFT:
+                return 'Draft';
+            case Project::STATUS_PENDING:
+                return 'Pending';
             case Project::STATUS_IN_PROGRESS:
                 return 'In-Progress';
+            case Project::STATUS_REVIEW:
+                return 'Review';
             case Project::STATUS_COMPLETED:
                 return 'Completed';
             default:
-                return 'Pending';
+                return str_replace('_', ' ', ucwords($status, '_'));
         }
     }
 

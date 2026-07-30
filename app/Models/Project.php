@@ -8,15 +8,22 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Project extends Model
 {
+    public const STATUS_DRAFT = 'draft';
+
     public const STATUS_PENDING = 'pending';
 
     public const STATUS_IN_PROGRESS = 'in_progress';
 
+    public const STATUS_REVIEW = 'review';
+
     public const STATUS_COMPLETED = 'completed';
 
+    /** Display / filter order: Draft → Pending → In-Progress → Review → Completed. */
     public const STATUSES = [
+        self::STATUS_DRAFT,
         self::STATUS_PENDING,
         self::STATUS_IN_PROGRESS,
+        self::STATUS_REVIEW,
         self::STATUS_COMPLETED,
     ];
 

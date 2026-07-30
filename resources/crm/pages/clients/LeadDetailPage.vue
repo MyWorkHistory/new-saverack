@@ -698,7 +698,7 @@ onMounted(async () => {
             <h2 class="staff-user-profile__name">
               {{ lead.company_name }}
             </h2>
-            <div class="text-center mb-3 d-flex flex-column align-items-center gap-2">
+            <div class="text-center mb-3">
               <button
                 v-if="canUpdate"
                 type="button"
@@ -716,14 +716,6 @@ onMounted(async () => {
               >
                 {{ leadStatusLabel(lead.status) }}
               </span>
-              <button
-                v-if="canUpdate"
-                type="button"
-                class="btn btn-sm btn-outline-secondary"
-                @click="openEditModal"
-              >
-                Edit
-              </button>
             </div>
 
             <AccountDetailSectionHead
@@ -732,6 +724,8 @@ onMounted(async () => {
               icon-style="plain"
               title-class="staff-user-profile__details-title mb-0"
               head-class="mb-2"
+              :show-edit="canUpdate"
+              @edit="openEditModal"
             />
 
             <dl class="staff-user-profile__dl mb-4">

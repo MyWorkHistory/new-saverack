@@ -18,49 +18,57 @@ final class ProjectCreatedSlackServiceTest extends TestCase
         config([
             'app.url' => 'https://app.saverack.com',
             'crm.frontend_url' => 'https://app.saverack.com',
+            'projects.slack_channel' => '#projects',
         ]);
     }
 
     public function test_build_message_payload_matches_expected_copy(): void
     {
-        $project = new Project(['pid' => '1001']);
+        $project = new Project(['pid' => 'P-1015']);
         $project->id = 42;
 
         $payload = app(ProjectCreatedSlackService::class)->buildMessagePayload($project);
 
-        $this->assertSame('Project Created', $payload['username']);
+        $this->assertSame('Project Created For Quote', $payload['username']);
         $this->assertSame(
-            "Project #1001 has been created\n<https://app.saverack.com/admin/clients/projects/42|View Project>",
+            "Project #P-1015 had been created and needs to be quoted.\n<https://app.saverack.com/admin/clients/projects/42|View Project>",
             $payload['text']
         );
     }
 
-    public function test_notify_posts_to_account_in_house_slack(): void
+    public function test_notify_posts_to_account_and_projects_channels(): void
     {
         $slack = $this->createMock(SlackDeliveryService::class);
         $slack->method('hasBotToken')->willReturn(true);
         $slack->method('channelFromInHouseSlack')
             ->with('demo-co')
             ->willReturn('#demo-co');
-        $slack->expects($this->once())
+        $slack->expects($this->exactly(2))
             ->method('post')
-            ->with(
-                '#demo-co',
-                $this->callback(function ($text) {
-                    return str_contains((string) $text, 'Project #1001 has been created')
-                        && str_contains((string) $text, 'View Project')
-                        && str_contains((string) $text, '/admin/clients/projects/42');
-                }),
-                'Project Created',
-                $this->anything()
+            ->withConsecutive(
+                [
+                    '#demo-co',
+                    $this->callback(function ($text) {
+                        return str_contains((string) $text, 'needs to be quoted')
+                            && str_contains((string) $text, 'View Project');
+                    }),
+                    'Project Created For Quote',
+                    $this->anything(),
+                ],
+                [
+                    '#projects',
+                    $this->anything(),
+                    'Project Created For Quote',
+                    $this->anything(),
+                ]
             )
             ->willReturn(['method' => 'bot', 'channel' => '#demo-co', 'ts' => '1.0']);
 
         $this->app->instance(SlackDeliveryService::class, $slack);
 
-        Log::shouldReceive('info')->once()->andReturnNull();
+        Log::shouldReceive('info')->twice()->andReturnNull();
 
-        $project = new Project(['pid' => '1001']);
+        $project = new Project(['pid' => 'P-1015']);
         $project->id = 42;
         $project->setRelation('clientAccount', new ClientAccount([
             'company_name' => 'Demo Co',
@@ -70,17 +78,26 @@ final class ProjectCreatedSlackServiceTest extends TestCase
         app(ProjectCreatedSlackService::class)->notify($project);
     }
 
-    public function test_notify_skips_when_no_in_house_slack(): void
+    public function test_notify_still_posts_to_projects_when_no_in_house_slack(): void
     {
         $slack = $this->createMock(SlackDeliveryService::class);
+        $slack->method('hasBotToken')->willReturn(true);
         $slack->method('channelFromInHouseSlack')->willReturn(null);
-        $slack->expects($this->never())->method('post');
+        $slack->expects($this->once())
+            ->method('post')
+            ->with(
+                '#projects',
+                $this->anything(),
+                'Project Created For Quote',
+                $this->anything()
+            )
+            ->willReturn(['method' => 'bot', 'channel' => '#projects', 'ts' => '1.0']);
 
         $this->app->instance(SlackDeliveryService::class, $slack);
 
         Log::shouldReceive('info')->once()->andReturnNull();
 
-        $project = new Project(['pid' => '1001']);
+        $project = new Project(['pid' => 'P-1015']);
         $project->id = 42;
         $project->setRelation('clientAccount', new ClientAccount([
             'company_name' => 'Demo Co',
@@ -99,9 +116,9 @@ final class ProjectCreatedSlackServiceTest extends TestCase
 
         $this->app->instance(SlackDeliveryService::class, $slack);
 
-        Log::shouldReceive('warning')->once()->andReturnNull();
+        Log::shouldReceive('warning')->atLeast()->once()->andReturnNull();
 
-        $project = new Project(['pid' => '1001']);
+        $project = new Project(['pid' => 'P-1015']);
         $project->id = 42;
         $project->setRelation('clientAccount', new ClientAccount([
             'company_name' => 'Demo Co',

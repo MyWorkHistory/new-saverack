@@ -9,8 +9,10 @@ defineProps({
   values: {
     type: Object,
     default: () => ({
+      draft: 0,
       pending: 0,
       in_progress: 0,
+      review: 0,
       completed: 0,
     }),
   },
@@ -37,7 +39,7 @@ function onSelect(status) {
     <div
       v-for="card in PROJECT_SUMMARY_CARDS"
       :key="card.key"
-      class="col-12 col-sm-6 col-xl-4"
+      class="col-12 col-sm-6 col-lg-4 col-xl"
     >
       <button
         type="button"

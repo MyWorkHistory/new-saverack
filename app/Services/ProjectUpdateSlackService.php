@@ -20,12 +20,16 @@ class ProjectUpdateSlackService
     }
 
     /**
-     * Post to the account in-house Slack channel when a project becomes
-     * in-progress or completed. Failures are logged and do not block the update.
+     * Post to the account in-house Slack channel and the shared #projects channel
+     * when project status changes (except Draft). Failures are logged and do not block.
      */
     public function notifyStatusChange(Project $project, string $status): void
     {
-        if (! in_array($status, [Project::STATUS_IN_PROGRESS, Project::STATUS_COMPLETED], true)) {
+        if ($status === Project::STATUS_DRAFT) {
+            return;
+        }
+
+        if (! in_array($status, Project::STATUSES, true)) {
             return;
         }
 
@@ -42,13 +46,17 @@ class ProjectUpdateSlackService
         }
 
         $payload = $this->buildMessagePayload($project, $status);
-        $channel = $this->slack->channelFromInHouseSlack($account->in_house_slack);
-        if ($channel === null || $channel === '') {
+        if ($payload === null) {
+            return;
+        }
+
+        $channels = $this->resolveChannels($account);
+        if ($channels === []) {
             Log::info('project.status_slack_skipped', [
                 'project_id' => $project->id,
                 'client_account_id' => $account->id,
                 'status' => $status,
-                'reason' => 'no_in_house_slack',
+                'reason' => 'no_slack_channels',
             ]);
 
             return;
@@ -58,43 +66,46 @@ class ProjectUpdateSlackService
         $username = (string) ($payload['username'] ?? self::USERNAME);
         $options = $this->deliveryOptions($username);
 
-        try {
-            $result = $this->slack->post(
-                $channel,
-                $text,
-                (string) ($options['username'] ?? $username),
-                $options['slack'] ?? []
-            );
-            Log::info('project.status_slack_sent', [
-                'project_id' => $project->id,
-                'client_account_id' => $account->id,
-                'status' => $status,
-                'slack_channel' => $result['channel'],
-                'delivery' => $result['method'],
-            ]);
-        } catch (\Throwable $e) {
-            Log::warning('project.status_slack_failed', [
-                'project_id' => $project->id,
-                'client_account_id' => $account->id,
-                'status' => $status,
-                'slack_channel' => $channel,
-                'message' => $e->getMessage(),
-            ]);
+        foreach ($channels as $channel) {
+            try {
+                $result = $this->slack->post(
+                    $channel,
+                    $text,
+                    (string) ($options['username'] ?? $username),
+                    $options['slack'] ?? []
+                );
+                Log::info('project.status_slack_sent', [
+                    'project_id' => $project->id,
+                    'client_account_id' => $account->id,
+                    'status' => $status,
+                    'slack_channel' => $result['channel'],
+                    'delivery' => $result['method'],
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('project.status_slack_failed', [
+                    'project_id' => $project->id,
+                    'client_account_id' => $account->id,
+                    'status' => $status,
+                    'slack_channel' => $channel,
+                    'message' => $e->getMessage(),
+                ]);
+            }
         }
     }
 
     /**
-     * @return array{text: string, username: string}
+     * @return array{text: string, username: string}|null
      */
-    public function buildMessagePayload(Project $project, string $status): array
+    public function buildMessagePayload(Project $project, string $status): ?array
     {
-        $pid = trim((string) ($project->pid ?? ''));
-        $label = $pid !== '' ? 'Project #'.$pid : 'Project #'.$project->id;
-        $url = CrmUrls::projectStaffUrl((int) $project->id);
-        $statusPhrase = $this->statusPhrase($status);
+        $body = $this->statusBody($project, $status);
+        if ($body === null) {
+            return null;
+        }
 
+        $url = CrmUrls::projectStaffUrl((int) $project->id);
         $lines = [
-            $label.' is '.$statusPhrase,
+            $body,
             '<'.$url.'|View Project>',
         ];
 
@@ -104,17 +115,46 @@ class ProjectUpdateSlackService
         ];
     }
 
-    private function statusPhrase(string $status): string
+    private function statusBody(Project $project, string $status): ?string
     {
-        if ($status === Project::STATUS_IN_PROGRESS) {
-            return 'in-progress';
+        $pid = trim((string) ($project->pid ?? ''));
+        $label = $pid !== '' ? 'Project #'.$pid : 'Project #'.$project->id;
+
+        switch ($status) {
+            case Project::STATUS_PENDING:
+                return $label.' has been quoted and is ready to start.';
+            case Project::STATUS_IN_PROGRESS:
+                return $label.' has currently in-progress';
+            case Project::STATUS_REVIEW:
+                return $label.' is ready for review';
+            case Project::STATUS_COMPLETED:
+                return $label.' is completed';
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function resolveChannels(ClientAccount $account): array
+    {
+        $channels = [];
+
+        $accountChannel = $this->slack->channelFromInHouseSlack($account->in_house_slack);
+        if ($accountChannel !== null && $accountChannel !== '') {
+            $channels[] = $accountChannel;
         }
 
-        if ($status === Project::STATUS_COMPLETED) {
-            return 'completed';
+        $projectsChannel = trim((string) config('projects.slack_channel', '#projects'));
+        if ($projectsChannel !== '') {
+            if ($projectsChannel[0] !== '#' && ! preg_match('/^C[A-Z0-9]+$/i', $projectsChannel)) {
+                $projectsChannel = '#'.$projectsChannel;
+            }
+            $channels[] = $projectsChannel;
         }
 
-        return str_replace('_', '-', $status);
+        return array_values(array_unique($channels));
     }
 
     /**

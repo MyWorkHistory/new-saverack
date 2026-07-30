@@ -16,7 +16,9 @@ function cardFromStatus(key, status, sub) {
 }
 
 export const PROJECT_SUMMARY_CARDS = [
+  cardFromStatus("draft", "draft", "Draft Projects"),
   cardFromStatus("pending", "pending", "Pending Projects"),
   cardFromStatus("in_progress", "in_progress", "In-Progress Projects"),
+  cardFromStatus("review", "review", "Review Projects"),
   cardFromStatus("completed", "completed", "Completed Projects"),
 ];

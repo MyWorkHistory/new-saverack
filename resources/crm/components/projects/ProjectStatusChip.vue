@@ -7,7 +7,7 @@ import {
 } from "../../utils/projectStatusDisplay.js";
 
 const props = defineProps({
-  status: { type: String, default: "pending" },
+  status: { type: String, default: "draft" },
   disabled: { type: Boolean, default: false },
 });
 

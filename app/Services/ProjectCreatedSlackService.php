@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Log;
 
 class ProjectCreatedSlackService
 {
-    private const USERNAME = 'Project Created';
+    private const USERNAME = 'Project Created For Quote';
 
     /** @var SlackDeliveryService */
     protected $slack;
@@ -20,8 +20,8 @@ class ProjectCreatedSlackService
     }
 
     /**
-     * Post to the account in-house Slack channel when a project is created.
-     * Failures are logged and do not block project creation.
+     * Post to the account in-house Slack channel and the shared #projects channel
+     * when a project is created. Failures are logged and do not block creation.
      */
     public function notify(Project $project): void
     {
@@ -37,12 +37,12 @@ class ProjectCreatedSlackService
         }
 
         $payload = $this->buildMessagePayload($project);
-        $channel = $this->slack->channelFromInHouseSlack($account->in_house_slack);
-        if ($channel === null || $channel === '') {
+        $channels = $this->resolveChannels($account);
+        if ($channels === []) {
             Log::info('project.created_slack_skipped', [
                 'project_id' => $project->id,
                 'client_account_id' => $account->id,
-                'reason' => 'no_in_house_slack',
+                'reason' => 'no_slack_channels',
             ]);
 
             return;
@@ -52,26 +52,28 @@ class ProjectCreatedSlackService
         $username = (string) ($payload['username'] ?? self::USERNAME);
         $options = $this->deliveryOptions($username);
 
-        try {
-            $result = $this->slack->post(
-                $channel,
-                $text,
-                (string) ($options['username'] ?? $username),
-                $options['slack'] ?? []
-            );
-            Log::info('project.created_slack_sent', [
-                'project_id' => $project->id,
-                'client_account_id' => $account->id,
-                'slack_channel' => $result['channel'],
-                'delivery' => $result['method'],
-            ]);
-        } catch (\Throwable $e) {
-            Log::warning('project.created_slack_failed', [
-                'project_id' => $project->id,
-                'client_account_id' => $account->id,
-                'slack_channel' => $channel,
-                'message' => $e->getMessage(),
-            ]);
+        foreach ($channels as $channel) {
+            try {
+                $result = $this->slack->post(
+                    $channel,
+                    $text,
+                    (string) ($options['username'] ?? $username),
+                    $options['slack'] ?? []
+                );
+                Log::info('project.created_slack_sent', [
+                    'project_id' => $project->id,
+                    'client_account_id' => $account->id,
+                    'slack_channel' => $result['channel'],
+                    'delivery' => $result['method'],
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('project.created_slack_failed', [
+                    'project_id' => $project->id,
+                    'client_account_id' => $account->id,
+                    'slack_channel' => $channel,
+                    'message' => $e->getMessage(),
+                ]);
+            }
         }
     }
 
@@ -85,7 +87,7 @@ class ProjectCreatedSlackService
         $url = CrmUrls::projectStaffUrl((int) $project->id);
 
         $lines = [
-            $label.' has been created',
+            $label.' had been created and needs to be quoted.',
             '<'.$url.'|View Project>',
         ];
 
@@ -93,6 +95,29 @@ class ProjectCreatedSlackService
             'text' => implode("\n", $lines),
             'username' => self::USERNAME,
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function resolveChannels(ClientAccount $account): array
+    {
+        $channels = [];
+
+        $accountChannel = $this->slack->channelFromInHouseSlack($account->in_house_slack);
+        if ($accountChannel !== null && $accountChannel !== '') {
+            $channels[] = $accountChannel;
+        }
+
+        $projectsChannel = trim((string) config('projects.slack_channel', '#projects'));
+        if ($projectsChannel !== '') {
+            if ($projectsChannel[0] !== '#' && ! preg_match('/^C[A-Z0-9]+$/i', $projectsChannel)) {
+                $projectsChannel = '#'.$projectsChannel;
+            }
+            $channels[] = $projectsChannel;
+        }
+
+        return array_values(array_unique($channels));
     }
 
     /**

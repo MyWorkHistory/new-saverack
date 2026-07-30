@@ -33,7 +33,7 @@ setCrmPageMeta({ title: "Save Rack | Projects", description: "Client projects." 
 
 const loading = ref(true);
 const summaryLoading = ref(true);
-const summary = ref({ pending: 0, in_progress: 0, completed: 0 });
+const summary = ref({ draft: 0, pending: 0, in_progress: 0, review: 0, completed: 0 });
 const rows = ref([]);
 const meta = ref({ current_page: 1, last_page: 1, per_page: 25, total: 0 });
 
@@ -87,8 +87,10 @@ async function loadSummary() {
   try {
     const { data } = await api.get("/projects/summary");
     summary.value = {
+      draft: Number(data?.draft || 0),
       pending: Number(data?.pending || 0),
       in_progress: Number(data?.in_progress || 0),
+      review: Number(data?.review || 0),
       completed: Number(data?.completed || 0),
     };
   } catch (e) {
@@ -241,7 +243,7 @@ watch([statusFilter, accountFilter, searchDebounced], () => {
 onMounted(async () => {
   document.addEventListener("click", onDocClick);
   const qStatus = String(route.query.status || "").trim();
-  if (["pending", "in_progress", "completed", "all"].includes(qStatus)) {
+  if (["draft", "pending", "in_progress", "review", "completed", "all"].includes(qStatus)) {
     statusFilter.value = qStatus;
   }
   await Promise.all([loadAccounts(), loadSummary(), loadList(1)]);
@@ -354,8 +356,10 @@ onUnmounted(() => {
                   class="form-select staff-datatable-filters__select"
                 >
                   <option value="all">All</option>
+                  <option value="draft">Draft</option>
                   <option value="pending">Pending</option>
                   <option value="in_progress">In-Progress</option>
+                  <option value="review">Review</option>
                   <option value="completed">Completed</option>
                 </select>
               </div>

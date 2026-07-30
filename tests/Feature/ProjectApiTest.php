@@ -62,7 +62,7 @@ class ProjectApiTest extends TestCase
         $res->assertCreated();
         $res->assertJsonPath('pid', 'P-1001');
         $res->assertJsonPath('name', 'Website Refresh');
-        $res->assertJsonPath('status', Project::STATUS_PENDING);
+        $res->assertJsonPath('status', Project::STATUS_DRAFT);
         $this->assertNotNull($res->json('custom_bill_id'));
         $this->assertNull($res->json('completed_at'));
 
@@ -110,7 +110,7 @@ class ProjectApiTest extends TestCase
         ]);
         $a = $this->postJson('/api/projects', [
             'client_account_id' => $account->id,
-            'name' => 'Pending One',
+            'name' => 'Draft One',
         ])->json('id');
         $b = $this->postJson('/api/projects', [
             'client_account_id' => $account->id,
@@ -121,12 +121,12 @@ class ProjectApiTest extends TestCase
         ])->assertOk();
 
         $summary = $this->getJson('/api/projects/summary')->assertOk()->json();
-        $this->assertSame(1, (int) $summary['pending']);
+        $this->assertSame(1, (int) $summary['draft']);
         $this->assertSame(1, (int) $summary['completed']);
 
-        $pending = $this->getJson('/api/projects?status=pending')->assertOk()->json('data');
-        $this->assertCount(1, $pending);
-        $this->assertSame((int) $a, (int) $pending[0]['id']);
+        $draft = $this->getJson('/api/projects?status=draft')->assertOk()->json('data');
+        $this->assertCount(1, $draft);
+        $this->assertSame((int) $a, (int) $draft[0]['id']);
 
         $all = $this->getJson('/api/projects')->assertOk()->json('data');
         $this->assertCount(2, $all);

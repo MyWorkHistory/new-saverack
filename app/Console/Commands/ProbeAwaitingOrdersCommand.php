@@ -41,6 +41,30 @@ class ProbeAwaitingOrdersCommand extends Command
             ->count();
         $this->line('Local awaiting index rows: '.$indexCount);
 
+        try {
+            $listed = app(\App\Services\ShipHeroOrderQueueIndexService::class)->listFromIndex([
+                'client_account_id' => $accountId,
+                'tab' => 'awaiting',
+                'first' => 5,
+            ]);
+            $this->line('listFromIndex (no date filter): queue_total='.(int) ($listed['meta']['queue_total'] ?? 0)
+                .', rows_returned='.count($listed['rows'] ?? []));
+            $listedMay = app(\App\Services\ShipHeroOrderQueueIndexService::class)->listFromIndex([
+                'client_account_id' => $accountId,
+                'tab' => 'awaiting',
+                'order_date_from' => PortalQueueCountsService::RTS_DASHBOARD_ORDER_FROM,
+                'order_date_to' => now()->toDateString(),
+                'first' => 5,
+            ]);
+            $this->line('listFromIndex (since May 1): queue_total='.(int) ($listedMay['meta']['queue_total'] ?? 0)
+                .', rows_returned='.count($listedMay['rows'] ?? []));
+            if ((int) ($listedMay['meta']['queue_total'] ?? 0) === 0 && $indexCount > 0) {
+                $this->warn('Since May 1 returns 0 but index has '.$indexCount.' rows — CRM shows 0 if the UI date filter is Still “Since May 1”. Use Any Order Date.');
+            }
+        } catch (Throwable $e) {
+            $this->warn('listFromIndex probe failed: '.$e->getMessage());
+        }
+
         if ($customerId === '') {
             $this->error('No shiphero_customer_account_id — cannot probe ShipHero.');
 

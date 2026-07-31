@@ -330,7 +330,7 @@ function breakdownRoute(rowKey) {
   if (rowKey === "ready_to_ship") {
     return {
       name: "orders-awaiting",
-      query: { client_account_id: accountId, date_preset: "since_may_1" },
+      query: { client_account_id: accountId, date_preset: "all" },
     };
   }
   if (rowKey === "shipped") {

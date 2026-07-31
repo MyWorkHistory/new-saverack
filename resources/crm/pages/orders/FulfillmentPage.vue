@@ -61,7 +61,7 @@ function accountRoute(section, accountId) {
   if (section.key === "shipped") {
     query.date_preset = "today";
   } else if (section.key === "ready_to_ship") {
-    query.date_preset = "since_may_1";
+    query.date_preset = "all";
   }
   return {
     name: section.routeName,

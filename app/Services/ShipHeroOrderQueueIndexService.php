@@ -1268,6 +1268,8 @@ class ShipHeroOrderQueueIndexService
         switch ($sectionKey) {
             case OrderDashboardSection::KEY_READY_TO_SHIP:
                 return ['queue_kind' => ShipHeroOrderQueueIndex::KIND_AWAITING, 'hold_reason' => null];
+            case OrderDashboardSection::KEY_ON_HOLD:
+                return ['queue_kind' => ShipHeroOrderQueueIndex::KIND_ON_HOLD, 'hold_reason' => null];
             case OrderDashboardSection::KEY_SHIPPED:
                 return ['queue_kind' => ShipHeroOrderQueueIndex::KIND_SHIPPED, 'hold_reason' => null];
             case OrderDashboardSection::KEY_HOLD_BACKORDER:

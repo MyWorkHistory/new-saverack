@@ -1526,9 +1526,9 @@ onUnmounted(() => {
                         <strong>Shipped</strong> defaults to <strong>today</strong> by <strong>ship date</strong> (when the label was created). Widen the date range if you need older fulfilled orders.
                       </template>
                       <template v-else-if="tabKey === 'awaiting'">
-                        This tab lists <strong>orders awaiting shipment</strong>. The default window matches the
-                        dashboard (<strong>May 1 through today</strong> by order date). Choose a different preset or
-                        custom range if you need another window.
+                        This tab lists <strong>orders awaiting shipment</strong> (Ready to Ship), matching
+                        ShipHero. Default date filter is <strong>Any Order Date</strong>. Use
+                        <strong>Since May 1</strong> only if you want the old dashboard window.
                       </template>
                       <template v-else-if="tabKey === 'on_hold'">
                         This tab lists <strong>unfulfilled on-hold orders</strong>. The default window matches the

@@ -88,9 +88,13 @@ function setQueueTabFromCard(cardKey) {
 
 function viewAllOrdersHref() {
   const routeName = QUEUE_ROUTE_BY_TAB[activeQueueTab.value] || "orders-awaiting";
+  const query = { client_account_id: String(accountIdNum.value) };
+  if (activeQueueTab.value === "awaiting") {
+    query.date_preset = "all";
+  }
   return router.resolve({
     name: routeName,
-    query: { client_account_id: String(accountIdNum.value) },
+    query,
   }).href;
 }
 

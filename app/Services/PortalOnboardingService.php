@@ -373,11 +373,8 @@ class PortalOnboardingService
                     'Approve fulfillment pricing on the Fees tab before verifying this task.'
                 );
             }
-            if ($account->fulfillment_pricing_accepted_at === null) {
-                throw new \InvalidArgumentException(
-                    'Mark fulfillment pricing complete (client accept or Mark Complete) before verifying.'
-                );
-            }
+            // Verification must not complete pricing — accepted_at is set only by client
+            // accept, admin Mark Complete, or Fees Approve.
         }
 
         $verifications = $this->verificationsArray($account);

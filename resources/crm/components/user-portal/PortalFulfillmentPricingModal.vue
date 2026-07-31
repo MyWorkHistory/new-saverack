@@ -43,7 +43,7 @@ const approved = computed(() => !!props.pricing?.approved);
 const accepted = computed(() => props.pricing?.status === "completed" || !!props.pricing?.accepted_at);
 const canMarkComplete = computed(() => props.adminMode && approved.value && !accepted.value);
 const canVerifyForClient = computed(
-  () => props.adminMode && approved.value && accepted.value && !props.taskVerified,
+  () => props.adminMode && approved.value && !props.taskVerified,
 );
 const allFeeItems = computed(() => {
   if (!approved.value) return [];
@@ -177,18 +177,20 @@ async function onMarkComplete() {
     >
       <div class="min-w-0">
         <h2 v-if="!pageMode" class="crm-vx-modal__title mb-0">Fulfillment Pricing</h2>
-        <p v-if="adminMode && taskVerified" class="text-secondary small mb-0 mt-1">
+        <p v-if="adminMode && taskVerified && accepted" class="text-secondary small mb-0 mt-1">
           Fulfillment pricing is completed and verified.
         </p>
+        <p v-else-if="adminMode && taskVerified" class="text-secondary small mb-0 mt-1">
+          Pricing is verified. Mark Complete separately if the client has accepted the schedule.
+        </p>
         <p v-else-if="adminMode && accepted" class="text-secondary small mb-0 mt-1">
-          Pricing is completed. Verify when you have confirmed the schedule.
+          Pricing is completed. Verify separately when you have confirmed the schedule.
         </p>
         <p v-else-if="adminMode && approved" class="text-secondary small mb-0 mt-1">
-          Fees are Approved. Approving on the Fees tab normally completes and verifies this task —
-          use Mark Complete / Verify here if needed.
+          Fees are Approved. Mark Complete and Verify are separate actions.
         </p>
         <p v-else-if="adminMode" class="text-secondary small mb-0 mt-1">
-          Approve fulfillment pricing on the Fees tab to complete and verify this task.
+          Approve fulfillment pricing on the Fees tab first (that verifies this task; complete separately).
         </p>
         <p v-else-if="pageMode && accepted" class="text-secondary small mb-0">
           You have accepted this account's fulfillment pricing schedule.
@@ -197,7 +199,9 @@ async function onMarkComplete() {
           Review your quoted fulfillment rates below. Download a PDF copy or accept the schedule.
         </p>
         <p v-else-if="pageMode" class="text-secondary small mb-0">
-          Quoted pricing has not been set for this account yet.
+          Your pricing is currently being adjusted to match your approved quote. Once the update is
+          complete, it will be available for your review. Please return to this section to complete
+          your onboarding.
         </p>
       </div>
       <button
@@ -230,20 +234,27 @@ async function onMarkComplete() {
         v-if="!approved"
         class="portal-fulfillment-pricing-modal__empty text-center text-secondary py-5 px-3"
       >
-        <p class="mb-2 fw-semibold text-body">Fulfillment pricing is not approved yet</p>
-        <p class="mb-0 mx-auto" style="max-width: 28rem">
-          Review and Approve the account fee schedule on the Fees tab. Approving also marks
-          Fulfillment Pricing completed and verified on Onboarding.
+        <template v-if="adminMode">
+          <p class="mb-2 fw-semibold text-body">Fulfillment Pricing Is Not Approved Yet</p>
+          <p class="mb-0 mx-auto" style="max-width: 28rem">
+            Review and Approve the account fee schedule on the Fees tab. Approving verifies
+            Fulfillment Pricing on Onboarding; completion stays separate (client accept or Mark
+            Complete).
+          </p>
+          <button
+            type="button"
+            class="crm-vx-modal-btn crm-vx-modal-btn--primary mt-4"
+            :disabled="busy || verifying"
+            @click="openFeesTab"
+          >
+            Open Fees Tab
+          </button>
+        </template>
+        <p v-else class="mb-0 mx-auto" style="max-width: 32rem">
+          Your pricing is currently being adjusted to match your approved quote. Once the update is
+          complete, it will be available for your review. Please return to this section to complete
+          your onboarding.
         </p>
-        <button
-          v-if="adminMode"
-          type="button"
-          class="crm-vx-modal-btn crm-vx-modal-btn--primary mt-4"
-          :disabled="busy || verifying"
-          @click="openFeesTab"
-        >
-          Open Fees Tab
-        </button>
       </div>
 
       <template v-else>
@@ -350,37 +361,43 @@ async function onMarkComplete() {
       class="crm-vx-modal__footer flex-wrap gap-2"
       :class="{ 'portal-pricing-page-panel__footer': pageMode }"
     >
-      <button
-        v-if="adminMode && taskVerified"
-        type="button"
-        class="crm-vx-modal-btn crm-vx-modal-btn--secondary me-auto"
-        :disabled="busy || verifying"
-        @click="emit('unverify')"
+      <div
+        v-if="adminMode && (taskVerified || canVerifyForClient || canMarkComplete)"
+        class="d-flex flex-wrap gap-2 me-auto"
       >
-        <CrmLoadingSpinner v-if="verifying" small class="me-1" />
-        Remove Verification
-      </button>
-      <button
-        v-else-if="adminMode && canVerifyForClient"
-        type="button"
-        class="crm-vx-modal-btn crm-vx-modal-btn--secondary me-auto"
-        :disabled="busy || verifying"
-        title="Verify after pricing is marked complete"
-        @click="emit('verify')"
-      >
-        <CrmLoadingSpinner v-if="verifying" small class="me-1" />
-        Verify
-      </button>
-      <button
-        v-else-if="adminMode && canMarkComplete"
-        type="button"
-        class="crm-vx-modal-btn crm-vx-modal-btn--primary me-auto"
-        :disabled="busy || verifying"
-        @click="onMarkComplete"
-      >
-        <CrmLoadingSpinner v-if="busy" small class="me-1" />
-        Mark Complete
-      </button>
+        <button
+          v-if="taskVerified"
+          type="button"
+          class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+          :disabled="busy || verifying"
+          @click="emit('unverify')"
+        >
+          <CrmLoadingSpinner v-if="verifying" small class="me-1" />
+          Remove Verification
+        </button>
+        <button
+          v-else-if="canVerifyForClient"
+          type="button"
+          class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+          :disabled="busy || verifying"
+          title="Verify only — does not mark pricing complete"
+          @click="emit('verify')"
+        >
+          <CrmLoadingSpinner v-if="verifying" small class="me-1" />
+          Verify
+        </button>
+        <button
+          v-if="canMarkComplete"
+          type="button"
+          class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+          :disabled="busy || verifying"
+          title="Mark Complete only — does not verify"
+          @click="onMarkComplete"
+        >
+          <CrmLoadingSpinner v-if="busy" small class="me-1" />
+          Mark Complete
+        </button>
+      </div>
 
       <template v-if="showAgree">
         <label class="portal-fulfillment-pricing-modal__agree form-check d-flex align-items-start gap-2 me-auto mb-0">

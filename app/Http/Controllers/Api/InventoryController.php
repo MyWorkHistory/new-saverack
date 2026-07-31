@@ -807,8 +807,7 @@ class InventoryController extends Controller
                 'sku' => $skuLabel,
                 'barcode' => $barcode,
                 'barcodeSvg' => Code128Svg::dataUri($barcode),
-                'barcodeHtml' => Code128Svg::htmlBars($barcode),
-            ])->setPaper([0, 0, 288, 144]);
+            ])->setPaper([0, 0, 288, 144], 'portrait');
 
             $safeSku = preg_replace('/[^A-Za-z0-9_-]+/', '-', $skuLabel);
             $safeSku = trim((string) $safeSku, '-');

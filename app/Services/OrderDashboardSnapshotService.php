@@ -960,14 +960,10 @@ class OrderDashboardSnapshotService
             throw new RuntimeException('Invalid queue tab: '.$queueTab);
         }
 
-        if ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
-            ShipHeroOrderQueueIndex::query()
-                ->where('client_account_id', $clientAccountId)
-                ->where('queue_kind', $tab)
-                ->delete();
-        }
-
-        $syncResult = $this->orderIndex->syncAccountQueue($clientAccountId, $tab);
+        // Purge stale rows only after a successful non-truncated sync. Never wipe the
+        // index before ShipHero returns — credit failures used to leave Ready to Ship empty.
+        $purgeStale = $tab === ShipHeroOrderQueueIndex::KIND_AWAITING;
+        $syncResult = $this->orderIndex->syncAccountQueue($clientAccountId, $tab, $purgeStale);
         if ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
             $this->orderIndex->supplementAwaitingFromRecentUpdates($clientAccountId);
             $this->orderIndex->pruneNonAwaitingRows($clientAccountId);

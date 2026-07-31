@@ -65,6 +65,10 @@ class ImportDashboardQueuesCommand extends Command
                 } catch (Throwable $e) {
                     $failures++;
                     $this->warn('  Tab '.$tab.' failed: '.$e->getMessage());
+                    if (stripos($e->getMessage(), 'not enough credits') !== false) {
+                        // Let the ShipHero credit bucket refill before the next account.
+                        sleep(20);
+                    }
                 }
             }
         }

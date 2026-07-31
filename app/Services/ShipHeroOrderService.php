@@ -465,7 +465,7 @@ query ShipHeroOrders(
             carrier
             method
           }
-          line_items(first: 25) {
+          line_items(first: 5) {
             edges {
               node {
                 sku

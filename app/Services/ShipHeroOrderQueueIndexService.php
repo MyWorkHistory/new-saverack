@@ -399,24 +399,28 @@ class ShipHeroOrderQueueIndexService
             $filters = $this->buildSyncFilters($tab, $customerId, $context);
             $after = null;
             $pages = 0;
+            $pageSize = max(5, min(100, (int) config('services.shiphero.order_queue_page_size', 20)));
             if ($maxPages === null) {
-                $maxPages = $tab === ShipHeroOrderQueueIndex::KIND_SHIPPED ? 200 : 50;
+                // Keep roughly the same order ceiling as the old first=100 × 50/200 pages.
+                $maxPages = $tab === ShipHeroOrderQueueIndex::KIND_SHIPPED
+                    ? max(200, (int) ceil(20000 / $pageSize))
+                    : max(50, (int) ceil(5000 / $pageSize));
             }
 
             do {
                 $filters['after'] = $after;
-                $filters['first'] = 100;
-                $page = ShipHeroCreditLimit::run(function () use ($tab, $filters) {
-                    return $tab === ShipHeroOrderQueueIndex::KIND_SHIPPED
-                        ? $this->orders->listShippedOrders($filters)
-                        : $this->orders->listOrders($filters);
-                });
+                $page = $this->fetchQueueSyncPage($tab, $filters, $pageSize);
+                $pageSize = max(5, min(100, (int) ($page['_page_size'] ?? $pageSize)));
+                unset($page['_page_size']);
                 $rows = is_array($page['rows'] ?? null) ? $page['rows'] : [];
                 $this->upsertRows($clientAccountId, $tab, $rows, $syncStarted);
                 $rowsUpserted += count($rows);
                 $after = $page['pagination']['end_cursor'] ?? null;
                 $hasNext = (bool) ($page['pagination']['has_next_page'] ?? false);
                 $pages++;
+                if ($hasNext && $after !== null) {
+                    usleep(ShipHeroCreditLimit::INTER_PAGE_SLEEP_MICROS);
+                }
                 if ($hasNext && $after !== null && $pages >= $maxPages) {
                     $truncated = true;
                     break;
@@ -462,6 +466,51 @@ class ShipHeroOrderQueueIndexService
                 $this->markSyncFailed($account, $e->getMessage());
             }
             throw $e;
+        }
+    }
+
+    /**
+     * Fetch one queue page, shrinking page size when ShipHero says the request costs too many credits.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    private function fetchQueueSyncPage(string $tab, array $filters, int $pageSize): array
+    {
+        $pageSize = max(5, min(100, $pageSize));
+        $attempt = 0;
+        $maxAttempts = 12;
+
+        while (true) {
+            $attempt++;
+            $filters['first'] = $pageSize;
+
+            try {
+                $page = $tab === ShipHeroOrderQueueIndex::KIND_SHIPPED
+                    ? $this->orders->listShippedOrders($filters)
+                    : $this->orders->listOrders($filters);
+                $page['_page_size'] = $pageSize;
+
+                return $page;
+            } catch (Throwable $e) {
+                if (! ShipHeroCreditLimit::isCreditLimitError($e->getMessage()) || $attempt >= $maxAttempts) {
+                    throw $e;
+                }
+
+                // Prefer shrinking the page so one GraphQL op fits the credit bucket, then wait if needed.
+                if ($pageSize > 5) {
+                    $pageSize = max(5, (int) floor($pageSize / 2));
+                    Log::warning('order_queue_index.page_size_reduced', [
+                        'tab' => $tab,
+                        'page_size' => $pageSize,
+                        'message' => $e->getMessage(),
+                    ]);
+                    continue;
+                }
+
+                $wait = ShipHeroCreditLimit::retrySeconds($e->getMessage()) ?? 2;
+                sleep(min(45, $wait + 1));
+            }
         }
     }
 

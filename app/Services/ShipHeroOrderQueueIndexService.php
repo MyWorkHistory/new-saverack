@@ -1345,8 +1345,10 @@ class ShipHeroOrderQueueIndexService
     {
         if ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
             $timezone = (string) ($context['timezone'] ?? PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE);
-            $from = $this->parseContextBoundary($context['awaiting_from'] ?? null, $timezone, true);
-            $to = $this->parseContextBoundary($context['awaiting_to'] ?? null, $timezone, false);
+            // Only apply dates the API/UI explicitly requested. Do NOT fall back to the
+            // dashboard May-1 context window — that hid full Ready to Ship indexes (e.g. 269→0).
+            $from = null;
+            $to = null;
             if (! empty($filters['order_date_from'])) {
                 $from = $this->parseContextBoundary((string) $filters['order_date_from'], $timezone, true);
             }

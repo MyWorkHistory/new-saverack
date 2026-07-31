@@ -115,6 +115,61 @@ class ShipHeroOrderQueueIndexServiceTest extends TestCase
         $this->assertSame('#1001', $row->order_number);
     }
 
+    public function test_list_awaiting_without_date_filters_includes_old_orders(): void
+    {
+        $now = now();
+        $old = $now->copy()->subMonths(6);
+        $account = $this->createLinkedAccount('Old Rts Co');
+        $accountId = (int) $account->id;
+
+        $queueCounts = Mockery::mock(PortalQueueCountsService::class);
+        $queueCounts->shouldReceive('contextForAccount')->andReturn([
+            'timezone' => 'America/New_York',
+            'awaiting_from' => '2026-05-01T00:00:00-04:00',
+            'awaiting_to' => $now->toIso8601String(),
+            'open_from' => $now->copy()->subDays(29)->toIso8601String(),
+            'open_to' => $now->toIso8601String(),
+            'shipped_from' => $now->copy()->startOfDay()->toIso8601String(),
+            'shipped_to' => $now->toIso8601String(),
+        ]);
+
+        ShipHeroOrderQueueIndex::query()->insert([
+            'client_account_id' => $accountId,
+            'shiphero_order_id' => 'old-rts',
+            'queue_kind' => ShipHeroOrderQueueIndex::KIND_AWAITING,
+            'order_number' => 'OLD1',
+            'order_date' => $old,
+            'list_payload' => json_encode(['id' => 'old-rts', 'order_number' => 'OLD1']),
+            'indexed_at' => $now,
+            'last_seen_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $service = new ShipHeroOrderQueueIndexService(
+            Mockery::mock(ShipHeroOrderService::class),
+            $queueCounts
+        );
+
+        $all = $service->listFromIndex([
+            'client_account_id' => $accountId,
+            'tab' => ShipHeroOrderQueueIndex::KIND_AWAITING,
+            'first' => 20,
+        ]);
+        $this->assertSame(1, $all['meta']['queue_total']);
+        $this->assertCount(1, $all['rows']);
+
+        $mayWindow = $service->listFromIndex([
+            'client_account_id' => $accountId,
+            'tab' => ShipHeroOrderQueueIndex::KIND_AWAITING,
+            'order_date_from' => '2026-05-01',
+            'order_date_to' => $now->toDateString(),
+            'first' => 20,
+        ]);
+        $this->assertSame(0, $mayWindow['meta']['queue_total']);
+        $this->assertTrue($mayWindow['meta']['date_filter_excludes_index']);
+    }
+
     public function test_aggregate_dashboard_section_groups_by_account(): void
     {
         $now = now();

@@ -410,14 +410,8 @@ class PortalQueueCountsService
                     'truncated' => false,
                 ];
             } elseif ($tab === 'awaiting') {
-                $from = $this->parseTimestamp($context['awaiting_from'] ?? null);
-                $to = $this->parseTimestamp($context['awaiting_to'] ?? null);
-                if ($from !== null) {
-                    $query->where('order_date', '>=', $from);
-                }
-                if ($to !== null) {
-                    $query->where('order_date', '<=', $to);
-                }
+                // Count all Ready to Ship index rows (match ShipHero). UI date presets still
+                // filter via listFromIndex order_date_from/to when the client sends them.
             } elseif ($tab === 'shipped') {
                 $from = $this->parseTimestamp($context['shipped_from'] ?? null);
                 $to = $this->parseTimestamp($context['shipped_to'] ?? null);
@@ -458,7 +452,7 @@ class PortalQueueCountsService
     private function queueCacheKey(array $context, string $tab): string
     {
         return sprintf(
-            'orders:queue_counts:v11:%d:%s:%s',
+            'orders:queue_counts:v12:%d:%s:%s',
             (int) $context['client_account_id'],
             $tab,
             md5(implode('|', [

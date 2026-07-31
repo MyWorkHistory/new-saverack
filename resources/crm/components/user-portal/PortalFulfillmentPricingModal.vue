@@ -384,10 +384,7 @@ async function onAgree() {
             :disabled="busy || verifying"
           />
           <span class="form-check-label small text-secondary">
-            By checking this box and clicking "I Agree," I acknowledge that I have reviewed and
-            accepted Save Rack's current pricing schedule and fee structure. I understand that
-            pricing may be updated from time to time in accordance with the Fulfillment Services
-            Agreement.
+            I have reviewed and accept Save Rack's current pricing schedule and fee structure.
           </span>
         </label>
         <button

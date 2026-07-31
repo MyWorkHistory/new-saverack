@@ -59,9 +59,9 @@ onMounted(async () => {
   <div class="asn-print-root p-4 text-center">
     <p v-if="err" class="text-danger">{{ err }}</p>
     <template v-else>
-      <p class="sku-line small text-secondary mb-1">{{ sku }}</p>
-      <p v-if="productName" class="name-line mb-2">{{ productName }}</p>
+      <p class="sku-line small text-secondary mb-2">{{ sku }}</p>
       <svg id="barcode-svg" class="mx-auto d-block"></svg>
+      <p v-if="productName" class="name-line mt-2 mb-0">{{ productName }}</p>
     </template>
   </div>
 </template>

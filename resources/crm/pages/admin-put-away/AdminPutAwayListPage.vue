@@ -93,17 +93,47 @@ function accountDetailTo(accountIdValue) {
   return id > 0 ? { name: "client-account-detail", params: { id: String(id) } } : null;
 }
 
-function locationLabel(value) {
-  const text = String(value || "").trim();
-  return text || "—";
+function splitLocationText(text) {
+  const raw = String(text || "").trim();
+  if (!raw || raw === "—") return [];
+  return raw
+    .split(/\s*[,;|]\s*|\n+/)
+    .map((part) => part.trim())
+    .filter((part) => part && part !== "—");
 }
 
-function hasBarcodeValue(barcode) {
-  return String(barcode || "").trim() !== "";
+/** Normalize `Name (5)` → `Name (QTY: 5)` for Restock-style display. */
+function formatLocationDisplay(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+  const match = raw.match(/^(.+?)\s*\(\s*(?:QTY:\s*)?(\d+)\s*\)$/i);
+  if (match) {
+    return `${match[1].trim()} (QTY: ${Number(match[2]).toLocaleString()})`;
+  }
+  return raw;
 }
 
-function barcodeLineLabel(barcode) {
-  return hasBarcodeValue(barcode) ? `Barcode: ${barcode}` : "Barcode: —";
+function locationLines(value) {
+  return splitLocationText(value).map(formatLocationDisplay);
+}
+
+/** Mobile accordion keys: `${accountId}|${sku}:pick` | `:backstock` */
+const mobileAccordionOpen = ref({});
+
+function mobileRowKey(row) {
+  return `${row?.client_account_id ?? ""}|${row?.sku ?? ""}`;
+}
+
+function isMobileAccordionOpen(row, section) {
+  return Boolean(mobileAccordionOpen.value[`${mobileRowKey(row)}:${section}`]);
+}
+
+function toggleMobileAccordion(row, section) {
+  const key = `${mobileRowKey(row)}:${section}`;
+  mobileAccordionOpen.value = {
+    ...mobileAccordionOpen.value,
+    [key]: !mobileAccordionOpen.value[key],
+  };
 }
 
 const lastUpdatedLabel = computed(() => {
@@ -553,7 +583,8 @@ onMounted(async () => {
         <CrmLoadingSpinner label="Loading put away list…" />
       </div>
 
-      <div v-else class="table-responsive staff-table-wrap">
+      <template v-else>
+      <div class="table-responsive staff-table-wrap d-none d-md-block">
         <table
           class="table table-hover align-middle mb-0 staff-data-table user-inv-table put-away-list-table"
           :class="{ 'put-away-list-table--syncing': loading || loadingMore }"
@@ -562,9 +593,9 @@ onMounted(async () => {
             <tr>
               <th class="staff-table-head__th order-detail-page__items-col" scope="col">Product</th>
               <th class="staff-table-head__th put-away-list-table__account-col" scope="col">Account</th>
+              <th class="staff-table-head__th user-inv-table__num-col" scope="col">Receiving</th>
               <th class="staff-table-head__th put-away-list-table__location-col" scope="col">Pickable Location</th>
               <th class="staff-table-head__th put-away-list-table__location-col" scope="col">Backstock Location</th>
-              <th class="staff-table-head__th user-inv-table__num-col" scope="col">Receiving</th>
               <th class="staff-table-head__th user-inv-table__num-col" scope="col">Pickable</th>
               <th class="staff-table-head__th user-inv-table__num-col" scope="col">Non-Pickable</th>
               <th class="staff-table-head__th user-inv-table__num-col" scope="col">On-Hand</th>
@@ -627,9 +658,6 @@ onMounted(async () => {
                     <div class="order-detail-page__item-name-sub" :title="row.name || undefined">
                       {{ row.name || "—" }}
                     </div>
-                    <div class="order-detail-page__item-meta">
-                      {{ barcodeLineLabel(row.barcode) }}
-                    </div>
                   </div>
                 </div>
               </td>
@@ -643,13 +671,33 @@ onMounted(async () => {
                 </RouterLink>
                 <span v-else>—</span>
               </td>
-              <td class="put-away-list-table__location-col small text-secondary">
-                {{ locationLabel(row.pick_location) }}
-              </td>
-              <td class="put-away-list-table__location-col small text-secondary">
-                {{ locationLabel(row.backstock_location) }}
-              </td>
               <td class="user-inv-table__num-col text-center">{{ Number(row.receiving_qty ?? 0).toLocaleString() }}</td>
+              <td class="put-away-list-table__location-col small text-secondary">
+                <template v-if="locationLines(row.pick_location).length">
+                  <div
+                    v-for="(location, index) in locationLines(row.pick_location)"
+                    :key="`${row.sku}-pick-${index}`"
+                    class="put-away-loc-row"
+                    :title="location"
+                  >
+                    {{ location }}
+                  </div>
+                </template>
+                <span v-else>—</span>
+              </td>
+              <td class="put-away-list-table__location-col small text-secondary">
+                <template v-if="locationLines(row.backstock_location).length">
+                  <div
+                    v-for="(location, index) in locationLines(row.backstock_location)"
+                    :key="`${row.sku}-backstock-${index}`"
+                    class="put-away-loc-row"
+                    :title="location"
+                  >
+                    {{ location }}
+                  </div>
+                </template>
+                <span v-else>—</span>
+              </td>
               <td class="user-inv-table__num-col text-center">{{ Number(row.pickable_qty ?? 0).toLocaleString() }}</td>
               <td class="user-inv-table__num-col text-center">{{ Number(row.non_pickable_qty ?? 0).toLocaleString() }}</td>
               <td class="user-inv-table__num-col text-center">{{ Number(row.on_hand ?? 0).toLocaleString() }}</td>
@@ -668,6 +716,216 @@ onMounted(async () => {
           </tbody>
         </table>
       </div>
+
+      <div
+        class="crm-mobile-item-cards d-md-none"
+        :class="{ 'put-away-list-table--syncing': loading || loadingMore }"
+        aria-label="Put away items"
+      >
+        <div v-if="!rows.length" class="crm-mobile-item-card__empty">{{ emptyTableMessage }}</div>
+        <template v-else>
+          <article
+            v-for="row in rows"
+            :key="`mobile-${row.client_account_id}-${row.sku}`"
+            class="crm-mobile-item-card"
+          >
+            <div class="crm-mobile-item-card__product">
+              <a
+                v-if="putAwayDetailHref(row)"
+                :href="putAwayDetailHref(row)"
+                target="_blank"
+                rel="noopener noreferrer"
+                :aria-label="row.sku ? `View put away for SKU ${row.sku}` : undefined"
+                @click="openPutAwayInNewTab(row, $event)"
+              >
+                <img
+                  v-if="row.image_url"
+                  :src="row.image_url"
+                  alt=""
+                  class="crm-mobile-item-card__thumb"
+                  loading="lazy"
+                />
+                <div
+                  v-else
+                  class="crm-mobile-item-card__thumb crm-mobile-item-card__thumb--empty"
+                  aria-hidden="true"
+                />
+              </a>
+              <template v-else>
+                <img
+                  v-if="row.image_url"
+                  :src="row.image_url"
+                  alt=""
+                  class="crm-mobile-item-card__thumb"
+                  loading="lazy"
+                />
+                <div
+                  v-else
+                  class="crm-mobile-item-card__thumb crm-mobile-item-card__thumb--empty"
+                  aria-hidden="true"
+                />
+              </template>
+              <div class="crm-mobile-item-card__copy">
+                <a
+                  v-if="putAwayDetailHref(row)"
+                  :href="putAwayDetailHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="crm-mobile-item-card__sku"
+                  @click="openPutAwayInNewTab(row, $event)"
+                >
+                  {{ row.sku || "—" }}
+                </a>
+                <div v-else class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain">
+                  {{ row.sku || "—" }}
+                </div>
+                <div class="crm-mobile-item-card__name">{{ row.name || "—" }}</div>
+                <RouterLink
+                  v-if="accountDetailTo(row.client_account_id)"
+                  :to="accountDetailTo(row.client_account_id)"
+                  class="crm-mobile-item-card__account"
+                >
+                  {{ accountLabelForRow(row) }}
+                </RouterLink>
+                <span v-else class="crm-mobile-item-card__account text-secondary">—</span>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__stats" role="group" aria-label="Put away quantities">
+              <div class="crm-mobile-item-card__stat">
+                <span class="crm-mobile-item-card__stat-label">Receiving</span>
+                <span class="crm-mobile-item-card__stat-value">{{ Number(row.receiving_qty ?? 0).toLocaleString() }}</span>
+              </div>
+              <div class="crm-mobile-item-card__stat">
+                <span class="crm-mobile-item-card__stat-label">Pickable</span>
+                <span class="crm-mobile-item-card__stat-value">{{ Number(row.pickable_qty ?? 0).toLocaleString() }}</span>
+              </div>
+              <div class="crm-mobile-item-card__stat">
+                <span class="crm-mobile-item-card__stat-label">Non-Pickable</span>
+                <span class="crm-mobile-item-card__stat-value">{{ Number(row.non_pickable_qty ?? 0).toLocaleString() }}</span>
+              </div>
+              <div class="crm-mobile-item-card__stat">
+                <span class="crm-mobile-item-card__stat-label">On Hand</span>
+                <span class="crm-mobile-item-card__stat-value">{{ Number(row.on_hand ?? 0).toLocaleString() }}</span>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__accordion">
+              <button
+                type="button"
+                class="crm-mobile-item-card__accordion-btn"
+                :aria-expanded="isMobileAccordionOpen(row, 'pick') ? 'true' : 'false'"
+                :disabled="!locationLines(row.pick_location).length"
+                @click="toggleMobileAccordion(row, 'pick')"
+              >
+                <span class="crm-mobile-item-card__accordion-icon" aria-hidden="true">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                    />
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                    />
+                  </svg>
+                </span>
+                <span>Pick Locations</span>
+                <svg
+                  class="crm-mobile-item-card__accordion-chevron"
+                  :class="{ 'is-open': isMobileAccordionOpen(row, 'pick') }"
+                  width="16"
+                  height="16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              <div
+                v-if="isMobileAccordionOpen(row, 'pick') && locationLines(row.pick_location).length"
+                class="crm-mobile-item-card__accordion-body"
+              >
+                <div
+                  v-for="(location, index) in locationLines(row.pick_location)"
+                  :key="`${row.sku}-m-pick-${index}`"
+                  class="crm-mobile-item-card__loc"
+                >
+                  {{ location }}
+                </div>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__accordion">
+              <button
+                type="button"
+                class="crm-mobile-item-card__accordion-btn"
+                :aria-expanded="isMobileAccordionOpen(row, 'backstock') ? 'true' : 'false'"
+                :disabled="!locationLines(row.backstock_location).length"
+                @click="toggleMobileAccordion(row, 'backstock')"
+              >
+                <span class="crm-mobile-item-card__accordion-icon" aria-hidden="true">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                    />
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                    />
+                  </svg>
+                </span>
+                <span>Backstock Locations</span>
+                <svg
+                  class="crm-mobile-item-card__accordion-chevron"
+                  :class="{ 'is-open': isMobileAccordionOpen(row, 'backstock') }"
+                  width="16"
+                  height="16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              <div
+                v-if="isMobileAccordionOpen(row, 'backstock') && locationLines(row.backstock_location).length"
+                class="crm-mobile-item-card__accordion-body"
+              >
+                <div
+                  v-for="(location, index) in locationLines(row.backstock_location)"
+                  :key="`${row.sku}-m-backstock-${index}`"
+                  class="crm-mobile-item-card__loc"
+                >
+                  {{ location }}
+                </div>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__footer">
+              <button
+                type="button"
+                class="crm-mobile-item-card__transfer"
+                :disabled="!canTransferRow(row) || transferLoading || transferBusy"
+                @click="openTransfer(row)"
+              >
+                Transfer
+              </button>
+            </div>
+          </article>
+        </template>
+      </div>
+      </template>
 
       <div v-if="pageInfo.has_next_page" class="p-3 border-top text-center">
         <button
@@ -738,10 +996,20 @@ onMounted(async () => {
 }
 
 .put-away-list-table .put-away-list-table__location-col {
-  width: 6.5rem;
-  min-width: 5rem;
+  width: 7.5rem;
+  min-width: 6rem;
   vertical-align: middle;
-  word-break: break-word;
+}
+
+.put-away-loc-row {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+.put-away-loc-row + .put-away-loc-row {
+  margin-top: 0.2rem;
 }
 
 .put-away-list-table__account-link {
@@ -811,13 +1079,7 @@ onMounted(async () => {
   line-height: 1.4;
   color: var(--bs-secondary-color);
   word-break: break-word;
-  margin-bottom: 0.35rem;
-}
-
-.admin-put-away-list-page .order-detail-page__item-meta {
-  font-size: 0.8125rem;
-  line-height: 1.4;
-  color: var(--bs-secondary-color);
+  margin-bottom: 0;
 }
 
 .admin-put-away-list-page .asn-line-thumb-link {

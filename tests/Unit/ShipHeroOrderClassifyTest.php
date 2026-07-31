@@ -89,4 +89,18 @@ class ShipHeroOrderClassifyTest extends TestCase
 
         $this->assertSame(['backorder', 'on_hold'], $tabs);
     }
+
+    public function test_classify_ready_to_ship_flag_wins_over_hold_and_backorder(): void
+    {
+        $service = app(ShipHeroOrderService::class);
+        $tab = $service->classifyOrderQueueTab([
+            'raw_fulfillment_status' => 'pending',
+            'ready_to_ship' => true,
+            'has_backorder' => true,
+            'has_active_hold' => true,
+            'display_status' => 'On Hold',
+        ]);
+
+        $this->assertSame('awaiting', $tab);
+    }
 }

@@ -152,7 +152,9 @@ class ShipHeroOrderService
             $this->applyOpenQueueTabGraphScope($vars, $tab, $filters);
         } elseif ($tab === 'awaiting') {
             $vars['ready_to_ship'] = true;
-            $vars['fulfillment_status'] = 'unfulfilled';
+            // Do not force fulfillment_status=unfulfilled — that drops pending/open RTS orders.
+            $vars['fulfillment_status'] = null;
+            $vars['fulfillment_status_not_in'] = self::OPEN_QUEUE_EXCLUDED_FULFILLMENT_STATUSES;
             $timezone = trim((string) ($filters['timezone'] ?? ''));
             if ($timezone === '' || ! in_array($timezone, timezone_identifiers_list(), true)) {
                 $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
@@ -1352,6 +1354,17 @@ GQL;
             return ['shipped'];
         }
 
+        // Trust ShipHero's ready_to_ship flag over local hold/backorder heuristics.
+        // Otherwise RTS sync rows are skipped/pruned and accounts show 0 in CRM.
+        if (! empty($row['ready_to_ship'])) {
+            return ['awaiting'];
+        }
+
+        $display = strtolower(trim((string) ($row['display_status'] ?? '')));
+        if ($display === 'ready to ship' || str_contains($display, 'ready to ship')) {
+            return ['awaiting'];
+        }
+
         $tabs = [];
         if ($this->orderQualifiesForBackorderQueue($row)) {
             $tabs[] = 'backorder';
@@ -1362,15 +1375,6 @@ GQL;
 
         if ($tabs !== []) {
             return array_values(array_unique($tabs));
-        }
-
-        if (! empty($row['ready_to_ship'])) {
-            return ['awaiting'];
-        }
-
-        $display = strtolower(trim((string) ($row['display_status'] ?? '')));
-        if ($display === 'ready to ship') {
-            return ['awaiting'];
         }
 
         $holds = is_array($row['holds'] ?? null) ? $row['holds'] : [];
@@ -4275,7 +4279,7 @@ query ShipHeroReadyToShipSummaryPage(
     order_date_from: $order_date_from,
     order_date_to: $order_date_to,
     ready_to_ship: true,
-    fulfillment_status: "unfulfilled"
+    fulfillment_status_not_in: ["fulfilled", "shipped", "complete", "canceled", "cancelled"]
   ) {
     request_id
     complexity

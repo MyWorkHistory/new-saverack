@@ -596,9 +596,12 @@ class ShipHeroOrderQueueIndexService
             }
 
             if ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
-                $classified = $this->orders->classifyOrderQueueTab($row);
-                if ($classified !== ShipHeroOrderQueueIndex::KIND_AWAITING) {
-                    continue;
+                // Prefer ShipHero ready_to_ship; only drop clearly non-RTS rows.
+                if (empty($row['ready_to_ship'])) {
+                    $classified = $this->orders->classifyOrderQueueTab($row);
+                    if ($classified !== ShipHeroOrderQueueIndex::KIND_AWAITING) {
+                        continue;
+                    }
                 }
             }
 
@@ -735,6 +738,10 @@ class ShipHeroOrderQueueIndexService
                 continue;
             }
             if ($this->orders->classifyOrderQueueTab($payload) !== ShipHeroOrderQueueIndex::KIND_AWAITING) {
+                // Keep rows ShipHero still marks ready_to_ship even if hold/backorder heuristics disagree.
+                if (! empty($payload['ready_to_ship'])) {
+                    continue;
+                }
                 $this->invalidateOrder($clientAccountId, (string) $row->shiphero_order_id);
                 $pruned++;
             }

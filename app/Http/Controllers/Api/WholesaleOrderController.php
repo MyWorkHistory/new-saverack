@@ -677,12 +677,6 @@ class WholesaleOrderController extends Controller
         $this->assertStaff($request);
         Gate::authorize('delete', $wholesaleOrder);
 
-        if (! $wholesaleOrder->isEditable()) {
-            throw ValidationException::withMessages([
-                'status' => ['Only draft or pending wholesale orders can be deleted.'],
-            ]);
-        }
-
         $wholesaleOrder->loadMissing(['lines', 'comments', 'shippingLabels', 'packages']);
 
         foreach ($wholesaleOrder->lines as $line) {

@@ -76,9 +76,8 @@ const manageMenuRow = computed(
 );
 
 function canDeleteRow(row) {
-  if (isPortal.value) return false;
-  const status = String(row?.status || "").toLowerCase();
-  return status === "draft" || status === "pending";
+  if (isPortal.value || !row?.id) return false;
+  return true;
 }
 
 function onDocClickFilter(e) {

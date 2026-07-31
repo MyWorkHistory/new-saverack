@@ -101,7 +101,9 @@ const deleteItemOpen = ref(false);
 const deleteItemBusy = ref(false);
 const deleteItemTarget = ref(null);
 
+const createBillOpen = ref(false);
 const createBillBusy = ref(false);
+const createBillStatus = ref("open");
 
 const deleteProjectOpen = ref(false);
 const deleteProjectBusy = ref(false);
@@ -332,13 +334,25 @@ async function confirmDeleteItem() {
   }
 }
 
+function openCreateBill() {
+  if (!project.value?.id || createBillBusy.value || hasBill.value || !canUpdate.value) return;
+  if (!quoteItems.value.length) return;
+  createBillStatus.value = "open";
+  createBillOpen.value = true;
+}
+
 async function createBill() {
   if (!project.value?.id || createBillBusy.value || hasBill.value || !canUpdate.value) return;
   createBillBusy.value = true;
   try {
-    const { data } = await api.post(`/projects/${project.value.id}/create-bill`);
+    const status =
+      createBillStatus.value === "open" ? "open" : "draft";
+    const { data } = await api.post(`/projects/${project.value.id}/create-bill`, {
+      status,
+    });
     project.value = data;
-    toast.success("Bill created.");
+    createBillOpen.value = false;
+    toast.success(status === "open" ? "Open bill created." : "Draft bill created.");
   } catch (e) {
     toast.errorFrom(e, "Could not create bill.");
   } finally {
@@ -801,7 +815,7 @@ onUnmounted(() => {
                 type="button"
                 class="btn btn-primary staff-page-primary btn-sm"
                 :disabled="createBillBusy || !quoteItems.length"
-                @click="createBill"
+                @click="openCreateBill"
               >
                 <CrmLoadingSpinner v-if="createBillBusy" small class="me-1" />
                 Create Bill
@@ -969,6 +983,34 @@ onUnmounted(() => {
       v-model:sku="quoteSku"
       @submit="submitQuote"
     />
+
+    <ConfirmModal
+      :open="createBillOpen"
+      title="Create Bill"
+      subtitle="Choose the bill status for this project."
+      confirm-label="Create Bill"
+      :busy="createBillBusy"
+      :danger="false"
+      form
+      @close="createBillOpen = false"
+      @confirm="createBill"
+    >
+      <label class="form-label small fw-semibold mb-1" for="project-create-bill-status">
+        Status
+      </label>
+      <select
+        id="project-create-bill-status"
+        v-model="createBillStatus"
+        class="form-select"
+        :disabled="createBillBusy"
+      >
+        <option value="open">Open</option>
+        <option value="draft">Draft</option>
+      </select>
+      <p class="small text-secondary mb-0 mt-2">
+        Open bills are ready to add to an invoice. Draft bills stay editable until opened.
+      </p>
+    </ConfirmModal>
 
     <ConfirmModal
       :open="deleteNoteOpen"

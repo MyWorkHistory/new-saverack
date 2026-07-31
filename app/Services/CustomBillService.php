@@ -93,11 +93,19 @@ class CustomBillService
      */
     public function create(array $header, array $items, ?User $actor): CustomBill
     {
-        $bill = DB::transaction(function () use ($header, $items, $actor) {
+        $status = CustomBill::STATUS_DRAFT;
+        if (isset($header['status'])) {
+            $requested = (string) $header['status'];
+            if (in_array($requested, [CustomBill::STATUS_DRAFT, CustomBill::STATUS_OPEN], true)) {
+                $status = $requested;
+            }
+        }
+
+        $bill = DB::transaction(function () use ($header, $items, $actor, $status) {
             $bill = CustomBill::query()->create([
                 'bill_number' => $this->nextBillNumber(),
                 'name' => isset($header['name']) ? (trim((string) $header['name']) ?: null) : null,
-                'status' => CustomBill::STATUS_DRAFT,
+                'status' => $status,
                 'client_account_id' => (int) $header['client_account_id'],
                 'bill_date' => $header['bill_date'],
                 'total_cents' => 0,
@@ -113,10 +121,21 @@ class CustomBillService
                 $this->insertItem($bill, $order, $row);
             }
             $this->recalculateTotal($bill);
-            $this->logHistory($bill, $actor, 'created', 'Custom bill created as draft.');
+            $this->logHistory(
+                $bill,
+                $actor,
+                'created',
+                $status === CustomBill::STATUS_OPEN
+                    ? 'Custom bill created as open.'
+                    : 'Custom bill created as draft.'
+            );
 
             return $bill->fresh(['items', 'clientAccount', 'histories.user']);
         });
+
+        if ($bill->isOpen()) {
+            app(BillCreatedSlackService::class)->notifyCustomBill($bill);
+        }
 
         return $bill;
     }

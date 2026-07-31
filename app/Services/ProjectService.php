@@ -331,7 +331,7 @@ class ProjectService
         return $this->findOrFail((int) $project->id);
     }
 
-    public function createBill(Project $project, ?User $actor): Project
+    public function createBill(Project $project, ?User $actor, string $status = CustomBill::STATUS_DRAFT): Project
     {
         if ($project->custom_bill_id) {
             throw ValidationException::withMessages([
@@ -339,7 +339,13 @@ class ProjectService
             ]);
         }
 
-        return DB::transaction(function () use ($project, $actor) {
+        if (! in_array($status, [CustomBill::STATUS_DRAFT, CustomBill::STATUS_OPEN], true)) {
+            throw ValidationException::withMessages([
+                'status' => ['Bill status must be draft or open.'],
+            ]);
+        }
+
+        return DB::transaction(function () use ($project, $actor, $status) {
             $project->loadMissing('quoteItems');
             $items = $project->quoteItems->map(function (ProjectQuoteItem $item) {
                 return [
@@ -356,6 +362,7 @@ class ProjectService
                     'client_account_id' => (int) $project->client_account_id,
                     'bill_date' => now()->toDateString(),
                     'name' => trim((string) $project->name) ?: null,
+                    'status' => $status,
                 ],
                 $items,
                 $actor

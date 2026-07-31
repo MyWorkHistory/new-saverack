@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CustomBillItemStoreRequest;
+use App\Models\CustomBill;
 use App\Models\Project;
 use App\Models\ProjectNote;
 use App\Services\ProjectService;
@@ -169,11 +170,17 @@ class ProjectController extends Controller
         return response()->json($this->projects->toDetailArray($project));
     }
 
-    public function createBill(Project $project): JsonResponse
+    public function createBill(Request $request, Project $project): JsonResponse
     {
         Gate::authorize('update', $project);
 
-        $project = $this->projects->createBill($project, request()->user());
+        $data = $request->validate([
+            'status' => ['nullable', 'string', Rule::in([CustomBill::STATUS_DRAFT, CustomBill::STATUS_OPEN])],
+        ]);
+
+        $status = (string) ($data['status'] ?? CustomBill::STATUS_DRAFT);
+
+        $project = $this->projects->createBill($project, $request->user(), $status);
 
         return response()->json($this->projects->toDetailArray($project), 201);
     }

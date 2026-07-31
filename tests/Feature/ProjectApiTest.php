@@ -44,7 +44,7 @@ class ProjectApiTest extends TestCase
         $this->getJson('/api/projects')->assertForbidden();
     }
 
-    public function test_create_project_assigns_pid_and_custom_bill(): void
+    public function test_create_project_assigns_pid_without_custom_bill(): void
     {
         $this->staffWithProjects();
         $account = ClientAccount::query()->create([
@@ -63,14 +63,8 @@ class ProjectApiTest extends TestCase
         $res->assertJsonPath('pid', 'P-1001');
         $res->assertJsonPath('name', 'Website Refresh');
         $res->assertJsonPath('status', Project::STATUS_DRAFT);
-        $this->assertNotNull($res->json('custom_bill_id'));
+        $this->assertNull($res->json('custom_bill_id'));
         $this->assertNull($res->json('completed_at'));
-
-        $bill = CustomBill::query()->find($res->json('custom_bill_id'));
-        $this->assertNotNull($bill);
-        $this->assertSame('P-1001', $bill->name);
-        $this->assertSame(CustomBill::STATUS_DRAFT, $bill->status);
-        $this->assertSame((int) $account->id, (int) $bill->client_account_id);
     }
 
     public function test_complete_status_sets_completed_at(): void
@@ -155,12 +149,7 @@ class ProjectApiTest extends TestCase
         $this->assertCount(1, $quote->json('quote_items'));
         $this->assertSame('Design Sprint', $quote->json('quote_items.0.name'));
         $this->assertGreaterThan(0, (int) $quote->json('quote_total_cents'));
-
-        $billId = (int) $quote->json('custom_bill_id');
-        $this->assertDatabaseHas('custom_bill_items', [
-            'custom_bill_id' => $billId,
-            'name' => 'Design Sprint',
-        ]);
+        $this->assertNull($quote->json('custom_bill_id'));
 
         $note = $this->postJson('/api/projects/'.$id.'/notes', [
             'body' => 'Internal kickoff notes',
@@ -169,6 +158,64 @@ class ProjectApiTest extends TestCase
 
         $show = $this->getJson('/api/projects/'.$id)->assertOk();
         $this->assertCount(1, $show->json('notes'));
+    }
+
+    public function test_create_bill_from_project_can_be_open(): void
+    {
+        $this->staffWithProjects();
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Bill Co',
+            'email' => 'bill-proj@example.test',
+        ]);
+        $id = (int) $this->postJson('/api/projects', [
+            'client_account_id' => $account->id,
+            'name' => 'Billable Project',
+        ])->json('id');
+
+        $this->postJson('/api/projects/'.$id.'/quote-items', [
+            'line_type' => CustomBillLineType::acceptedLineTypes()[0] ?? 'fulfillment',
+            'name' => 'Install',
+            'quantity' => 1,
+            'unit_price' => 100,
+        ])->assertCreated();
+
+        $res = $this->postJson('/api/projects/'.$id.'/create-bill', [
+            'status' => CustomBill::STATUS_OPEN,
+        ]);
+        $res->assertCreated();
+        $res->assertJsonPath('custom_bill_status', CustomBill::STATUS_OPEN);
+        $this->assertNotNull($res->json('custom_bill_id'));
+
+        $bill = CustomBill::query()->find($res->json('custom_bill_id'));
+        $this->assertNotNull($bill);
+        $this->assertSame(CustomBill::STATUS_OPEN, $bill->status);
+        $this->assertSame('Billable Project', $bill->name);
+        $this->assertSame(1, $bill->items()->count());
+    }
+
+    public function test_create_bill_from_project_defaults_to_draft(): void
+    {
+        $this->staffWithProjects();
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Draft Bill Co',
+            'email' => 'draft-bill-proj@example.test',
+        ]);
+        $id = (int) $this->postJson('/api/projects', [
+            'client_account_id' => $account->id,
+            'name' => 'Draft Bill Project',
+        ])->json('id');
+
+        $this->postJson('/api/projects/'.$id.'/quote-items', [
+            'line_type' => CustomBillLineType::acceptedLineTypes()[0] ?? 'fulfillment',
+            'name' => 'Setup',
+            'quantity' => 1,
+            'unit_price' => 50,
+        ])->assertCreated();
+
+        $res = $this->postJson('/api/projects/'.$id.'/create-bill')->assertCreated();
+        $res->assertJsonPath('custom_bill_status', CustomBill::STATUS_DRAFT);
     }
 
     public function test_delete_project_keeps_custom_bill(): void
@@ -184,10 +231,20 @@ class ProjectApiTest extends TestCase
             'name' => 'Temp Project',
         ])->assertCreated();
         $id = (int) $create->json('id');
-        $billId = (int) $create->json('custom_bill_id');
+
+        $this->postJson('/api/projects/'.$id.'/quote-items', [
+            'line_type' => CustomBillLineType::acceptedLineTypes()[0] ?? 'fulfillment',
+            'name' => 'Work',
+            'quantity' => 1,
+            'unit_price' => 25,
+        ])->assertCreated();
+
+        $billId = (int) $this->postJson('/api/projects/'.$id.'/create-bill', [
+            'status' => CustomBill::STATUS_OPEN,
+        ])->json('custom_bill_id');
 
         $this->deleteJson('/api/projects/'.$id)->assertOk();
         $this->assertDatabaseMissing('projects', ['id' => $id]);
-        $this->assertDatabaseHas('custom_bills', ['id' => $billId, 'name' => 'P-1001']);
+        $this->assertDatabaseHas('custom_bills', ['id' => $billId, 'name' => 'Temp Project']);
     }
 }

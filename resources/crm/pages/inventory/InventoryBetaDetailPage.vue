@@ -460,6 +460,10 @@ async function openBarcodeLabelPdf() {
   if (barcode) {
     params.barcode = barcode;
   }
+  const name = String(product.value.name || "").trim();
+  if (name) {
+    params.name = name;
+  }
   const path = `/inventory/products/${encodeURIComponent(product.value.sku)}/barcode-label.pdf`;
   barcodePdfLoading.value = true;
   try {

@@ -730,6 +730,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('client-accounts.onboarding.fulfillment-agreement.destroy');
     Route::get('client-accounts/{client_account}/onboarding/fulfillment-pricing.pdf', [ClientAccountOnboardingController::class, 'downloadFulfillmentPricingPdf'])
         ->name('client-accounts.onboarding.fulfillment-pricing.pdf');
+    Route::post('client-accounts/{client_account}/onboarding/fulfillment-pricing/accept', [ClientAccountOnboardingController::class, 'acceptFulfillmentPricing'])
+        ->name('client-accounts.onboarding.fulfillment-pricing.accept');
     Route::get('client-accounts/{client_account}/fees/pricing.pdf', [ClientAccountOnboardingController::class, 'downloadAccountPricingPdf'])
         ->name('client-accounts.fees.pricing.pdf');
     Route::patch('client-accounts/{client_account}/fulfillment-pricing/status', [ClientAccountController::class, 'updateFulfillmentPricingStatus'])

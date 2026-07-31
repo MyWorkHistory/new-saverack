@@ -370,11 +370,13 @@ class PortalOnboardingService
             );
             if ($pricingStatus !== ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED) {
                 throw new \InvalidArgumentException(
-                    'Approve fulfillment pricing on the Fees tab before verifying for the client.'
+                    'Approve fulfillment pricing on the Fees tab before verifying this task.'
                 );
             }
             if ($account->fulfillment_pricing_accepted_at === null) {
-                $account->fulfillment_pricing_accepted_at = now();
+                throw new \InvalidArgumentException(
+                    'Mark fulfillment pricing complete (client accept or Mark Complete) before verifying.'
+                );
             }
         }
 

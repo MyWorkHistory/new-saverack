@@ -758,6 +758,7 @@ class InventoryController extends Controller
         $validated = $request->validate([
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
             'barcode' => ['nullable', 'string', 'max:255'],
+            'name' => ['nullable', 'string', 'max:500'],
         ]);
         $clientAccountId = isset($validated['client_account_id'])
             ? (int) $validated['client_account_id']
@@ -766,48 +767,65 @@ class InventoryController extends Controller
         try {
             $skuLabel = trim(rawurldecode($sku));
             $barcode = isset($validated['barcode']) ? trim((string) $validated['barcode']) : '';
+            $productName = isset($validated['name']) ? trim((string) $validated['name']) : '';
 
-            if ($barcode === '' && $clientAccountId > 0) {
+            if ($clientAccountId > 0 && ($barcode === '' || $productName === '')) {
                 $indexed = ShipHeroInventoryProductIndex::query()
                     ->where('client_account_id', $clientAccountId)
                     ->where(function ($q) use ($skuLabel) {
                         $q->where('sku', $skuLabel)
                             ->orWhere('sku_search', strtolower($skuLabel));
                     })
-                    ->whereNotNull('barcode')
-                    ->where('barcode', '!=', '')
                     ->orderByDesc('synced_at')
-                    ->first(['sku', 'barcode']);
+                    ->first(['sku', 'barcode', 'name']);
                 if ($indexed !== null) {
-                    $barcode = trim((string) $indexed->barcode);
                     $skuFromIndex = trim((string) $indexed->sku);
                     if ($skuFromIndex !== '') {
                         $skuLabel = $skuFromIndex;
                     }
+                    if ($barcode === '') {
+                        $barcode = trim((string) ($indexed->barcode ?? ''));
+                    }
+                    if ($productName === '') {
+                        $productName = trim((string) ($indexed->name ?? ''));
+                    }
                 }
             }
 
-            if ($barcode === '') {
+            if ($barcode === '' || $productName === '') {
                 $shipheroCustomerId = null;
                 if ($clientAccountId > 0) {
                     $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
                 }
                 $product = $this->inventory->getProductDetailBySku($skuLabel, null, $shipheroCustomerId);
                 if (! is_array($product)) {
-                    return response()->json(['message' => 'Product not found.'], 404);
+                    if ($barcode === '') {
+                        return response()->json(['message' => 'Product not found.'], 404);
+                    }
+                } else {
+                    if ($barcode === '') {
+                        $barcode = isset($product['barcode']) ? trim((string) $product['barcode']) : '';
+                    }
+                    $skuLabel = isset($product['sku']) ? trim((string) $product['sku']) : $skuLabel;
+                    if ($productName === '') {
+                        $productName = isset($product['name']) ? trim((string) $product['name']) : '';
+                    }
                 }
-                $barcode = isset($product['barcode']) ? trim((string) $product['barcode']) : '';
-                $skuLabel = isset($product['sku']) ? trim((string) $product['sku']) : $skuLabel;
             }
             if ($barcode === '') {
                 return response()->json(['message' => 'No barcode on file for this SKU in ShipHero.'], 422);
             }
 
-            $pdf = Pdf::loadView('pdf.inventory.barcode', [
+            // Same layout as ASN line barcode labels (SKU, barcode, product name).
+            $line = (object) [
                 'sku' => $skuLabel,
+                'name' => $productName,
+            ];
+            $pdf = Pdf::loadView('pdf.asn.barcode', [
+                'line' => $line,
                 'barcode' => $barcode,
                 'barcodeSvg' => Code128Svg::dataUri($barcode),
-            ])->setPaper([0, 0, 288, 144], 'portrait');
+            ])->setPaper([0, 0, 288, 144]);
 
             $safeSku = preg_replace('/[^A-Za-z0-9_-]+/', '-', $skuLabel);
             $safeSku = trim((string) $safeSku, '-');

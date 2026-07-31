@@ -396,6 +396,15 @@ class ClientAccountOnboardingController extends Controller
         return $this->pricingPdfs->download($client_account);
     }
 
+    public function acceptFulfillmentPricing(ClientAccount $client_account): JsonResponse
+    {
+        Gate::authorize('update', $client_account);
+
+        $client_account = $this->onboarding->acceptFulfillmentPricing($client_account);
+
+        return response()->json($this->onboarding->buildAdminOnboardingPayload($client_account));
+    }
+
     public function downloadAccountPricingPdf(ClientAccount $client_account): Response
     {
         Gate::authorize('view', $client_account);

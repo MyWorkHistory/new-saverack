@@ -158,6 +158,54 @@ class PortalFulfillmentPricingApiTest extends TestCase
         $this->assertStringNotContainsString('USPS Postage PortalHidden', $pdfPortal->getContent());
     }
 
+    public function test_staff_verify_does_not_complete_pricing(): void
+    {
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_PENDING,
+            'company_name' => 'Pricing Verify Split Co',
+            'email' => 'pricing-verify-split@example.test',
+            'fulfillment_pricing_status' => ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED,
+            'fulfillment_pricing_approved_at' => now(),
+        ]);
+
+        $this->actingAsStaff();
+
+        $verifyBeforeAccept = $this->patchJson(
+            '/api/client-accounts/'.$account->id.'/onboarding/tasks/fulfillment_pricing/verification',
+            ['verified' => true]
+        );
+        $verifyBeforeAccept->assertStatus(422);
+        $this->assertNull($account->fresh()->fulfillment_pricing_accepted_at);
+
+        $complete = $this->postJson(
+            '/api/client-accounts/'.$account->id.'/onboarding/fulfillment-pricing/accept'
+        );
+        $complete->assertOk();
+        $complete->assertJsonPath('fulfillment_pricing.status', 'completed');
+        $tasksAfterComplete = collect($complete->json('tasks'));
+        $pricingTask = $tasksAfterComplete->firstWhere('id', 'fulfillment_pricing');
+        $this->assertIsArray($pricingTask);
+        $this->assertSame('completed', $pricingTask['status'] ?? null);
+        $this->assertFalse((bool) ($pricingTask['verified'] ?? true));
+        $this->assertNotNull($account->fresh()->fulfillment_pricing_accepted_at);
+        $verifications = $account->fresh()->onboarding_verifications;
+        $this->assertTrue(
+            ! is_array($verifications)
+            || empty($verifications['fulfillment_pricing']['verified_at'] ?? null)
+        );
+
+        $verify = $this->patchJson(
+            '/api/client-accounts/'.$account->id.'/onboarding/tasks/fulfillment_pricing/verification',
+            ['verified' => true]
+        );
+        $verify->assertOk();
+        $pricingTaskVerified = collect($verify->json('tasks'))->firstWhere('id', 'fulfillment_pricing');
+        $this->assertIsArray($pricingTaskVerified);
+        $this->assertSame('completed', $pricingTaskVerified['status'] ?? null);
+        $this->assertTrue((bool) ($pricingTaskVerified['verified'] ?? false));
+        $this->assertNotNull($account->fresh()->fulfillment_pricing_accepted_at);
+    }
+
     public function test_pending_pdf_still_downloads(): void
     {
         $account = ClientAccount::query()->create([

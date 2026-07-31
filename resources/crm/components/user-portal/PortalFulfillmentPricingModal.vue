@@ -41,7 +41,10 @@ const selectedFee = ref(null);
 
 const approved = computed(() => !!props.pricing?.approved);
 const accepted = computed(() => props.pricing?.status === "completed" || !!props.pricing?.accepted_at);
-const canVerifyForClient = computed(() => props.adminMode && approved.value && !props.taskVerified);
+const canMarkComplete = computed(() => props.adminMode && approved.value && !accepted.value);
+const canVerifyForClient = computed(
+  () => props.adminMode && approved.value && accepted.value && !props.taskVerified,
+);
 const allFeeItems = computed(() => {
   if (!approved.value) return [];
   return normalizeAccountFeeItems({ fees: { items: props.pricing?.fees || [] } });
@@ -140,6 +143,26 @@ async function onAgree() {
     busy.value = false;
   }
 }
+
+async function onMarkComplete() {
+  if (!canMarkComplete.value || busy.value || props.verifying) return;
+  if (!props.clientAccountId) {
+    toast.error("Missing client account.");
+    return;
+  }
+  busy.value = true;
+  try {
+    const { data } = await api.post(
+      `/client-accounts/${props.clientAccountId}/onboarding/fulfillment-pricing/accept`,
+    );
+    emit("accepted", data);
+    toast.success("Fulfillment Pricing marked complete.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not mark pricing complete.");
+  } finally {
+    busy.value = false;
+  }
+}
 </script>
 
 <template>
@@ -155,13 +178,17 @@ async function onAgree() {
       <div class="min-w-0">
         <h2 v-if="!pageMode" class="crm-vx-modal__title mb-0">Fulfillment Pricing</h2>
         <p v-if="adminMode && taskVerified" class="text-secondary small mb-0 mt-1">
-          Fulfillment pricing is verified and accepted for the client.
+          Fulfillment pricing is completed and verified.
+        </p>
+        <p v-else-if="adminMode && accepted" class="text-secondary small mb-0 mt-1">
+          Pricing is completed. Verify separately when you have confirmed the schedule.
         </p>
         <p v-else-if="adminMode && approved" class="text-secondary small mb-0 mt-1">
-          Fees are Approved. Verify For Client to mark pricing accepted on the user side.
+          Fees are Approved. Mark Complete when the client accepts (or mark complete for them), then
+          Verify.
         </p>
         <p v-else-if="adminMode" class="text-secondary small mb-0 mt-1">
-          Approve fulfillment pricing on the Fees tab before verifying for the client.
+          Approve fulfillment pricing on the Fees tab before completing or verifying.
         </p>
         <p v-else-if="pageMode && accepted" class="text-secondary small mb-0">
           You have accepted this account's fulfillment pricing schedule.
@@ -206,7 +233,7 @@ async function onAgree() {
         <p class="mb-2 fw-semibold text-body">Fulfillment pricing is not approved yet</p>
         <p class="mb-0 mx-auto" style="max-width: 28rem">
           Review and Approve the account fee schedule on the Fees tab. After approval, return here
-          to Verify For Client.
+          to Mark Complete and Verify.
         </p>
         <button
           v-if="adminMode"
@@ -334,15 +361,25 @@ async function onAgree() {
         Remove Verification
       </button>
       <button
-        v-else-if="adminMode && approved"
+        v-else-if="adminMode && canVerifyForClient"
         type="button"
         class="crm-vx-modal-btn crm-vx-modal-btn--secondary me-auto"
-        :disabled="busy || verifying || !canVerifyForClient"
-        :title="!approved ? 'Approve pricing on the Fees tab first.' : undefined"
+        :disabled="busy || verifying"
+        title="Verify after pricing is marked complete"
         @click="emit('verify')"
       >
         <CrmLoadingSpinner v-if="verifying" small class="me-1" />
-        Verify For Client
+        Verify
+      </button>
+      <button
+        v-else-if="adminMode && canMarkComplete"
+        type="button"
+        class="crm-vx-modal-btn crm-vx-modal-btn--primary me-auto"
+        :disabled="busy || verifying"
+        @click="onMarkComplete"
+      >
+        <CrmLoadingSpinner v-if="busy" small class="me-1" />
+        Mark Complete
       </button>
 
       <template v-if="showAgree">

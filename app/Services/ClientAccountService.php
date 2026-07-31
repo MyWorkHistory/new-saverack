@@ -929,8 +929,8 @@ class ClientAccountService
         }
         $account->save();
 
-        // Fees Approve only unlocks pricing for the client. Completion / verification
-        // happen via client accept or admin "Verify For Client" on Onboarding.
+        // Fees Approve only unlocks pricing for the client. Completion is client accept
+        // (or admin Mark Complete); verification is a separate onboarding step.
         if ($status !== ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED) {
             $onboarding = app(PortalOnboardingService::class);
             $actorId = $actor !== null ? (int) $actor->id : null;

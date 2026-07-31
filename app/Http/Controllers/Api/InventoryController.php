@@ -22,7 +22,9 @@ use App\Services\CrossAccountInventoryListService;
 use App\Services\PutAwayInventoryService;
 use App\Services\ShipHeroInventoryService;
 use App\Services\ShipHeroOrderService;
+use App\Support\Barcode\Code128Svg;
 use App\Support\InventoryAdjustmentActor;
+use App\Models\ShipHeroInventoryProductIndex;
 use Barryvdh\DomPDF\Facade\Pdf;
 use GuzzleHttp\Client;
 use Illuminate\Http\JsonResponse;
@@ -762,14 +764,35 @@ class InventoryController extends Controller
             : null;
 
         try {
-            $skuLabel = trim($sku);
+            $skuLabel = trim(rawurldecode($sku));
             $barcode = isset($validated['barcode']) ? trim((string) $validated['barcode']) : '';
+
+            if ($barcode === '' && $clientAccountId > 0) {
+                $indexed = ShipHeroInventoryProductIndex::query()
+                    ->where('client_account_id', $clientAccountId)
+                    ->where(function ($q) use ($skuLabel) {
+                        $q->where('sku', $skuLabel)
+                            ->orWhere('sku_search', strtolower($skuLabel));
+                    })
+                    ->whereNotNull('barcode')
+                    ->where('barcode', '!=', '')
+                    ->orderByDesc('synced_at')
+                    ->first(['sku', 'barcode']);
+                if ($indexed !== null) {
+                    $barcode = trim((string) $indexed->barcode);
+                    $skuFromIndex = trim((string) $indexed->sku);
+                    if ($skuFromIndex !== '') {
+                        $skuLabel = $skuFromIndex;
+                    }
+                }
+            }
+
             if ($barcode === '') {
                 $shipheroCustomerId = null;
                 if ($clientAccountId > 0) {
                     $shipheroCustomerId = $this->resolveShipHeroCustomerAccountId($clientAccountId, $request);
                 }
-                $product = $this->inventory->getProductDetailBySku($sku, null, $shipheroCustomerId);
+                $product = $this->inventory->getProductDetailBySku($skuLabel, null, $shipheroCustomerId);
                 if (! is_array($product)) {
                     return response()->json(['message' => 'Product not found.'], 404);
                 }
@@ -779,28 +802,44 @@ class InventoryController extends Controller
             if ($barcode === '') {
                 return response()->json(['message' => 'No barcode on file for this SKU in ShipHero.'], 422);
             }
+
             $pdf = Pdf::loadView('pdf.inventory.barcode', [
                 'sku' => $skuLabel,
                 'barcode' => $barcode,
                 'barcodeSvg' => Code128Svg::dataUri($barcode),
+                'barcodeHtml' => Code128Svg::htmlBars($barcode),
             ])->setPaper([0, 0, 288, 144]);
 
             $safeSku = preg_replace('/[^A-Za-z0-9_-]+/', '-', $skuLabel);
             $safeSku = trim((string) $safeSku, '-');
+            $filename = ($safeSku !== '' ? $safeSku : 'product').'-barcode.pdf';
 
-            return $pdf->stream(($safeSku !== '' ? $safeSku : 'product').'-barcode.pdf');
+            return response($pdf->output(), 200, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'inline; filename="'.$filename.'"',
+                'Cache-Control' => 'private, max-age=0, must-revalidate',
+            ]);
         } catch (ValidationException $e) {
             throw $e;
         } catch (RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 502);
+            Log::warning('inventory.barcode_label.failed', [
+                'sku' => $sku,
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json(['message' => $e->getMessage()], 503);
         } catch (Throwable $e) {
             report($e);
+            Log::error('inventory.barcode_label.exception', [
+                'sku' => $sku,
+                'message' => $e->getMessage(),
+            ]);
 
             return response()->json([
                 'message' => config('app.debug')
                     ? $e->getMessage()
                     : 'Could not generate barcode label.',
-            ], 502);
+            ], 500);
         }
     }
 

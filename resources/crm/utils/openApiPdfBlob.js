@@ -8,7 +8,8 @@ export async function openApiPdfBlob(apiClient, path, options = {}) {
   const method = String(options.method || "get").toLowerCase() === "post" ? "post" : "get";
   const config = {
     responseType: "blob",
-    headers: { Accept: "application/pdf" },
+    headers: { Accept: "application/pdf, application/json" },
+    validateStatus: () => true,
   };
   if (options.params) {
     config.params = options.params;
@@ -21,34 +22,33 @@ export async function openApiPdfBlob(apiClient, path, options = {}) {
 
   let blob = res.data instanceof Blob ? res.data : new Blob([res.data], { type: "application/pdf" });
   const contentType = String(res.headers?.["content-type"] || blob.type || "");
+  const status = Number(res.status || 0);
 
-  if (contentType.includes("application/json") || blob.type.includes("json")) {
+  async function messageFromBlob(fallback) {
     const text = await blob.text();
-    let message = "Could not open PDF.";
     try {
       const json = JSON.parse(text);
       if (typeof json?.message === "string" && json.message.trim()) {
-        message = json.message;
+        return json.message.trim();
       }
     } catch {
       // no-op
     }
-    throw new Error(message);
+    if (text && text.length < 400 && !text.trim().startsWith("%PDF")) {
+      return text.trim() || fallback;
+    }
+    return fallback;
+  }
+
+  if (status >= 400 || contentType.includes("application/json") || blob.type.includes("json")) {
+    throw new Error(await messageFromBlob(`Could not open PDF (${status || "error"}).`));
   }
 
   if (blob.size < 64) {
     const text = await blob.text();
     if (text.trim().startsWith("{")) {
-      let message = "Could not open PDF.";
-      try {
-        const json = JSON.parse(text);
-        if (typeof json?.message === "string" && json.message.trim()) {
-          message = json.message;
-        }
-      } catch {
-        // no-op
-      }
-      throw new Error(message);
+      blob = new Blob([text], { type: "application/json" });
+      throw new Error(await messageFromBlob("Could not open PDF."));
     }
   }
 

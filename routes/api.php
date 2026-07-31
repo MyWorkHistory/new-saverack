@@ -381,6 +381,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [WholesaleOrderController::class, 'store'])->middleware('can:orders.create');
         Route::get('/{wholesaleOrder}/product-catalog', [WholesaleOrderController::class, 'productCatalog'])->middleware('can:orders.view');
         Route::get('/{wholesaleOrder}', [WholesaleOrderController::class, 'show'])->middleware('can:orders.view');
+        Route::delete('/{wholesaleOrder}', [WholesaleOrderController::class, 'destroy'])->middleware('can:orders.delete');
         Route::patch('/{wholesaleOrder}', [WholesaleOrderController::class, 'update'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/ready-to-ship', [WholesaleOrderController::class, 'readyToShip'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/mark-picked', [WholesaleOrderController::class, 'markPicked'])->middleware('can:orders.update');

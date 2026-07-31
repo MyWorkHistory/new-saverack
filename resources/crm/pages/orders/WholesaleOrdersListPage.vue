@@ -1,13 +1,16 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { computed, inject, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
+import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import WholesaleOrderCreateDrawer from "../../components/orders/WholesaleOrderCreateDrawer.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
+import { crmIsPortalUser } from "../../utils/crmUser.js";
 import {
   WHOLESALE_STATUS_OPTIONS,
   WHOLESALE_TYPE_OPTIONS,
@@ -18,6 +21,15 @@ import {
 
 const toast = useToast();
 const router = useRouter();
+const route = useRoute();
+const crmUser = inject("crmUser", ref(null));
+
+const isPortal = computed(
+  () => Boolean(route.meta?.userPortal) || crmIsPortalUser(crmUser.value),
+);
+const detailRouteName = computed(() =>
+  isPortal.value ? "user-wholesale-order-detail" : "wholesale-order-detail",
+);
 
 const accounts = ref([]);
 const accountsLoading = ref(false);
@@ -36,7 +48,15 @@ const createOrderType = ref("");
 const createOrderNumber = ref("");
 const createInstructions = ref("");
 
-const tableColspan = 7;
+const manageOpenId = ref(null);
+const manageMenuRect = ref({ top: 0, left: 0 });
+const MENU_W = 180;
+const MENU_H = 100;
+const deleteConfirmOpen = ref(false);
+const deleteBusy = ref(false);
+const deleteTarget = ref(null);
+
+const tableColspan = computed(() => (isPortal.value ? 6 : 7));
 
 const accountOptions = computed(() =>
   (accounts.value || []).map((a) => ({
@@ -51,9 +71,22 @@ const pickListRoute = computed(() => {
   return { name: "wholesale-pick-list", query };
 });
 
+const manageMenuRow = computed(
+  () => results.value.find((r) => r.id === manageOpenId.value) ?? null,
+);
+
+function canDeleteRow(row) {
+  if (isPortal.value) return false;
+  const status = String(row?.status || "").toLowerCase();
+  return status === "draft" || status === "pending";
+}
+
 function onDocClickFilter(e) {
   if (!e.target?.closest?.("[data-toolbar-filter]")) {
     filterMenuOpen.value = false;
+  }
+  if (!e.target?.closest?.("[data-wholesale-row-actions]")) {
+    manageOpenId.value = null;
   }
 }
 
@@ -65,6 +98,7 @@ function resetToolbarFilters() {
 }
 
 async function loadAccounts() {
+  if (isPortal.value) return;
   accountsLoading.value = true;
   try {
     const { data } = await api.get("/inventory/client-account-options");
@@ -85,7 +119,9 @@ async function loadList() {
   loading.value = true;
   try {
     const params = {};
-    if (accountFilter.value) params.client_account_id = Number(accountFilter.value);
+    if (!isPortal.value && accountFilter.value) {
+      params.client_account_id = Number(accountFilter.value);
+    }
     if (orderNumber.value.trim()) params.q = orderNumber.value.trim();
     if (statusFilter.value) params.status = statusFilter.value;
     if (typeFilter.value) params.order_type = typeFilter.value;
@@ -101,11 +137,40 @@ async function loadList() {
 
 function openRow(row) {
   if (!row?.id) return;
-  router.push({ name: "wholesale-order-detail", params: { id: String(row.id) } });
+  router.push({ name: detailRouteName.value, params: { id: String(row.id) } });
+}
+
+function placeManageMenu(btn) {
+  if (!(btn instanceof HTMLElement)) return;
+  const r = btn.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+  if (top + MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - MENU_H - 4);
+  }
+  manageMenuRect.value = { top, left };
+}
+
+async function toggleManageMenu(row, e) {
+  e?.stopPropagation?.();
+  const id = row?.id;
+  if (manageOpenId.value === id) {
+    manageOpenId.value = null;
+    return;
+  }
+  const btn = e?.currentTarget;
+  manageOpenId.value = id;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (btn instanceof HTMLElement) placeManageMenu(btn);
+  });
 }
 
 function openCreate() {
-  createAccountId.value = accountFilter.value || "";
+  createAccountId.value = isPortal.value
+    ? String(crmUser.value?.client_account_id || "")
+    : accountFilter.value || "";
   createOrderType.value = "";
   createOrderNumber.value = "";
   createInstructions.value = "";
@@ -113,8 +178,10 @@ function openCreate() {
 }
 
 async function submitCreate() {
-  const accountId = Number(createAccountId.value);
-  if (!accountId) {
+  const accountId = Number(
+    isPortal.value ? crmUser.value?.client_account_id : createAccountId.value,
+  );
+  if (!isPortal.value && !accountId) {
     toast.error("Select an account.");
     return;
   }
@@ -129,30 +196,58 @@ async function submitCreate() {
   }
   createBusy.value = true;
   try {
-    const { data } = await api.post("/admin/wholesale-orders", {
-      client_account_id: accountId,
+    const body = {
       order_type: createOrderType.value,
       order_number: num,
       instructions: createInstructions.value.trim() || null,
-    });
+    };
+    if (!isPortal.value) {
+      body.client_account_id = accountId;
+    }
+    const { data } = await api.post("/admin/wholesale-orders", body);
     createOpen.value = false;
-    toast.success("Wholesale order created.");
+    toast.success(isPortal.value ? "Wholesale order submitted." : "Wholesale order created.");
     if (data?.id) {
-      router.push({ name: "wholesale-order-detail", params: { id: String(data.id) } });
+      router.push({ name: detailRouteName.value, params: { id: String(data.id) } });
     } else {
       await loadList();
     }
   } catch (e) {
-    toast.errorFrom(e, "Could not create wholesale order.");
+    toast.errorFrom(e, isPortal.value ? "Could not submit wholesale order." : "Could not create wholesale order.");
   } finally {
     createBusy.value = false;
+  }
+}
+
+function openDeleteConfirm(row) {
+  manageOpenId.value = null;
+  deleteTarget.value = row;
+  deleteConfirmOpen.value = true;
+}
+
+async function confirmDelete() {
+  const row = deleteTarget.value;
+  if (!row?.id || deleteBusy.value) return;
+  deleteBusy.value = true;
+  try {
+    await api.delete(`/admin/wholesale-orders/${row.id}`);
+    toast.success("Wholesale order deleted.");
+    deleteConfirmOpen.value = false;
+    deleteTarget.value = null;
+    await loadList();
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete wholesale order.");
+  } finally {
+    deleteBusy.value = false;
   }
 }
 
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Wholesale Orders",
-    description: "Manage wholesale fulfillment orders.",
+    description: isPortal.value
+      ? "Your wholesale fulfillment orders."
+      : "Manage wholesale fulfillment orders.",
   });
   document.addEventListener("click", onDocClickFilter);
   loadAccounts();
@@ -169,10 +264,17 @@ onUnmounted(() => {
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
       <div>
         <h1 class="h4 mb-1 fw-semibold text-body">Wholesale</h1>
-        <p class="small text-secondary mb-0">Wholesale fulfillment orders by account.</p>
+        <p class="small text-secondary mb-0">
+          {{
+            isPortal
+              ? "Submit and track wholesale fulfillment orders."
+              : "Wholesale fulfillment orders by account."
+          }}
+        </p>
       </div>
       <div class="d-flex flex-wrap gap-2">
         <RouterLink
+          v-if="!isPortal"
           :to="pickListRoute"
           class="btn btn-outline-secondary fw-semibold orders-toolbar-outline-btn"
         >
@@ -183,7 +285,7 @@ onUnmounted(() => {
           class="btn btn-primary staff-page-primary fw-semibold"
           @click="openCreate"
         >
-          Create Order
+          {{ isPortal ? "Submit Order" : "Create Order" }}
         </button>
       </div>
     </div>
@@ -193,7 +295,7 @@ onUnmounted(() => {
     >
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row wholesale-orders-toolbar-row">
-          <div class="wholesale-orders-toolbar-account flex-shrink-0">
+          <div v-if="!isPortal" class="wholesale-orders-toolbar-account flex-shrink-0">
             <CrmSearchableSelect
               v-model="accountFilter"
               class="staff-toolbar-search staff-toolbar-search--inline"
@@ -323,7 +425,7 @@ onUnmounted(() => {
               <th class="staff-table-head__th text-center" scope="col">Order #</th>
               <th class="staff-table-head__th text-center" scope="col">Type</th>
               <th class="staff-table-head__th text-center" scope="col">Items</th>
-              <th class="staff-table-head__th text-center" scope="col">Account</th>
+              <th v-if="!isPortal" class="staff-table-head__th text-center" scope="col">Account</th>
               <th class="staff-table-head__th text-center" scope="col">Date</th>
               <th class="staff-table-head__th text-center" scope="col">Action</th>
             </tr>
@@ -357,22 +459,70 @@ onUnmounted(() => {
               <td class="text-center fw-semibold">{{ row.order_number || "—" }}</td>
               <td class="text-center">{{ row.order_type_label || wholesaleTypeLabel(row.order_type) }}</td>
               <td class="text-center">{{ row.items_count ?? "—" }}</td>
-              <td class="text-center">{{ row.client_account_company_name || "—" }}</td>
+              <td v-if="!isPortal" class="text-center">{{ row.client_account_company_name || "—" }}</td>
               <td class="text-center small text-secondary">{{ formatDateUs(row.created_at) || "—" }}</td>
-              <td class="text-center" @click.stop>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-secondary fw-semibold orders-toolbar-outline-btn"
-                  @click="openRow(row)"
+              <td class="text-center staff-actions-cell" @click.stop>
+                <div
+                  data-wholesale-row-actions
+                  class="staff-actions-inner staff-actions-inner--single justify-content-center"
                 >
-                  View
-                </button>
+                  <button
+                    type="button"
+                    class="staff-action-btn staff-action-btn--more"
+                    :class="{ 'is-open': manageOpenId === row.id }"
+                    :aria-expanded="manageOpenId === row.id ? 'true' : 'false'"
+                    aria-haspopup="true"
+                    aria-label="Row actions"
+                    @click="toggleManageMenu(row, $event)"
+                  >
+                    <CrmIconRowActions variant="horizontal" />
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="manageMenuRow"
+        data-wholesale-row-actions
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
+        :style="{ top: `${manageMenuRect.top}px`, left: `${manageMenuRect.left}px` }"
+        @click.stop
+      >
+        <button type="button" class="staff-row-menu__item" role="menuitem" @click="openRow(manageMenuRow)">
+          View
+        </button>
+        <button
+          v-if="canDeleteRow(manageMenuRow)"
+          type="button"
+          class="staff-row-menu__item staff-row-menu__item--danger"
+          role="menuitem"
+          @click="openDeleteConfirm(manageMenuRow)"
+        >
+          Delete
+        </button>
+      </div>
+    </Teleport>
+
+    <ConfirmModal
+      :open="deleteConfirmOpen"
+      title="Delete Wholesale Order"
+      :message="
+        deleteTarget
+          ? `Delete order ${deleteTarget.order_number || '#' + deleteTarget.id}? This cannot be undone.`
+          : 'Delete this wholesale order?'
+      "
+      confirm-label="Delete"
+      :busy="deleteBusy"
+      :danger="true"
+      @close="deleteConfirmOpen = false"
+      @confirm="confirmDelete"
+    />
 
     <WholesaleOrderCreateDrawer
       v-model:open="createOpen"
@@ -382,6 +532,7 @@ onUnmounted(() => {
       v-model:instructions="createInstructions"
       :account-options="accountOptions"
       :busy="createBusy"
+      :portal="isPortal"
       @submit="submitCreate"
     />
   </div>

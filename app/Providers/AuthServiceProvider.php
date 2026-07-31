@@ -191,6 +191,9 @@ class AuthServiceProvider extends ServiceProvider
             if (! $user) {
                 return false;
             }
+            if ((int) ($user->client_account_id ?? 0) > 0) {
+                return true;
+            }
             if ($user->isAdministrator() || $user->isCrmOwner()) {
                 return true;
             }

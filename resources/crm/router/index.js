@@ -1003,6 +1003,29 @@ const routes = [
       userPortal: true,
     },
   },
+  {
+    path: "/users/orders/wholesale",
+    name: "user-wholesale-orders",
+    component: () => import("../pages/orders/WholesaleOrdersListPage.vue"),
+    meta: {
+      ...meta.wholesaleOrdersList,
+      title: "Save Rack | Wholesale Orders",
+      description: "Your wholesale fulfillment orders.",
+      userPortal: true,
+    },
+  },
+  {
+    path: "/users/orders/wholesale/:id",
+    name: "user-wholesale-order-detail",
+    component: () => import("../pages/orders/WholesaleOrderDetailPage.vue"),
+    props: true,
+    meta: {
+      ...meta.wholesaleOrderDetail,
+      title: "Save Rack | Wholesale Order",
+      description: "Wholesale order detail.",
+      userPortal: true,
+    },
+  },
   { path: "/users/orders/:shipheroOrderId", name: "user-order-detail", component: () => import("../pages/user-orders/UserOrderDetailPage.vue"), props: true, meta: { ...meta.orderDetail, userPortal: true } },
   { path: "/users/inventory/out-of-stock", name: "user-inventory-out-of-stock", component: () => import("../pages/user-inventory/UserInventoryOutOfStockPage.vue"), meta: { ...meta.userPortalInventoryOutOfStock, userPortal: true } },
   { path: "/users/inventory", name: "user-inventory", component: InventoryBetaListPage, meta: { ...meta.userPortalInventory, userPortal: true } },
@@ -1937,6 +1960,7 @@ async function ensureOrdersRouteAccess(path) {
     if (path.startsWith("/admin/orders/backorder")) return pages.backorder === true;
     if (path.startsWith("/admin/orders/shipped")) return pages.shipped === true;
     if (path.startsWith("/admin/orders/wholesale")) return pages.wholesale === true;
+    if (path.startsWith("/users/orders/wholesale")) return pages.wholesale === true;
     if (path.startsWith("/admin/orders/search") || path === "/admin/orders") {
       return pages.search === true;
     }

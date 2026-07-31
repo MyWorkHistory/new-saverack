@@ -16,6 +16,7 @@ const props = defineProps({
   orderNumber: { type: String, default: "" },
   instructions: { type: String, default: "" },
   busy: { type: Boolean, default: false },
+  portal: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
@@ -36,7 +37,7 @@ function close() {
 <template>
   <CrmRightDrawer
     :open="open"
-    title="Create Wholesale Order"
+    :title="portal ? 'Submit Wholesale Order' : 'Create Wholesale Order'"
     :busy="busy"
     form-id="wholesale-order-create-form"
     max-width="3xl"
@@ -44,7 +45,7 @@ function close() {
     @submit="emit('submit')"
   >
     <div class="row g-3">
-      <div class="col-12">
+      <div v-if="!portal" class="col-12">
         <label class="form-label">Account</label>
         <CrmSearchableSelect
           :model-value="String(accountId)"
@@ -84,12 +85,16 @@ function close() {
         />
       </div>
       <div class="col-12">
-        <label class="form-label">Instructions</label>
+        <label class="form-label">{{ portal ? "Note to Packer" : "Instructions" }}</label>
         <textarea
           :value="instructions"
           class="form-control"
           rows="4"
-          placeholder="Warehouse instructions for this order…"
+          :placeholder="
+            portal
+              ? 'Note for the warehouse packer…'
+              : 'Warehouse instructions for this order…'
+          "
           :disabled="busy"
           @input="emit('update:instructions', $event.target.value)"
         />
@@ -107,7 +112,15 @@ function close() {
           :class="CRM_BTN_PRIMARY"
           :disabled="busy"
         >
-          {{ busy ? "Creating…" : "Create Order" }}
+          {{
+            busy
+              ? portal
+                ? "Submitting…"
+                : "Creating…"
+              : portal
+                ? "Submit Order"
+                : "Create Order"
+          }}
         </button>
       </footer>
     </template>

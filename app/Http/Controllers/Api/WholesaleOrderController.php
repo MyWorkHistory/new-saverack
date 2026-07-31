@@ -55,6 +55,19 @@ class WholesaleOrderController extends Controller
         }
     }
 
+    private function isPortalUser(?User $user): bool
+    {
+        return $user instanceof User && (int) ($user->client_account_id ?? 0) > 0;
+    }
+
+    /**
+     * Portal users may only touch their own account's orders (policy). Staff keep assertStaff on staff-only actions.
+     */
+    private function authorizePortalOrStaffView(Request $request, WholesaleOrder $order): void
+    {
+        Gate::authorize('view', $order);
+    }
+
     /**
      * @return array<string, string>
      */
@@ -541,7 +554,6 @@ class WholesaleOrderController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $this->assertStaff($request);
         Gate::authorize('viewAny', WholesaleOrder::class);
 
         $validated = $request->validate([
@@ -555,13 +567,18 @@ class WholesaleOrderController extends Controller
 
         $perPage = (int) ($validated['per_page'] ?? 25);
         $user = $request->user();
+        if (! $user instanceof User) {
+            abort(403);
+        }
 
         $query = WholesaleOrder::query()
             ->with(['clientAccount', 'createdBy'])
             ->orderByDesc('created_at')
             ->orderByDesc('id');
 
-        if (! empty($validated['client_account_id'])) {
+        if ($this->isPortalUser($user)) {
+            $query->where('client_account_id', (int) $user->client_account_id);
+        } elseif (! empty($validated['client_account_id'])) {
             $account = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
             Gate::authorize('view', $account);
             $query->where('client_account_id', $account->id);
@@ -606,18 +623,34 @@ class WholesaleOrderController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $this->assertStaff($request);
         Gate::authorize('create', WholesaleOrder::class);
 
+        $user = $request->user();
+        if (! $user instanceof User) {
+            abort(403);
+        }
+
         $validated = $request->validate([
-            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'client_account_id' => [$this->isPortalUser($user) ? 'nullable' : 'required', 'integer', 'exists:client_accounts,id'],
             'order_type' => ['required', 'string', Rule::in(WholesaleOrder::ORDER_TYPES)],
             'order_number' => ['required', 'string', 'max:128'],
             'instructions' => ['nullable', 'string', 'max:20000'],
         ]);
 
-        $account = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
-        Gate::authorize('view', $account);
+        if ($this->isPortalUser($user)) {
+            $accountId = (int) $user->client_account_id;
+        } else {
+            $accountId = (int) $validated['client_account_id'];
+        }
+
+        $account = ClientAccount::query()->findOrFail($accountId);
+        if ($this->isPortalUser($user)) {
+            if ((int) $user->client_account_id !== (int) $account->id) {
+                abort(403);
+            }
+        } else {
+            Gate::authorize('view', $account);
+        }
 
         $order = WholesaleOrder::query()->create([
             'client_account_id' => $account->id,
@@ -626,7 +659,7 @@ class WholesaleOrderController extends Controller
             'status' => WholesaleOrder::STATUS_DRAFT,
             'instructions' => isset($validated['instructions']) ? trim((string) $validated['instructions']) : null,
             'items_count' => 0,
-            'created_by_user_id' => $request->user() instanceof User ? $request->user()->id : null,
+            'created_by_user_id' => $user->id,
         ]);
 
         return response()->json($this->serializeDetail($order->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user.profile'])), 201);
@@ -634,10 +667,49 @@ class WholesaleOrderController extends Controller
 
     public function show(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
     {
-        $this->assertStaff($request);
-        Gate::authorize('view', $wholesaleOrder);
+        $this->authorizePortalOrStaffView($request, $wholesaleOrder);
 
         return response()->json($this->serializeDetail($wholesaleOrder));
+    }
+
+    public function destroy(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('delete', $wholesaleOrder);
+
+        if (! $wholesaleOrder->isEditable()) {
+            throw ValidationException::withMessages([
+                'status' => ['Only draft or pending wholesale orders can be deleted.'],
+            ]);
+        }
+
+        $wholesaleOrder->loadMissing(['lines', 'comments', 'shippingLabels', 'packages']);
+
+        foreach ($wholesaleOrder->lines as $line) {
+            if ($line->barcode_path) {
+                Storage::disk('local')->delete($line->barcode_path);
+            }
+            $line->delete();
+        }
+        foreach ($wholesaleOrder->comments as $comment) {
+            if ($comment->attachment_path) {
+                Storage::disk('local')->delete($comment->attachment_path);
+            }
+            $comment->delete();
+        }
+        foreach ($wholesaleOrder->shippingLabels as $label) {
+            if ($label->path) {
+                Storage::disk('local')->delete($label->path);
+            }
+            $label->delete();
+        }
+        if ($wholesaleOrder->shipping_label_path) {
+            Storage::disk('local')->delete($wholesaleOrder->shipping_label_path);
+        }
+        $wholesaleOrder->packages()->delete();
+        $wholesaleOrder->delete();
+
+        return response()->json(['message' => 'Wholesale order deleted.']);
     }
 
     public function productCatalog(
@@ -645,7 +717,6 @@ class WholesaleOrderController extends Controller
         WholesaleOrder $wholesaleOrder,
         ShipHeroInventoryService $inventory
     ): JsonResponse {
-        $this->assertStaff($request);
         Gate::authorize('view', $wholesaleOrder);
 
         $validated = $request->validate([
@@ -717,8 +788,36 @@ class WholesaleOrderController extends Controller
 
     public function update(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
     {
-        $this->assertStaff($request);
         Gate::authorize('update', $wholesaleOrder);
+
+        $user = $request->user();
+        if ($this->isPortalUser($user instanceof User ? $user : null)) {
+            $validated = $request->validate([
+                'instructions' => ['nullable', 'string', 'max:20000'],
+            ]);
+            if (! $wholesaleOrder->isEditable()) {
+                throw ValidationException::withMessages([
+                    'status' => ['This wholesale order cannot be edited.'],
+                ]);
+            }
+            if (array_key_exists('instructions', $validated)) {
+                $wholesaleOrder->instructions = $validated['instructions'] !== null
+                    ? trim((string) $validated['instructions'])
+                    : null;
+            }
+            $wholesaleOrder->save();
+
+            return response()->json($this->serializeDetail($wholesaleOrder->fresh([
+                'clientAccount',
+                'createdBy',
+                'lines',
+                'comments.user.profile',
+                'shippingLabels',
+                'packages',
+            ])));
+        }
+
+        $this->assertStaff($request);
 
         $validated = $request->validate([
             'order_number' => ['sometimes', 'string', 'max:128'],
@@ -855,7 +954,6 @@ class WholesaleOrderController extends Controller
 
     public function storeLine(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
     {
-        $this->assertStaff($request);
         Gate::authorize('update', $wholesaleOrder);
         $this->assertLineEditable($wholesaleOrder);
 
@@ -898,7 +996,6 @@ class WholesaleOrderController extends Controller
 
     public function updateLine(Request $request, WholesaleOrder $wholesaleOrder, WholesaleOrderLine $line): JsonResponse
     {
-        $this->assertStaff($request);
         Gate::authorize('update', $wholesaleOrder);
         $this->assertLineEditable($wholesaleOrder);
         $this->assertLineBelongsToOrder($wholesaleOrder, $line);
@@ -927,7 +1024,6 @@ class WholesaleOrderController extends Controller
 
     public function destroyLine(Request $request, WholesaleOrder $wholesaleOrder, WholesaleOrderLine $line): JsonResponse
     {
-        $this->assertStaff($request);
         Gate::authorize('update', $wholesaleOrder);
         $this->assertLineEditable($wholesaleOrder);
         $this->assertLineBelongsToOrder($wholesaleOrder, $line);
@@ -975,7 +1071,6 @@ class WholesaleOrderController extends Controller
 
     public function lineBarcodePdf(Request $request, WholesaleOrder $wholesaleOrder, WholesaleOrderLine $line)
     {
-        $this->assertStaff($request);
         Gate::authorize('view', $wholesaleOrder);
         $this->assertLineBelongsToOrder($wholesaleOrder, $line);
 

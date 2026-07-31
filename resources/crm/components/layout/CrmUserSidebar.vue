@@ -54,6 +54,7 @@ function navActive(mode) {
   if (mode === "orders-on-hold") return p.startsWith("/users/orders/on-hold");
   if (mode === "orders-backorder") return p.startsWith("/users/orders/backorder");
   if (mode === "orders-shipped") return p.startsWith("/users/orders/shipped");
+  if (mode === "orders-wholesale") return p.startsWith("/users/orders/wholesale");
   if (mode === "orders-create") return p === "/users/orders/create";
   if (mode === "inventory" || mode === "products") {
     return (
@@ -204,6 +205,16 @@ function onNavClick(event) {
               <li><RouterLink to="/users/orders/on-hold" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-on-hold') }" @click="onNavClick">On-Hold</RouterLink></li>
               <li><RouterLink to="/users/orders/backorder" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-backorder') }" @click="onNavClick">Backorder</RouterLink></li>
               <li><RouterLink to="/users/orders/shipped" class="vx-nav-link vx-nav-sublink" :class="{ 'vx-nav-link--active': navActive('orders-shipped') }" @click="onNavClick">Shipped</RouterLink></li>
+              <li>
+                <RouterLink
+                  to="/users/orders/wholesale"
+                  class="vx-nav-link vx-nav-sublink"
+                  :class="{ 'vx-nav-link--active': navActive('orders-wholesale') }"
+                  @click="onNavClick"
+                >
+                  Wholesale
+                </RouterLink>
+              </li>
               <li>
                 <RouterLink
                   to="/users/orders/create"

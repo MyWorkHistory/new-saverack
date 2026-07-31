@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -17,6 +17,7 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateUs, formatDateTimeUs } from "../../utils/formatUserDates.js";
 import { noteAuthorFromRecord } from "../../utils/noteAuthor.js";
+import { crmIsPortalUser } from "../../utils/crmUser.js";
 import {
   wholesaleLineStatusBadgeClass,
   wholesaleLineStatusLabel,
@@ -31,6 +32,11 @@ import {
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
+const crmUser = inject("crmUser", ref(null));
+
+const isPortal = computed(
+  () => Boolean(route.meta?.userPortal) || crmIsPortalUser(crmUser.value),
+);
 
 const LINE_MENU_W = 176;
 const LINE_MENU_H = 88;
@@ -97,11 +103,15 @@ function commentAuthor(comment) {
 
 const canReadyToShip = computed(() => Boolean(order.value?.can_ready_to_ship));
 const showReadyToShipButton = computed(() => {
+  if (isPortal.value) return false;
   const s = String(order.value?.status || "").toLowerCase();
   return (s === "draft" || s === "pending") && !order.value?.shiphero_order_id;
 });
 
-const showPickListLink = computed(() => String(order.value?.status || "").toLowerCase() === "in_progress");
+const showPickListLink = computed(() => {
+  if (isPortal.value) return false;
+  return String(order.value?.status || "").toLowerCase() === "in_progress";
+});
 
 const pickListRoute = computed(() => {
   const query = {};
@@ -113,9 +123,14 @@ const pickListRoute = computed(() => {
 });
 
 const canClickStatusBadge = computed(() => {
+  if (isPortal.value) return false;
   const s = String(order.value?.status || "").toLowerCase();
   return s === "pending" || s === "completed";
 });
+
+const listRouteName = computed(() =>
+  isPortal.value ? "user-wholesale-orders" : "wholesale-orders",
+);
 
 const readyToShipDisabledReason = computed(() => {
   const o = order.value;
@@ -300,7 +315,7 @@ async function load() {
     });
   } catch (e) {
     toast.errorFrom(e, "Could not load wholesale order.");
-    router.push({ name: "wholesale-orders" });
+    router.push({ name: listRouteName.value });
   } finally {
     loading.value = false;
   }
@@ -619,7 +634,7 @@ onUnmounted(() => {
             <button
               type="button"
               class="btn btn-link btn-sm text-secondary px-0 py-0 mb-2 text-decoration-none"
-              @click="router.push({ name: 'wholesale-orders' })"
+              @click="router.push({ name: listRouteName })"
             >
               &lt; Wholesale Orders
             </button>
@@ -642,7 +657,7 @@ onUnmounted(() => {
                 {{ orderStatusLabel() }}
               </span>
               <a
-                v-if="shipheroAdminUrl"
+                v-if="shipheroAdminUrl && !isPortal"
                 :href="shipheroAdminUrl"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -949,7 +964,10 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+        <div
+          v-if="!isPortal"
+          class="staff-table-card staff-datatable-card staff-datatable-card--white p-4"
+        >
           <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
             <h2 class="h6 fw-semibold mb-0">Comments</h2>
             <button
@@ -1035,7 +1053,7 @@ onUnmounted(() => {
           <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-1">
             <h3 class="h6 fw-semibold mb-0">Product &amp; Fulfillment Requirements</h3>
             <button
-              v-if="isEditable"
+              v-if="isEditable && !isPortal"
               type="button"
               class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1"
               @click="openRequirementsEdit"
@@ -1066,7 +1084,7 @@ onUnmounted(() => {
         <WholesaleShippingLabelsCard
           v-if="order"
           :order="order"
-          :editable="isEditable"
+          :editable="isEditable && !isPortal"
           :formatted-address="formattedShippingAddress"
           @saved="onShippingLabelsSaved"
         />
@@ -1111,7 +1129,7 @@ onUnmounted(() => {
                   : "—"
               }}</span>
             </div>
-            <div v-if="shipheroAdminUrl" class="order-detail-page__detail-row">
+            <div v-if="shipheroAdminUrl && !isPortal" class="order-detail-page__detail-row">
               <span class="order-detail-page__detail-label">ShipHero Order</span>
               <span class="order-detail-page__detail-value">
                 <a
@@ -1172,6 +1190,7 @@ onUnmounted(() => {
       package-type="box"
       :packages="order.boxes || []"
       :saved-at="order.boxes_saved_at"
+      :read-only="isPortal"
       @saved="onPackageInfoSaved"
     />
 
@@ -1182,6 +1201,7 @@ onUnmounted(() => {
       package-type="pallet"
       :packages="order.pallets || []"
       :saved-at="order.pallets_saved_at"
+      :read-only="isPortal"
       @saved="onPackageInfoSaved"
     />
 
@@ -1202,7 +1222,13 @@ onUnmounted(() => {
         :style="{ top: `${lineMenuRect.top}px`, left: `${lineMenuRect.left}px` }"
         @click.stop
       >
-        <button type="button" class="staff-row-menu__item" role="menuitem" @click="onLineMenuUpload">
+        <button
+          v-if="!isPortal"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="onLineMenuUpload"
+        >
           Upload Barcode
         </button>
         <button type="button" class="staff-row-menu__item staff-row-menu__item--danger" role="menuitem" @click="onLineMenuRemove">

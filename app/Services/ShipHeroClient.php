@@ -5,6 +5,7 @@ namespace App\Services;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use App\Support\ShipHeroCreditLimit;
 use RuntimeException;
 use Throwable;
 
@@ -106,6 +107,8 @@ class ShipHeroClient
         }
 
         $maxAttempts = 3;
+        $creditAttempts = 0;
+        $maxCreditAttempts = 12;
         $lastTransportError = null;
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             Log::info('shiphero.graphql.request.start', [
@@ -168,6 +171,11 @@ class ShipHeroClient
                     $message = is_array($first)
                         ? (string) ($first['message'] ?? json_encode($first))
                         : (string) $first;
+                    if ($this->shouldRetryCreditLimit($message, $creditAttempts, $maxCreditAttempts)) {
+                        $creditAttempts++;
+                        $attempt = max(0, $attempt - 1);
+                        continue;
+                    }
                     Log::warning('shiphero.graphql.http_error_with_body', [
                         'operation' => $operation,
                         'status' => $status,
@@ -197,6 +205,12 @@ class ShipHeroClient
                 $message = is_array($first)
                     ? (string) ($first['message'] ?? json_encode($first))
                     : (string) $first;
+
+                if ($this->shouldRetryCreditLimit($message, $creditAttempts, $maxCreditAttempts)) {
+                    $creditAttempts++;
+                    $attempt = max(0, $attempt - 1);
+                    continue;
+                }
 
                 if ($this->isTransientApiErrorMessage($message) && $attempt < $maxAttempts) {
                     usleep($this->retrySleepMicros($attempt));
@@ -320,6 +334,27 @@ class ShipHeroClient
             || str_contains($m, 'bad gateway')
             || str_contains($m, 'temporarily unavailable')
             || str_contains($m, 'timeout');
+    }
+
+    /**
+     * Wait for ShipHero's credit bucket to refill, then allow the outer loop to retry.
+     */
+    private function shouldRetryCreditLimit(string $message, int $creditAttempts, int $maxCreditAttempts): bool
+    {
+        if (! ShipHeroCreditLimit::isCreditLimitError($message) || $creditAttempts >= $maxCreditAttempts) {
+            return false;
+        }
+
+        $wait = ShipHeroCreditLimit::retrySeconds($message) ?? 2;
+        $wait = min(45, max(1, $wait + 1));
+        Log::warning('shiphero.graphql.credit_limit_wait', [
+            'wait_seconds' => $wait,
+            'credit_attempt' => $creditAttempts + 1,
+            'message' => mb_substr($message, 0, 400),
+        ]);
+        sleep($wait);
+
+        return true;
     }
 
     private function retrySleepMicros(int $attempt): int

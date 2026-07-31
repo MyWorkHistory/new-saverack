@@ -965,7 +965,15 @@ class OrderDashboardSnapshotService
         $purgeStale = $tab === ShipHeroOrderQueueIndex::KIND_AWAITING;
         $syncResult = $this->orderIndex->syncAccountQueue($clientAccountId, $tab, $purgeStale);
         if ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
-            $this->orderIndex->supplementAwaitingFromRecentUpdates($clientAccountId);
+            try {
+                $this->orderIndex->supplementAwaitingFromRecentUpdates($clientAccountId);
+            } catch (Throwable $e) {
+                // Don't fail a successful index sync because the optional recent-updates pass hit credits.
+                Log::warning('order_dashboard.awaiting_supplement_failed', [
+                    'client_account_id' => $clientAccountId,
+                    'message' => $e->getMessage(),
+                ]);
+            }
             $this->orderIndex->pruneNonAwaitingRows($clientAccountId);
         }
         $this->patchAccountFromQueueTab($clientAccountId, $tab);

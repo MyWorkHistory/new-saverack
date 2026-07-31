@@ -497,7 +497,10 @@ class ShipHeroOrderQueueIndexService
                     throw $e;
                 }
 
-                // Prefer shrinking the page so one GraphQL op fits the credit bucket, then wait if needed.
+                // Always honor ShipHero's refill wait — shrinking alone can still cost ~300 credits.
+                $wait = ShipHeroCreditLimit::retrySeconds($e->getMessage()) ?? 2;
+                sleep(min(45, max(1, $wait + 1)));
+
                 if ($pageSize > 5) {
                     $pageSize = max(5, (int) floor($pageSize / 2));
                     Log::warning('order_queue_index.page_size_reduced', [
@@ -505,11 +508,7 @@ class ShipHeroOrderQueueIndexService
                         'page_size' => $pageSize,
                         'message' => $e->getMessage(),
                     ]);
-                    continue;
                 }
-
-                $wait = ShipHeroCreditLimit::retrySeconds($e->getMessage()) ?? 2;
-                sleep(min(45, $wait + 1));
             }
         }
     }
@@ -806,7 +805,7 @@ class ShipHeroOrderQueueIndexService
             $page = $this->orders->listRecentlyUpdatedOrders([
                 'customer_account_id' => $customerId,
                 'updated_from' => $updatedFrom,
-                'first' => 50,
+                'first' => 10,
                 'after' => $after,
             ]);
             $rows = is_array($page['rows'] ?? null) ? $page['rows'] : [];
@@ -849,7 +848,7 @@ class ShipHeroOrderQueueIndexService
                 'timezone' => $timezone,
                 'updated_from' => $updatedFrom,
                 'updated_to' => Carbon::now($timezone)->endOfDay()->toIso8601String(),
-                'first' => 50,
+                'first' => 10,
                 'after' => $after,
             ]);
             $rows = is_array($page['rows'] ?? null) ? $page['rows'] : [];

@@ -56,7 +56,7 @@ return [
          * Order queue index page size (Ready to Ship / on-hold / etc.).
          * Keep low — listOrders with line items can cost ~13 credits/order; first=100 often exceeds the credit bucket.
          */
-        'order_queue_page_size' => (int) env('SHIPHERO_ORDER_QUEUE_PAGE_SIZE', 20),
+        'order_queue_page_size' => (int) env('SHIPHERO_ORDER_QUEUE_PAGE_SIZE', 10),
         /** ShipHero warehouse_products page size (keep under per-operation credit limit). */
         'restock_page_size' => (int) env('SHIPHERO_RESTOCK_PAGE_SIZE', 20),
         /** Max location rows per warehouse product in restock scan. */

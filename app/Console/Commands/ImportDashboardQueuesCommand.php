@@ -57,17 +57,30 @@ class ImportDashboardQueuesCommand extends Command
             $this->line('Account #'.$accountId.' '.$account->company_name.'…');
 
             foreach ($tabs as $tab) {
-                try {
-                    $syncResult = $snapshots->importDashboardAccount($accountId, $tab);
-                    if (! empty($syncResult['truncated'])) {
-                        $truncated++;
-                    }
-                } catch (Throwable $e) {
-                    $failures++;
-                    $this->warn('  Tab '.$tab.' failed: '.$e->getMessage());
-                    if (stripos($e->getMessage(), 'not enough credits') !== false) {
-                        // Let the ShipHero credit bucket refill before the next account.
-                        sleep(20);
+                $tabAttempts = 0;
+                $tabOk = false;
+                while (! $tabOk && $tabAttempts < 4) {
+                    $tabAttempts++;
+                    try {
+                        $syncResult = $snapshots->importDashboardAccount($accountId, $tab);
+                        if (! empty($syncResult['truncated'])) {
+                            $truncated++;
+                        }
+                        $tabOk = true;
+                    } catch (Throwable $e) {
+                        $isCredit = stripos($e->getMessage(), 'not enough credits') !== false
+                            || stripos($e->getMessage(), 'max allowed') !== false;
+                        if ($isCredit && $tabAttempts < 4) {
+                            $this->warn('  Tab '.$tab.' credit limit (attempt '.$tabAttempts.'/4): waiting to retry…');
+                            sleep(20);
+                            continue;
+                        }
+                        $failures++;
+                        $this->warn('  Tab '.$tab.' failed: '.$e->getMessage());
+                        if ($isCredit) {
+                            sleep(20);
+                        }
+                        break;
                     }
                 }
             }

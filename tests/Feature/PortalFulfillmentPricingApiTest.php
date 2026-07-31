@@ -115,12 +115,9 @@ class PortalFulfillmentPricingApiTest extends TestCase
         $approve->assertOk();
         $approve->assertJsonPath('fulfillment_pricing_status', 'approved');
         $this->assertNotNull($account->fresh()->fulfillment_pricing_approved_at);
-        $this->assertNull($account->fresh()->fulfillment_pricing_accepted_at);
+        $this->assertNotNull($account->fresh()->fulfillment_pricing_accepted_at);
         $verifications = $account->fresh()->onboarding_verifications;
-        $this->assertTrue(
-            ! is_array($verifications)
-            || empty($verifications['fulfillment_pricing']['verified_at'] ?? null)
-        );
+        $this->assertNotEmpty($verifications['fulfillment_pricing']['verified_at'] ?? null);
 
         $pdfAdmin = $this->get('/api/client-accounts/'.$account->id.'/onboarding/fulfillment-pricing.pdf');
         $pdfAdmin->assertOk();
@@ -131,8 +128,8 @@ class PortalFulfillmentPricingApiTest extends TestCase
         $show = $this->getJson('/api/portal/onboarding');
         $show->assertOk();
         $show->assertJsonPath('fulfillment_pricing.approved', true);
-        $show->assertJsonPath('fulfillment_pricing.status', 'not_completed');
-        $show->assertJsonPath('tasks.2.status', 'not_completed');
+        $show->assertJsonPath('fulfillment_pricing.status', 'completed');
+        $show->assertJsonPath('tasks.2.status', 'completed');
         $this->assertNotEmpty($show->json('fulfillment_pricing.fees'));
         $portalCategories = [];
         foreach ($show->json('fulfillment_pricing.fees') as $feeRow) {
@@ -146,6 +143,7 @@ class PortalFulfillmentPricingApiTest extends TestCase
         $this->assertContains(ClientAccountFee::GROUP_FULFILLMENT, $portalCategories);
         $this->assertNotContains(PricingFeeTemplate::CATEGORY_POSTAGE, $portalCategories);
 
+        // Already completed by staff approve; accept remains idempotent.
         $accept = $this->postJson('/api/portal/onboarding/fulfillment-pricing/accept');
         $accept->assertOk();
         $accept->assertJsonPath('fulfillment_pricing.status', 'completed');
@@ -158,7 +156,35 @@ class PortalFulfillmentPricingApiTest extends TestCase
         $this->assertStringNotContainsString('USPS Postage PortalHidden', $pdfPortal->getContent());
     }
 
-    public function test_staff_verify_does_not_complete_pricing(): void
+    public function test_staff_approve_completes_and_verifies_pricing(): void
+    {
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_PENDING,
+            'company_name' => 'Pricing Approve Completes Co',
+            'email' => 'pricing-approve-completes@example.test',
+        ]);
+
+        $this->actingAsStaff();
+        $approve = $this->patchJson(
+            '/api/client-accounts/'.$account->id.'/fulfillment-pricing/status',
+            ['status' => 'approved']
+        );
+        $approve->assertOk();
+
+        $account->refresh();
+        $this->assertSame(ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED, $account->fulfillment_pricing_status);
+        $this->assertNotNull($account->fulfillment_pricing_accepted_at);
+        $this->assertNotEmpty($account->onboarding_verifications['fulfillment_pricing']['verified_at'] ?? null);
+
+        $adminShow = $this->getJson('/api/client-accounts/'.$account->id.'/onboarding');
+        $adminShow->assertOk();
+        $pricingTask = collect($adminShow->json('tasks'))->firstWhere('id', 'fulfillment_pricing');
+        $this->assertIsArray($pricingTask);
+        $this->assertSame('completed', $pricingTask['status'] ?? null);
+        $this->assertTrue((bool) ($pricingTask['verified'] ?? false));
+    }
+
+    public function test_staff_verify_requires_complete_first(): void
     {
         $account = ClientAccount::query()->create([
             'status' => ClientAccount::STATUS_PENDING,

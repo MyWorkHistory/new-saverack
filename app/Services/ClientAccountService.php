@@ -923,17 +923,21 @@ class ClientAccountService
         $account->fulfillment_pricing_status = $status;
         if ($status === ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED) {
             $account->fulfillment_pricing_approved_at = $account->fulfillment_pricing_approved_at ?? now();
+            // Approving fees also completes + verifies the onboarding pricing task.
+            if ($account->fulfillment_pricing_accepted_at === null) {
+                $account->fulfillment_pricing_accepted_at = now();
+            }
         } else {
             $account->fulfillment_pricing_approved_at = null;
             $account->fulfillment_pricing_accepted_at = null;
         }
         $account->save();
 
-        // Fees Approve only unlocks pricing for the client. Completion is client accept
-        // (or admin Mark Complete); verification is a separate onboarding step.
-        if ($status !== ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED) {
-            $onboarding = app(PortalOnboardingService::class);
-            $actorId = $actor !== null ? (int) $actor->id : null;
+        $onboarding = app(PortalOnboardingService::class);
+        $actorId = $actor !== null ? (int) $actor->id : null;
+        if ($status === ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED) {
+            $onboarding->setTaskVerified($account, 'fulfillment_pricing', true, $actorId);
+        } else {
             $onboarding->setTaskVerified($account, 'fulfillment_pricing', false, $actorId);
         }
 

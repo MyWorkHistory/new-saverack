@@ -181,14 +181,14 @@ async function onMarkComplete() {
           Fulfillment pricing is completed and verified.
         </p>
         <p v-else-if="adminMode && accepted" class="text-secondary small mb-0 mt-1">
-          Pricing is completed. Verify separately when you have confirmed the schedule.
+          Pricing is completed. Verify when you have confirmed the schedule.
         </p>
         <p v-else-if="adminMode && approved" class="text-secondary small mb-0 mt-1">
-          Fees are Approved. Mark Complete when the client accepts (or mark complete for them), then
-          Verify.
+          Fees are Approved. Approving on the Fees tab normally completes and verifies this task —
+          use Mark Complete / Verify here if needed.
         </p>
         <p v-else-if="adminMode" class="text-secondary small mb-0 mt-1">
-          Approve fulfillment pricing on the Fees tab before completing or verifying.
+          Approve fulfillment pricing on the Fees tab to complete and verify this task.
         </p>
         <p v-else-if="pageMode && accepted" class="text-secondary small mb-0">
           You have accepted this account's fulfillment pricing schedule.
@@ -232,8 +232,8 @@ async function onMarkComplete() {
       >
         <p class="mb-2 fw-semibold text-body">Fulfillment pricing is not approved yet</p>
         <p class="mb-0 mx-auto" style="max-width: 28rem">
-          Review and Approve the account fee schedule on the Fees tab. After approval, return here
-          to Mark Complete and Verify.
+          Review and Approve the account fee schedule on the Fees tab. Approving also marks
+          Fulfillment Pricing completed and verified on Onboarding.
         </p>
         <button
           v-if="adminMode"

@@ -63,9 +63,20 @@ class ImportDashboardQueuesCommand extends Command
                     $tabAttempts++;
                     try {
                         $syncResult = $snapshots->importDashboardAccount($accountId, $tab);
+                        $pages = (int) ($syncResult['pages'] ?? 0);
+                        $rows = (int) ($syncResult['rows_upserted'] ?? 0);
+                        $this->line('  Tab '.$tab.': pages='.$pages.', rows_upserted='.$rows);
+                        if ($rows === 0) {
+                            $this->warn('  Tab '.$tab.' imported 0 rows — check ShipHero customer id / Ready to Ship filters.');
+                        }
                         if (! empty($syncResult['truncated'])) {
                             $truncated++;
                         }
+                        $indexCount = ShipHeroOrderQueueIndex::query()
+                            ->where('client_account_id', $accountId)
+                            ->where('queue_kind', $tab)
+                            ->count();
+                        $this->line('  Index '.$tab.' rows now: '.$indexCount);
                         $tabOk = true;
                     } catch (Throwable $e) {
                         $isCredit = stripos($e->getMessage(), 'not enough credits') !== false

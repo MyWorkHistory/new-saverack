@@ -139,7 +139,7 @@ const removeHoldsSingleOrderId = ref("");
 const createOrderModalOpen = ref(false);
 
 const query = reactive({
-  datePreset: "today",
+  datePreset: "all",
   from: "",
   to: "",
   fulfillmentStatus: "",
@@ -851,7 +851,8 @@ watch([allPageSelected, somePageSelected, displayedRows], () => {
 
 function defaultDatePresetForCurrentTab() {
   if (tabKey.value === "awaiting") {
-    return "since_may_1";
+    // Match ShipHero Ready to Ship (no order-date floor). "Since May 1" remains available.
+    return "all";
   }
   if (tabKey.value === "on_hold") {
     return "since_feb_1";

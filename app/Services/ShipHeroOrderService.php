@@ -152,29 +152,37 @@ class ShipHeroOrderService
             $this->applyOpenQueueTabGraphScope($vars, $tab, $filters);
         } elseif ($tab === 'awaiting') {
             $vars['ready_to_ship'] = true;
-            // Do not force fulfillment_status=unfulfilled — that drops pending/open RTS orders.
+            // Match ShipHero Ready to Ship: ready_to_ship only (do not require unfulfilled —
+            // that drops pending/open RTS). Optional not_in / date windows come from filters.
             $vars['fulfillment_status'] = null;
-            $vars['fulfillment_status_not_in'] = self::OPEN_QUEUE_EXCLUDED_FULFILLMENT_STATUSES;
+            $vars['fulfillment_status_not_in'] = null;
             $timezone = trim((string) ($filters['timezone'] ?? ''));
             if ($timezone === '' || ! in_array($timezone, timezone_identifiers_list(), true)) {
                 $timezone = PortalQueueCountsService::DEFAULT_ACCOUNT_TIMEZONE;
             }
-            $explicitUpdatedFrom = $this->nullableIso($filters['updated_from'] ?? null);
-            if ($explicitUpdatedFrom !== null) {
+            if (! empty($filters['skip_date_window'])) {
                 $vars['order_date_from'] = null;
                 $vars['order_date_to'] = null;
-                $vars['updated_from'] = $explicitUpdatedFrom;
-                $vars['updated_to'] = $this->nullableIso($filters['updated_to'] ?? null)
-                    ?? Carbon::now($timezone)->endOfDay()->toIso8601String();
+                $vars['updated_from'] = null;
+                $vars['updated_to'] = null;
             } else {
-                $hasOrderWindow = is_string($vars['order_date_from']) && trim((string) $vars['order_date_from']) !== ''
-                    && is_string($vars['order_date_to']) && trim((string) $vars['order_date_to']) !== '';
-                if ($hasOrderWindow) {
-                    $this->applyOrderDateWindowToGraphVars($vars, $timezone);
-                }
-                if (! $hasOrderWindow) {
-                    $vars['updated_from'] = Carbon::now($timezone)->subDays(180)->startOfDay()->toIso8601String();
-                    $vars['updated_to'] = Carbon::now($timezone)->endOfDay()->toIso8601String();
+                $explicitUpdatedFrom = $this->nullableIso($filters['updated_from'] ?? null);
+                if ($explicitUpdatedFrom !== null) {
+                    $vars['order_date_from'] = null;
+                    $vars['order_date_to'] = null;
+                    $vars['updated_from'] = $explicitUpdatedFrom;
+                    $vars['updated_to'] = $this->nullableIso($filters['updated_to'] ?? null)
+                        ?? Carbon::now($timezone)->endOfDay()->toIso8601String();
+                } else {
+                    $hasOrderWindow = is_string($vars['order_date_from']) && trim((string) $vars['order_date_from']) !== ''
+                        && is_string($vars['order_date_to']) && trim((string) $vars['order_date_to']) !== '';
+                    if ($hasOrderWindow) {
+                        $this->applyOrderDateWindowToGraphVars($vars, $timezone);
+                    }
+                    if (! $hasOrderWindow) {
+                        $vars['updated_from'] = Carbon::now($timezone)->subDays(180)->startOfDay()->toIso8601String();
+                        $vars['updated_to'] = Carbon::now($timezone)->endOfDay()->toIso8601String();
+                    }
                 }
             }
         } elseif ($tab === 'backorder') {
@@ -4278,8 +4286,7 @@ query ShipHeroReadyToShipSummaryPage(
     customer_account_id: $customer_account_id,
     order_date_from: $order_date_from,
     order_date_to: $order_date_to,
-    ready_to_ship: true,
-    fulfillment_status_not_in: ["fulfilled", "shipped", "complete", "canceled", "cancelled"]
+    ready_to_ship: true
   ) {
     request_id
     complexity

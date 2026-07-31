@@ -136,16 +136,37 @@ class ImportDashboardAccountCommand extends Command
             return self::FAILURE;
         }
 
-        if (! empty($syncResult['truncated'])) {
-            $this->warn('Sync was truncated (pagination limit). Some stale rows may remain until webhooks or orders:sync-recent-updates runs.');
-        }
-
         if (is_array($syncResult['tabs'] ?? null)) {
             foreach ($syncResult['tabs'] as $subTab => $subResult) {
+                $this->line(sprintf(
+                    '  %s: pages=%d rows_upserted=%d',
+                    $subTab,
+                    (int) ($subResult['pages'] ?? 0),
+                    (int) ($subResult['rows_upserted'] ?? 0)
+                ));
                 if (! empty($subResult['truncated'])) {
                     $this->warn('Tab '.$subTab.' was truncated.');
                 }
             }
+        } else {
+            $pages = (int) ($syncResult['pages'] ?? 0);
+            $rows = (int) ($syncResult['rows_upserted'] ?? 0);
+            $this->line('  pages='.$pages.', rows_upserted='.$rows);
+            if ($rows === 0) {
+                $this->warn('Imported 0 rows. Run: php artisan orders:probe-awaiting '.$accountId);
+            }
+            if (! empty($syncResult['truncated'])) {
+                $this->warn('Sync was truncated (pagination limit). Some stale rows may remain until webhooks or orders:sync-recent-updates runs.');
+            }
+        }
+
+        $indexTab = $tab === 'all' ? ShipHeroOrderQueueIndex::KIND_AWAITING : $tab;
+        if ($indexTab !== 'all' && in_array($indexTab, ShipHeroOrderQueueIndex::QUEUE_KINDS, true)) {
+            $indexCount = ShipHeroOrderQueueIndex::query()
+                ->where('client_account_id', $accountId)
+                ->where('queue_kind', $indexTab)
+                ->count();
+            $this->line('Index '.$indexTab.' rows now: '.$indexCount);
         }
 
         $payload = $snapshots->getDashboardPayload();

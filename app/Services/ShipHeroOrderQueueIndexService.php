@@ -427,11 +427,10 @@ class ShipHeroOrderQueueIndexService
                 }
             } while ($hasNext && $after !== null && $pages < $maxPages);
 
-            // Drop rows that left this queue only on an explicit full rebuild (purgeStale).
-            // Incremental sync must not purge — incomplete shipped pagination used to report
-            // truncated=false and wipe today's shipments down to a handful of rows.
+            // Never purge after an empty pull — that wipes the index when ShipHero filters
+            // return 0 (credits, bad window, etc.) and leaves Ready to Ship blank.
             $didPurge = false;
-            if ($purgeStale && ! $truncated) {
+            if ($purgeStale && ! $truncated && $rowsUpserted > 0) {
                 ShipHeroOrderQueueIndex::query()
                     ->where('client_account_id', $clientAccountId)
                     ->where('queue_kind', $tab)
@@ -441,6 +440,12 @@ class ShipHeroOrderQueueIndexService
                     })
                     ->delete();
                 $didPurge = true;
+            } elseif ($purgeStale && $rowsUpserted === 0) {
+                Log::warning('order_queue_index.purge_skipped_empty_sync', [
+                    'client_account_id' => $clientAccountId,
+                    'tab' => $tab,
+                    'pages' => $pages,
+                ]);
             }
 
             if ($updateAccountSyncStatus) {
@@ -1431,8 +1436,10 @@ class ShipHeroOrderQueueIndexService
         ];
 
         if ($tab === ShipHeroOrderQueueIndex::KIND_AWAITING) {
-            $filters['order_date_from'] = $context['awaiting_from'] ?? null;
-            $filters['order_date_to'] = $context['awaiting_to'] ?? null;
+            // Match ShipHero Ready to Ship (no order-date floor). UI date filters apply on read.
+            $filters['skip_date_window'] = true;
+            $filters['order_date_from'] = null;
+            $filters['order_date_to'] = null;
         } elseif ($tab === ShipHeroOrderQueueIndex::KIND_SHIPPED) {
             $filters['order_date_from'] = $context['shipped_from'] ?? null;
             $filters['order_date_to'] = $context['shipped_to'] ?? null;

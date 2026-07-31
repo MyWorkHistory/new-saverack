@@ -1942,6 +1942,62 @@ button.staff-status-badge:focus-visible {
   margin-bottom: 0.75rem;
 }
 
+.crm-mobile-item-card__head-start {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.crm-mobile-item-card__head-end {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.crm-mobile-item-card__check {
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.crm-mobile-item-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.crm-mobile-item-card__meta-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.crm-mobile-item-card__meta-label {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.crm-mobile-item-card__meta-value {
+  min-width: 0;
+  text-align: right;
+  color: var(--bs-body-color);
+  word-break: break-word;
+}
+
+.crm-mobile-item-card__channels {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
 .crm-mobile-item-card__product {
   display: flex;
   align-items: flex-start;
@@ -1963,6 +2019,15 @@ button.staff-status-badge:focus-visible {
 .crm-mobile-item-card__thumb--empty {
   display: block;
   background: rgba(0, 0, 0, 0.05);
+}
+
+.crm-mobile-item-card__thumb--avatar {
+  border-radius: 50%;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bs-secondary-bg, #e9ecef);
 }
 
 .crm-mobile-item-card__copy {

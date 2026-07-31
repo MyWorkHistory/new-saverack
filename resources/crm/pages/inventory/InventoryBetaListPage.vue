@@ -1284,7 +1284,7 @@ onUnmounted(() => {
         >
           On Hand, Allocated, and Backorder are snapshots from the last account sync. Open a product for live quantities.
         </p>
-        <div class="table-responsive staff-table-wrap">
+        <div class="table-responsive staff-table-wrap d-none d-md-block">
         <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -1486,6 +1486,142 @@ onUnmounted(() => {
             </tr>
           </tbody>
         </table>
+        </div>
+
+        <div class="crm-mobile-item-cards d-md-none" aria-label="Inventory items">
+          <div v-if="loading" class="crm-mobile-item-card__empty">Loading inventory…</div>
+          <div v-else-if="isStaffPickerMode && !hasSearched" class="crm-mobile-item-card__empty">
+            Enter a SKU or barcode and press Search — account is optional. Select an account to filter the catalog.
+          </div>
+          <div v-else-if="listLoadFailed && !displayRows.length" class="crm-mobile-item-card__empty">
+            Catalog not loaded. Click <strong>Sync Products</strong> to load from ShipHero.
+          </div>
+          <div v-else-if="!displayRows.length" class="crm-mobile-item-card__empty">No inventory rows found.</div>
+          <template v-else>
+            <div class="d-flex align-items-center gap-2 px-1 pb-1">
+              <input
+                type="checkbox"
+                class="form-check-input staff-table-head__check mt-0 user-inv-check crm-mobile-item-card__check"
+                :checked="allVisibleSelected"
+                aria-label="Select all visible rows"
+                @change="onSelectAllCheckboxChange"
+              />
+              <span class="small text-secondary">Select all</span>
+            </div>
+            <article
+              v-for="row in displayRows"
+              :key="`mobile-${rowKey(row)}`"
+              class="crm-mobile-item-card"
+            >
+              <div class="crm-mobile-item-card__head">
+                <div class="crm-mobile-item-card__head-start">
+                  <input
+                    type="checkbox"
+                    class="form-check-input staff-table-head__check mt-0 user-inv-check crm-mobile-item-card__check"
+                    :checked="isRowSelected(row)"
+                    :aria-label="`Select ${row.sku}`"
+                    @change="onRowCheckboxChange($event, row)"
+                  />
+                  <button
+                    type="button"
+                    class="badge rounded-pill user-inv-status-badge user-inv-status-badge--btn border-0"
+                    :class="row.crm_active === false ? 'user-inv-status-badge--inactive' : 'user-inv-status-badge--active'"
+                    :aria-label="`Status: ${crmStatusLabel(row)}. Click to ${canInventoryUpdate && effectiveRowAccountId(row) > 0 ? 'update' : 'view'}.`"
+                    @click="openStatusModal(row)"
+                  >
+                    {{ crmStatusLabel(row) }}
+                  </button>
+                </div>
+                <div v-if="canEditCrmStatus" class="crm-mobile-item-card__head-end" data-row-actions>
+                  <button
+                    type="button"
+                    class="staff-action-btn staff-action-btn--more"
+                    :class="{ 'is-open': rowActionKey === rowKey(row) }"
+                    :aria-expanded="rowActionKey === rowKey(row)"
+                    aria-haspopup="true"
+                    aria-label="Row actions"
+                    :disabled="bulkBusy || effectiveRowAccountId(row) <= 0"
+                    @click="toggleRowActionMenu(row, $event)"
+                  >
+                    <CrmIconRowActions variant="horizontal" />
+                  </button>
+                </div>
+              </div>
+
+              <div class="crm-mobile-item-card__product">
+                <a
+                  :href="inventoryDetailHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :aria-label="`View ${row.sku || 'product'}`"
+                >
+                  <img
+                    v-if="row.image_url"
+                    :src="row.image_url"
+                    alt=""
+                    class="crm-mobile-item-card__thumb"
+                    loading="lazy"
+                  />
+                  <div
+                    v-else
+                    class="crm-mobile-item-card__thumb crm-mobile-item-card__thumb--empty"
+                    aria-hidden="true"
+                  />
+                </a>
+                <div class="crm-mobile-item-card__copy">
+                  <a
+                    :href="inventoryDetailHref(row)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="crm-mobile-item-card__sku"
+                  >
+                    {{ row.sku || "—" }}
+                  </a>
+                  <a
+                    :href="inventoryDetailHref(row)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="crm-mobile-item-card__name text-decoration-none"
+                  >
+                    {{ row.name || "—" }}
+                  </a>
+                  <template v-if="showAccountColumn">
+                    <a
+                      v-if="clientAccountHref(row)"
+                      :href="clientAccountHref(row)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="crm-mobile-item-card__account"
+                    >
+                      {{ rowAccountLabel(row) }}
+                    </a>
+                    <span v-else class="crm-mobile-item-card__account text-secondary">
+                      {{ rowAccountLabel(row) }}
+                    </span>
+                  </template>
+                </div>
+              </div>
+
+              <div class="crm-mobile-item-card__stats" role="group" aria-label="Inventory quantities">
+                <div class="crm-mobile-item-card__stat">
+                  <span class="crm-mobile-item-card__stat-label">On Hand</span>
+                  <span class="crm-mobile-item-card__stat-value">{{ Number(row.on_hand || 0) }}</span>
+                </div>
+                <div class="crm-mobile-item-card__stat">
+                  <span class="crm-mobile-item-card__stat-label">Allocated</span>
+                  <span class="crm-mobile-item-card__stat-value">{{ Number(row.allocated || 0) }}</span>
+                </div>
+                <div class="crm-mobile-item-card__stat">
+                  <span class="crm-mobile-item-card__stat-label">Backorder</span>
+                  <span class="crm-mobile-item-card__stat-value">{{ Number(row.backorder || 0) }}</span>
+                </div>
+                <div class="crm-mobile-item-card__stat">
+                  <span class="crm-mobile-item-card__stat-label">Kit</span>
+                  <span class="crm-mobile-item-card__stat-value">{{ (row.kit || row.kit_build) ? "Yes" : "No" }}</span>
+                </div>
+              </div>
+            </article>
+          </template>
         </div>
       </div>
       <div

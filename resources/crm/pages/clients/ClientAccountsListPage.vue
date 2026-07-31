@@ -1193,7 +1193,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="table-responsive staff-table-wrap">
+      <div class="table-responsive staff-table-wrap d-none d-md-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -1462,9 +1462,162 @@ onUnmounted(() => {
           </tbody>
         </table>
       </div>
-      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
-        Scroll sideways or swipe to see all columns.
-      </p>
+
+      <div class="crm-mobile-item-cards d-md-none" aria-label="Client accounts">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <div class="d-flex justify-content-center py-3">
+            <CrmLoadingSpinner message="Loading…" />
+          </div>
+        </div>
+        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">No accounts found.</div>
+        <template v-else>
+          <div v-if="showCheckboxCol" class="d-flex align-items-center gap-2 px-1 pb-1">
+            <input
+              type="checkbox"
+              class="form-check-input staff-table-head__check mt-0 crm-mobile-item-card__check"
+              :checked="isAllPageSelected"
+              :disabled="loading || !rows.length"
+              aria-label="Select all on page"
+              @change="toggleSelectAll"
+            />
+            <span class="small text-secondary">Select all</span>
+          </div>
+          <article
+            v-for="row in rows"
+            :key="`mobile-${row.id}`"
+            class="crm-mobile-item-card"
+          >
+            <div class="crm-mobile-item-card__head">
+              <div class="crm-mobile-item-card__head-start">
+                <input
+                  v-if="showCheckboxCol"
+                  type="checkbox"
+                  class="form-check-input staff-table-head__check mt-0 crm-mobile-item-card__check"
+                  :checked="selectedIds.includes(row.id)"
+                  :aria-label="`Select ${row.company_name}`"
+                  @change="toggleRowSelect(row.id)"
+                />
+                <div class="d-flex flex-column align-items-start gap-1 min-w-0">
+                  <button
+                    v-if="canUpdate"
+                    type="button"
+                    class="staff-status-badge text-capitalize"
+                    :class="statusBadgeClass(row.status)"
+                    title="Change account status"
+                    @click.stop="openStatusModal(row)"
+                  >
+                    {{ row.status }}
+                  </button>
+                  <span
+                    v-else
+                    class="badge rounded-pill text-capitalize fw-medium"
+                    :class="statusBadgeClass(row.status)"
+                  >
+                    {{ row.status }}
+                  </span>
+                  <span
+                    v-if="String(row.status || '').toLowerCase() === 'paused' && (row.pause_reason_label || row.pause_reason)"
+                    class="small text-secondary"
+                  >
+                    Reason: {{ row.pause_reason_label || clientAccountPauseReasonLabel(row.pause_reason) }}
+                  </span>
+                  <span
+                    v-else-if="String(row.status || '').toLowerCase() === 'inactive' && (row.inactive_reason_label || row.inactive_reason)"
+                    class="small text-secondary"
+                  >
+                    Reason: {{ row.inactive_reason_label || clientAccountInactiveReasonLabel(row.inactive_reason) }}
+                  </span>
+                </div>
+              </div>
+              <div
+                v-if="showRowActions"
+                class="crm-mobile-item-card__head-end"
+                data-row-actions
+              >
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': manageOpenId === row.id }"
+                  :aria-expanded="manageOpenId === row.id"
+                  :aria-row-actions="row.id"
+                  aria-haspopup="true"
+                  aria-label="Row actions"
+                  @click="toggleManageMenu(row.id, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__product">
+              <span class="crm-mobile-item-card__thumb crm-mobile-item-card__thumb--avatar">
+                <img
+                  v-if="showAccountAvatarImage(row)"
+                  :src="resolvePublicUrl(accountsListAvatarUrl(row))"
+                  alt=""
+                  :class="[
+                    'w-100 h-100',
+                    accountsListAvatarIsBrand(row) ? 'object-fit-contain p-1' : 'object-fit-cover',
+                  ]"
+                  @error="markAvatarLoadFailed(row.id)"
+                />
+                <span
+                  v-else
+                  class="d-flex w-100 h-100 align-items-center justify-content-center fw-semibold staff-user-cell__meta text-uppercase"
+                  :class="avatarClassForRow(row)"
+                >
+                  {{ accountRowInitials(row) }}
+                </span>
+              </span>
+              <div class="crm-mobile-item-card__copy">
+                <RouterLink
+                  :to="accountDetailRoute(row)"
+                  class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain text-decoration-none"
+                >
+                  {{ row.company_name }}
+                </RouterLink>
+                <RouterLink
+                  :to="accountDetailRoute(row)"
+                  class="crm-mobile-item-card__name text-decoration-none text-secondary"
+                >
+                  {{
+                    row.contact_full_name && String(row.contact_full_name).trim()
+                      ? row.contact_full_name
+                      : "—"
+                  }}
+                </RouterLink>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__meta">
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Email</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.email || "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Channel</span>
+                <div class="crm-mobile-item-card__channels">
+                  <ClientAccountChannelIcons
+                    :notify-email="!!row.notify_email"
+                    :notification-email="row.notification_email || ''"
+                    :telegram-handle="row.telegram_handle || ''"
+                    :whatsapp-e164="row.whatsapp_e164 || ''"
+                    :slack-channel="row.slack_channel || ''"
+                  />
+                </div>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Start Date</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatDateUs(accountStartDate(row)) }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Account Manager</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.account_manager?.name || "—" }}</span>
+              </div>
+            </div>
+          </article>
+        </template>
+      </div>
 
       <div
         class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3 border-top staff-table-footer"

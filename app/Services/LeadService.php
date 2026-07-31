@@ -367,7 +367,11 @@ class LeadService
         }
 
         $bytes = $this->screenshots->captureImageBytes($website);
-        $this->logos->replaceFromBytes($lead, $bytes, 'png');
+        $this->logos->replaceFromBytes($lead, $bytes, 'png', [
+            'fit' => 'cover',
+            'background' => 'white',
+            'prefer_top' => true,
+        ]);
 
         if ($actor !== null) {
             $this->activityLog->log($actor, 'lead.updated', $lead, null, [

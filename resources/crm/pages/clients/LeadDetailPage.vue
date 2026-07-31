@@ -231,20 +231,16 @@ function websiteHref(website) {
   return `https://${raw}`;
 }
 
-function gmailComposeHref(email, companyName, contactName) {
+function gmailComposeHref(email, companyName) {
   const to = String(email || "").trim();
   if (!to) return "";
   const company = String(companyName || "").trim() || "Account";
-  const name = String(contactName || "").trim();
   const params = new URLSearchParams({
     view: "cm",
     fs: "1",
     to,
     su: `Fulfillment for ${company}`,
   });
-  if (name) {
-    params.set("body", `Hi ${name},`);
-  }
   return `https://mail.google.com/mail/?${params.toString()}`;
 }
 
@@ -875,7 +871,7 @@ onMounted(async () => {
                     class="d-inline-flex align-items-center justify-content-end gap-1 flex-wrap"
                   >
                     <a
-                      :href="gmailComposeHref(lead.email, lead.company_name, lead.name)"
+                      :href="gmailComposeHref(lead.email, lead.company_name)"
                       target="_blank"
                       rel="noopener noreferrer"
                       class="link-primary text-decoration-none text-break"

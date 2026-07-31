@@ -19,7 +19,7 @@ class LeadLogoService
         return $this->replaceFromBytes($lead, $contents, $ext);
     }
 
-    public function replaceFromBytes(Lead $lead, string $bytes, string $ext = 'png'): string
+    public function replaceFromBytes(Lead $lead, string $bytes, string $ext = 'png', array $options = []): string
     {
         $ext = $this->normalizeExtString($ext);
         $disk = Storage::disk('public');
@@ -32,7 +32,7 @@ class LeadLogoService
         $relative = $dir.'/'.$filename;
 
         $previous = $lead->logo_path;
-        $imageBytes = $this->processRawBytes($bytes, $ext);
+        $imageBytes = $this->processRawBytes($bytes, $ext, $options);
         $disk->put($relative, $imageBytes);
         $lead->logo_path = $relative;
         $lead->save();
@@ -78,7 +78,12 @@ class LeadLogoService
         return $ext;
     }
 
-    private function processRawBytes(string $contents, string $ext): string
+    /**
+     * @param  array{fit?: string, background?: string}  $options
+     *   fit: contain (default) | cover
+     *   background: transparent (default) | white
+     */
+    private function processRawBytes(string $contents, string $ext, array $options = []): string
     {
         if (! function_exists('imagecreatefromstring') || $contents === '') {
             return $contents;
@@ -102,18 +107,52 @@ class LeadLogoService
                 return $contents;
             }
 
-            imagealphablending($canvas, false);
-            imagesavealpha($canvas, true);
-            $transparent = imagecolorallocatealpha($canvas, 0, 0, 0, 127);
-            imagefilledrectangle($canvas, 0, 0, $size, $size, $transparent);
-            imagealphablending($canvas, true);
+            $fit = strtolower((string) ($options['fit'] ?? 'contain'));
+            $background = strtolower((string) ($options['background'] ?? 'transparent'));
+            $useWhite = $background === 'white' || $fit === 'cover' || $ext === 'jpg';
 
-            $scale = min($size / $srcW, $size / $srcH);
-            $dstW = (int) max(1, round($srcW * $scale));
-            $dstH = (int) max(1, round($srcH * $scale));
-            $dstX = (int) floor(($size - $dstW) / 2);
-            $dstY = (int) floor(($size - $dstH) / 2);
-            imagecopyresampled($canvas, $source, $dstX, $dstY, 0, 0, $dstW, $dstH, $srcW, $srcH);
+            if ($useWhite) {
+                imagealphablending($canvas, true);
+                $white = imagecolorallocate($canvas, 255, 255, 255);
+                imagefilledrectangle($canvas, 0, 0, $size, $size, $white);
+            } else {
+                imagealphablending($canvas, false);
+                imagesavealpha($canvas, true);
+                $transparent = imagecolorallocatealpha($canvas, 0, 0, 0, 127);
+                imagefilledrectangle($canvas, 0, 0, $size, $size, $transparent);
+                imagealphablending($canvas, true);
+            }
+
+            if ($fit === 'cover') {
+                $scale = max($size / $srcW, $size / $srcH);
+                $cropW = (int) max(1, round($size / $scale));
+                $cropH = (int) max(1, round($size / $scale));
+                $srcX = (int) max(0, floor(($srcW - $cropW) / 2));
+                $srcY = (int) max(0, floor(($srcH - $cropH) / 2));
+                // Prefer top of page for website screenshots (hero/header), not vertical center.
+                if (! empty($options['prefer_top'])) {
+                    $srcY = 0;
+                }
+                imagecopyresampled(
+                    $canvas,
+                    $source,
+                    0,
+                    0,
+                    $srcX,
+                    $srcY,
+                    $size,
+                    $size,
+                    $cropW,
+                    $cropH
+                );
+            } else {
+                $scale = min($size / $srcW, $size / $srcH);
+                $dstW = (int) max(1, round($srcW * $scale));
+                $dstH = (int) max(1, round($srcH * $scale));
+                $dstX = (int) floor(($size - $dstW) / 2);
+                $dstY = (int) floor(($size - $dstH) / 2);
+                imagecopyresampled($canvas, $source, $dstX, $dstY, 0, 0, $dstW, $dstH, $srcW, $srcH);
+            }
 
             ob_start();
             if ($ext === 'jpg') {
@@ -121,6 +160,9 @@ class LeadLogoService
             } elseif ($ext === 'webp' && function_exists('imagewebp')) {
                 imagewebp($canvas, null, 90);
             } else {
+                if ($useWhite) {
+                    imagesavealpha($canvas, false);
+                }
                 imagepng($canvas);
             }
             $out = (string) ob_get_clean();

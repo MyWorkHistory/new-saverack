@@ -38,6 +38,11 @@ class WebsiteScreenshotService
             'url' => $url,
             'screenshot' => 'true',
             'meta' => 'false',
+            // Square above-the-fold capture so the avatar is not a tiny strip on black.
+            'screenshot.type' => 'png',
+            'screenshot.viewport.width' => 1200,
+            'screenshot.viewport.height' => 1200,
+            'screenshot.viewport.deviceScaleFactor' => 1,
         ]);
 
         if ($response->status() === 429) {

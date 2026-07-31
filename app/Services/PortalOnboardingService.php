@@ -374,7 +374,7 @@ class PortalOnboardingService
                 );
             }
             // Verification must not complete pricing — accepted_at is set only by client
-            // accept, admin Mark Complete, or Fees Approve.
+            // accept or staff I Agree (accept endpoint). Fees Approve verifies only.
         }
 
         $verifications = $this->verificationsArray($account);

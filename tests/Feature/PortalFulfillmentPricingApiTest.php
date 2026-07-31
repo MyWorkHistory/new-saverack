@@ -183,6 +183,29 @@ class PortalFulfillmentPricingApiTest extends TestCase
         $this->assertTrue((bool) ($pricingTask['verified'] ?? false));
     }
 
+    public function test_staff_can_accept_pricing_for_client(): void
+    {
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_PENDING,
+            'company_name' => 'Pricing Staff Agree Co',
+            'email' => 'pricing-staff-agree@example.test',
+            'fulfillment_pricing_status' => ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED,
+            'fulfillment_pricing_approved_at' => now(),
+        ]);
+
+        $this->actingAsStaff();
+        $accept = $this->postJson(
+            '/api/client-accounts/'.$account->id.'/onboarding/fulfillment-pricing/accept'
+        );
+        $accept->assertOk();
+        $accept->assertJsonPath('fulfillment_pricing.status', 'completed');
+        $pricingTask = collect($accept->json('tasks'))->firstWhere('id', 'fulfillment_pricing');
+        $this->assertIsArray($pricingTask);
+        $this->assertSame('completed', $pricingTask['status'] ?? null);
+        $this->assertNull($account->fresh()->onboarding_verifications['fulfillment_pricing']['verified_at'] ?? null);
+        $this->assertNotNull($account->fresh()->fulfillment_pricing_accepted_at);
+    }
+
     public function test_staff_verify_does_not_complete_pricing(): void
     {
         $account = ClientAccount::query()->create([

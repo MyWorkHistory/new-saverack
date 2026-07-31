@@ -41,7 +41,6 @@ const selectedFee = ref(null);
 
 const approved = computed(() => !!props.pricing?.approved);
 const accepted = computed(() => props.pricing?.status === "completed" || !!props.pricing?.accepted_at);
-const canMarkComplete = computed(() => props.adminMode && approved.value && !accepted.value);
 const canVerifyForClient = computed(
   () => props.adminMode && approved.value && !props.taskVerified,
 );
@@ -63,9 +62,7 @@ const downloadPath = computed(() => {
   return "/portal/onboarding/fulfillment-pricing.pdf";
 });
 
-const showAgree = computed(
-  () => !props.adminMode && approved.value && !accepted.value,
-);
+const showAgree = computed(() => approved.value && !accepted.value);
 
 const showSearchFilter = computed(() => props.pageMode && approved.value);
 const showClickHint = computed(() => approved.value && !props.adminMode);
@@ -131,34 +128,25 @@ async function downloadPdf() {
 
 async function onAgree() {
   if (!showAgree.value || !agreed.value || busy.value) return;
-  busy.value = true;
-  try {
-    const { data } = await api.post("/portal/onboarding/fulfillment-pricing/accept");
-    emit("accepted", data);
-    toast.success("Fulfillment Pricing accepted.");
-    if (!props.pageMode) emit("update:open", false);
-  } catch (e) {
-    toast.errorFrom(e, "Could not accept pricing.");
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function onMarkComplete() {
-  if (!canMarkComplete.value || busy.value || props.verifying) return;
-  if (!props.clientAccountId) {
+  if (props.adminMode && !props.clientAccountId) {
     toast.error("Missing client account.");
     return;
   }
   busy.value = true;
   try {
-    const { data } = await api.post(
-      `/client-accounts/${props.clientAccountId}/onboarding/fulfillment-pricing/accept`,
-    );
+    const path = props.adminMode
+      ? `/client-accounts/${props.clientAccountId}/onboarding/fulfillment-pricing/accept`
+      : "/portal/onboarding/fulfillment-pricing/accept";
+    const { data } = await api.post(path);
     emit("accepted", data);
-    toast.success("Fulfillment Pricing marked complete.");
+    toast.success(
+      props.adminMode
+        ? "Fulfillment Pricing accepted for the client."
+        : "Fulfillment Pricing accepted.",
+    );
+    if (!props.pageMode && !props.adminMode) emit("update:open", false);
   } catch (e) {
-    toast.errorFrom(e, "Could not mark pricing complete.");
+    toast.errorFrom(e, "Could not accept pricing.");
   } finally {
     busy.value = false;
   }
@@ -181,16 +169,16 @@ async function onMarkComplete() {
           Fulfillment pricing is completed and verified.
         </p>
         <p v-else-if="adminMode && taskVerified" class="text-secondary small mb-0 mt-1">
-          Pricing is verified. Mark Complete separately if the client has accepted the schedule.
+          Pricing is verified. Use I Agree below to complete for the client if needed.
         </p>
         <p v-else-if="adminMode && accepted" class="text-secondary small mb-0 mt-1">
           Pricing is completed. Verify separately when you have confirmed the schedule.
         </p>
         <p v-else-if="adminMode && approved" class="text-secondary small mb-0 mt-1">
-          Fees are Approved. Mark Complete and Verify are separate actions.
+          Fees are Approved. Complete with I Agree (same as the client), or Verify separately.
         </p>
         <p v-else-if="adminMode" class="text-secondary small mb-0 mt-1">
-          Approve fulfillment pricing on the Fees tab first (that verifies this task; complete separately).
+          Approve fulfillment pricing on the Fees tab first (that verifies this task).
         </p>
         <p v-else-if="pageMode && accepted" class="text-secondary small mb-0">
           You have accepted this account's fulfillment pricing schedule.
@@ -237,9 +225,8 @@ async function onMarkComplete() {
         <template v-if="adminMode">
           <p class="mb-2 fw-semibold text-body">Fulfillment Pricing Is Not Approved Yet</p>
           <p class="mb-0 mx-auto" style="max-width: 28rem">
-            Review and Approve the account fee schedule on the Fees tab. Approving verifies
-            Fulfillment Pricing on Onboarding; completion stays separate (client accept or Mark
-            Complete).
+            Review and Approve the account fee schedule on the Fees tab. Approving verifies this
+            onboarding task. After approval, you can accept pricing for the client with I Agree.
           </p>
           <button
             type="button"
@@ -362,8 +349,8 @@ async function onMarkComplete() {
       :class="{ 'portal-pricing-page-panel__footer': pageMode }"
     >
       <div
-        v-if="adminMode && (taskVerified || canVerifyForClient || canMarkComplete)"
-        class="d-flex flex-wrap gap-2 me-auto"
+        v-if="adminMode && (taskVerified || canVerifyForClient)"
+        class="d-flex flex-wrap gap-2"
       >
         <button
           v-if="taskVerified"
@@ -386,17 +373,6 @@ async function onMarkComplete() {
           <CrmLoadingSpinner v-if="verifying" small class="me-1" />
           Verify
         </button>
-        <button
-          v-if="canMarkComplete"
-          type="button"
-          class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-          :disabled="busy || verifying"
-          title="Mark Complete only — does not verify"
-          @click="onMarkComplete"
-        >
-          <CrmLoadingSpinner v-if="busy" small class="me-1" />
-          Mark Complete
-        </button>
       </div>
 
       <template v-if="showAgree">
@@ -405,7 +381,7 @@ async function onMarkComplete() {
             v-model="agreed"
             class="form-check-input mt-1 flex-shrink-0"
             type="checkbox"
-            :disabled="busy"
+            :disabled="busy || verifying"
           />
           <span class="form-check-label small text-secondary">
             By checking this box and clicking "I Agree," I acknowledge that I have reviewed and
@@ -417,7 +393,7 @@ async function onMarkComplete() {
         <button
           type="button"
           class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-          :disabled="!agreed || busy"
+          :disabled="!agreed || busy || verifying"
           @click="onAgree"
         >
           <CrmLoadingSpinner v-if="busy" small class="me-1" />

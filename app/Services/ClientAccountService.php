@@ -929,8 +929,8 @@ class ClientAccountService
         }
         $account->save();
 
-        // Fees Approve verifies the onboarding pricing task only — completion stays client accept
-        // (or admin Mark Complete).
+        // Fees Approve verifies the onboarding pricing task only — completion is client
+        // accept or staff I Agree on the onboarding modal.
         $onboarding = app(PortalOnboardingService::class);
         $actorId = $actor !== null ? (int) $actor->id : null;
         if ($status === ClientAccount::FULFILLMENT_PRICING_STATUS_APPROVED) {

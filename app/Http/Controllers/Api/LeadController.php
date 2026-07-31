@@ -8,21 +8,27 @@ use App\Models\Lead;
 use App\Models\LeadComment;
 use App\Models\LeadFee;
 use App\Services\LeadService;
+use App\Services\FulfillmentPricingPdfService;
 use App\Support\CrmActivityPresenter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\Response;
 
 class LeadController extends Controller
 {
     /** @var LeadService */
     private $leads;
 
-    public function __construct(LeadService $leads)
+    /** @var FulfillmentPricingPdfService */
+    private $pricingPdfs;
+
+    public function __construct(LeadService $leads, FulfillmentPricingPdfService $pricingPdfs)
     {
         $this->leads = $leads;
+        $this->pricingPdfs = $pricingPdfs;
     }
 
     public function meta(): JsonResponse
@@ -258,6 +264,15 @@ class LeadController extends Controller
         );
 
         return response()->json($this->leads->toDetailArray($lead));
+    }
+
+    public function downloadPricingPdf(Lead $lead): Response
+    {
+        Gate::authorize('view', $lead);
+
+        $fees = $this->leads->feesPayloadForApi($lead, false)['items'] ?? [];
+
+        return $this->pricingPdfs->downloadForLead($lead, is_array($fees) ? $fees : []);
     }
 
     public function history(Lead $lead): JsonResponse

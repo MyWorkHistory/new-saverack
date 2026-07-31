@@ -50,6 +50,8 @@ const meta = ref({
 
 const lineMenuSku = ref(null);
 const lineMenuRect = ref({ top: 0, left: 0 });
+/** Mobile card accordion keys: `${sku}:backstock` | `${sku}:pick` */
+const mobileAccordionOpen = ref({});
 
 const transferModalOpen = ref(false);
 const transferBusy = ref(false);
@@ -348,6 +350,22 @@ function rowStatus(row) {
 function canShowTransferAction(row) {
   if (!canTransfer.value) return false;
   return rowStatus(row) !== RESTOCK_STATUS_COMPLETE;
+}
+
+function mobileAccordionKey(sku, section) {
+  return `${String(sku || "")}:${section}`;
+}
+
+function isMobileAccordionOpen(sku, section) {
+  return Boolean(mobileAccordionOpen.value[mobileAccordionKey(sku, section)]);
+}
+
+function toggleMobileAccordion(sku, section) {
+  const key = mobileAccordionKey(sku, section);
+  mobileAccordionOpen.value = {
+    ...mobileAccordionOpen.value,
+    [key]: !mobileAccordionOpen.value[key],
+  };
 }
 
 async function enrichMissingPickLocations(list) {
@@ -892,7 +910,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="table-responsive staff-table-wrap">
+      <div class="table-responsive staff-table-wrap d-none d-md-block">
         <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -1021,6 +1039,221 @@ onUnmounted(() => {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div class="crm-mobile-item-cards d-md-none" aria-label="Restock items">
+        <div v-if="loading" class="crm-mobile-item-card__empty">Loading restock data…</div>
+        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">
+          Upload a restock CSV to get started.
+        </div>
+        <div v-else-if="!filteredRows.length" class="crm-mobile-item-card__empty">
+          No rows match your search.
+        </div>
+        <template v-else>
+          <article
+            v-for="row in filteredRows"
+            :key="`mobile-${row.sku}`"
+            class="crm-mobile-item-card"
+          >
+          <div class="crm-mobile-item-card__head">
+            <span
+              class="staff-status-badge text-capitalize"
+              :class="restockStatusBadgeClass(row.status)"
+            >
+              {{ row.status_label || restockStatusLabel(row.status) }}
+            </span>
+            <div
+              v-if="rowStatus(row) !== RESTOCK_STATUS_COMPLETE"
+              data-restock-row-actions
+              class="staff-actions-inner staff-actions-inner--single"
+            >
+              <button
+                type="button"
+                class="staff-action-btn staff-action-btn--more"
+                :class="{ 'is-open': lineMenuSku === row.sku }"
+                aria-haspopup="true"
+                :aria-expanded="lineMenuSku === row.sku ? 'true' : 'false'"
+                aria-label="Row actions"
+                @click.stop="onRowMenuClick(row.sku, $event)"
+              >
+                <CrmIconRowActions variant="horizontal" />
+              </button>
+            </div>
+          </div>
+
+          <div class="crm-mobile-item-card__product">
+            <a
+              :href="inventoryDetailHref(row)"
+              target="_blank"
+              rel="noopener noreferrer"
+              :aria-label="`View ${row.sku || 'product'}`"
+            >
+              <img
+                v-if="row.image_url"
+                :src="row.image_url"
+                alt=""
+                class="crm-mobile-item-card__thumb"
+                loading="lazy"
+              />
+              <div
+                v-else
+                class="crm-mobile-item-card__thumb crm-mobile-item-card__thumb--empty"
+                aria-hidden="true"
+              />
+            </a>
+            <div class="crm-mobile-item-card__copy">
+              <a
+                :href="inventoryDetailHref(row)"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="crm-mobile-item-card__sku"
+              >
+                {{ row.sku || "—" }}
+              </a>
+              <div class="crm-mobile-item-card__name">{{ row.name || "—" }}</div>
+              <RouterLink
+                v-if="accountDetailTo(row.client_account_id)"
+                :to="accountDetailTo(row.client_account_id)"
+                class="crm-mobile-item-card__account"
+              >
+                {{ row.account_name }}
+              </RouterLink>
+              <span v-else class="crm-mobile-item-card__account text-secondary">—</span>
+            </div>
+          </div>
+
+          <div class="crm-mobile-item-card__stats" role="group" aria-label="Inventory quantities">
+            <div class="crm-mobile-item-card__stat">
+              <span class="crm-mobile-item-card__stat-label">On Hand</span>
+              <span class="crm-mobile-item-card__stat-value">{{ formatQty(row.on_hand) }}</span>
+            </div>
+            <div class="crm-mobile-item-card__stat">
+              <span class="crm-mobile-item-card__stat-label">Allocated</span>
+              <span class="crm-mobile-item-card__stat-value">{{ formatQty(row.allocated) }}</span>
+            </div>
+            <div class="crm-mobile-item-card__stat">
+              <span class="crm-mobile-item-card__stat-label">Pickable</span>
+              <span class="crm-mobile-item-card__stat-value">{{ formatQty(row.pickable_qty) }}</span>
+            </div>
+            <div class="crm-mobile-item-card__stat">
+              <span class="crm-mobile-item-card__stat-label">Backstock</span>
+              <span class="crm-mobile-item-card__stat-value">{{ formatQty(row.backstock_qty) }}</span>
+            </div>
+          </div>
+
+          <div class="crm-mobile-item-card__accordion">
+            <button
+              type="button"
+              class="crm-mobile-item-card__accordion-btn"
+              :aria-expanded="isMobileAccordionOpen(row.sku, 'backstock') ? 'true' : 'false'"
+              :disabled="!splitLocationText(row.backstock_locations).length"
+              @click="toggleMobileAccordion(row.sku, 'backstock')"
+            >
+              <span class="crm-mobile-item-card__accordion-icon" aria-hidden="true">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                  />
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+              </span>
+              <span>Backstock Locations</span>
+              <svg
+                class="crm-mobile-item-card__accordion-chevron"
+                :class="{ 'is-open': isMobileAccordionOpen(row.sku, 'backstock') }"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <div
+              v-if="isMobileAccordionOpen(row.sku, 'backstock') && splitLocationText(row.backstock_locations).length"
+              class="crm-mobile-item-card__accordion-body"
+            >
+              <div
+                v-for="(location, index) in splitLocationText(row.backstock_locations)"
+                :key="`${row.sku}-m-backstock-${index}`"
+                class="crm-mobile-item-card__loc"
+              >
+                {{ location }}
+              </div>
+            </div>
+          </div>
+
+          <div class="crm-mobile-item-card__accordion">
+            <button
+              type="button"
+              class="crm-mobile-item-card__accordion-btn"
+              :aria-expanded="isMobileAccordionOpen(row.sku, 'pick') ? 'true' : 'false'"
+              :disabled="!splitLocationText(pickLocationText(row)).length"
+              @click="toggleMobileAccordion(row.sku, 'pick')"
+            >
+              <span class="crm-mobile-item-card__accordion-icon" aria-hidden="true">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                  />
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+              </span>
+              <span>Pick Locations</span>
+              <svg
+                class="crm-mobile-item-card__accordion-chevron"
+                :class="{ 'is-open': isMobileAccordionOpen(row.sku, 'pick') }"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <div
+              v-if="isMobileAccordionOpen(row.sku, 'pick') && splitLocationText(pickLocationText(row)).length"
+              class="crm-mobile-item-card__accordion-body"
+            >
+              <div
+                v-for="(location, index) in splitLocationText(pickLocationText(row))"
+                :key="`${row.sku}-m-pick-${index}`"
+                class="crm-mobile-item-card__loc"
+              >
+                {{ location }}
+              </div>
+            </div>
+          </div>
+
+          <div v-if="canShowTransferAction(row)" class="crm-mobile-item-card__footer">
+            <button
+              type="button"
+              class="crm-mobile-item-card__transfer"
+              @click="openTransferFromMenu(row)"
+            >
+              Transfer
+            </button>
+          </div>
+          </article>
+        </template>
       </div>
     </div>
 

@@ -209,6 +209,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/{lead}/comments/{comment}/attachment', [LeadController::class, 'downloadCommentAttachment']);
             Route::delete('/{lead}', [LeadController::class, 'destroy']);
             Route::patch('/{lead}/fees/{fee}', [LeadController::class, 'updateFee']);
+            Route::get('/{lead}/fees/pricing.pdf', [LeadController::class, 'downloadPricingPdf']);
             Route::get('/{lead}/history', [LeadController::class, 'history']);
         });
 

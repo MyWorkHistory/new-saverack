@@ -6,6 +6,7 @@ import PricingFeeList from "../settings/PricingFeeList.vue";
 import { useToast } from "../../composables/useToast.js";
 import { normalizeAccountFeeItems } from "../../utils/accountFees.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
+import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
 import {
   PRICING_CATEGORY_OPTIONS,
   feeMatchesCategory,
@@ -44,6 +45,13 @@ const filteredFees = computed(() =>
 const amountModalOpen = ref(false);
 const amountModalFee = ref(null);
 const amountSaving = ref(false);
+const downloading = ref(false);
+
+const downloadFileName = computed(() => {
+  const raw = String(props.lead?.company_name || "Lead").trim();
+  const safe = raw.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "Lead";
+  return `${safe}-Pricing.pdf`;
+});
 
 function resetFilters() {
   categoryFilter.value = "all";
@@ -88,6 +96,20 @@ async function saveFeeAmount(payload) {
   }
 }
 
+async function downloadPricingPdf() {
+  if (downloading.value) return;
+  downloading.value = true;
+  try {
+    await openApiPdfBlob(api, `/leads/${props.leadId}/fees/pricing.pdf`, {
+      download: downloadFileName.value,
+    });
+  } catch (e) {
+    toast.errorFrom(e, "Could not download pricing PDF.");
+  } finally {
+    downloading.value = false;
+  }
+}
+
 watch(
   () => props.leadId,
   () => {
@@ -111,7 +133,17 @@ onUnmounted(() => {
 <template>
   <div class="crm-lead-fees">
     <header class="mb-4">
-      <h2 class="h5 mb-1 fw-semibold text-body">Lead Fees</h2>
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+        <h2 class="h5 mb-0 fw-semibold text-body">Lead Fees</h2>
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm ms-auto"
+          :disabled="downloading"
+          @click="downloadPricingPdf"
+        >
+          {{ downloading ? "Downloading…" : "Download" }}
+        </button>
+      </div>
       <p class="small text-secondary mb-0">
         Pricing for this lead. Click a fee to view the description and set a lead-specific price.
       </p>

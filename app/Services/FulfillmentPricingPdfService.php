@@ -32,12 +32,17 @@ class FulfillmentPricingPdfService
             ? ($this->clientAccounts->feesPayloadForApi($account, false, true)['items'] ?? [])
             : [];
 
+        $pathsById = $account->feeItems->mapWithKeys(function ($fee) {
+            return [(int) $fee->id => $fee->icon_path];
+        });
+
         return $this->streamPdf(
-            $account,
+            trim((string) ($account->company_name ?: $account->brand_name ?: 'Account')),
             is_array($fees) ? $fees : [],
             $approved,
             'Quoted pricing has not been set for this account',
-            'fulfillment-pricing-'.$this->safeAccountSlug($account).'.pdf'
+            'fulfillment-pricing-'.$this->safeSlug((string) ($account->company_name ?: 'account')).'.pdf',
+            $pathsById
         );
     }
 
@@ -50,30 +55,66 @@ class FulfillmentPricingPdfService
         $fees = $this->clientAccounts->feesPayloadForApi($account, false, true)['items'] ?? [];
         $fees = is_array($fees) ? $fees : [];
 
+        $pathsById = $account->feeItems->mapWithKeys(function ($fee) {
+            return [(int) $fee->id => $fee->icon_path];
+        });
+
         return $this->streamPdf(
-            $account,
+            trim((string) ($account->company_name ?: $account->brand_name ?: 'Account')),
             $fees,
             true,
             'No fees are configured for this account.',
-            $this->safeAccountSlug($account).'-Pricing.pdf'
+            $this->safeSlug((string) ($account->company_name ?: 'account')).'-Pricing.pdf',
+            $pathsById
+        );
+    }
+
+    /**
+     * Lead Fees tab export — same schedule PDF as account (no cost).
+     *
+     * @param  list<array<string, mixed>>  $fees
+     */
+    public function downloadForLead(\App\Models\Lead $lead, array $fees): Response
+    {
+        $lead->loadMissing(['feeItems.pricingTemplate']);
+        $pathsById = $lead->feeItems->mapWithKeys(function ($fee) {
+            $path = $fee->icon_path;
+            if ((! is_string($path) || trim($path) === '') && $fee->pricingTemplate !== null) {
+                $path = $fee->pricingTemplate->icon_path;
+            }
+
+            return [(int) $fee->id => $path];
+        });
+
+        $name = trim((string) ($lead->company_name ?: 'Lead'));
+
+        return $this->streamPdf(
+            $name !== '' ? $name : 'Lead',
+            $fees,
+            true,
+            'No fee schedule loaded for this lead.',
+            $this->safeSlug($name !== '' ? $name : 'lead').'-Pricing.pdf',
+            $pathsById
         );
     }
 
     /**
      * @param  list<array<string, mixed>>  $fees
+     * @param  \Illuminate\Support\Collection<int, string|null>|array<int, string|null>  $pathsById
      */
     private function streamPdf(
-        ClientAccount $account,
+        string $accountName,
         array $fees,
         bool $approved,
         string $emptyMessage,
-        string $filename
+        string $filename,
+        $pathsById
     ): Response {
-        $fees = $this->addEmbeddedIcons($account, $fees);
+        $fees = $this->addEmbeddedIcons($pathsById, $fees);
 
         $pdf = Pdf::loadView('pdf.fulfillment-pricing', [
             'title' => 'Save Rack Fulfillment Pricing',
-            'accountName' => trim((string) ($account->company_name ?: $account->brand_name ?: 'Account')),
+            'accountName' => $accountName,
             'dateLabel' => Carbon::now()->format('F j, Y'),
             'approved' => $approved,
             'fees' => $fees,
@@ -85,27 +126,24 @@ class FulfillmentPricingPdfService
 
     /**
      * Embed fee icons as small data URIs so DomPDF never fetches URLs.
-     * Icons are best-effort: any failure (missing GD, bad file, unsupported
-     * format) falls back to the letter placeholder instead of a 500.
      *
+     * @param  \Illuminate\Support\Collection<int, string|null>|array<int, string|null>  $pathsById
      * @param  list<array<string, mixed>>  $fees
      * @return list<array<string, mixed>>
      */
-    private function addEmbeddedIcons(ClientAccount $account, array $fees): array
+    private function addEmbeddedIcons($pathsById, array $fees): array
     {
         $gdAvailable = extension_loaded('gd');
         $disk = Storage::disk('public');
-
-        $pathsById = $account->feeItems
-            ->mapWithKeys(function ($fee) {
-                return [(int) $fee->id => $fee->icon_path];
-            });
+        $paths = $pathsById instanceof \Illuminate\Support\Collection
+            ? $pathsById
+            : collect($pathsById);
 
         foreach ($fees as $index => $fee) {
             $fees[$index]['icon_data_uri'] = null;
 
             $id = (int) ($fee['id'] ?? 0);
-            $path = $pathsById->get($id);
+            $path = $paths->get($id);
             if (! is_string($path) || trim($path) === '') {
                 continue;
             }
@@ -127,7 +165,6 @@ class FulfillmentPricingPdfService
                     continue;
                 }
 
-                // Without GD, DomPDF can only embed plain JPEGs reliably.
                 $extension = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
                 if (in_array($extension, ['jpg', 'jpeg'], true)) {
                     $fees[$index]['icon_data_uri'] = 'data:image/jpeg;base64,'.base64_encode($contents);
@@ -181,9 +218,9 @@ class FulfillmentPricingPdfService
         return $ok && is_string($png) && $png !== '' ? $png : null;
     }
 
-    private function safeAccountSlug(ClientAccount $account): string
+    private function safeSlug(string $name): string
     {
-        $safe = preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) ($account->company_name ?: 'account'));
+        $safe = preg_replace('/[^A-Za-z0-9._-]+/', '-', $name);
         if ($safe === null || $safe === '' || $safe === '-') {
             return 'account';
         }

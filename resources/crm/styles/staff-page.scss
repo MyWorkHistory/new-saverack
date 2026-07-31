@@ -1918,6 +1918,251 @@ button.staff-status-badge:focus-visible {
   }
 }
 
+/* Mobile item cards (Restock / Return Bin) — stacked layout, no horizontal scroll */
+.crm-mobile-item-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 0.875rem;
+}
+
+.crm-mobile-item-card {
+  background: #fff;
+  border: 1px solid #e8e7ed;
+  border-radius: 0.75rem;
+  box-shadow: 0 0.125rem 0.5rem rgba(47, 43, 61, 0.06);
+  padding: 0.875rem 1rem 0.75rem;
+}
+
+.crm-mobile-item-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.crm-mobile-item-card__product {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+  margin-bottom: 0.875rem;
+}
+
+.crm-mobile-item-card__thumb {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 0.4rem;
+  object-fit: cover;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #f8fafc;
+  flex-shrink: 0;
+}
+
+.crm-mobile-item-card__thumb--empty {
+  display: block;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.crm-mobile-item-card__copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.crm-mobile-item-card__sku {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  line-height: 1.3;
+  color: #2563eb;
+  text-decoration: none;
+  word-break: break-word;
+}
+
+.crm-mobile-item-card__sku:hover {
+  text-decoration: underline;
+}
+
+.crm-mobile-item-card__sku--plain {
+  color: var(--bs-body-color);
+  cursor: default;
+}
+
+.crm-mobile-item-card__sku--plain:hover {
+  text-decoration: none;
+}
+
+.crm-mobile-item-card__name {
+  margin-top: 0.15rem;
+  font-size: 0.875rem;
+  line-height: 1.35;
+  color: var(--bs-body-color);
+  word-break: break-word;
+}
+
+.crm-mobile-item-card__account {
+  display: inline-block;
+  margin-top: 0.2rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.crm-mobile-item-card__account:hover {
+  text-decoration: underline;
+}
+
+.crm-mobile-item-card__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid #e8e7ed;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+  background: #fafafa;
+}
+
+.crm-mobile-item-card__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  padding: 0.55rem 0.25rem;
+  text-align: center;
+  border-right: 1px solid #e8e7ed;
+}
+
+.crm-mobile-item-card__stat:last-child {
+  border-right: 0;
+}
+
+.crm-mobile-item-card__stat-label {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: #94a3b8;
+  line-height: 1.2;
+}
+
+.crm-mobile-item-card__stat-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--bs-body-color);
+  line-height: 1.2;
+}
+
+.crm-mobile-item-card__qty {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid #e8e7ed;
+  border-radius: 0.5rem;
+  background: #fafafa;
+}
+
+.crm-mobile-item-card__qty-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.crm-mobile-item-card__qty-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--bs-body-color);
+}
+
+.crm-mobile-item-card__accordion {
+  border: 1px solid #e8e7ed;
+  border-radius: 0.5rem;
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+}
+
+.crm-mobile-item-card__accordion-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 0;
+  background: #fff;
+  color: var(--bs-body-color);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.crm-mobile-item-card__accordion-btn:disabled {
+  opacity: 0.65;
+}
+
+.crm-mobile-item-card__accordion-icon {
+  display: inline-flex;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.crm-mobile-item-card__accordion-chevron {
+  margin-left: auto;
+  color: #94a3b8;
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.crm-mobile-item-card__accordion-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.crm-mobile-item-card__accordion-body {
+  padding: 0 0.75rem 0.65rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+.crm-mobile-item-card__loc {
+  font-size: 0.8125rem;
+  color: #64748b;
+  line-height: 1.45;
+  padding-top: 0.35rem;
+}
+
+.crm-mobile-item-card__footer {
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+}
+
+.crm-mobile-item-card__transfer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.7rem 0.75rem;
+  border: 0;
+  border-top: 1px solid #f1f5f9;
+  background: transparent;
+  color: #dc2626;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.crm-mobile-item-card__transfer:disabled {
+  opacity: 0.45;
+}
+
+.crm-mobile-item-card__empty {
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--bs-secondary-color);
+  font-size: 0.875rem;
+}
+
 @import "./asn-list";
 @import "./client-accounts-list";
 @import "./staff-user-detail";

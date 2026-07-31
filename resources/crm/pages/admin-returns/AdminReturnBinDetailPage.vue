@@ -24,6 +24,8 @@ const binName = ref("");
 
 const lineMenuKey = ref(null);
 const lineMenuRect = ref({ top: 0, left: 0 });
+/** Mobile card accordion keys: `${rowKey}:pick` */
+const mobileAccordionOpen = ref({});
 
 const transferModalOpen = ref(false);
 const transferBusy = ref(false);
@@ -103,6 +105,25 @@ function splitPickLocations(text) {
   const raw = String(text || "").trim();
   if (!raw || raw === "—") return [];
   return raw.split(",").map((part) => part.trim()).filter(Boolean);
+}
+
+function isMobileAccordionOpen(row) {
+  return Boolean(mobileAccordionOpen.value[`${rowKey(row)}:pick`]);
+}
+
+function toggleMobileAccordion(row) {
+  const key = `${rowKey(row)}:pick`;
+  mobileAccordionOpen.value = {
+    ...mobileAccordionOpen.value,
+    [key]: !mobileAccordionOpen.value[key],
+  };
+}
+
+function formatQty(value) {
+  if (value === null || value === undefined || value === "") return "0";
+  const n = Number(value);
+  if (Number.isNaN(n)) return "0";
+  return n.toLocaleString();
 }
 
 function closeLineMenu() {
@@ -276,7 +297,7 @@ onUnmounted(() => {
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
-      <div class="table-responsive staff-table-wrap">
+      <div class="table-responsive staff-table-wrap d-none d-md-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -358,9 +379,128 @@ onUnmounted(() => {
           </tbody>
         </table>
       </div>
-      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
-        Scroll sideways or swipe to see all columns.
-      </p>
+
+      <div class="crm-mobile-item-cards d-md-none" aria-label="Bin items">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <div class="d-flex justify-content-center py-3">
+            <CrmLoadingSpinner message="Loading bin items…" />
+          </div>
+        </div>
+        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">No items in this bin.</div>
+        <template v-else>
+          <article
+            v-for="row in rows"
+            :key="`mobile-${row.sku}-${row.client_account_id}`"
+            class="crm-mobile-item-card"
+          >
+            <div class="crm-mobile-item-card__head">
+              <div
+                data-return-bin-row-actions
+                class="staff-actions-inner staff-actions-inner--single ms-auto"
+              >
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': lineMenuKey === rowKey(row) }"
+                  aria-haspopup="true"
+                  :aria-expanded="lineMenuKey === rowKey(row) ? 'true' : 'false'"
+                  aria-label="Row actions"
+                  @click.stop="onRowMenuClick(row, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__product">
+              <img
+                v-if="row.image_url"
+                :src="row.image_url"
+                alt=""
+                class="crm-mobile-item-card__thumb"
+                loading="lazy"
+              />
+              <div
+                v-else
+                class="crm-mobile-item-card__thumb crm-mobile-item-card__thumb--empty"
+                aria-hidden="true"
+              />
+              <div class="crm-mobile-item-card__copy">
+                <div class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain">
+                  {{ row.sku || "—" }}
+                </div>
+                <div class="crm-mobile-item-card__name">{{ row.name || "—" }}</div>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__qty">
+              <span class="crm-mobile-item-card__qty-label">Qty</span>
+              <span class="crm-mobile-item-card__qty-value">{{ formatQty(row.qty) }}</span>
+            </div>
+
+            <div class="crm-mobile-item-card__accordion">
+              <button
+                type="button"
+                class="crm-mobile-item-card__accordion-btn"
+                :aria-expanded="isMobileAccordionOpen(row) ? 'true' : 'false'"
+                :disabled="!splitPickLocations(row.pick_location).length"
+                @click="toggleMobileAccordion(row)"
+              >
+                <span class="crm-mobile-item-card__accordion-icon" aria-hidden="true">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                    />
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                    />
+                  </svg>
+                </span>
+                <span>Pick Location</span>
+                <svg
+                  class="crm-mobile-item-card__accordion-chevron"
+                  :class="{ 'is-open': isMobileAccordionOpen(row) }"
+                  width="16"
+                  height="16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              <div
+                v-if="isMobileAccordionOpen(row) && splitPickLocations(row.pick_location).length"
+                class="crm-mobile-item-card__accordion-body"
+              >
+                <div
+                  v-for="(location, index) in splitPickLocations(row.pick_location)"
+                  :key="`${row.sku}-m-pick-${index}`"
+                  class="crm-mobile-item-card__loc"
+                >
+                  {{ location }}
+                </div>
+              </div>
+            </div>
+
+            <div v-if="canTransfer" class="crm-mobile-item-card__footer">
+              <button
+                type="button"
+                class="crm-mobile-item-card__transfer"
+                @click="openTransferFromMenu(row)"
+              >
+                Transfer
+              </button>
+            </div>
+          </article>
+        </template>
+      </div>
     </div>
 
     <Teleport to="body">

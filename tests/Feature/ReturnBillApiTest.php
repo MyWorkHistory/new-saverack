@@ -293,6 +293,43 @@ class ReturnBillApiTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_add_to_invoice_accepts_non_compliant_line_type(): void
+    {
+        $account = $this->account();
+        [, $bill] = $this->processedReturnWithBill($account, 2);
+        $this->billingUser();
+
+        $this->postJson('/api/return-bills/'.$bill->id.'/items', [
+            'line_type' => ReturnBill::LINE_NON_COMPLIANT,
+            'quantity' => 1,
+            'unit_price' => 15.00,
+        ])->assertOk();
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-RB-NC-001',
+            'client_account_id' => $account->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+        ]);
+
+        $this->postJson('/api/return-bills/'.$bill->id.'/add-to-invoice', [
+            'invoice_id' => $invoice->id,
+            'line_types' => [
+                ReturnBill::LINE_FIRST_ITEM,
+                ReturnBill::LINE_ADDITIONAL_ITEMS,
+                ReturnBill::LINE_NON_COMPLIANT,
+            ],
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', ReturnBill::STATUS_INVOICED)
+            ->assertJsonPath('invoice_id', $invoice->id);
+    }
+
     public function test_line_crud_recalculates_total_and_logs_history(): void
     {
         $account = $this->account();

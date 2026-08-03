@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ReturnBill;
 use App\Models\ReturnBillItem;
 use App\Services\ReturnBillService;
+use App\Support\Billing\ReturnBillChargeCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -104,13 +105,7 @@ class ReturnBillController extends Controller
         $validated = $request->validate([
             'invoice_id' => ['required', 'integer', 'exists:invoices,id'],
             'line_types' => ['nullable', 'array'],
-            'line_types.*' => ['string', Rule::in([
-                ReturnBill::LINE_FIRST_ITEM,
-                ReturnBill::LINE_ADDITIONAL_ITEMS,
-                ReturnBill::LINE_ASSEMBLY,
-                ReturnBill::LINE_REPACKAGING,
-                ReturnBill::LINE_DISPOSAL,
-            ])],
+            'line_types.*' => ['string', Rule::in(ReturnBillChargeCatalog::lineTypes())],
         ]);
 
         $lineTypes = isset($validated['line_types']) ? array_values($validated['line_types']) : null;
@@ -129,13 +124,7 @@ class ReturnBillController extends Controller
     {
         $this->authorize('update', $returnBill);
         $validated = $request->validate([
-            'line_type' => ['required', 'string', Rule::in([
-                ReturnBill::LINE_FIRST_ITEM,
-                ReturnBill::LINE_ADDITIONAL_ITEMS,
-                ReturnBill::LINE_ASSEMBLY,
-                ReturnBill::LINE_REPACKAGING,
-                ReturnBill::LINE_DISPOSAL,
-            ])],
+            'line_type' => ['required', 'string', Rule::in(ReturnBillChargeCatalog::lineTypes())],
             'name' => ['nullable', 'string', 'max:255'],
             'quantity' => ['required', 'numeric', 'min:0.0001'],
             'unit_price_cents' => ['nullable', 'integer', 'min:0'],
@@ -151,13 +140,7 @@ class ReturnBillController extends Controller
     {
         $this->authorize('update', $returnBill);
         $validated = $request->validate([
-            'line_type' => ['required', 'string', Rule::in([
-                ReturnBill::LINE_FIRST_ITEM,
-                ReturnBill::LINE_ADDITIONAL_ITEMS,
-                ReturnBill::LINE_ASSEMBLY,
-                ReturnBill::LINE_REPACKAGING,
-                ReturnBill::LINE_DISPOSAL,
-            ])],
+            'line_type' => ['required', 'string', Rule::in(ReturnBillChargeCatalog::lineTypes())],
             'name' => ['nullable', 'string', 'max:255'],
             'quantity' => ['required', 'numeric', 'min:0.0001'],
             'unit_price_cents' => ['nullable', 'integer', 'min:0'],
@@ -169,7 +152,7 @@ class ReturnBillController extends Controller
         return response()->json($this->returnBills->toDetailArray($bill));
     }
 
-    public function destroyItem(ReturnBill $returnBill, ReturnBillItem $item): JsonResponse
+    public function destroyItem(Request $request, ReturnBill $returnBill, ReturnBillItem $item): JsonResponse
     {
         $this->authorize('update', $returnBill);
         $bill = $this->returnBills->deleteItem($returnBill, $item, $request->user());

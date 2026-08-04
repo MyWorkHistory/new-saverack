@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
@@ -23,6 +24,103 @@ class WebsiteScreenshotService
             ]);
         }
 
+        $attempts = [
+            $this->defaultCaptureQuery($url),
+            $this->retryCaptureQuery($url),
+            $this->minimalCaptureQuery($url),
+        ];
+
+        $lastError = 'Could not capture website screenshot.';
+        foreach ($attempts as $index => $query) {
+            try {
+                $bytes = $this->requestScreenshotBytes($query);
+                if ($this->isMostlyDarkImage($bytes)) {
+                    Log::warning('website_screenshot.mostly_dark', [
+                        'url' => $url,
+                        'attempt' => $index + 1,
+                        'bytes' => strlen($bytes),
+                    ]);
+                    $lastError = 'Website screenshot came back blank or too dark. Try again, or upload a logo manually.';
+                    continue;
+                }
+
+                return $bytes;
+            } catch (RuntimeException $e) {
+                $lastError = $e->getMessage();
+                Log::warning('website_screenshot.attempt_failed', [
+                    'url' => $url,
+                    'attempt' => $index + 1,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        throw new RuntimeException($lastError);
+    }
+
+    /**
+     * @return array<string, string|int>
+     */
+    private function defaultCaptureQuery(string $url): array
+    {
+        return [
+            'url' => $url,
+            'screenshot' => 'true',
+            'meta' => 'false',
+            // Bust stale black/blank cached captures from prior failed loads.
+            'force' => 'true',
+            'colorScheme' => 'light',
+            'waitUntil' => 'networkidle2',
+            'waitForTimeout' => 3000,
+            'styles' => 'html,body{background:#ffffff!important;color-scheme:light!important;min-height:100%;}',
+            // Desktop viewport; LeadLogoService crops the top for the avatar.
+            'screenshot.type' => 'png',
+            'screenshot.viewport.width' => 1440,
+            'screenshot.viewport.height' => 900,
+            'screenshot.viewport.deviceScaleFactor' => 1,
+        ];
+    }
+
+    /**
+     * @return array<string, string|int>
+     */
+    private function retryCaptureQuery(string $url): array
+    {
+        $query = $this->defaultCaptureQuery($url);
+        $query['waitUntil'] = 'load';
+        $query['waitForTimeout'] = 5000;
+        $query['screenshot.viewport.width'] = 1280;
+        $query['screenshot.viewport.height'] = 800;
+
+        return $query;
+    }
+
+    /**
+     * Lean query for free-tier / strict parameter sets.
+     *
+     * @return array<string, string|int>
+     */
+    private function minimalCaptureQuery(string $url): array
+    {
+        return [
+            'url' => $url,
+            'screenshot' => 'true',
+            'meta' => 'false',
+            'force' => 'true',
+            'colorScheme' => 'light',
+            'waitUntil' => 'load',
+            'waitForTimeout' => 4000,
+            'screenshot.type' => 'png',
+            'screenshot.viewport.width' => 1280,
+            'screenshot.viewport.height' => 720,
+        ];
+    }
+
+    /**
+     * @param  array<string, string|int>  $query
+     */
+    private function requestScreenshotBytes(array $query): string
+    {
         $apiKey = trim((string) config('services.microlink.api_key', ''));
         $configuredUrl = trim((string) config('services.microlink.api_url', ''));
         $baseUrl = $configuredUrl !== ''
@@ -34,16 +132,7 @@ class WebsiteScreenshotService
             $request = $request->withHeaders(['x-api-key' => $apiKey]);
         }
 
-        $response = $request->get($baseUrl, [
-            'url' => $url,
-            'screenshot' => 'true',
-            'meta' => 'false',
-            // Square above-the-fold capture so the avatar is not a tiny strip on black.
-            'screenshot.type' => 'png',
-            'screenshot.viewport.width' => 1200,
-            'screenshot.viewport.height' => 1200,
-            'screenshot.viewport.deviceScaleFactor' => 1,
-        ]);
+        $response = $request->get($baseUrl, $query);
 
         if ($response->status() === 429) {
             throw new RuntimeException('Screenshot service rate limit reached. Try again later.');
@@ -72,6 +161,61 @@ class WebsiteScreenshotService
         }
 
         return $bytes;
+    }
+
+    /**
+     * Detect blank/black captures (bot walls, unloaded SPAs, dark empty shells).
+     */
+    private function isMostlyDarkImage(string $bytes): bool
+    {
+        if (! function_exists('imagecreatefromstring')) {
+            return false;
+        }
+
+        $image = @imagecreatefromstring($bytes);
+        if ($image === false) {
+            return false;
+        }
+
+        try {
+            $width = imagesx($image);
+            $height = imagesy($image);
+            if ($width < 8 || $height < 8) {
+                return true;
+            }
+
+            $stepX = max(1, (int) floor($width / 24));
+            $stepY = max(1, (int) floor($height / 24));
+            $samples = 0;
+            $dark = 0;
+            $lumaSum = 0.0;
+
+            for ($y = 0; $y < $height; $y += $stepY) {
+                for ($x = 0; $x < $width; $x += $stepX) {
+                    $rgb = imagecolorat($image, $x, $y);
+                    $r = ($rgb >> 16) & 0xFF;
+                    $g = ($rgb >> 8) & 0xFF;
+                    $b = $rgb & 0xFF;
+                    $luma = (0.2126 * $r) + (0.7152 * $g) + (0.0722 * $b);
+                    $lumaSum += $luma;
+                    $samples++;
+                    if ($luma < 28) {
+                        $dark++;
+                    }
+                }
+            }
+
+            if ($samples < 1) {
+                return true;
+            }
+
+            $darkRatio = $dark / $samples;
+            $avgLuma = $lumaSum / $samples;
+
+            return $darkRatio >= 0.90 || $avgLuma < 18.0;
+        } finally {
+            imagedestroy($image);
+        }
     }
 
     public function normalizeWebsiteUrl(?string $website): ?string

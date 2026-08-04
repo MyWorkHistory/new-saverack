@@ -29,35 +29,25 @@ class WebsiteScreenshotService
             ]);
         }
 
-        $endpoint = $this->buildThumIoUrl($url);
-
-        $response = Http::timeout(120)
-            ->withHeaders([
-                'User-Agent' => 'SaveRackCRM/1.0',
-                'Accept' => 'image/png,image/jpeg,image/*,*/*',
-            ])
-            ->get($endpoint);
-
-        if ($response->status() === 429) {
-            throw new RuntimeException('Screenshot service rate limit reached. Try again later.');
-        }
-
-        if (! $response->successful()) {
-            Log::warning('website_screenshot.thum_http_error', [
+        // Prefer Open Graph image when thum.io can resolve one (usually a real brand image).
+        try {
+            $ogBytes = $this->downloadThumImage($this->buildThumIoUrl($url, ['ogImage' => true]));
+            if (! $this->isUnusableThumbnail($ogBytes)) {
+                return $ogBytes;
+            }
+        } catch (RuntimeException $e) {
+            Log::info('website_screenshot.ogimage_skipped', [
                 'url' => $url,
-                'endpoint' => $endpoint,
-                'status' => $response->status(),
-                'body' => mb_substr($response->body(), 0, 300),
+                'message' => $e->getMessage(),
             ]);
-            throw new RuntimeException('Could not capture website screenshot (HTTP '.$response->status().').');
         }
 
-        $bytes = $response->body();
-        if ($bytes === '' || strlen($bytes) < 32 || @imagecreatefromstring($bytes) === false) {
-            throw new RuntimeException('Screenshot service did not return a usable image.');
-        }
+        // Warm cache, then fetch the final PNG (avoids saving the animated loader frame).
+        $screenshotUrl = $this->buildThumIoUrl($url, ['ogImage' => false]);
+        $this->prefetchThumImage($screenshotUrl);
 
-        if ($this->isMostlyBlankImage($bytes)) {
+        $bytes = $this->downloadThumImage($screenshotUrl);
+        if ($this->isUnusableThumbnail($bytes)) {
             throw new RuntimeException(
                 'Website screenshot came back blank. Try again, or upload a logo manually.'
             );
@@ -71,38 +61,111 @@ class WebsiteScreenshotService
      *
      * Example:
      * https://image.thum.io/get/width/1200/crop/1200/png/noanimate/https://example.com
+     *
+     * @param  array{ogImage?: bool}  $options
      */
-    public function buildThumIoUrl(string $websiteUrl): string
+    public function buildThumIoUrl(string $websiteUrl, array $options = []): string
     {
         $base = rtrim((string) config('services.thum_io.base_url', 'https://image.thum.io'), '/');
         $width = max(100, (int) config('services.thum_io.width', 1200));
         $crop = max(100, (int) config('services.thum_io.crop', 1200));
-        $maxAgeHours = max(0, (int) config('services.thum_io.max_age_hours', 1));
+        $maxAgeHours = max(0, (int) config('services.thum_io.max_age_hours', 0));
+        $useOgImage = ! empty($options['ogImage']);
 
-        // Modifiers go before the target URL (docs: path segments, then site URL).
-        $parts = [
-            'get',
-            'width',
-            (string) $width,
-            'crop',
-            (string) $crop,
-            'png',
-            'noanimate',
-        ];
+        // Docs: modifiers are path segments placed BEFORE the target URL.
+        $parts = ['get'];
 
-        if ($maxAgeHours > 0) {
-            // Refresh if cached image is older than N hours.
-            array_splice($parts, 1, 0, ['maxAge', (string) $maxAgeHours]);
+        if ($useOgImage) {
+            $parts[] = 'ogImage';
         }
 
-        // Pass target as ?url= so query strings on the website stay intact.
-        return $base.'/'.implode('/', $parts).'/?'.http_build_query(['url' => $websiteUrl]);
+        // Bust stale cache when regenerating thumbnails from the CRM.
+        if ($maxAgeHours > 0) {
+            $parts[] = 'maxAge';
+            $parts[] = (string) $maxAgeHours;
+        } else {
+            $parts[] = 'refresh';
+        }
+
+        $parts[] = 'width';
+        $parts[] = (string) $width;
+        $parts[] = 'crop';
+        $parts[] = (string) $crop;
+        // Final static PNG — required for server-side downloads (docs: batch jobs).
+        $parts[] = 'png';
+        $parts[] = 'noanimate';
+
+        // Append the raw website URL (docs primary format).
+        return $base.'/'.implode('/', $parts).'/'.$websiteUrl;
+    }
+
+    private function prefetchThumImage(string $endpoint): void
+    {
+        // Docs: /prefetch/ queues render; follow-up request returns the final image.
+        $prefetchEndpoint = preg_replace('#/get/#', '/get/prefetch/', $endpoint, 1);
+        if (! is_string($prefetchEndpoint) || $prefetchEndpoint === $endpoint) {
+            return;
+        }
+
+        try {
+            Http::timeout(90)
+                ->withHeaders([
+                    'User-Agent' => 'SaveRackCRM/1.0',
+                    'Accept' => '*/*',
+                ])
+                ->get($prefetchEndpoint);
+        } catch (\Throwable $e) {
+            Log::info('website_screenshot.prefetch_failed', [
+                'message' => $e->getMessage(),
+            ]);
+        }
+
+        // Brief settle so the final PNG is ready before we download.
+        usleep(750000);
+    }
+
+    private function downloadThumImage(string $endpoint): string
+    {
+        $response = Http::timeout(120)
+            ->withHeaders([
+                'User-Agent' => 'SaveRackCRM/1.0',
+                'Accept' => 'image/png,image/jpeg,image/*,*/*',
+            ])
+            ->get($endpoint);
+
+        if ($response->status() === 429) {
+            throw new RuntimeException('Screenshot service rate limit reached. Try again later.');
+        }
+
+        if (! $response->successful()) {
+            Log::warning('website_screenshot.thum_http_error', [
+                'endpoint' => $endpoint,
+                'status' => $response->status(),
+                'body' => mb_substr($response->body(), 0, 300),
+            ]);
+            throw new RuntimeException('Could not capture website screenshot (HTTP '.$response->status().').');
+        }
+
+        $bytes = $response->body();
+        if ($bytes === '' || strlen($bytes) < 32) {
+            throw new RuntimeException('Screenshot service returned an empty response.');
+        }
+
+        // thum.io may return a plain-text status for prefetch/errors — never save that as a logo.
+        $contentType = strtolower((string) $response->header('Content-Type'));
+        if (str_contains($contentType, 'text/') || @imagecreatefromstring($bytes) === false) {
+            throw new RuntimeException(
+                'Screenshot was not ready yet. Wait a moment and try again.'
+            );
+        }
+
+        return $bytes;
     }
 
     /**
-     * True only for near-total blank/black captures — not merely dark brand heroes.
+     * Reject blank loaders / empty white frames / solid black shells.
      */
-    private function isMostlyBlankImage(string $bytes): bool
+    private function isUnusableThumbnail(string $bytes): bool
     {
         if (! function_exists('imagecreatefromstring')) {
             return false;
@@ -116,7 +179,7 @@ class WebsiteScreenshotService
         try {
             $width = imagesx($image);
             $height = imagesy($image);
-            if ($width < 8 || $height < 8) {
+            if ($width < 32 || $height < 32) {
                 return true;
             }
 
@@ -124,6 +187,7 @@ class WebsiteScreenshotService
             $stepY = max(1, (int) floor($height / 24));
             $samples = 0;
             $nearBlack = 0;
+            $nearWhite = 0;
             $lumaSum = 0.0;
             $uniqueBuckets = [];
 
@@ -139,6 +203,9 @@ class WebsiteScreenshotService
                     if ($luma < 12) {
                         $nearBlack++;
                     }
+                    if ($luma > 245) {
+                        $nearWhite++;
+                    }
                     $uniqueBuckets[((int) ($r / 32)).'-'.((int) ($g / 32)).'-'.((int) ($b / 32))] = true;
                 }
             }
@@ -147,11 +214,15 @@ class WebsiteScreenshotService
                 return true;
             }
 
-            $blackRatio = $nearBlack / $samples;
             $avgLuma = $lumaSum / $samples;
+            $blackRatio = $nearBlack / $samples;
+            $whiteRatio = $nearWhite / $samples;
+            $bucketCount = count($uniqueBuckets);
 
+            // Solid black, solid white/loader, or almost no color variety.
             return ($blackRatio >= 0.97 && $avgLuma < 10.0)
-                || (count($uniqueBuckets) <= 2 && $avgLuma < 18.0);
+                || ($whiteRatio >= 0.97 && $avgLuma > 245.0)
+                || ($bucketCount <= 2 && ($avgLuma < 18.0 || $avgLuma > 240.0));
         } finally {
             imagedestroy($image);
         }

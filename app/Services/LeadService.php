@@ -367,12 +367,11 @@ class LeadService
         }
 
         $bytes = $this->screenshots->captureImageBytes($website);
-        // Contain + white: show the full above-the-fold capture without cropping a dark hero
-        // into a solid black avatar square.
+        // Cover the avatar square so the preview fills the crop (no tiny strip on white).
         $this->logos->replaceFromBytes($lead, $bytes, 'png', [
-            'fit' => 'contain',
+            'fit' => 'cover',
             'background' => 'white',
-            'prefer_top' => false,
+            'prefer_top' => true,
         ]);
 
         if ($actor !== null) {

@@ -118,7 +118,8 @@ return [
         'base_url' => env('THUM_IO_BASE_URL', 'https://image.thum.io'),
         'width' => (int) env('THUM_IO_WIDTH', 1200),
         'crop' => (int) env('THUM_IO_CROP', 1200),
-        'max_age_hours' => (int) env('THUM_IO_MAX_AGE_HOURS', 1),
+        // 0 = always refresh on generate (recommended for CRM "Generate thumbnail")
+        'max_age_hours' => (int) env('THUM_IO_MAX_AGE_HOURS', 0),
     ],
 
 ];

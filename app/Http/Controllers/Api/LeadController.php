@@ -146,18 +146,25 @@ class LeadController extends Controller
     {
         Gate::authorize('update', $lead);
 
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(60);
+        }
+
         try {
             $lead = $this->leads->captureWebsiteThumbnail($lead, $request->user());
         } catch (\Illuminate\Validation\ValidationException $e) {
             throw $e;
         } catch (\Throwable $e) {
             report($e);
+            $message = $e->getMessage() !== ''
+                ? $e->getMessage()
+                : 'Could not generate website thumbnail.';
+            $status = str_contains(strtolower($message), 'timed out')
+                || str_contains(strtolower($message), 'not ready')
+                ? 504
+                : 422;
 
-            return response()->json([
-                'message' => $e->getMessage() !== ''
-                    ? $e->getMessage()
-                    : 'Could not generate website thumbnail.',
-            ], 502);
+            return response()->json(['message' => $message], $status);
         }
 
         return response()->json($this->leads->toDetailArray($lead));

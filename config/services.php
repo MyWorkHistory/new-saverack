@@ -116,10 +116,11 @@ return [
     */
     'thum_io' => [
         'base_url' => env('THUM_IO_BASE_URL', 'https://image.thum.io'),
-        'width' => (int) env('THUM_IO_WIDTH', 1200),
-        'crop' => (int) env('THUM_IO_CROP', 1200),
-        // 0 = always refresh on generate (recommended for CRM "Generate thumbnail")
-        'max_age_hours' => (int) env('THUM_IO_MAX_AGE_HOURS', 0),
+        // Smaller = faster captures (avoids Cloudflare 502 origin timeouts).
+        'width' => (int) env('THUM_IO_WIDTH', 800),
+        'crop' => (int) env('THUM_IO_CROP', 800),
+        // Cache hits are much faster on repeat generate.
+        'max_age_hours' => (int) env('THUM_IO_MAX_AGE_HOURS', 24),
     ],
 
 ];

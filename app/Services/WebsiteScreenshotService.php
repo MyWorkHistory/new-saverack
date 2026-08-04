@@ -10,10 +10,15 @@ use RuntimeException;
 /**
  * Lead website thumbnails via thum.io URL API (no API key).
  *
+ * Keep this path fast: Cloudflare will 502 if the origin holds the request too long.
+ *
  * @see https://www.thum.io/documentation/api/url
  */
 class WebsiteScreenshotService
 {
+    /** Stay under typical Cloudflare / proxy origin timeouts. */
+    private const HTTP_TIMEOUT_SECONDS = 45;
+
     /**
      * Capture a website screenshot and return image bytes.
      *
@@ -29,24 +34,10 @@ class WebsiteScreenshotService
             ]);
         }
 
-        // Prefer Open Graph image when thum.io can resolve one (usually a real brand image).
-        try {
-            $ogBytes = $this->downloadThumImage($this->buildThumIoUrl($url, ['ogImage' => true]));
-            if (! $this->isUnusableThumbnail($ogBytes)) {
-                return $ogBytes;
-            }
-        } catch (RuntimeException $e) {
-            Log::info('website_screenshot.ogimage_skipped', [
-                'url' => $url,
-                'message' => $e->getMessage(),
-            ]);
-        }
+        // One request only — no prefetch / multi-pass (those cause Cloudflare 502 timeouts).
+        $endpoint = $this->buildThumIoUrl($url);
+        $bytes = $this->downloadThumImage($endpoint);
 
-        // Warm cache, then fetch the final PNG (avoids saving the animated loader frame).
-        $screenshotUrl = $this->buildThumIoUrl($url, ['ogImage' => false]);
-        $this->prefetchThumImage($screenshotUrl);
-
-        $bytes = $this->downloadThumImage($screenshotUrl);
         if ($this->isUnusableThumbnail($bytes)) {
             throw new RuntimeException(
                 'Website screenshot came back blank. Try again, or upload a logo manually.'
@@ -60,31 +51,22 @@ class WebsiteScreenshotService
      * Build a thum.io URL per https://www.thum.io/documentation/api/url
      *
      * Example:
-     * https://image.thum.io/get/width/1200/crop/1200/png/noanimate/https://example.com
-     *
-     * @param  array{ogImage?: bool}  $options
+     * https://image.thum.io/get/width/800/crop/800/png/noanimate/https://example.com
      */
-    public function buildThumIoUrl(string $websiteUrl, array $options = []): string
+    public function buildThumIoUrl(string $websiteUrl): string
     {
         $base = rtrim((string) config('services.thum_io.base_url', 'https://image.thum.io'), '/');
-        $width = max(100, (int) config('services.thum_io.width', 1200));
-        $crop = max(100, (int) config('services.thum_io.crop', 1200));
-        $maxAgeHours = max(0, (int) config('services.thum_io.max_age_hours', 0));
-        $useOgImage = ! empty($options['ogImage']);
+        $width = max(100, (int) config('services.thum_io.width', 800));
+        $crop = max(100, (int) config('services.thum_io.crop', 800));
+        $maxAgeHours = max(0, (int) config('services.thum_io.max_age_hours', 24));
 
         // Docs: modifiers are path segments placed BEFORE the target URL.
         $parts = ['get'];
 
-        if ($useOgImage) {
-            $parts[] = 'ogImage';
-        }
-
-        // Bust stale cache when regenerating thumbnails from the CRM.
+        // Prefer cache hits (fast). Regenerating within maxAge still returns the cached shot.
         if ($maxAgeHours > 0) {
             $parts[] = 'maxAge';
             $parts[] = (string) $maxAgeHours;
-        } else {
-            $parts[] = 'refresh';
         }
 
         $parts[] = 'width';
@@ -95,43 +77,28 @@ class WebsiteScreenshotService
         $parts[] = 'png';
         $parts[] = 'noanimate';
 
-        // Append the raw website URL (docs primary format).
         return $base.'/'.implode('/', $parts).'/'.$websiteUrl;
-    }
-
-    private function prefetchThumImage(string $endpoint): void
-    {
-        // Docs: /prefetch/ queues render; follow-up request returns the final image.
-        $prefetchEndpoint = preg_replace('#/get/#', '/get/prefetch/', $endpoint, 1);
-        if (! is_string($prefetchEndpoint) || $prefetchEndpoint === $endpoint) {
-            return;
-        }
-
-        try {
-            Http::timeout(90)
-                ->withHeaders([
-                    'User-Agent' => 'SaveRackCRM/1.0',
-                    'Accept' => '*/*',
-                ])
-                ->get($prefetchEndpoint);
-        } catch (\Throwable $e) {
-            Log::info('website_screenshot.prefetch_failed', [
-                'message' => $e->getMessage(),
-            ]);
-        }
-
-        // Brief settle so the final PNG is ready before we download.
-        usleep(750000);
     }
 
     private function downloadThumImage(string $endpoint): string
     {
-        $response = Http::timeout(120)
-            ->withHeaders([
-                'User-Agent' => 'SaveRackCRM/1.0',
-                'Accept' => 'image/png,image/jpeg,image/*,*/*',
-            ])
-            ->get($endpoint);
+        try {
+            $response = Http::timeout(self::HTTP_TIMEOUT_SECONDS)
+                ->connectTimeout(10)
+                ->withHeaders([
+                    'User-Agent' => 'SaveRackCRM/1.0',
+                    'Accept' => 'image/png,image/jpeg,image/*,*/*',
+                ])
+                ->get($endpoint);
+        } catch (\Throwable $e) {
+            Log::warning('website_screenshot.thum_request_failed', [
+                'endpoint' => $endpoint,
+                'message' => $e->getMessage(),
+            ]);
+            throw new RuntimeException(
+                'Screenshot service timed out. Wait a minute and try again.'
+            );
+        }
 
         if ($response->status() === 429) {
             throw new RuntimeException('Screenshot service rate limit reached. Try again later.');
@@ -151,7 +118,7 @@ class WebsiteScreenshotService
             throw new RuntimeException('Screenshot service returned an empty response.');
         }
 
-        // thum.io may return a plain-text status for prefetch/errors — never save that as a logo.
+        // thum.io may return plain text while rendering — never save that as a logo.
         $contentType = strtolower((string) $response->header('Content-Type'));
         if (str_contains($contentType, 'text/') || @imagecreatefromstring($bytes) === false) {
             throw new RuntimeException(
@@ -219,7 +186,6 @@ class WebsiteScreenshotService
             $whiteRatio = $nearWhite / $samples;
             $bucketCount = count($uniqueBuckets);
 
-            // Solid black, solid white/loader, or almost no color variety.
             return ($blackRatio >= 0.97 && $avgLuma < 10.0)
                 || ($whiteRatio >= 0.97 && $avgLuma > 245.0)
                 || ($bucketCount <= 2 && ($avgLuma < 18.0 || $avgLuma > 240.0));

@@ -48,11 +48,6 @@ class WebsiteScreenshotService
     }
 
     /**
-     * Build a thum.io URL per https://www.thum.io/documentation/api/url
-     *
-     * Example:
-     * https://image.thum.io/get/width/800/crop/800/png/noanimate/https://example.com
-     *
      * @param  array{prefetch?: bool}  $options
      */
     public function buildThumIoUrl(string $websiteUrl, array $options = []): string
@@ -60,15 +55,10 @@ class WebsiteScreenshotService
         $base = rtrim((string) config('services.thum_io.base_url', 'https://image.thum.io'), '/');
         $width = max(100, (int) config('services.thum_io.width', 800));
         $crop = max(100, (int) config('services.thum_io.crop', 800));
-        // Short maxAge so regenerates refresh soon, but cache hits after prefetch are fast.
         $maxAgeHours = max(1, (int) config('services.thum_io.max_age_hours', 1));
-        $prefetch = ! empty($options['prefetch']);
 
         // Docs: modifiers are path segments placed BEFORE the target URL.
         $parts = ['get'];
-        if ($prefetch) {
-            $parts[] = 'prefetch';
-        }
 
         $parts[] = 'maxAge';
         $parts[] = (string) $maxAgeHours;
@@ -76,7 +66,6 @@ class WebsiteScreenshotService
         $parts[] = (string) $width;
         $parts[] = 'crop';
         $parts[] = (string) $crop;
-        // Final static PNG — required for downloads (docs: batch jobs / noanimate).
         $parts[] = 'png';
         $parts[] = 'noanimate';
 

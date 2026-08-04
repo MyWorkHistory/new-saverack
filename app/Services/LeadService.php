@@ -386,8 +386,8 @@ class LeadService
 
         return [
             'website' => $url,
+            // Single image URL only — no prefetch (extra hits cause "local rate limited").
             'screenshot_url' => $this->screenshots->buildThumIoUrl($url),
-            'prefetch_url' => $this->screenshots->buildThumIoUrl($url, ['prefetch' => true]),
         ];
     }
 

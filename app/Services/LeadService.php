@@ -344,17 +344,50 @@ class LeadService
         return $lead->fresh(['feeItems.pricingTemplate']) ?? $lead;
     }
 
-    public function uploadLogo(Lead $lead, UploadedFile $file, ?User $actor = null): Lead
+    public function uploadLogo(Lead $lead, UploadedFile $file, ?User $actor = null, array $options = []): Lead
     {
-        $this->logos->replaceForLead($lead, $file);
+        $this->logos->replaceForLead($lead, $file, $options);
 
         if ($actor !== null) {
+            $fields = ['logo'];
+            if (! empty($options['from_website_thumbnail'])) {
+                $fields[] = 'website_thumbnail';
+            }
             $this->activityLog->log($actor, 'lead.updated', $lead, null, [
-                'fields' => ['logo'],
+                'fields' => $fields,
             ]);
         }
 
         return $lead->fresh(['feeItems.pricingTemplate']) ?? $lead;
+    }
+
+    /**
+     * Build a thum.io screenshot URL for the lead website (no server-side download).
+     * The browser fetches this URL and uploads the image via uploadLogo — avoids Cloudflare 502
+     * when the origin waits on thum.io.
+     *
+     * @return array{website: string, screenshot_url: string}
+     */
+    public function websiteThumbnailCapturePlan(Lead $lead): array
+    {
+        $website = trim((string) ($lead->website ?? ''));
+        if ($website === '') {
+            throw ValidationException::withMessages([
+                'website' => ['Add a website on this lead before generating a thumbnail.'],
+            ]);
+        }
+
+        $url = $this->screenshots->normalizeWebsiteUrl($website);
+        if ($url === null) {
+            throw ValidationException::withMessages([
+                'website' => ['A valid website URL is required to generate a thumbnail.'],
+            ]);
+        }
+
+        return [
+            'website' => $url,
+            'screenshot_url' => $this->screenshots->buildThumIoUrl($url, ['refresh' => true]),
+        ];
     }
 
     public function captureWebsiteThumbnail(Lead $lead, ?User $actor = null): Lead
@@ -367,7 +400,6 @@ class LeadService
         }
 
         $bytes = $this->screenshots->captureImageBytes($website);
-        // Cover the avatar square so the preview fills the crop (no tiny strip on white).
         $this->logos->replaceFromBytes($lead, $bytes, 'png', [
             'fit' => 'cover',
             'background' => 'white',

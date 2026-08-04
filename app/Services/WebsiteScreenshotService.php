@@ -52,19 +52,23 @@ class WebsiteScreenshotService
      *
      * Example:
      * https://image.thum.io/get/width/800/crop/800/png/noanimate/https://example.com
+     *
+     * @param  array{refresh?: bool}  $options
      */
-    public function buildThumIoUrl(string $websiteUrl): string
+    public function buildThumIoUrl(string $websiteUrl, array $options = []): string
     {
         $base = rtrim((string) config('services.thum_io.base_url', 'https://image.thum.io'), '/');
         $width = max(100, (int) config('services.thum_io.width', 800));
         $crop = max(100, (int) config('services.thum_io.crop', 800));
         $maxAgeHours = max(0, (int) config('services.thum_io.max_age_hours', 24));
+        $forceRefresh = ! empty($options['refresh']);
 
         // Docs: modifiers are path segments placed BEFORE the target URL.
         $parts = ['get'];
 
-        // Prefer cache hits (fast). Regenerating within maxAge still returns the cached shot.
-        if ($maxAgeHours > 0) {
+        if ($forceRefresh) {
+            $parts[] = 'refresh';
+        } elseif ($maxAgeHours > 0) {
             $parts[] = 'maxAge';
             $parts[] = (string) $maxAgeHours;
         }
@@ -73,7 +77,7 @@ class WebsiteScreenshotService
         $parts[] = (string) $width;
         $parts[] = 'crop';
         $parts[] = (string) $crop;
-        // Final static PNG — required for server-side downloads (docs: batch jobs).
+        // Final static PNG — required for server-side / browser downloads (docs: batch jobs).
         $parts[] = 'png';
         $parts[] = 'noanimate';
 

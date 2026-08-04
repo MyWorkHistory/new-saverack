@@ -471,7 +471,27 @@ async function captureWebsiteThumbnail() {
   }
   thumbnailGenerating.value = true;
   try {
-    const { data } = await api.post(`/leads/${lead.value.id}/website-thumbnail`);
+    // 1) API only builds the thum.io URL (instant — no Cloudflare 502).
+    const { data: plan } = await api.post(`/leads/${lead.value.id}/website-thumbnail`);
+    const screenshotUrl = String(plan?.screenshot_url || "").trim();
+    if (!screenshotUrl) {
+      throw new Error("Could not build screenshot URL.");
+    }
+
+    // 2) Browser fetches thum.io directly (CORS enabled), then uploads as logo.
+    const imgRes = await fetch(screenshotUrl, { mode: "cors", credentials: "omit" });
+    if (!imgRes.ok) {
+      throw new Error("Could not capture website screenshot. Try again in a moment.");
+    }
+    const blob = await imgRes.blob();
+    if (!blob || blob.size < 32 || !String(blob.type || "").startsWith("image/")) {
+      throw new Error("Screenshot was not ready yet. Wait a moment and try again.");
+    }
+
+    const fd = new FormData();
+    fd.append("logo", new File([blob], "website-thumbnail.png", { type: blob.type || "image/png" }));
+    fd.append("source", "website_thumbnail");
+    const { data } = await api.post(`/leads/${lead.value.id}/logo`, fd);
     lead.value = data;
     toast.success("Website thumbnail generated.");
   } catch (err) {

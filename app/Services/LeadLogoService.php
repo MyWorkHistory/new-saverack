@@ -11,12 +11,12 @@ class LeadLogoService
 {
     private const CANVAS_SIZE = 256;
 
-    public function replaceForLead(Lead $lead, UploadedFile $file): string
+    public function replaceForLead(Lead $lead, UploadedFile $file, array $options = []): string
     {
         $ext = $this->normalizeExtension($file);
         $contents = (string) file_get_contents($file->getRealPath());
 
-        return $this->replaceFromBytes($lead, $contents, $ext);
+        return $this->replaceFromBytes($lead, $contents, $ext, $options);
     }
 
     public function replaceFromBytes(Lead $lead, string $bytes, string $ext = 'png', array $options = []): string

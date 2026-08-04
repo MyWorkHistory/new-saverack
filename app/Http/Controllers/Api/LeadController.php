@@ -134,10 +134,21 @@ class LeadController extends Controller
         Gate::authorize('update', $lead);
 
         $request->validate([
-            'logo' => ['required', 'file', 'image', 'max:5120'],
+            'logo' => ['required', 'file', 'image', 'max:10240'],
+            'source' => ['nullable', 'string', 'in:website_thumbnail'],
         ]);
 
-        $lead = $this->leads->uploadLogo($lead, $request->file('logo'), $request->user());
+        $options = [];
+        if ($request->input('source') === 'website_thumbnail') {
+            $options = [
+                'fit' => 'cover',
+                'background' => 'white',
+                'prefer_top' => true,
+                'from_website_thumbnail' => true,
+            ];
+        }
+
+        $lead = $this->leads->uploadLogo($lead, $request->file('logo'), $request->user(), $options);
 
         return response()->json($this->leads->toDetailArray($lead));
     }
@@ -146,28 +157,15 @@ class LeadController extends Controller
     {
         Gate::authorize('update', $lead);
 
-        if (function_exists('set_time_limit')) {
-            @set_time_limit(60);
-        }
-
+        // Fast path: return a thum.io URL for the browser to fetch (avoids Cloudflare 502
+        // when PHP waits on the screenshot provider).
         try {
-            $lead = $this->leads->captureWebsiteThumbnail($lead, $request->user());
+            $plan = $this->leads->websiteThumbnailCapturePlan($lead);
         } catch (\Illuminate\Validation\ValidationException $e) {
             throw $e;
-        } catch (\Throwable $e) {
-            report($e);
-            $message = $e->getMessage() !== ''
-                ? $e->getMessage()
-                : 'Could not generate website thumbnail.';
-            $status = str_contains(strtolower($message), 'timed out')
-                || str_contains(strtolower($message), 'not ready')
-                ? 504
-                : 422;
-
-            return response()->json(['message' => $message], $status);
         }
 
-        return response()->json($this->leads->toDetailArray($lead));
+        return response()->json($plan);
     }
 
     public function storeComment(Request $request, Lead $lead): JsonResponse

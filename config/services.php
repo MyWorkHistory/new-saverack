@@ -120,7 +120,7 @@ return [
         'width' => (int) env('THUM_IO_WIDTH', 800),
         'crop' => (int) env('THUM_IO_CROP', 800),
         // Cache hits are much faster on repeat generate.
-        'max_age_hours' => (int) env('THUM_IO_MAX_AGE_HOURS', 24),
+        'max_age_hours' => (int) env('THUM_IO_MAX_AGE_HOURS', 1),
     ],
 
 ];

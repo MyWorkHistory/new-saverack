@@ -53,31 +53,30 @@ class WebsiteScreenshotService
      * Example:
      * https://image.thum.io/get/width/800/crop/800/png/noanimate/https://example.com
      *
-     * @param  array{refresh?: bool}  $options
+     * @param  array{prefetch?: bool}  $options
      */
     public function buildThumIoUrl(string $websiteUrl, array $options = []): string
     {
         $base = rtrim((string) config('services.thum_io.base_url', 'https://image.thum.io'), '/');
         $width = max(100, (int) config('services.thum_io.width', 800));
         $crop = max(100, (int) config('services.thum_io.crop', 800));
-        $maxAgeHours = max(0, (int) config('services.thum_io.max_age_hours', 24));
-        $forceRefresh = ! empty($options['refresh']);
+        // Short maxAge so regenerates refresh soon, but cache hits after prefetch are fast.
+        $maxAgeHours = max(1, (int) config('services.thum_io.max_age_hours', 1));
+        $prefetch = ! empty($options['prefetch']);
 
         // Docs: modifiers are path segments placed BEFORE the target URL.
         $parts = ['get'];
-
-        if ($forceRefresh) {
-            $parts[] = 'refresh';
-        } elseif ($maxAgeHours > 0) {
-            $parts[] = 'maxAge';
-            $parts[] = (string) $maxAgeHours;
+        if ($prefetch) {
+            $parts[] = 'prefetch';
         }
 
+        $parts[] = 'maxAge';
+        $parts[] = (string) $maxAgeHours;
         $parts[] = 'width';
         $parts[] = (string) $width;
         $parts[] = 'crop';
         $parts[] = (string) $crop;
-        // Final static PNG — required for server-side / browser downloads (docs: batch jobs).
+        // Final static PNG — required for downloads (docs: batch jobs / noanimate).
         $parts[] = 'png';
         $parts[] = 'noanimate';
 

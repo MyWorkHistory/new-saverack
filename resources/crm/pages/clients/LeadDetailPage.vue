@@ -26,6 +26,7 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
 import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates.js";
+import { captureThumIoScreenshot } from "../../utils/captureThumIoScreenshot.js";
 
 const props = defineProps({
   id: { type: [String, Number], required: true },
@@ -471,25 +472,14 @@ async function captureWebsiteThumbnail() {
   }
   thumbnailGenerating.value = true;
   try {
-    // 1) API only builds the thum.io URL (instant — no Cloudflare 502).
+    // 1) API only builds thum.io URLs (instant — no Cloudflare 502).
     const { data: plan } = await api.post(`/leads/${lead.value.id}/website-thumbnail`);
-    const screenshotUrl = String(plan?.screenshot_url || "").trim();
-    if (!screenshotUrl) {
-      throw new Error("Could not build screenshot URL.");
-    }
 
-    // 2) Browser fetches thum.io directly (CORS enabled), then uploads as logo.
-    const imgRes = await fetch(screenshotUrl, { mode: "cors", credentials: "omit" });
-    if (!imgRes.ok) {
-      throw new Error("Could not capture website screenshot. Try again in a moment.");
-    }
-    const blob = await imgRes.blob();
-    if (!blob || blob.size < 32 || !String(blob.type || "").startsWith("image/")) {
-      throw new Error("Screenshot was not ready yet. Wait a moment and try again.");
-    }
+    // 2) Prefetch + poll until a real site image arrives (skip white loader frames).
+    const file = await captureThumIoScreenshot(plan);
 
     const fd = new FormData();
-    fd.append("logo", new File([blob], "website-thumbnail.png", { type: blob.type || "image/png" }));
+    fd.append("logo", file);
     fd.append("source", "website_thumbnail");
     const { data } = await api.post(`/leads/${lead.value.id}/logo`, fd);
     lead.value = data;

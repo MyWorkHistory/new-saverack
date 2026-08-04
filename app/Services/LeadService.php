@@ -386,7 +386,8 @@ class LeadService
 
         return [
             'website' => $url,
-            'screenshot_url' => $this->screenshots->buildThumIoUrl($url, ['refresh' => true]),
+            'screenshot_url' => $this->screenshots->buildThumIoUrl($url),
+            'prefetch_url' => $this->screenshots->buildThumIoUrl($url, ['prefetch' => true]),
         ];
     }
 

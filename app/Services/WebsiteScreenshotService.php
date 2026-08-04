@@ -7,10 +7,15 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
+/**
+ * Lead website thumbnails via thum.io URL API (no API key).
+ *
+ * @see https://www.thum.io/documentation/api/url
+ */
 class WebsiteScreenshotService
 {
     /**
-     * Capture a website screenshot via Microlink and return PNG/JPEG bytes.
+     * Capture a website screenshot and return image bytes.
      *
      * @throws ValidationException
      * @throws RuntimeException
@@ -24,149 +29,80 @@ class WebsiteScreenshotService
             ]);
         }
 
-        $attempts = [
-            $this->defaultCaptureQuery($url),
-            $this->retryCaptureQuery($url),
-            $this->minimalCaptureQuery($url),
-        ];
+        $endpoint = $this->buildThumIoUrl($url);
 
-        $lastError = 'Could not capture website screenshot.';
-        foreach ($attempts as $index => $query) {
-            try {
-                $bytes = $this->requestScreenshotBytes($query);
-                if ($this->isMostlyDarkImage($bytes)) {
-                    Log::warning('website_screenshot.mostly_dark', [
-                        'url' => $url,
-                        'attempt' => $index + 1,
-                        'bytes' => strlen($bytes),
-                    ]);
-                    $lastError = 'Website screenshot came back blank or too dark. Try again, or upload a logo manually.';
-                    continue;
-                }
-
-                return $bytes;
-            } catch (RuntimeException $e) {
-                $lastError = $e->getMessage();
-                Log::warning('website_screenshot.attempt_failed', [
-                    'url' => $url,
-                    'attempt' => $index + 1,
-                    'message' => $e->getMessage(),
-                ]);
-            }
-        }
-
-        throw new RuntimeException($lastError);
-    }
-
-    /**
-     * @return array<string, string|int>
-     */
-    private function defaultCaptureQuery(string $url): array
-    {
-        return [
-            'url' => $url,
-            'screenshot' => 'true',
-            'meta' => 'false',
-            // Bust stale black/blank cached captures from prior failed loads.
-            'force' => 'true',
-            'colorScheme' => 'light',
-            'waitUntil' => 'networkidle2',
-            'waitForTimeout' => 3000,
-            'styles' => 'html,body{background:#ffffff!important;color-scheme:light!important;min-height:100%;}',
-            // Desktop viewport; LeadLogoService crops the top for the avatar.
-            'screenshot.type' => 'png',
-            'screenshot.viewport.width' => 1440,
-            'screenshot.viewport.height' => 900,
-            'screenshot.viewport.deviceScaleFactor' => 1,
-        ];
-    }
-
-    /**
-     * @return array<string, string|int>
-     */
-    private function retryCaptureQuery(string $url): array
-    {
-        $query = $this->defaultCaptureQuery($url);
-        $query['waitUntil'] = 'load';
-        $query['waitForTimeout'] = 5000;
-        $query['screenshot.viewport.width'] = 1280;
-        $query['screenshot.viewport.height'] = 800;
-
-        return $query;
-    }
-
-    /**
-     * Lean query for free-tier / strict parameter sets.
-     *
-     * @return array<string, string|int>
-     */
-    private function minimalCaptureQuery(string $url): array
-    {
-        return [
-            'url' => $url,
-            'screenshot' => 'true',
-            'meta' => 'false',
-            'force' => 'true',
-            'colorScheme' => 'light',
-            'waitUntil' => 'load',
-            'waitForTimeout' => 4000,
-            'screenshot.type' => 'png',
-            'screenshot.viewport.width' => 1280,
-            'screenshot.viewport.height' => 720,
-        ];
-    }
-
-    /**
-     * @param  array<string, string|int>  $query
-     */
-    private function requestScreenshotBytes(array $query): string
-    {
-        $apiKey = trim((string) config('services.microlink.api_key', ''));
-        $configuredUrl = trim((string) config('services.microlink.api_url', ''));
-        $baseUrl = $configuredUrl !== ''
-            ? rtrim($configuredUrl, '/')
-            : ($apiKey !== '' ? 'https://pro.microlink.io' : 'https://api.microlink.io');
-
-        $request = Http::timeout(90)->acceptJson();
-        if ($apiKey !== '') {
-            $request = $request->withHeaders(['x-api-key' => $apiKey]);
-        }
-
-        $response = $request->get($baseUrl, $query);
+        $response = Http::timeout(120)
+            ->withHeaders([
+                'User-Agent' => 'SaveRackCRM/1.0',
+                'Accept' => 'image/png,image/jpeg,image/*,*/*',
+            ])
+            ->get($endpoint);
 
         if ($response->status() === 429) {
             throw new RuntimeException('Screenshot service rate limit reached. Try again later.');
         }
 
         if (! $response->successful()) {
-            $message = (string) (data_get($response->json(), 'message')
-                ?: data_get($response->json(), 'status')
-                ?: 'Could not capture website screenshot.');
-            throw new RuntimeException($message);
+            Log::warning('website_screenshot.thum_http_error', [
+                'url' => $url,
+                'endpoint' => $endpoint,
+                'status' => $response->status(),
+                'body' => mb_substr($response->body(), 0, 300),
+            ]);
+            throw new RuntimeException('Could not capture website screenshot (HTTP '.$response->status().').');
         }
 
-        $screenshotUrl = data_get($response->json(), 'data.screenshot.url');
-        if (! is_string($screenshotUrl) || trim($screenshotUrl) === '') {
-            throw new RuntimeException('Screenshot service did not return an image.');
+        $bytes = $response->body();
+        if ($bytes === '' || strlen($bytes) < 32 || @imagecreatefromstring($bytes) === false) {
+            throw new RuntimeException('Screenshot service did not return a usable image.');
         }
 
-        $imageResponse = Http::timeout(90)->get($screenshotUrl);
-        if (! $imageResponse->successful()) {
-            throw new RuntimeException('Could not download website screenshot.');
-        }
-
-        $bytes = $imageResponse->body();
-        if ($bytes === '' || strlen($bytes) < 32) {
-            throw new RuntimeException('Website screenshot was empty.');
+        if ($this->isMostlyBlankImage($bytes)) {
+            throw new RuntimeException(
+                'Website screenshot came back blank. Try again, or upload a logo manually.'
+            );
         }
 
         return $bytes;
     }
 
     /**
-     * Detect blank/black captures (bot walls, unloaded SPAs, dark empty shells).
+     * Build a thum.io URL per https://www.thum.io/documentation/api/url
+     *
+     * Example:
+     * https://image.thum.io/get/width/1200/crop/1200/png/noanimate/https://example.com
      */
-    private function isMostlyDarkImage(string $bytes): bool
+    public function buildThumIoUrl(string $websiteUrl): string
+    {
+        $base = rtrim((string) config('services.thum_io.base_url', 'https://image.thum.io'), '/');
+        $width = max(100, (int) config('services.thum_io.width', 1200));
+        $crop = max(100, (int) config('services.thum_io.crop', 1200));
+        $maxAgeHours = max(0, (int) config('services.thum_io.max_age_hours', 1));
+
+        // Modifiers go before the target URL (docs: path segments, then site URL).
+        $parts = [
+            'get',
+            'width',
+            (string) $width,
+            'crop',
+            (string) $crop,
+            'png',
+            'noanimate',
+        ];
+
+        if ($maxAgeHours > 0) {
+            // Refresh if cached image is older than N hours.
+            array_splice($parts, 1, 0, ['maxAge', (string) $maxAgeHours]);
+        }
+
+        // Pass target as ?url= so query strings on the website stay intact.
+        return $base.'/'.implode('/', $parts).'/?'.http_build_query(['url' => $websiteUrl]);
+    }
+
+    /**
+     * True only for near-total blank/black captures — not merely dark brand heroes.
+     */
+    private function isMostlyBlankImage(string $bytes): bool
     {
         if (! function_exists('imagecreatefromstring')) {
             return false;
@@ -174,7 +110,7 @@ class WebsiteScreenshotService
 
         $image = @imagecreatefromstring($bytes);
         if ($image === false) {
-            return false;
+            return true;
         }
 
         try {
@@ -187,8 +123,9 @@ class WebsiteScreenshotService
             $stepX = max(1, (int) floor($width / 24));
             $stepY = max(1, (int) floor($height / 24));
             $samples = 0;
-            $dark = 0;
+            $nearBlack = 0;
             $lumaSum = 0.0;
+            $uniqueBuckets = [];
 
             for ($y = 0; $y < $height; $y += $stepY) {
                 for ($x = 0; $x < $width; $x += $stepX) {
@@ -199,9 +136,10 @@ class WebsiteScreenshotService
                     $luma = (0.2126 * $r) + (0.7152 * $g) + (0.0722 * $b);
                     $lumaSum += $luma;
                     $samples++;
-                    if ($luma < 28) {
-                        $dark++;
+                    if ($luma < 12) {
+                        $nearBlack++;
                     }
+                    $uniqueBuckets[((int) ($r / 32)).'-'.((int) ($g / 32)).'-'.((int) ($b / 32))] = true;
                 }
             }
 
@@ -209,10 +147,11 @@ class WebsiteScreenshotService
                 return true;
             }
 
-            $darkRatio = $dark / $samples;
+            $blackRatio = $nearBlack / $samples;
             $avgLuma = $lumaSum / $samples;
 
-            return $darkRatio >= 0.90 || $avgLuma < 18.0;
+            return ($blackRatio >= 0.97 && $avgLuma < 10.0)
+                || (count($uniqueBuckets) <= 2 && $avgLuma < 18.0);
         } finally {
             imagedestroy($image);
         }

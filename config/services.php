@@ -110,12 +110,15 @@ return [
     ],
 
     /*
-    | Lead website thumbnails (Microlink screenshot API).
-    | Free tier: api.microlink.io (no key). Pro: set MICROLINK_API_KEY → pro.microlink.io.
+    | Lead website thumbnails via thum.io URL API (no API key).
+    | Docs: https://www.thum.io/documentation/api/url
+    | Example: https://image.thum.io/get/width/1200/crop/1200/png/noanimate/?url=https://example.com
     */
-    'microlink' => [
-        'api_key' => env('MICROLINK_API_KEY'),
-        'api_url' => env('MICROLINK_API_URL'),
+    'thum_io' => [
+        'base_url' => env('THUM_IO_BASE_URL', 'https://image.thum.io'),
+        'width' => (int) env('THUM_IO_WIDTH', 1200),
+        'crop' => (int) env('THUM_IO_CROP', 1200),
+        'max_age_hours' => (int) env('THUM_IO_MAX_AGE_HOURS', 1),
     ],
 
 ];

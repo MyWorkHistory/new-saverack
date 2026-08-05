@@ -553,7 +553,7 @@ onMounted(async () => {
       </div>
 
       <template v-else>
-      <div class="table-responsive staff-table-wrap d-none d-lg-block">
+      <div class="staff-table-wrap put-away-list-table-wrap d-none d-lg-block">
         <table
           class="table table-hover align-middle mb-0 staff-data-table user-inv-table put-away-list-table"
           :class="{ 'put-away-list-table--syncing': loading || loadingMore }"
@@ -624,7 +624,10 @@ onMounted(async () => {
                     <div v-else class="order-detail-page__item-sku-title" :title="row.sku || undefined">
                       {{ row.sku || "—" }}
                     </div>
-                    <div class="order-detail-page__item-name-sub" :title="row.name || undefined">
+                    <div
+                      class="order-detail-page__item-name-sub"
+                      :title="row.name || undefined"
+                    >
                       {{ row.name || "—" }}
                     </div>
                   </div>
@@ -741,14 +744,24 @@ onMounted(async () => {
                   target="_blank"
                   rel="noopener noreferrer"
                   class="crm-mobile-item-card__sku"
+                  :title="row.sku || undefined"
                   @click="openPutAwayInNewTab(row, $event)"
                 >
                   {{ row.sku || "—" }}
                 </a>
-                <div v-else class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain">
+                <div
+                  v-else
+                  class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain"
+                  :title="row.sku || undefined"
+                >
                   {{ row.sku || "—" }}
                 </div>
-                <div class="crm-mobile-item-card__name">{{ row.name || "—" }}</div>
+                <div
+                  class="crm-mobile-item-card__name"
+                  :title="row.name || undefined"
+                >
+                  {{ row.name || "—" }}
+                </div>
                 <RouterLink
                   v-if="accountDetailTo(row.client_account_id)"
                   :to="accountDetailTo(row.client_account_id)"
@@ -938,9 +951,17 @@ onMounted(async () => {
   width: min(280px, 100%);
 }
 
+/* Fit table in viewport — no scrollbar from long product names. */
+.put-away-list-table-wrap.staff-table-wrap {
+  overflow-x: hidden !important;
+  overflow-y: visible !important;
+  box-shadow: none !important;
+}
+
 .put-away-list-table {
   table-layout: fixed;
   width: 100%;
+  max-width: 100%;
 }
 
 .put-away-list-table--syncing {
@@ -948,45 +969,55 @@ onMounted(async () => {
   pointer-events: none;
 }
 
+.put-away-list-table th,
+.put-away-list-table td {
+  overflow: hidden;
+  vertical-align: middle;
+}
+
 .put-away-list-table .user-inv-table__num-col {
-  min-width: 3.75rem;
-  width: 3.75rem;
+  width: 4.25rem;
+  min-width: 0;
   padding-left: 0.2rem;
   padding-right: 0.2rem;
   font-size: 0.8125rem;
 }
 
 .put-away-list-table .put-away-list-table__transfer-col {
-  width: 5.5rem;
-  min-width: 5.5rem;
+  width: 5.25rem;
+  min-width: 0;
   padding-left: 0.25rem;
   padding-right: 0.25rem;
 }
 
 .put-away-list-table .put-away-list-table__account-col {
   width: 7rem;
-  min-width: 5.5rem;
-  vertical-align: middle;
+  min-width: 0;
 }
 
 .put-away-list-table .put-away-list-table__location-col {
-  width: 7.5rem;
-  min-width: 6rem;
-  vertical-align: middle;
+  width: 7rem;
+  min-width: 0;
 }
 
 .put-away-loc-row {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1.4;
+  line-height: 1.35;
+  max-width: 100%;
 }
 
 .put-away-loc-row + .put-away-loc-row {
-  margin-top: 0.2rem;
+  margin-top: 0.15rem;
 }
 
 .put-away-list-table__account-link {
+  display: block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: #2563eb;
   text-decoration: none;
   font-weight: 500;
@@ -1007,8 +1038,8 @@ onMounted(async () => {
 }
 
 .admin-put-away-list-page .asn-line-thumb {
-  width: 64px;
-  height: 64px;
+  width: 56px;
+  height: 56px;
   border-radius: 0.4rem;
   object-fit: cover;
   border: 1px solid rgba(0, 0, 0, 0.08);
@@ -1017,8 +1048,8 @@ onMounted(async () => {
 }
 
 .admin-put-away-list-page .asn-line-thumb--lg {
-  width: 72px;
-  height: 72px;
+  width: 56px;
+  height: 56px;
 }
 
 .admin-put-away-list-page .asn-line-thumb--empty {
@@ -1028,23 +1059,34 @@ onMounted(async () => {
 
 .admin-put-away-list-page .order-detail-page__item-cell {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  align-items: flex-start;
+  gap: 0.65rem;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.admin-put-away-list-page .order-detail-page__item-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .admin-put-away-list-page .order-detail-page__items-col {
-  width: 28%;
-  min-width: 14rem;
+  width: 26%;
+  min-width: 0;
+  max-width: 18rem;
   vertical-align: middle;
 }
 
 .admin-put-away-list-page .order-detail-page__item-sku-title {
-  font-size: 1rem;
+  display: block;
+  font-size: 0.9375rem;
   font-weight: 700;
-  line-height: 1.35;
+  line-height: 1.3;
   color: var(--bs-body-color);
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.15rem;
   max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
@@ -1052,27 +1094,49 @@ onMounted(async () => {
 }
 
 .admin-put-away-list-page .order-detail-page__item-name-sub {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   font-size: 0.8125rem;
   line-height: 1.35;
+  max-height: calc(1.35em * 2);
   color: var(--bs-secondary-color);
   margin-bottom: 0;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  cursor: default;
 }
 
-.admin-put-away-list-page .crm-mobile-item-card__sku,
-.admin-put-away-list-page .crm-mobile-item-card__name {
-  max-width: 100%;
-  white-space: nowrap;
+.admin-put-away-list-page .crm-mobile-item-card__copy {
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  word-break: normal;
 }
 
-.admin-put-away-list-page .crm-mobile-item-card__name {
+.admin-put-away-list-page .crm-mobile-item-card__sku {
   display: block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-put-away-list-page .crm-mobile-item-card__name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-height: calc(1.35em * 2);
+  margin-top: 0.15rem;
+  cursor: default;
 }
 
 .admin-put-away-list-page .asn-line-thumb-link {

@@ -661,7 +661,7 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <div class="table-responsive staff-table-wrap">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -821,9 +821,114 @@ onUnmounted(() => {
         </table>
       </div>
 
-      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
-        Scroll sideways or swipe to see all columns.
-      </p>
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="ASNs">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <div class="d-flex justify-content-center py-3">
+            <CrmLoadingSpinner message="Loading ASNs…" />
+          </div>
+        </div>
+        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">No ASNs found.</div>
+        <template v-else>
+          <article
+            v-for="row in rows"
+            :key="`mobile-${row.id}`"
+            class="crm-mobile-item-card"
+            @click="openRow(row)"
+          >
+            <div class="crm-mobile-item-card__head">
+              <div class="crm-mobile-item-card__head-start">
+                <input
+                  type="checkbox"
+                  class="form-check-input staff-table-head__check crm-mobile-item-card__check"
+                  :checked="selected.has(row.id)"
+                  :aria-label="`Select ASN ${formatAsnDisplay(row.asn_number)}`"
+                  @click.stop
+                  @change="toggleOne(row.id)"
+                />
+                <AsnStatusChip :status="row.status" />
+              </div>
+              <div class="crm-mobile-item-card__head-end" data-row-actions @click.stop>
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': manageOpenId == row.id }"
+                  :aria-expanded="manageOpenId == row.id ? 'true' : 'false'"
+                  aria-haspopup="true"
+                  aria-label="Row actions"
+                  @click="toggleManageMenu(row.id, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__product">
+              <span
+                class="admin-asn-list-account-avatar crm-mobile-item-card__thumb crm-mobile-item-card__thumb--avatar"
+                :class="avatarClassFromSeed(row.client_account_company_name || row.client_account_id)"
+                aria-hidden="true"
+              >
+                {{ initialsFromName(row.client_account_company_name) }}
+              </span>
+              <div class="crm-mobile-item-card__copy">
+                <span class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain">
+                  {{ formatAsnDisplay(row.asn_number) }}
+                </span>
+                <RouterLink
+                  v-if="row.client_account_id"
+                  :to="`/admin/clients/accounts/${row.client_account_id}`"
+                  class="crm-mobile-item-card__name text-decoration-none"
+                  @click.stop
+                >
+                  {{ row.client_account_company_name || "—" }}
+                </RouterLink>
+                <span v-else class="crm-mobile-item-card__name">
+                  {{ row.client_account_company_name || "—" }}
+                </span>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__meta">
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Date Created</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatDateUs(row.created_at) }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Expected QTY</span>
+                <span class="crm-mobile-item-card__meta-value">{{ Number(row.expected_qty ?? 0).toLocaleString() }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Accepted QTY</span>
+                <span class="crm-mobile-item-card__meta-value">{{ Number(row.accepted_qty ?? 0).toLocaleString() }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Rejected QTY</span>
+                <span class="crm-mobile-item-card__meta-value">{{ Number(row.rejected_qty ?? 0).toLocaleString() }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Total Boxes</span>
+                <span class="crm-mobile-item-card__meta-value">{{ Number(row.total_boxes ?? 0).toLocaleString() }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Tracking</span>
+                <span class="crm-mobile-item-card__meta-value">
+                  <a
+                    v-if="trackingLink(row)"
+                    :href="trackingLink(row)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-decoration-none"
+                    @click.stop
+                  >
+                    {{ row.tracking_display || "—" }}
+                  </a>
+                  <template v-else>{{ row.tracking_display || "—" }}</template>
+                </span>
+              </div>
+            </div>
+          </article>
+        </template>
+      </div>
 
       <div
         v-if="!loading && meta.last_page > 1"

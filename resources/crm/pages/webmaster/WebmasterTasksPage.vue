@@ -899,7 +899,7 @@ onUnmounted(() => {
             v-if="canUpdateTasks || canDeleteTasks"
             class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
           >
-            <div class="d-none d-md-flex align-items-center gap-2 flex-shrink-0">
+            <div class="d-none d-lg-flex align-items-center gap-2 flex-shrink-0">
               <button
                 v-if="canUpdateTasks"
                 type="button"
@@ -921,7 +921,7 @@ onUnmounted(() => {
             </div>
             <div
               v-if="canUpdateTasks && canDeleteTasks"
-              class="d-md-none position-relative flex-shrink-0"
+              class="d-lg-none position-relative flex-shrink-0"
               data-toolbar-bulk
             >
               <button
@@ -978,7 +978,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="table-responsive staff-table-wrap">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -1141,9 +1141,103 @@ onUnmounted(() => {
           </tbody>
         </table>
       </div>
-      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
-        Scroll sideways or swipe to see all columns.
-      </p>
+
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Webmaster tasks">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <div class="d-flex justify-content-center py-3">
+            <CrmLoadingSpinner message="Loading tasks…" />
+          </div>
+        </div>
+        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">No tasks found.</div>
+        <template v-else>
+          <div v-if="showCheckboxColumn" class="d-flex align-items-center gap-2 px-1 pb-1">
+            <input
+              type="checkbox"
+              class="form-check-input staff-table-head__check mt-0 crm-mobile-item-card__check"
+              :checked="isAllPageSelected"
+              :disabled="loading || !rows.length"
+              aria-label="Select all on page"
+              @change="toggleSelectAll"
+            />
+            <span class="small text-secondary">Select all</span>
+          </div>
+          <article v-for="task in rows" :key="`mobile-${task.id}`" class="crm-mobile-item-card">
+            <div class="crm-mobile-item-card__head">
+              <div class="crm-mobile-item-card__head-start">
+                <input
+                  v-if="showCheckboxColumn"
+                  type="checkbox"
+                  class="form-check-input staff-table-head__check mt-0 crm-mobile-item-card__check"
+                  :checked="selectedIds.includes(task.id)"
+                  :aria-label="`Select ${task.title}`"
+                  @change="toggleRowSelect(task.id)"
+                />
+                <button
+                  v-if="canUpdateTasks"
+                  type="button"
+                  class="badge rounded-pill text-capitalize fw-medium border-0"
+                  :class="statusBadgeClass(task.status)"
+                  :disabled="statusPickerBusy"
+                  @click.stop="openStatusModal(task)"
+                >
+                  {{ statusLabel(task.status) }}
+                </button>
+                <span
+                  v-else
+                  class="badge rounded-pill text-capitalize fw-medium"
+                  :class="statusBadgeClass(task.status)"
+                >
+                  {{ statusLabel(task.status) }}
+                </span>
+              </div>
+              <div v-if="showRowActions" class="crm-mobile-item-card__head-end" data-row-actions>
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': manageOpenId === task.id }"
+                  :aria-expanded="manageOpenId === task.id"
+                  aria-haspopup="true"
+                  aria-label="Row actions"
+                  @click="toggleManageMenu(task.id, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__product">
+              <div class="crm-mobile-item-card__copy">
+                <a
+                  :href="taskDetailHref(task)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="crm-mobile-item-card__sku text-decoration-none"
+                >
+                  {{ task.title }}
+                </a>
+                <span class="badge rounded-pill text-capitalize fw-medium mt-1" :class="priorityBadgeClass(task.priority)">
+                  {{ priorityLabel(task.priority) }}
+                </span>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__meta">
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Assignee</span>
+                <span class="crm-mobile-item-card__meta-value">{{ task.assignee?.name || "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Due Date</span>
+                <span class="crm-mobile-item-card__meta-value">{{ task.due_date ? formatDateUs(task.due_date) : "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Price</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatUsdPrice(task.price) || "—" }}</span>
+              </div>
+            </div>
+          </article>
+        </template>
+      </div>
 
       <div
         class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3 border-top staff-table-footer"

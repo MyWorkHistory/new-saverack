@@ -483,10 +483,10 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="loading" class="p-5 d-flex justify-content-center">
+      <div v-if="loading" class="p-5 d-flex justify-content-center d-none d-lg-flex">
         <CrmLoadingSpinner message="Loading leads…" />
       </div>
-      <div v-else class="table-responsive staff-table-wrap">
+      <div v-else class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -604,6 +604,112 @@ onUnmounted(() => {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Leads">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <div class="d-flex justify-content-center py-3">
+            <CrmLoadingSpinner message="Loading leads…" />
+          </div>
+        </div>
+        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">No leads found.</div>
+        <template v-else>
+          <article v-for="row in rows" :key="`mobile-${row.id}`" class="crm-mobile-item-card">
+            <div class="crm-mobile-item-card__head">
+              <div class="crm-mobile-item-card__head-start">
+                <button
+                  v-if="canUpdate"
+                  type="button"
+                  class="staff-status-badge"
+                  :class="statusBadgeClass(row.status)"
+                  title="Change lead status"
+                  @click.stop="openStatusModal(row)"
+                >
+                  {{ leadStatusLabel(row.status) }}
+                </button>
+                <span
+                  v-else
+                  class="staff-status-badge"
+                  :class="statusBadgeClass(row.status)"
+                >
+                  {{ leadStatusLabel(row.status) }}
+                </span>
+              </div>
+              <div class="crm-mobile-item-card__head-end" data-row-actions>
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': manageOpenId === row.id }"
+                  :aria-expanded="manageOpenId === row.id"
+                  aria-haspopup="true"
+                  aria-label="Row actions"
+                  @click="toggleManageMenu(row.id, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__product">
+              <span class="crm-mobile-item-card__thumb crm-mobile-item-card__thumb--avatar">
+                <img
+                  v-if="row.logo_url"
+                  :src="row.logo_url"
+                  alt=""
+                  class="w-100 h-100 object-fit-cover"
+                />
+                <span
+                  v-else
+                  class="d-flex w-100 h-100 align-items-center justify-content-center fw-semibold small"
+                  :class="avatarClassForEmail(row.email || row.company_name)"
+                >
+                  {{ leadInitials(row.company_name) }}
+                </span>
+              </span>
+              <div class="crm-mobile-item-card__copy">
+                <RouterLink
+                  :to="{ name: 'lead-detail', params: { id: row.id } }"
+                  class="crm-mobile-item-card__sku text-decoration-none"
+                >
+                  {{ row.company_name }}
+                </RouterLink>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__meta">
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Email</span>
+                <span class="crm-mobile-item-card__meta-value">
+                  <a v-if="row.email" :href="`mailto:${row.email}`" class="text-decoration-none">{{ row.email }}</a>
+                  <template v-else>—</template>
+                </span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Website</span>
+                <span class="crm-mobile-item-card__meta-value">
+                  <a
+                    v-if="row.website"
+                    :href="websiteHref(row.website)"
+                    class="text-decoration-none"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {{ row.website }}
+                  </a>
+                  <template v-else>—</template>
+                </span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Follow Up</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatFollowUpRemaining(row) }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Date Created</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatDateUs(row.created_at) }}</span>
+              </div>
+            </div>
+          </article>
+        </template>
       </div>
 
       <div

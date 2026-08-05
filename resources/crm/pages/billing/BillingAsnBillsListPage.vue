@@ -490,7 +490,7 @@ onUnmounted(() => {
             v-if="showCheckboxColumn && selectedIds.length"
             class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
           >
-            <div class="d-none d-md-flex align-items-center gap-2 flex-shrink-0">
+            <div class="d-none d-lg-flex align-items-center gap-2 flex-shrink-0">
               <button
                 v-if="canUpdate"
                 type="button"
@@ -512,7 +512,7 @@ onUnmounted(() => {
             </div>
             <div
               v-if="canUpdate || canDelete"
-              class="d-md-none position-relative flex-shrink-0"
+              class="d-lg-none position-relative flex-shrink-0"
               data-toolbar-bulk
             >
               <button

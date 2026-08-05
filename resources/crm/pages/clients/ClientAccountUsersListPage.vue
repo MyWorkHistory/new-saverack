@@ -1187,7 +1187,7 @@ onUnmounted(() => {
             </div>
             <div
               v-if="canUpdate || canDelete"
-              class="d-none d-md-flex align-items-center gap-2 flex-shrink-0"
+              class="d-none d-lg-flex align-items-center gap-2 flex-shrink-0"
             >
               <button
                 v-if="canUpdate"
@@ -1210,7 +1210,7 @@ onUnmounted(() => {
             </div>
             <div
               v-if="canUpdate && canDelete"
-              class="d-md-none position-relative flex-shrink-0"
+              class="d-lg-none position-relative flex-shrink-0"
               data-toolbar-bulk
             >
               <button
@@ -1274,7 +1274,7 @@ onUnmounted(() => {
             <button
               v-if="canUpdate && !canDelete"
               type="button"
-              class="btn btn-outline-secondary staff-toolbar-btn d-md-none flex-shrink-0"
+              class="btn btn-outline-secondary staff-toolbar-btn d-lg-none flex-shrink-0"
               :disabled="!selectedIds.length || loading"
               @click="openBulkEdit"
             >
@@ -1283,7 +1283,7 @@ onUnmounted(() => {
             <button
               v-if="canDelete && !canUpdate"
               type="button"
-              class="btn btn-outline-danger staff-toolbar-btn d-md-none flex-shrink-0"
+              class="btn btn-outline-danger staff-toolbar-btn d-lg-none flex-shrink-0"
               :disabled="!selectedDeletableRows.length || loading"
               @click="openBulkDelete"
             >
@@ -1526,7 +1526,7 @@ onUnmounted(() => {
           </tbody>
         </table>
       </div>
-      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
+      <p class="staff-table-mobile-scroll-cue d-lg-none" aria-hidden="true">
         Scroll sideways or swipe to see all columns.
       </p>
 

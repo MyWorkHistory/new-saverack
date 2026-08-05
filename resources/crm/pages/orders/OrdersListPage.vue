@@ -1726,7 +1726,7 @@ onUnmounted(() => {
         >
           {{ orderQueueSyncBannerText }}
         </div>
-      <div class="table-responsive staff-table-wrap">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -1891,9 +1891,152 @@ onUnmounted(() => {
           </tbody>
         </table>
       </div>
-      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
-        Scroll sideways or swipe to see all columns.
-      </p>
+
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Orders">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <div class="d-flex justify-content-center py-3">
+            <CrmLoadingSpinner message="Loading orders..." />
+          </div>
+        </div>
+        <div v-else-if="isOrdersSearchPage && !hasSearched" class="crm-mobile-item-card__empty">
+          <template v-if="isAdminOrdersList && !selectedAccountId">
+            Enter an order number and click Search to look up across all accounts, or select an account to
+            filter.
+          </template>
+          <template v-else>Enter an order number and click Search.</template>
+        </div>
+        <div v-else-if="!isOrdersSearchPage && !selectedAccountId" class="crm-mobile-item-card__empty">
+          Select an account to load orders.
+        </div>
+        <div v-else-if="hasSearched && displayedRows.length === 0" class="crm-mobile-item-card__empty">
+          {{ ordersEmptyMessage }}
+        </div>
+        <template v-else>
+          <article v-for="row in displayedRows" :key="`mobile-${row.id}`" class="crm-mobile-item-card">
+            <div class="crm-mobile-item-card__head">
+              <div class="crm-mobile-item-card__head-start">
+                <input
+                  type="checkbox"
+                  class="form-check-input m-0 crm-mobile-item-card__check"
+                  :checked="isRowSelected(row)"
+                  :disabled="!row.id || crossAccountMode || !selectedAccountId"
+                  :aria-label="`Select order ${row.order_number || row.id}`"
+                  @change="toggleRowSelected(row)"
+                />
+                <div class="d-flex flex-column align-items-start gap-1 min-w-0">
+                  <template v-if="tabKey === 'on_hold' && holdReasonLabelsForRow(row).length">
+                    <span
+                      v-for="(label, holdIdx) in holdReasonLabelsForRow(row)"
+                      :key="`m-${row.id}-hold-${holdIdx}`"
+                      class="badge rounded-pill fw-medium"
+                      :class="statusClass(label)"
+                    >
+                      {{ label }}
+                    </span>
+                  </template>
+                  <span v-else class="badge rounded-pill fw-medium" :class="statusClassForRow(row)">
+                    {{ displayOrderStatus(row) }}
+                  </span>
+                </div>
+              </div>
+              <div class="crm-mobile-item-card__head-end" data-row-actions>
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': manageOpenId === row.id }"
+                  :aria-expanded="manageOpenId === row.id"
+                  aria-haspopup="true"
+                  aria-label="Row actions"
+                  @click="toggleManageMenu(row.id, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__product">
+              <div class="crm-mobile-item-card__copy">
+                <a
+                  v-if="effectiveClientAccountId(row)"
+                  :href="orderDetailHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="crm-mobile-item-card__sku text-decoration-none"
+                  @click="onOrderNumberClick($event, row)"
+                >
+                  {{ row.order_number || "—" }}
+                </a>
+                <span v-else class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain">
+                  {{ row.order_number || "—" }}
+                </span>
+                <div class="crm-mobile-item-card__name">{{ row.recipient_name || "—" }}</div>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__meta">
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">{{ orderDateColumnLabel }}</span>
+                <span class="crm-mobile-item-card__meta-value">{{ rowDisplayDate(row) }}</span>
+              </div>
+              <div v-if="showAccountColumn" class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Account</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.client_account_company_name || row.account || "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Country</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.country || "—" }}</span>
+              </div>
+              <template v-if="isShippedTab">
+                <div class="crm-mobile-item-card__meta-row">
+                  <span class="crm-mobile-item-card__meta-label">Carrier</span>
+                  <span class="crm-mobile-item-card__meta-value">
+                    <template v-if="rowTrackingLabels(row).length">
+                      <div v-for="label in rowTrackingLabels(row)" :key="`m-c-${label.id || label.tracking_number}`">
+                        {{ formatShipmentCarrier(label) }}
+                      </div>
+                    </template>
+                    <template v-else>—</template>
+                  </span>
+                </div>
+                <div class="crm-mobile-item-card__meta-row">
+                  <span class="crm-mobile-item-card__meta-label">Tracking</span>
+                  <span class="crm-mobile-item-card__meta-value">
+                    <template v-if="rowTrackingLabels(row).length">
+                      <template v-for="label in rowTrackingLabels(row)" :key="`m-t-${label.id || label.tracking_number}`">
+                        <div v-for="parts in [formatCarrierTrackingLine(label)]" :key="`m-${parts.trackingNumber}`">
+                          <a
+                            v-if="parts.trackingUrl"
+                            :href="parts.trackingUrl"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="text-primary text-decoration-none"
+                          >
+                            {{ parts.trackingNumber }}
+                          </a>
+                          <span v-else>{{ parts.trackingNumber }}</span>
+                        </div>
+                      </template>
+                    </template>
+                    <template v-else>—</template>
+                  </span>
+                </div>
+              </template>
+              <div v-else class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Shipping Method</span>
+                <span class="crm-mobile-item-card__meta-value">
+                  {{
+                    formatCurrentShippingMethod(
+                      row.shipping_carrier,
+                      row.method,
+                      row.shipping_method_title,
+                    )
+                  }}
+                </span>
+              </div>
+            </div>
+          </article>
+        </template>
+      </div>
 
       <div class="staff-table-footer card-footer d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center justify-content-end gap-3">
         <button

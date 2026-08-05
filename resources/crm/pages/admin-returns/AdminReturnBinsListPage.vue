@@ -249,7 +249,7 @@ onUnmounted(() => {
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
-      <div class="table-responsive staff-table-wrap">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -316,9 +316,59 @@ onUnmounted(() => {
           </tbody>
         </table>
       </div>
-      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
-        Scroll sideways or swipe to see all columns.
-      </p>
+
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Return bins">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <div class="d-flex justify-content-center py-3">
+            <CrmLoadingSpinner message="Loading return bins…" />
+          </div>
+        </div>
+        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">
+          No return bins yet. Add a bin to get started.
+        </div>
+        <template v-else>
+          <article
+            v-for="row in rows"
+            :key="`mobile-bin-${row.id}`"
+            class="crm-mobile-item-card"
+            @click="openBin(row)"
+          >
+            <div class="crm-mobile-item-card__head">
+              <div class="crm-mobile-item-card__head-start">
+                <span class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain">
+                  {{ row.name || "—" }}
+                </span>
+              </div>
+              <div
+                v-if="canManage"
+                class="crm-mobile-item-card__head-end"
+                data-return-bin-list-actions
+                @click.stop
+              >
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': menuRowId === Number(row.id) }"
+                  aria-haspopup="true"
+                  :aria-expanded="menuRowId === Number(row.id) ? 'true' : 'false'"
+                  aria-label="Row actions"
+                  :disabled="actionBusy"
+                  @click.stop="onRowMenuClick(row, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__meta">
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Items</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.items_count ?? 0 }}</span>
+              </div>
+            </div>
+          </article>
+        </template>
+      </div>
     </div>
 
     <Teleport to="body">

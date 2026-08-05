@@ -227,7 +227,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="table-responsive staff-table-wrap">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -325,6 +325,74 @@ onUnmounted(() => {
         </table>
       </div>
 
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Return orders">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <div class="d-flex justify-content-center py-3">
+            <CrmLoadingSpinner message="Loading returns…" />
+          </div>
+        </div>
+        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">
+          {{ searchDebounced ? "No returns match your search." : "No return orders yet." }}
+        </div>
+        <template v-else>
+          <article v-for="r in rows" :key="`mobile-${r.id}`" class="crm-mobile-item-card">
+            <div class="crm-mobile-item-card__head">
+              <div class="crm-mobile-item-card__head-start">
+                <span class="badge rounded-pill fw-medium" :class="returnStatusBadgeClass(r.status)">
+                  {{ returnStatusLabel(r.status) }}
+                </span>
+              </div>
+              <div class="crm-mobile-item-card__head-end" data-return-row-actions>
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :aria-expanded="actionOpenId === r.id"
+                  aria-label="Row Actions"
+                  @click="toggleRowActionMenu(r, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__product">
+              <div class="crm-mobile-item-card__copy">
+                <a
+                  v-if="returnDetailHref(r)"
+                  :href="returnDetailHref(r)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="crm-mobile-item-card__sku text-decoration-none"
+                >
+                  {{ r.order_number || "—" }}
+                </a>
+                <span v-else class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain">—</span>
+                <div class="crm-mobile-item-card__name">{{ r.customer_name || "—" }}</div>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__meta">
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">RMA #</span>
+                <span class="crm-mobile-item-card__meta-value">{{ r.rma_number || "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Created Date</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatDateUs(r.created_at) || "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Processed Date</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatDateUs(r.processed_at) || "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Items</span>
+                <span class="crm-mobile-item-card__meta-value">{{ Number(r.items_count ?? 0).toLocaleString() }}</span>
+              </div>
+            </div>
+          </article>
+        </template>
+      </div>
+
       <div
         v-if="!loading && meta.last_page > 1"
         class="d-flex justify-content-between align-items-center px-3 py-3 border-top flex-wrap gap-2"
@@ -355,9 +423,6 @@ onUnmounted(() => {
           </button>
         </div>
       </div>
-      <p class="staff-table-mobile-scroll-cue d-md-none px-3 pb-2 mb-0" aria-hidden="true">
-        Scroll sideways or swipe to see all columns.
-      </p>
     </div>
 
     <Teleport to="body">

@@ -118,8 +118,29 @@ class BillingBillsService
                 custom_bills.bill_date as bill_date,
                 custom_bills.total_cents as total_cents,
                 custom_bills.invoice_id as invoice_id,
-                CASE WHEN projects.pid IS NOT NULL THEN 'Project #' ELSE NULL END as ref_label,
-                projects.pid as ref_value,
+                CASE
+                    WHEN (
+                        SELECT 1 FROM custom_bill_items
+                        WHERE custom_bill_items.custom_bill_id = custom_bills.id
+                          AND custom_bill_items.sku IS NOT NULL
+                          AND TRIM(custom_bill_items.sku) != ''
+                        LIMIT 1
+                    ) IS NOT NULL THEN 'Reference #'
+                    WHEN projects.pid IS NOT NULL THEN 'Project #'
+                    ELSE NULL
+                END as ref_label,
+                COALESCE(
+                    (
+                        SELECT TRIM(custom_bill_items.sku)
+                        FROM custom_bill_items
+                        WHERE custom_bill_items.custom_bill_id = custom_bills.id
+                          AND custom_bill_items.sku IS NOT NULL
+                          AND TRIM(custom_bill_items.sku) != ''
+                        ORDER BY custom_bill_items.id
+                        LIMIT 1
+                    ),
+                    projects.pid
+                ) as ref_value,
                 projects.id as project_id,
                 (SELECT COUNT(*) FROM custom_bill_items WHERE custom_bill_items.custom_bill_id = custom_bills.id) as items_count
             ");
@@ -131,7 +152,13 @@ class BillingBillsService
                 }
                 $inner->orWhere('custom_bills.name', 'like', '%'.$search.'%')
                     ->orWhere('client_accounts.company_name', 'like', '%'.$search.'%')
-                    ->orWhere('projects.pid', 'like', '%'.$search.'%');
+                    ->orWhere('projects.pid', 'like', '%'.$search.'%')
+                    ->orWhereExists(function ($exists) use ($search) {
+                        $exists->selectRaw('1')
+                            ->from('custom_bill_items')
+                            ->whereColumn('custom_bill_items.custom_bill_id', 'custom_bills.id')
+                            ->where('custom_bill_items.sku', 'like', '%'.$search.'%');
+                    });
             });
         });
 

@@ -139,7 +139,7 @@ function onBackdrop() {
                 </div>
               </div>
 
-              <label class="form-label" :for="`${formId}-sku`">SKU (optional)</label>
+              <label class="form-label" :for="`${formId}-sku`">Reference #</label>
               <input
                 :id="`${formId}-sku`"
                 :value="sku"

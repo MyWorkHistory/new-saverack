@@ -297,7 +297,7 @@ onUnmounted(() => {
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
-      <div class="table-responsive staff-table-wrap d-none d-md-block">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -380,7 +380,7 @@ onUnmounted(() => {
         </table>
       </div>
 
-      <div class="crm-mobile-item-cards d-md-none" aria-label="Bin items">
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Bin items">
         <div v-if="loading" class="crm-mobile-item-card__empty">
           <div class="d-flex justify-content-center py-3">
             <CrmLoadingSpinner message="Loading bin items…" />

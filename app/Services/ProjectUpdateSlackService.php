@@ -20,8 +20,8 @@ class ProjectUpdateSlackService
     }
 
     /**
-     * Post to the account in-house Slack channel and the shared #projects channel
-     * when project status changes (except Draft). Failures are logged and do not block.
+     * Post to the account in-house Slack channel when project status changes
+     * (except Draft). Failures are logged and do not block.
      */
     public function notifyStatusChange(Project $project, string $status): void
     {
@@ -103,9 +103,15 @@ class ProjectUpdateSlackService
             return null;
         }
 
+        $pid = trim((string) ($project->pid ?? ''));
+        $name = trim((string) ($project->name ?? ''));
+        if ($name === '') {
+            $name = $pid !== '' ? $pid : (string) $project->id;
+        }
         $url = CrmUrls::projectStaffUrl((int) $project->id);
         $lines = [
             $body,
+            'Name: '.$name,
             '<'.$url.'|View Project>',
         ];
 
@@ -122,9 +128,9 @@ class ProjectUpdateSlackService
 
         switch ($status) {
             case Project::STATUS_PENDING:
-                return $label.' has been quoted and is ready to start.';
+                return $label.' is quoted';
             case Project::STATUS_IN_PROGRESS:
-                return $label.' has currently in-progress';
+                return $label.' is in progress';
             case Project::STATUS_REVIEW:
                 return $label.' is ready for review';
             case Project::STATUS_COMPLETED:
@@ -135,26 +141,18 @@ class ProjectUpdateSlackService
     }
 
     /**
+     * Account in-house Slack only; no shared #projects fallback.
+     *
      * @return list<string>
      */
     private function resolveChannels(ClientAccount $account): array
     {
-        $channels = [];
-
         $accountChannel = $this->slack->channelFromInHouseSlack($account->in_house_slack);
-        if ($accountChannel !== null && $accountChannel !== '') {
-            $channels[] = $accountChannel;
+        if ($accountChannel === null || $accountChannel === '') {
+            return [];
         }
 
-        $projectsChannel = trim((string) config('projects.slack_channel', '#projects'));
-        if ($projectsChannel !== '') {
-            if ($projectsChannel[0] !== '#' && ! preg_match('/^C[A-Z0-9]+$/i', $projectsChannel)) {
-                $projectsChannel = '#'.$projectsChannel;
-            }
-            $channels[] = $projectsChannel;
-        }
-
-        return array_values(array_unique($channels));
+        return [$accountChannel];
     }
 
     /**

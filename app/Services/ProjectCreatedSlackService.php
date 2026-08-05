@@ -20,8 +20,8 @@ class ProjectCreatedSlackService
     }
 
     /**
-     * Post to the account in-house Slack channel and the shared #projects channel
-     * when a project is created. Failures are logged and do not block creation.
+     * Post to the account in-house Slack channel when a project is created.
+     * Failures are logged and do not block creation.
      */
     public function notify(Project $project): void
     {
@@ -84,10 +84,15 @@ class ProjectCreatedSlackService
     {
         $pid = trim((string) ($project->pid ?? ''));
         $label = $pid !== '' ? 'Project #'.$pid : 'Project #'.$project->id;
+        $name = trim((string) ($project->name ?? ''));
+        if ($name === '') {
+            $name = $pid !== '' ? $pid : (string) $project->id;
+        }
         $url = CrmUrls::projectStaffUrl((int) $project->id);
 
         $lines = [
-            $label.' had been created and needs to be quoted.',
+            $label.' is created',
+            'Name: '.$name,
             '<'.$url.'|View Project>',
         ];
 
@@ -98,26 +103,18 @@ class ProjectCreatedSlackService
     }
 
     /**
+     * Account in-house Slack only; no shared #projects fallback.
+     *
      * @return list<string>
      */
     private function resolveChannels(ClientAccount $account): array
     {
-        $channels = [];
-
         $accountChannel = $this->slack->channelFromInHouseSlack($account->in_house_slack);
-        if ($accountChannel !== null && $accountChannel !== '') {
-            $channels[] = $accountChannel;
+        if ($accountChannel === null || $accountChannel === '') {
+            return [];
         }
 
-        $projectsChannel = trim((string) config('projects.slack_channel', '#projects'));
-        if ($projectsChannel !== '') {
-            if ($projectsChannel[0] !== '#' && ! preg_match('/^C[A-Z0-9]+$/i', $projectsChannel)) {
-                $projectsChannel = '#'.$projectsChannel;
-            }
-            $channels[] = $projectsChannel;
-        }
-
-        return array_values(array_unique($channels));
+        return [$accountChannel];
     }
 
     /**

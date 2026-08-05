@@ -659,6 +659,7 @@ onUnmounted(() => {
                   <tr>
                     <th class="staff-table-head__th">Category</th>
                     <th class="staff-table-head__th">Service / Name</th>
+                    <th class="staff-table-head__th">Reference #</th>
                     <th class="staff-table-head__th text-end">Qty</th>
                     <th class="staff-table-head__th text-end">Price</th>
                     <th class="staff-table-head__th text-end">Total</th>
@@ -672,13 +673,14 @@ onUnmounted(() => {
                 </thead>
                 <tbody>
                   <tr v-if="!bill.items?.length">
-                    <td :colspan="isEditable && canUpdate ? 6 : 5" class="text-center text-secondary py-4">
+                    <td :colspan="isEditable && canUpdate ? 7 : 6" class="text-center text-secondary py-4">
                       No line items yet.
                     </td>
                   </tr>
                   <tr v-for="item in bill.items" :key="item.id">
                     <td>{{ invoiceCategoryLabel(item.line_type) }}</td>
                     <td class="fw-medium">{{ item.name }}</td>
+                    <td class="text-secondary">{{ item.sku || "—" }}</td>
                     <td class="text-end text-nowrap">{{ item.quantity }}</td>
                     <td class="text-end">{{ formatCents(item.unit_price_cents) }}</td>
                     <td class="text-end fw-semibold">{{ formatCents(item.line_total_cents) }}</td>

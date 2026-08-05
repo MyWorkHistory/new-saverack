@@ -1284,7 +1284,7 @@ onUnmounted(() => {
         >
           On Hand, Allocated, and Backorder are snapshots from the last account sync. Open a product for live quantities.
         </p>
-        <div class="table-responsive staff-table-wrap d-none d-md-block">
+        <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -1488,7 +1488,7 @@ onUnmounted(() => {
         </table>
         </div>
 
-        <div class="crm-mobile-item-cards d-md-none" aria-label="Inventory items">
+        <div class="crm-mobile-item-cards d-lg-none" aria-label="Inventory items">
           <div v-if="loading" class="crm-mobile-item-card__empty">Loading inventory…</div>
           <div v-else-if="isStaffPickerMode && !hasSearched" class="crm-mobile-item-card__empty">
             Enter a SKU or barcode and press Search — account is optional. Select an account to filter the catalog.

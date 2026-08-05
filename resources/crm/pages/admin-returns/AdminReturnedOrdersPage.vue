@@ -161,7 +161,7 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="table-responsive staff-table-wrap">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -223,6 +223,67 @@ onMounted(() => {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Returned orders">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <div class="d-flex justify-content-center py-3">
+            <CrmLoadingSpinner message="Loading returned orders…" />
+          </div>
+        </div>
+        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">No returned orders found.</div>
+        <template v-else>
+          <article
+            v-for="row in rows"
+            :key="`mobile-${row.id}`"
+            class="crm-mobile-item-card"
+            @click="openRow(row)"
+          >
+            <div class="crm-mobile-item-card__head">
+              <div class="crm-mobile-item-card__head-start">
+                <span class="badge rounded-pill fw-medium" :class="processDisplayStatusBadgeClass('returned')">
+                  {{ processDisplayStatusLabel("returned") }}
+                </span>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__product">
+              <div class="crm-mobile-item-card__copy">
+                <span class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain">
+                  RMA {{ row.rma_number || "—" }}
+                </span>
+                <div class="crm-mobile-item-card__name">Order {{ row.order_number || "—" }}</div>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__meta">
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Company</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.client_account_company_name || "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Customer</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.customer_name || "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Type</span>
+                <span class="crm-mobile-item-card__meta-value">{{ returnTypeLabel(row.return_type) }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Items</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.items_count ?? "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Date Processed</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatDateUs(row.processed_at) || "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Processed By</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.processed_by_name || "—" }}</span>
+              </div>
+            </div>
+          </article>
+        </template>
       </div>
 
       <div

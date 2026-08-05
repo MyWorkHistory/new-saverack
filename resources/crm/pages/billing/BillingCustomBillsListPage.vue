@@ -454,7 +454,7 @@ onUnmounted(() => {
             v-model="query.search"
             type="search"
             class="form-control staff-toolbar-search staff-toolbar-search--inline"
-            placeholder="Search bill #, account, ASN, RMA, or project"
+            placeholder="Search bill #, account, ASN, RMA, project, or reference"
             autocomplete="off"
           />
           <div class="position-relative flex-shrink-0" data-toolbar-filter>
@@ -522,7 +522,7 @@ onUnmounted(() => {
             v-if="showCheckboxColumn && selectedIds.length"
             class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
           >
-            <div class="d-none d-md-flex align-items-center gap-2 flex-shrink-0">
+            <div class="d-none d-lg-flex align-items-center gap-2 flex-shrink-0">
               <button
                 v-if="canUpdate"
                 type="button"
@@ -544,7 +544,7 @@ onUnmounted(() => {
             </div>
             <div
               v-if="canUpdate || canDelete"
-              class="d-md-none position-relative flex-shrink-0"
+              class="d-lg-none position-relative flex-shrink-0"
               data-toolbar-bulk
             >
               <button
@@ -603,7 +603,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="table-responsive staff-table-wrap">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -716,6 +716,82 @@ onUnmounted(() => {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Bills">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <div class="d-flex justify-content-center py-3">
+            <CrmLoadingSpinner message="Loading bills…" />
+          </div>
+        </div>
+        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">No bills found.</div>
+        <template v-else>
+          <article v-for="row in rows" :key="`mobile-${rowKey(row)}`" class="crm-mobile-item-card">
+            <div class="crm-mobile-item-card__head">
+              <div class="crm-mobile-item-card__head-start">
+                <input
+                  v-if="showCheckboxColumn"
+                  type="checkbox"
+                  class="form-check-input crm-mobile-item-card__check"
+                  :checked="selectedIds.includes(rowKey(row))"
+                  :aria-label="`Select bill #${row.bill_number}`"
+                  @change="toggleRowSelect(row)"
+                />
+                <span class="badge rounded-pill fw-medium" :class="statusBadgeClass(row.status)">
+                  {{ row.status_label }}
+                </span>
+              </div>
+              <div
+                v-if="canDelete && row.bill_kind === 'custom' && (row.status === 'open' || row.status === 'draft')"
+                class="crm-mobile-item-card__head-end"
+                data-row-actions
+              >
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': manageOpenId === rowKey(row) }"
+                  :aria-expanded="manageOpenId === rowKey(row)"
+                  aria-haspopup="true"
+                  aria-label="Row actions"
+                  @click="toggleManageMenu(row, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__product">
+              <div class="crm-mobile-item-card__copy">
+                <RouterLink
+                  :to="detailPath(row)"
+                  class="crm-mobile-item-card__sku text-decoration-none"
+                >
+                  {{ row.display_name || row.bill_number }}
+                </RouterLink>
+                <div class="crm-mobile-item-card__name">{{ row.client_account_name || "—" }}</div>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__meta">
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Type</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.bill_kind_label || "Custom" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Ref</span>
+                <span class="crm-mobile-item-card__meta-value">{{ refDisplay(row) }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Date</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatIsoDate(row.bill_date) }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Price</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatCents(row.total_cents) }}</span>
+              </div>
+            </div>
+          </article>
+        </template>
       </div>
 
       <div

@@ -910,7 +910,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="table-responsive staff-table-wrap d-none d-md-block">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table user-inv-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -1041,7 +1041,7 @@ onUnmounted(() => {
         </table>
       </div>
 
-      <div class="crm-mobile-item-cards d-md-none" aria-label="Restock items">
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Restock items">
         <div v-if="loading" class="crm-mobile-item-card__empty">Loading restock data…</div>
         <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">
           Upload a restock CSV to get started.

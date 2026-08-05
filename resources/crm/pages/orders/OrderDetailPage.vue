@@ -2224,7 +2224,7 @@ function goToOrdersList() {
                 </div>
               </div>
             </div>
-            <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
+            <p class="staff-table-mobile-scroll-cue d-lg-none" aria-hidden="true">
               Scroll sideways or swipe to see all columns.
             </p>
           </div>

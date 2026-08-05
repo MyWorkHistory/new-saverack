@@ -451,7 +451,7 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <div class="table-responsive staff-table-wrap">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -580,9 +580,87 @@ onUnmounted(() => {
           </tbody>
         </table>
       </div>
-      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
-        Scroll sideways or swipe to see all columns.
-      </p>
+
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="ASNs">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <div class="d-flex justify-content-center py-3">
+            <CrmLoadingSpinner message="Loading ASNs…" />
+          </div>
+        </div>
+        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">
+          No ASNs yet. Use Create ASN to get started.
+        </div>
+        <template v-else>
+          <article
+            v-for="r in rows"
+            :key="`mobile-${r.id}`"
+            class="crm-mobile-item-card"
+            @click="openRow(r)"
+          >
+            <div class="crm-mobile-item-card__head">
+              <div class="crm-mobile-item-card__head-start">
+                <input
+                  type="checkbox"
+                  class="form-check-input staff-table-head__check m-0 crm-mobile-item-card__check"
+                  :checked="selected.has(r.id)"
+                  :aria-label="`Select ASN ${r.asn_number}`"
+                  @click.stop
+                  @change="toggleOne(r.id)"
+                />
+                <AsnStatusChip :status="r.status" />
+              </div>
+              <div class="crm-mobile-item-card__head-end" data-row-actions @click.stop>
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': manageOpenId == r.id }"
+                  :aria-expanded="manageOpenId == r.id ? 'true' : 'false'"
+                  aria-haspopup="true"
+                  aria-label="Row actions"
+                  @click="toggleManageMenu(r.id, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__product">
+              <div class="crm-mobile-item-card__copy">
+                <span class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain">
+                  {{ formatAsnDisplay(r.asn_number) }}
+                </span>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__meta">
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Date Created</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatDateUs(r.created_at) }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Expected QTY</span>
+                <span class="crm-mobile-item-card__meta-value">{{ Number(r.expected_qty ?? 0).toLocaleString() }}</span>
+              </div>
+              <div v-if="!embedded" class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Accepted QTY</span>
+                <span class="crm-mobile-item-card__meta-value">{{ Number(r.accepted_qty ?? 0).toLocaleString() }}</span>
+              </div>
+              <div v-if="!embedded" class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Rejected QTY</span>
+                <span class="crm-mobile-item-card__meta-value">{{ Number(r.rejected_qty ?? 0).toLocaleString() }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Total Boxes</span>
+                <span class="crm-mobile-item-card__meta-value">{{ Number(r.total_boxes ?? 0).toLocaleString() }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Tracking</span>
+                <span class="crm-mobile-item-card__meta-value">{{ r.tracking_display || "—" }}</span>
+              </div>
+            </div>
+          </article>
+        </template>
+      </div>
 
       <div
         v-if="!loading && meta.last_page > 1"

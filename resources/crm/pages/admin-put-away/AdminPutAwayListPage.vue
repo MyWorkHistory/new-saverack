@@ -584,7 +584,7 @@ onMounted(async () => {
       </div>
 
       <template v-else>
-      <div class="table-responsive staff-table-wrap d-none d-md-block">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table
           class="table table-hover align-middle mb-0 staff-data-table user-inv-table put-away-list-table"
           :class="{ 'put-away-list-table--syncing': loading || loadingMore }"
@@ -718,7 +718,7 @@ onMounted(async () => {
       </div>
 
       <div
-        class="crm-mobile-item-cards d-md-none"
+        class="crm-mobile-item-cards d-lg-none"
         :class="{ 'put-away-list-table--syncing': loading || loadingMore }"
         aria-label="Put away items"
       >

@@ -1087,7 +1087,7 @@ onUnmounted(() => {
             </div>
             <div
               v-if="canBulkUpdate || canBulkDelete"
-              class="d-none d-md-flex align-items-center gap-2 flex-shrink-0"
+              class="d-none d-lg-flex align-items-center gap-2 flex-shrink-0"
             >
               <button
                 v-if="canBulkUpdate"
@@ -1110,7 +1110,7 @@ onUnmounted(() => {
             </div>
             <div
               v-if="canBulkUpdate && canBulkDelete"
-              class="d-md-none position-relative flex-shrink-0"
+              class="d-lg-none position-relative flex-shrink-0"
               data-toolbar-bulk
             >
               <button
@@ -1174,7 +1174,7 @@ onUnmounted(() => {
             <button
               v-else-if="canBulkUpdate"
               type="button"
-              class="btn btn-outline-secondary staff-toolbar-btn d-md-none flex-shrink-0"
+              class="btn btn-outline-secondary staff-toolbar-btn d-lg-none flex-shrink-0"
               :disabled="!selectedIds.length || loading"
               @click="openBulkStatusModal"
             >
@@ -1183,7 +1183,7 @@ onUnmounted(() => {
             <button
               v-else-if="canBulkDelete"
               type="button"
-              class="btn btn-outline-danger staff-toolbar-btn d-md-none flex-shrink-0"
+              class="btn btn-outline-danger staff-toolbar-btn d-lg-none flex-shrink-0"
               :disabled="!selectedIds.length || loading"
               @click="openBulkDelete"
             >
@@ -1193,7 +1193,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="table-responsive staff-table-wrap d-none d-md-block">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -1463,7 +1463,7 @@ onUnmounted(() => {
         </table>
       </div>
 
-      <div class="crm-mobile-item-cards d-md-none" aria-label="Client accounts">
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Client accounts">
         <div v-if="loading" class="crm-mobile-item-card__empty">
           <div class="d-flex justify-content-center py-3">
             <CrmLoadingSpinner message="Loading…" />

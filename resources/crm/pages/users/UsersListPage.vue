@@ -883,7 +883,7 @@ onUnmounted(() => {
             </div>
             <div
               v-if="canUpdateUsers || canDeleteUsers"
-              class="d-none d-md-flex align-items-center gap-2 flex-shrink-0"
+              class="d-none d-lg-flex align-items-center gap-2 flex-shrink-0"
             >
               <button
                 v-if="canUpdateUsers"
@@ -906,7 +906,7 @@ onUnmounted(() => {
             </div>
             <div
               v-if="canUpdateUsers && canDeleteUsers"
-              class="d-md-none position-relative flex-shrink-0"
+              class="d-lg-none position-relative flex-shrink-0"
               data-toolbar-bulk
             >
               <button
@@ -970,7 +970,7 @@ onUnmounted(() => {
             <button
               v-if="canUpdateUsers && !canDeleteUsers"
               type="button"
-              class="btn btn-outline-secondary staff-toolbar-btn d-md-none flex-shrink-0"
+              class="btn btn-outline-secondary staff-toolbar-btn d-lg-none flex-shrink-0"
               :disabled="!selectedIds.length || loading"
               @click="openBulkEdit"
             >
@@ -979,7 +979,7 @@ onUnmounted(() => {
             <button
               v-if="canDeleteUsers && !canUpdateUsers"
               type="button"
-              class="btn btn-outline-danger staff-toolbar-btn d-md-none flex-shrink-0"
+              class="btn btn-outline-danger staff-toolbar-btn d-lg-none flex-shrink-0"
               :disabled="!selectedDeletableIds.length || loading"
               @click="openBulkDelete"
             >
@@ -989,7 +989,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="table-responsive staff-table-wrap">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -1239,9 +1239,120 @@ onUnmounted(() => {
           </tbody>
         </table>
       </div>
-      <p class="staff-table-mobile-scroll-cue d-md-none" aria-hidden="true">
-        Scroll sideways or swipe to see all columns.
-      </p>
+
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Staff">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <div class="d-flex justify-content-center py-3">
+            <CrmLoadingSpinner message="Loading users…" />
+          </div>
+        </div>
+        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">No staff found.</div>
+        <template v-else>
+          <div v-if="showCheckboxColumn" class="d-flex align-items-center gap-2 px-1 pb-1">
+            <input
+              type="checkbox"
+              class="form-check-input staff-table-head__check mt-0 crm-mobile-item-card__check"
+              :checked="isAllPageSelected"
+              :disabled="loading || !rows.length"
+              aria-label="Select all on page"
+              @change="toggleSelectAll"
+            />
+            <span class="small text-secondary">Select all</span>
+          </div>
+          <article
+            v-for="user in rows"
+            :key="`mobile-${user.id}`"
+            class="crm-mobile-item-card"
+          >
+            <div class="crm-mobile-item-card__head">
+              <div class="crm-mobile-item-card__head-start">
+                <input
+                  v-if="showCheckboxColumn"
+                  type="checkbox"
+                  class="form-check-input staff-table-head__check mt-0 crm-mobile-item-card__check"
+                  :checked="selectedIds.includes(user.id)"
+                  :aria-label="`Select ${user.name}`"
+                  @change="toggleRowSelect(user.id)"
+                />
+                <span
+                  class="badge rounded-pill text-capitalize fw-medium"
+                  :class="statusBadgeClass(user.status)"
+                >
+                  {{ user.status }}
+                </span>
+              </div>
+              <div v-if="showRowActions" class="crm-mobile-item-card__head-end" data-row-actions>
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': manageOpenId === user.id }"
+                  :aria-expanded="manageOpenId === user.id"
+                  aria-haspopup="true"
+                  aria-label="Row actions"
+                  @click="toggleManageMenu(user.id, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__product">
+              <span class="crm-mobile-item-card__thumb crm-mobile-item-card__thumb--avatar">
+                <img
+                  v-if="showStaffAvatarImage(user)"
+                  :src="resolvePublicUrl(staffUserAvatarUrl(user))"
+                  alt=""
+                  class="w-100 h-100 object-fit-cover"
+                  @error="markAvatarLoadFailed(user.id)"
+                />
+                <span
+                  v-else
+                  class="d-flex w-100 h-100 align-items-center justify-content-center fw-semibold staff-user-cell__meta text-uppercase"
+                  :class="avatarClassForUser(user)"
+                >
+                  {{ staffUserInitials(user) }}
+                </span>
+              </span>
+              <div class="crm-mobile-item-card__copy">
+                <RouterLink
+                  :to="`/admin/staff/${user.id}`"
+                  class="crm-mobile-item-card__sku text-decoration-none"
+                >
+                  {{ user.name }}
+                </RouterLink>
+                <RouterLink
+                  :to="`/admin/staff/${user.id}`"
+                  class="crm-mobile-item-card__name text-decoration-none"
+                >
+                  {{ user.email }}
+                </RouterLink>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__meta">
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Position</span>
+                <span class="crm-mobile-item-card__meta-value">{{ user.profile?.job_position || "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Birthday</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatBirthdayUs(user.profile?.birthday) }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Hire Date</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatDateUs(user.profile?.hire_date) }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Role</span>
+                <span class="crm-mobile-item-card__meta-value d-inline-flex align-items-center gap-2">
+                  <StaffRoleIcon :roles="user.roles" />
+                  {{ primaryRoleLabel(user) }}
+                </span>
+              </div>
+            </div>
+          </article>
+        </template>
+      </div>
 
       <div
         class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3 border-top staff-table-footer"

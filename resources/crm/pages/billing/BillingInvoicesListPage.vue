@@ -1249,7 +1249,7 @@ onUnmounted(() => {
             v-if="showCheckboxColumn"
             class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
           >
-            <div class="d-none d-md-flex align-items-center gap-2 flex-shrink-0">
+            <div class="d-none d-lg-flex align-items-center gap-2 flex-shrink-0">
               <button
                 v-if="canUpdate"
                 type="button"
@@ -1280,7 +1280,7 @@ onUnmounted(() => {
             </div>
             <div
               v-if="canUpdate && canDelete"
-              class="d-md-none position-relative flex-shrink-0"
+              class="d-lg-none position-relative flex-shrink-0"
               data-toolbar-bulk
             >
               <button
@@ -1355,7 +1355,7 @@ onUnmounted(() => {
             <button
               v-if="canUpdate && !canDelete"
               type="button"
-              class="btn btn-outline-secondary staff-toolbar-btn d-md-none flex-shrink-0"
+              class="btn btn-outline-secondary staff-toolbar-btn d-lg-none flex-shrink-0"
               :disabled="!selectedDraftCount || loading || bulkBusy"
               @click="bulkSendOpen = true"
             >
@@ -1364,7 +1364,7 @@ onUnmounted(() => {
             <button
               v-if="canUpdate && !canDelete"
               type="button"
-              class="btn btn-outline-secondary staff-toolbar-btn d-md-none flex-shrink-0"
+              class="btn btn-outline-secondary staff-toolbar-btn d-lg-none flex-shrink-0"
               :disabled="!selectedIds.length || loading || bulkBusy"
               @click="bulkVoidOpen = true"
             >
@@ -1373,7 +1373,7 @@ onUnmounted(() => {
             <button
               v-if="canDelete && !canUpdate"
               type="button"
-              class="btn btn-outline-danger staff-toolbar-btn d-md-none flex-shrink-0"
+              class="btn btn-outline-danger staff-toolbar-btn d-lg-none flex-shrink-0"
               :disabled="!selectedIds.length || loading || bulkBusy"
               @click="bulkDeleteOpen = true"
             >
@@ -1383,7 +1383,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="table-responsive staff-table-wrap">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -1612,6 +1612,104 @@ onUnmounted(() => {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Invoices">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <div class="d-flex justify-content-center py-3">
+            <CrmLoadingSpinner message="Loading invoices…" />
+          </div>
+        </div>
+        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">No invoices found.</div>
+        <template v-else>
+          <article v-for="row in rows" :key="`mobile-${row.id}`" class="crm-mobile-item-card">
+            <div class="crm-mobile-item-card__head">
+              <div class="crm-mobile-item-card__head-start">
+                <input
+                  v-if="showCheckboxColumn"
+                  type="checkbox"
+                  class="form-check-input staff-table-head__check mt-0 crm-mobile-item-card__check"
+                  :checked="selectedIds.includes(row.id)"
+                  :aria-label="`Select invoice ${row.invoice_number}`"
+                  @change="toggleRowSelect(row.id)"
+                />
+                <span
+                  class="badge rounded-pill text-capitalize fw-medium"
+                  :class="statusBadgeClass(legacyStatusKey(row))"
+                >
+                  {{ displayStatusText(row) }}
+                </span>
+              </div>
+              <div v-if="!portalMode" class="crm-mobile-item-card__head-end" data-row-actions>
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': manageOpenId === row.id }"
+                  :aria-expanded="manageOpenId === row.id"
+                  aria-haspopup="true"
+                  aria-label="Row actions"
+                  @click="toggleManageMenu(row.id, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+              <div v-else class="crm-mobile-item-card__head-end">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn"
+                  :disabled="publicViewBusyId === row.id"
+                  @click="openPublicInvoice(row)"
+                >
+                  View
+                </button>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__product">
+              <div class="crm-mobile-item-card__copy">
+                <a
+                  v-if="portalMode"
+                  href="#"
+                  class="crm-mobile-item-card__sku text-decoration-none"
+                  @click.prevent="openPublicInvoice(row)"
+                >
+                  {{ row.invoice_number }}
+                </a>
+                <a
+                  v-else
+                  :href="invoiceDetailHref(row)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="crm-mobile-item-card__sku text-decoration-none"
+                >
+                  {{ row.invoice_number }}
+                </a>
+                <div v-if="!portalMode" class="crm-mobile-item-card__name">
+                  {{ row.client_company_name || "—" }}
+                </div>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__meta">
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Total</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatCents(row.total_cents, row.currency) }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Issued</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.invoice_date_label || formatIsoDate(row.issued_at) }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Due</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatIsoDate(row.due_at) }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Balance</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatCents(row.balance_due_cents, row.currency) }}</span>
+              </div>
+            </div>
+          </article>
+        </template>
       </div>
 
       <div

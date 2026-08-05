@@ -535,7 +535,7 @@ button.billing-inv-summary-card:hover:not(:disabled) .staff-stat-card__icon {
  * Compact buttons + `minmax(0,1fr)` actions track with horizontal scroll if needed
  * (avoids overlap with the filter control).
  */
-@media (max-width: 767.98px) {
+@media (max-width: 991.98px) {
   .staff-table-toolbar {
     padding-top: 0.75rem;
     padding-bottom: 0.875rem;
@@ -577,7 +577,8 @@ button.billing-inv-summary-card:hover:not(:disabled) .staff-stat-card__icon {
   }
 
   .staff-table-toolbar--row > .staff-toolbar-row-actions,
-  .staff-table-toolbar--row > div.d-flex.flex-wrap.align-items-center.ms-md-auto {
+  .staff-table-toolbar--row > div.d-flex.flex-wrap.align-items-center.ms-md-auto,
+  .staff-table-toolbar--row > div.d-flex.flex-wrap.align-items-center.ms-lg-auto {
     grid-column: 2;
     grid-row: 2;
     justify-self: stretch;
@@ -714,7 +715,7 @@ button.billing-inv-summary-card:hover:not(:disabled) .staff-stat-card__icon {
   background: var(--bs-body-bg) !important;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 992px) {
   .staff-table-toolbar {
     padding: 1rem 1.375rem;
   }
@@ -1861,7 +1862,7 @@ button.staff-status-badge:focus-visible {
  * Mobile: full data grid scrolls horizontally (standard CRM pattern — no row modal).
  * `scroll` keeps a gutter on more desktop browsers; iOS still overlays — use `.staff-table-mobile-scroll-cue` in markup.
  */
-@media (max-width: 767.98px) {
+@media (max-width: 991.98px) {
   .staff-table-wrap {
     touch-action: pan-x pan-y;
   }

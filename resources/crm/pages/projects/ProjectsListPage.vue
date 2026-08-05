@@ -368,10 +368,10 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="loading" class="p-5 d-flex justify-content-center">
+      <div v-if="loading" class="p-5 d-flex justify-content-center d-none d-lg-flex">
         <CrmLoadingSpinner message="Loading projects…" />
       </div>
-      <div v-else class="table-responsive staff-table-wrap">
+      <div v-else class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -436,6 +436,73 @@ onUnmounted(() => {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Projects">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <div class="d-flex justify-content-center py-3">
+            <CrmLoadingSpinner message="Loading projects…" />
+          </div>
+        </div>
+        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">No projects found.</div>
+        <template v-else>
+          <article v-for="row in rows" :key="`mobile-${row.id}`" class="crm-mobile-item-card">
+            <div class="crm-mobile-item-card__head">
+              <div class="crm-mobile-item-card__head-start">
+                <ProjectStatusChip
+                  :status="row.status"
+                  :disabled="statusBusyId === row.id"
+                  @change="(s) => changeStatus(row, s)"
+                />
+              </div>
+              <div class="crm-mobile-item-card__head-end" data-row-actions @click.stop>
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': manageOpenId === row.id }"
+                  :aria-expanded="manageOpenId === row.id"
+                  aria-haspopup="true"
+                  aria-label="Row actions"
+                  @click="(e) => openManage(row, e)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__product">
+              <div class="crm-mobile-item-card__copy">
+                <RouterLink
+                  class="crm-mobile-item-card__sku text-decoration-none"
+                  :to="`/admin/clients/projects/${row.id}`"
+                >
+                  {{ row.pid }}
+                </RouterLink>
+                <RouterLink
+                  class="crm-mobile-item-card__name text-decoration-none"
+                  :to="`/admin/clients/projects/${row.id}`"
+                >
+                  {{ row.name }}
+                </RouterLink>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__meta">
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Account</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.client_account_name || "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Date Created</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatDateUs(row.created_at) || "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Date Completed</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatDateUs(row.completed_at) || "—" }}</span>
+              </div>
+            </div>
+          </article>
+        </template>
       </div>
 
       <div

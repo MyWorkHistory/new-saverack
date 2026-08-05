@@ -416,7 +416,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="table-responsive staff-table-wrap">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -481,6 +481,70 @@ onUnmounted(() => {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Wholesale orders">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <div class="d-flex justify-content-center py-3">
+            <CrmLoadingSpinner message="Loading wholesale orders…" />
+          </div>
+        </div>
+        <div v-else-if="!results.length" class="crm-mobile-item-card__empty">No wholesale orders found.</div>
+        <template v-else>
+          <article
+            v-for="row in results"
+            :key="`mobile-${row.id}`"
+            class="crm-mobile-item-card"
+            @click="openRow(row)"
+          >
+            <div class="crm-mobile-item-card__head">
+              <div class="crm-mobile-item-card__head-start">
+                <span class="badge rounded-pill fw-medium" :class="wholesaleStatusBadgeClass(row.status)">
+                  {{ row.status_label || wholesaleStatusLabel(row.status) }}
+                </span>
+              </div>
+              <div class="crm-mobile-item-card__head-end" data-wholesale-row-actions @click.stop>
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': manageOpenId === row.id }"
+                  :aria-expanded="manageOpenId === row.id ? 'true' : 'false'"
+                  aria-haspopup="true"
+                  aria-label="Row actions"
+                  @click="toggleManageMenu(row, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__product">
+              <div class="crm-mobile-item-card__copy">
+                <span class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain">
+                  {{ row.order_number || "—" }}
+                </span>
+                <div class="crm-mobile-item-card__name">
+                  {{ row.order_type_label || wholesaleTypeLabel(row.order_type) }}
+                </div>
+              </div>
+            </div>
+
+            <div class="crm-mobile-item-card__meta">
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Items</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.items_count ?? "—" }}</span>
+              </div>
+              <div v-if="!isPortal" class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Account</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.client_account_company_name || "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Date</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatDateUs(row.created_at) || "—" }}</span>
+              </div>
+            </div>
+          </article>
+        </template>
       </div>
     </div>
 

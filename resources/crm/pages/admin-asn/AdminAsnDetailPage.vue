@@ -1836,7 +1836,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <p class="staff-table-mobile-scroll-cue d-md-none px-3" aria-hidden="true">
+          <p class="staff-table-mobile-scroll-cue d-lg-none px-3" aria-hidden="true">
             Scroll sideways or swipe to see all columns.
           </p>
         </div>

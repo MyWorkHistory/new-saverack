@@ -356,7 +356,7 @@ onMounted(() => {
               </tbody>
             </table>
           </div>
-          <p class="staff-table-mobile-scroll-cue d-md-none px-3 pb-2 mb-0" aria-hidden="true">
+          <p class="staff-table-mobile-scroll-cue d-lg-none px-3 pb-2 mb-0" aria-hidden="true">
             Scroll sideways or swipe to see all columns.
           </p>
         </div>

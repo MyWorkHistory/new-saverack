@@ -620,7 +620,6 @@ async function submitTransferQty() {
     from_location_id: transferFromLocation.value.location_id,
     quantity: qty,
     reason: transferForm.reason,
-    background: 1,
   };
   if (clientAccountId.value > 0) {
     body.client_account_id = clientAccountId.value;
@@ -652,15 +651,18 @@ async function submitTransferQty() {
     body.to_location_id = String(transferForm.to_location_id).trim();
   }
 
-  transferModalOpen.value = false;
-  transferBusy.value = false;
-  toast.success("Quantity transferred.");
-
+  transferBusy.value = true;
   try {
-    await api.post("/inventory/transfer", body);
+    const { data } = await api.post("/inventory/transfer", body);
+    transferModalOpen.value = false;
+    toast.success("Quantity transferred.");
+    applyWarehouseSliceToProduct(data?.warehouse);
     await reloadProductData({ refresh: true });
+    applyWarehouseSliceToProduct(data?.warehouse);
   } catch (e) {
     toast.errorFrom(e, "Could not transfer quantity.");
+  } finally {
+    transferBusy.value = false;
   }
 }
 

@@ -1558,14 +1558,11 @@ class InventoryController extends Controller
                 $shipheroCustomerId
             );
 
-            if ($clientAccountId !== null && $clientAccountId > 0) {
-                $this->putAway->syncLocalReceivingAfterTransferFrom(
+            if ($clientAccountId !== null && $clientAccountId > 0 && is_array($updated)) {
+                $this->putAway->syncLocalReceivingFromWarehouseSlice(
                     $clientAccountId,
                     $validated['sku'],
-                    $validated['warehouse_id'],
-                    $fromLocationId,
-                    (int) $validated['quantity'],
-                    $shipheroCustomerId
+                    $updated
                 );
             }
 

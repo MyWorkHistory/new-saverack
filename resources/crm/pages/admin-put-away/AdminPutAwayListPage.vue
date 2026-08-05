@@ -273,11 +273,14 @@ async function loadAdjustmentReasons() {
   }
 }
 
-async function fetchPage(append) {
+async function fetchPage(append, { forceRefresh = false } = {}) {
   const params = {
     first: LIST_PAGE_SIZE,
     receiving_only: 1,
   };
+  if (forceRefresh) {
+    params.refresh = 1;
+  }
   if (hasAccountFilter.value) {
     params.client_account_id = accountId.value;
   }
@@ -291,7 +294,7 @@ async function fetchPage(append) {
   applyListPayload(data, append);
 }
 
-async function loadRows(reset = false) {
+async function loadRows(reset = false, { forceRefresh = false } = {}) {
   if (reset) {
     loading.value = true;
     pageInfo.value = { has_next_page: false, end_cursor: null };
@@ -300,7 +303,7 @@ async function loadRows(reset = false) {
     loadingMore.value = true;
   }
   try {
-    await fetchPage(!reset);
+    await fetchPage(!reset, { forceRefresh });
   } catch (e) {
     toast.errorFrom(e, "Could not load put away list.");
   } finally {
@@ -385,6 +388,28 @@ function fillTransferAllQty() {
   transferForm.quantity = String(transferFromLocation.value?.quantity ?? 0);
 }
 
+function applyLocalTransferResult(row, qty) {
+  const sku = String(row?.sku || "");
+  const accountIdForRow = Number(row?.client_account_id || 0);
+  const transferred = Math.max(0, Number(qty) || 0);
+  if (!sku || transferred <= 0) return;
+
+  const nextQty = Math.max(0, Number(row?.receiving_qty || 0) - transferred);
+  if (nextQty <= 0) {
+    rows.value = rows.value.filter(
+      (r) => !(String(r.sku) === sku && Number(r.client_account_id || 0) === accountIdForRow),
+    );
+    return;
+  }
+
+  const match = rows.value.find(
+    (r) => String(r.sku) === sku && Number(r.client_account_id || 0) === accountIdForRow,
+  );
+  if (match) {
+    match.receiving_qty = nextQty;
+  }
+}
+
 async function submitTransfer() {
   if (!transferRow.value || !transferFromLocation.value) return;
   const qty = parseInt(String(transferForm.quantity || ""), 10);
@@ -400,7 +425,6 @@ async function submitTransfer() {
     from_location_id: transferFromLocation.value.location_id,
     quantity: qty,
     reason: transferForm.reason,
-    background: 1,
   };
   const accountIdForRow = Number(transferRow.value.client_account_id || 0);
   if (accountIdForRow > 0) {
@@ -433,15 +457,21 @@ async function submitTransfer() {
     body.to_location_id = String(transferForm.to_location_id).trim();
   }
 
+  const rowSnapshot = transferRow.value;
   transferModalOpen.value = false;
-  transferBusy.value = false;
+  transferBusy.value = true;
+  // Instant UI: drop row if Receiving is empty, otherwise show remaining qty.
+  applyLocalTransferResult(rowSnapshot, qty);
   toast.success("Quantity transferred.");
 
   try {
     await api.post("/inventory/transfer", body);
-    await loadRows(true);
+    await loadRows(true, { forceRefresh: true });
   } catch (e) {
     toast.errorFrom(e, "Could not transfer quantity.");
+    await loadRows(true, { forceRefresh: true });
+  } finally {
+    transferBusy.value = false;
   }
 }
 
@@ -1014,16 +1044,35 @@ onMounted(async () => {
   font-weight: 700;
   line-height: 1.35;
   color: var(--bs-body-color);
-  word-break: break-word;
   margin-bottom: 0.2rem;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .admin-put-away-list-page .order-detail-page__item-name-sub {
   font-size: 0.8125rem;
-  line-height: 1.4;
+  line-height: 1.35;
   color: var(--bs-secondary-color);
-  word-break: break-word;
   margin-bottom: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-put-away-list-page .crm-mobile-item-card__sku,
+.admin-put-away-list-page .crm-mobile-item-card__name {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+}
+
+.admin-put-away-list-page .crm-mobile-item-card__name {
+  display: block;
 }
 
 .admin-put-away-list-page .asn-line-thumb-link {

@@ -355,7 +355,7 @@ async function loadAdjustmentReasons() {
 async function fetchPage(append) {
   const params = {
     first: LIST_PAGE_SIZE,
-    receiving_only: true,
+    receiving_only: 1,
   };
   if (hasAccountFilter.value) {
     params.client_account_id = accountId.value;

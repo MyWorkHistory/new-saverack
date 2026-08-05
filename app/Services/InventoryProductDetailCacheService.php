@@ -56,6 +56,54 @@ class InventoryProductDetailCacheService
     }
 
     /**
+     * Batch-read fresh product JSON for list enrichment (one query per account).
+     *
+     * @param  list<array{client_account_id:int, sku:string}>  $pairs
+     * @return array<string, array<string, mixed>> Map key "{accountId}|{normalizedSku}" => product_json
+     */
+    public function getCachedProductsForPairs(array $pairs): array
+    {
+        $byAccount = [];
+        foreach ($pairs as $pair) {
+            $accountId = (int) ($pair['client_account_id'] ?? 0);
+            $sku = trim((string) ($pair['sku'] ?? ''));
+            if ($accountId <= 0 || $sku === '') {
+                continue;
+            }
+            $normalized = $this->normalizeSku($sku);
+            if ($normalized === '') {
+                continue;
+            }
+            $byAccount[$accountId][$normalized] = true;
+        }
+
+        if ($byAccount === []) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($byAccount as $accountId => $skuMap) {
+            $rows = ShipHeroInventoryProductDetailCache::query()
+                ->where('client_account_id', $accountId)
+                ->whereIn('sku_search', array_keys($skuMap))
+                ->get(['client_account_id', 'sku_search', 'product_json', 'product_synced_at', 'synced_at']);
+
+            foreach ($rows as $row) {
+                if (! is_array($row->product_json)) {
+                    continue;
+                }
+                if (! $this->isFresh($this->productSyncedAt($row))) {
+                    continue;
+                }
+                $key = ((int) $row->client_account_id).'|'.(string) $row->sku_search;
+                $out[$key] = $row->product_json;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * @return list<array<string, mixed>>|null
      */
     public function getCachedParentKits(int $clientAccountId, string $sku): ?array

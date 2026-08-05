@@ -355,6 +355,7 @@ async function loadAdjustmentReasons() {
 async function fetchPage(append) {
   const params = {
     first: LIST_PAGE_SIZE,
+    receiving_only: true,
   };
   if (hasAccountFilter.value) {
     params.client_account_id = accountId.value;
@@ -513,9 +514,7 @@ onMounted(async () => {
   if (accountIdFromQuery > 0) {
     selectedAccountId.value = String(accountIdFromQuery);
   }
-  await loadAccounts();
-  await loadAdjustmentReasons();
-  await loadRows(true);
+  await Promise.all([loadAccounts(), loadAdjustmentReasons(), loadRows(true)]);
 });
 </script>
 

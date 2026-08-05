@@ -347,4 +347,102 @@ class PutAwayApiTest extends TestCase
             ->assertJsonPath('rows.0.receiving_location.warehouse_id', 'wh-1')
             ->assertJsonPath('rows.0.receiving_location.location_id', 'recv-1');
     }
+
+    public function test_list_hides_and_prunes_rows_with_zero_receiving_in_product_cache(): void
+    {
+        $account = $this->account('stale');
+        Sanctum::actingAs($this->staffUser());
+
+        $snapshot = $this->receivingSnapshot();
+        PutAwayReceivingSnapshotRow::create([
+            'put_away_receiving_snapshot_id' => $snapshot->id,
+            'client_account_id' => $account->id,
+            'sku' => 'STALE-RECV',
+            'name' => 'Stale Receiving',
+            'receiving_qty' => 8,
+            'pickable_qty' => 1,
+            'non_pickable_qty' => 0,
+            'on_hand' => 1,
+            'backorder' => 0,
+        ]);
+
+        ShipHeroInventoryProductDetailCache::query()->create([
+            'client_account_id' => $account->id,
+            'sku' => 'STALE-RECV',
+            'sku_search' => 'stale-recv',
+            'product_json' => [
+                'sku' => 'STALE-RECV',
+                'warehouses' => [
+                    [
+                        'warehouse_id' => 'wh-1',
+                        'locations' => [
+                            [
+                                'location_id' => 'pick-1',
+                                'location_name' => 'A-01',
+                                'quantity' => 5,
+                                'pickable' => true,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'product_synced_at' => now(),
+        ]);
+
+        $this->getJson('/api/admin/put-away')
+            ->assertOk()
+            ->assertJsonCount(0, 'rows');
+
+        $this->assertDatabaseMissing('put_away_receiving_snapshot_rows', [
+            'sku' => 'STALE-RECV',
+            'client_account_id' => $account->id,
+        ]);
+    }
+
+    public function test_list_uses_live_receiving_qty_from_product_cache(): void
+    {
+        $account = $this->account('live-qty');
+        Sanctum::actingAs($this->staffUser());
+
+        $snapshot = $this->receivingSnapshot();
+        PutAwayReceivingSnapshotRow::create([
+            'put_away_receiving_snapshot_id' => $snapshot->id,
+            'client_account_id' => $account->id,
+            'sku' => 'LIVE-QTY',
+            'name' => 'Live Qty',
+            'receiving_qty' => 99,
+            'pickable_qty' => 0,
+            'non_pickable_qty' => 0,
+            'on_hand' => 3,
+            'backorder' => 0,
+        ]);
+
+        ShipHeroInventoryProductDetailCache::query()->create([
+            'client_account_id' => $account->id,
+            'sku' => 'LIVE-QTY',
+            'sku_search' => 'live-qty',
+            'product_json' => [
+                'sku' => 'LIVE-QTY',
+                'warehouses' => [
+                    [
+                        'warehouse_id' => 'wh-1',
+                        'locations' => [
+                            [
+                                'location_id' => 'recv-1',
+                                'location_name' => 'Receiving',
+                                'quantity' => 3,
+                                'pickable' => false,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'product_synced_at' => now(),
+        ]);
+
+        $this->getJson('/api/admin/put-away')
+            ->assertOk()
+            ->assertJsonCount(1, 'rows')
+            ->assertJsonPath('rows.0.receiving_qty', 3);
+    }
 }

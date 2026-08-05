@@ -6448,6 +6448,89 @@ GQL,
     }
 
     /**
+     * Paginate item locations at a named bin (e.g. Receiving) with inventory.
+     * Much cheaper than scanning all warehouse_products for put-away.
+     *
+     * @return array{edges: list<array<string, mixed>>, page_info: array{has_next_page: bool, end_cursor: string|null}}
+     */
+    public function paginateItemLocationsAtLocationName(
+        string $warehouseId,
+        string $locationName,
+        ?string $after = null,
+        int $first = 100
+    ): array {
+        $warehouseId = trim($warehouseId);
+        $locationName = trim($locationName);
+        if ($warehouseId === '' || $locationName === '') {
+            throw new RuntimeException('Warehouse id and location name are required.');
+        }
+
+        $first = max(1, min(100, $first));
+        $after = is_string($after) && trim($after) !== '' ? trim($after) : null;
+
+        $graphql = <<<'GQL'
+query ShipHeroItemLocationsAtName(
+  $warehouse_id: String!
+  $location_name: [String!]!
+  $has_inventory: Boolean
+  $first: Int!
+  $after: String
+) {
+  item_locations(
+    warehouse_id: $warehouse_id
+    location_name: $location_name
+    has_inventory: $has_inventory
+  ) {
+    data(first: $first, after: $after) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          sku
+          quantity
+          location_id
+          location {
+            id
+            name
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+
+        $vars = [
+            'warehouse_id' => $warehouseId,
+            'location_name' => [$locationName],
+            'has_inventory' => true,
+            'first' => $first,
+            'after' => $after,
+        ];
+
+        $json = $this->client->query($graphql, $vars);
+        $connection = data_get($json, 'data.item_locations.data');
+        if (! is_array($connection)) {
+            throw new RuntimeException('Unexpected ShipHero item_locations response.');
+        }
+
+        $edges = is_array($connection['edges'] ?? null) ? $connection['edges'] : [];
+        $pageInfo = is_array($connection['pageInfo'] ?? null) ? $connection['pageInfo'] : [];
+
+        return [
+            'edges' => $edges,
+            'page_info' => [
+                'has_next_page' => (bool) ($pageInfo['hasNextPage'] ?? false),
+                'end_cursor' => isset($pageInfo['endCursor']) && is_string($pageInfo['endCursor']) && $pageInfo['endCursor'] !== ''
+                    ? $pageInfo['endCursor']
+                    : null,
+            ],
+        ];
+    }
+
+    /**
      * Paginate warehouse-scoped product inventory for the admin restock report.
      * Uses warehouse_products(warehouse_id) so each page does not load every warehouse per SKU.
      *

@@ -9,6 +9,7 @@ use App\Models\PutAwayReceivingSnapshotRow;
 use App\Models\ShipHeroInventoryProductDetailCache;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -20,6 +21,8 @@ class PutAwayApiTest extends TestCase
     {
         parent::setUp();
         config(['services.shiphero.put_away_warehouse_id' => 'wh-1']);
+        // Skip live Receiving sync so tests can assert against seeded local rows.
+        Cache::put('put-away-receiving-item-sync-fresh:wh-1', time(), 600);
     }
 
     private function inventoryViewPermission(): Permission

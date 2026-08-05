@@ -9,13 +9,19 @@ use App\Models\PutAwaySnapshot;
 use App\Models\PutAwaySnapshotRow;
 use App\Models\ShipHeroInventoryProductIndex;
 use App\Jobs\RefreshPutAwayReceivingSnapshotJob;
+use App\Services\AsnReceivingService;
 use App\Support\PutAwayRowBuilder;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Throwable;
 
 class PutAwayInventoryService
 {
     public const CACHE_TTL_MINUTES = 30;
+
+    /** Re-sync Receiving bins from ShipHero at most this often on list load. */
+    public const RECEIVING_LIST_SYNC_MINUTES = 5;
 
     public const LIST_PAGE_SIZE = 20;
 
@@ -119,19 +125,30 @@ class PutAwayInventoryService
         $warehouseId = $this->resolveWarehouseId();
         $snapshot = $this->ensureLocalReceivingSnapshot($warehouseId);
 
+        if ($refresh || ! $this->isReceivingListSyncFresh($warehouseId)) {
+            try {
+                $snapshot = $this->syncReceivingSnapshotFromItemLocations($warehouseId);
+            } catch (Throwable $e) {
+                report($e);
+                // Keep serving last local index if sync fails mid-request.
+                if (! $snapshot->exists) {
+                    throw $e;
+                }
+            }
+        }
+
         return $this->paginateReceivingSnapshotRows($snapshot, $clientAccountId, $query, $first, $after, $receivingOnly);
     }
 
     /**
-     * Returns current local Receiving index meta (no ShipHero warehouse scan).
+     * Sync Receiving location inventory from ShipHero into the local index.
      *
      * @return array<string, mixed>
      */
     public function refreshReceiving(): array
     {
         $warehouseId = $this->resolveWarehouseId();
-        $snapshot = $this->ensureLocalReceivingSnapshot($warehouseId);
-        $this->refreshLocalReceivingRowCount($snapshot);
+        $snapshot = $this->syncReceivingSnapshotFromItemLocations($warehouseId);
 
         return $this->localReceivingMeta($snapshot);
     }
@@ -198,7 +215,7 @@ class PutAwayInventoryService
             @set_time_limit(0);
         }
 
-        $this->executeReceivingSnapshotRebuild($warehouseId);
+        $this->syncReceivingSnapshotFromItemLocations($warehouseId);
     }
 
     public function dispatchReceivingRefreshJob(string $warehouseId): void
@@ -278,9 +295,6 @@ class PutAwayInventoryService
             $snapshot->status = PutAwayReceivingSnapshot::STATUS_OK;
             $snapshot->error_message = null;
             $snapshot->refresh_started_at = null;
-            if ($snapshot->computed_at === null) {
-                $snapshot->computed_at = now();
-            }
             $snapshot->save();
         }
 
@@ -379,6 +393,7 @@ class PutAwayInventoryService
                 ->where('sku', $sku)
                 ->delete();
             $this->refreshLocalReceivingRowCount($snapshot);
+            $this->forgetReceivingListSyncFresh($snapshot->warehouse_id);
 
             return;
         }
@@ -402,6 +417,7 @@ class PutAwayInventoryService
         }
         $row->save();
         $this->refreshLocalReceivingRowCount($snapshot);
+        $this->forgetReceivingListSyncFresh($snapshot->warehouse_id);
     }
 
     /**
@@ -1251,14 +1267,237 @@ class PutAwayInventoryService
 
     private function isReceivingFresh(PutAwayReceivingSnapshot $snapshot): bool
     {
-        if ($snapshot->status !== PutAwayReceivingSnapshot::STATUS_OK) {
-            return false;
+        return $this->isReceivingListSyncFresh((string) $snapshot->warehouse_id);
+    }
+
+    private function isReceivingListSyncFresh(string $warehouseId): bool
+    {
+        return Cache::has($this->receivingListSyncCacheKey($warehouseId));
+    }
+
+    private function markReceivingListSyncFresh(string $warehouseId): void
+    {
+        Cache::put(
+            $this->receivingListSyncCacheKey($warehouseId),
+            time(),
+            now()->addMinutes(self::RECEIVING_LIST_SYNC_MINUTES)
+        );
+    }
+
+    private function forgetReceivingListSyncFresh(string $warehouseId): void
+    {
+        $warehouseId = trim($warehouseId);
+        if ($warehouseId === '') {
+            return;
         }
-        if ($snapshot->computed_at === null) {
-            return false;
+        Cache::forget($this->receivingListSyncCacheKey($warehouseId));
+    }
+
+    private function receivingListSyncCacheKey(string $warehouseId): string
+    {
+        return 'put-away-receiving-item-sync-fresh:'.$warehouseId;
+    }
+
+    /**
+     * Rebuild local put-away index from ShipHero item_locations at bin "Receiving" only.
+     * Fast + accurate: does not scan the entire warehouse catalog.
+     */
+    public function syncReceivingSnapshotFromItemLocations(?string $warehouseId = null): PutAwayReceivingSnapshot
+    {
+        $warehouseId = $warehouseId ?? $this->resolveWarehouseId();
+
+        try {
+            $lock = Cache::lock('put-away-receiving-item-sync:'.$warehouseId, 120);
+
+            return $lock->block(5, function () use ($warehouseId) {
+                return $this->executeReceivingItemLocationSync($warehouseId);
+            });
+        } catch (Throwable $e) {
+            // Array/file cache may not support locks in tests/local.
+            return $this->executeReceivingItemLocationSync($warehouseId);
+        }
+    }
+
+    private function executeReceivingItemLocationSync(string $warehouseId): PutAwayReceivingSnapshot
+    {
+        $started = microtime(true);
+        $snapshot = $this->ensureLocalReceivingSnapshot($warehouseId);
+        $snapshot->status = PutAwayReceivingSnapshot::STATUS_RUNNING;
+        $snapshot->error_message = null;
+        $snapshot->refresh_started_at = now();
+        $snapshot->save();
+
+        try {
+            $built = [];
+            $skippedUnresolved = 0;
+            $after = null;
+            $pageGuard = 0;
+
+            do {
+                $pageGuard++;
+                if ($pageGuard > 200) {
+                    throw new RuntimeException('Receiving item_locations pagination exceeded safety limit.');
+                }
+
+                $page = $this->inventory->paginateItemLocationsAtLocationName(
+                    $warehouseId,
+                    AsnReceivingService::RECEIVING_LOCATION_NAME,
+                    $after,
+                    100
+                );
+                $edges = is_array($page['edges'] ?? null) ? $page['edges'] : [];
+                foreach ($edges as $edge) {
+                    if (! is_array($edge)) {
+                        continue;
+                    }
+                    $node = is_array($edge['node'] ?? null) ? $edge['node'] : null;
+                    if ($node === null) {
+                        continue;
+                    }
+                    $sku = trim((string) ($node['sku'] ?? ''));
+                    $qty = max(0, (int) ($node['quantity'] ?? 0));
+                    if ($sku === '' || $qty <= 0) {
+                        continue;
+                    }
+
+                    $locName = strtolower(trim((string) data_get($node, 'location.name', '')));
+                    if ($locName !== '' && $locName !== strtolower(AsnReceivingService::RECEIVING_LOCATION_NAME)) {
+                        continue;
+                    }
+
+                    $meta = $this->localProductMetaForSku($sku);
+                    $clientAccountId = $meta['client_account_id'] ?? null;
+                    if ($clientAccountId === null) {
+                        $skippedUnresolved++;
+
+                        continue;
+                    }
+
+                    $key = $clientAccountId.'|'.mb_strtolower($sku);
+                    if (! isset($built[$key])) {
+                        $built[$key] = [
+                            'client_account_id' => $clientAccountId,
+                            'sku' => $sku,
+                            'name' => $meta['name'] ?? $sku,
+                            'barcode' => $meta['barcode'] ?? null,
+                            'image_url' => $meta['image_url'] ?? null,
+                            'receiving_qty' => $qty,
+                            'pickable_qty' => 0,
+                            'non_pickable_qty' => 0,
+                            'on_hand' => 0,
+                            'backorder' => 0,
+                        ];
+                    } else {
+                        $built[$key]['receiving_qty'] += $qty;
+                    }
+                }
+
+                $pageInfo = is_array($page['page_info'] ?? null) ? $page['page_info'] : [];
+                $hasNext = (bool) ($pageInfo['has_next_page'] ?? false);
+                $after = isset($pageInfo['end_cursor']) && is_string($pageInfo['end_cursor']) && $pageInfo['end_cursor'] !== ''
+                    ? $pageInfo['end_cursor']
+                    : null;
+            } while ($hasNext && $after !== null);
+
+            $now = now();
+            DB::transaction(function () use ($snapshot, $built, $now, $skippedUnresolved, $started) {
+                PutAwayReceivingSnapshotRow::query()
+                    ->where('put_away_receiving_snapshot_id', $snapshot->id)
+                    ->delete();
+
+                foreach (array_chunk(array_values($built), 200) as $chunk) {
+                    $insert = [];
+                    foreach ($chunk as $row) {
+                        $insert[] = [
+                            'put_away_receiving_snapshot_id' => $snapshot->id,
+                            'client_account_id' => $row['client_account_id'],
+                            'sku' => $row['sku'],
+                            'name' => $row['name'],
+                            'barcode' => $row['barcode'],
+                            'image_url' => $row['image_url'],
+                            'receiving_qty' => $row['receiving_qty'],
+                            'pickable_qty' => $row['pickable_qty'],
+                            'non_pickable_qty' => $row['non_pickable_qty'],
+                            'on_hand' => $row['on_hand'],
+                            'backorder' => $row['backorder'],
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ];
+                    }
+                    if ($insert !== []) {
+                        PutAwayReceivingSnapshotRow::query()->insert($insert);
+                    }
+                }
+
+                $snapshot->status = PutAwayReceivingSnapshot::STATUS_OK;
+                $snapshot->error_message = null;
+                $snapshot->computed_at = $now;
+                $snapshot->row_count = count($built);
+                $snapshot->skipped_unresolved_account = $skippedUnresolved;
+                $snapshot->duration_ms = (int) round((microtime(true) - $started) * 1000);
+                $snapshot->refresh_started_at = null;
+                $snapshot->save();
+            });
+
+            $this->markReceivingListSyncFresh($warehouseId);
+
+            return $snapshot->fresh() ?? $snapshot;
+        } catch (Throwable $e) {
+            $snapshot->status = PutAwayReceivingSnapshot::STATUS_FAILED;
+            $snapshot->error_message = $e->getMessage() !== '' ? $e->getMessage() : 'Receiving sync failed.';
+            $snapshot->duration_ms = (int) round((microtime(true) - $started) * 1000);
+            $snapshot->refresh_started_at = null;
+            $snapshot->save();
+            throw $e;
+        }
+    }
+
+    /**
+     * Local-only account/name lookup (no ShipHero) for bulk Receiving sync.
+     *
+     * @return array{client_account_id:?int, name:?string, barcode:?string, image_url:?string}
+     */
+    private function localProductMetaForSku(string $sku): array
+    {
+        $skuSearch = mb_strtolower(trim($sku));
+        $empty = [
+            'client_account_id' => null,
+            'name' => null,
+            'barcode' => null,
+            'image_url' => null,
+        ];
+        if ($skuSearch === '') {
+            return $empty;
         }
 
-        return $snapshot->computed_at->gte(now()->subMinutes(self::CACHE_TTL_MINUTES));
+        $indexRow = ShipHeroInventoryProductIndex::query()
+            ->where('sku_search', $skuSearch)
+            ->orderByDesc('synced_at')
+            ->first(['client_account_id', 'name', 'barcode', 'image_url']);
+
+        if ($indexRow === null) {
+            $indexRow = ShipHeroInventoryProductIndex::query()
+                ->whereRaw('LOWER(sku) = ?', [$skuSearch])
+                ->orderByDesc('synced_at')
+                ->first(['client_account_id', 'name', 'barcode', 'image_url']);
+        }
+
+        if ($indexRow === null) {
+            return $empty;
+        }
+
+        return [
+            'client_account_id' => $indexRow->client_account_id !== null ? (int) $indexRow->client_account_id : null,
+            'name' => $indexRow->name !== null && trim((string) $indexRow->name) !== ''
+                ? trim((string) $indexRow->name)
+                : null,
+            'barcode' => $indexRow->barcode !== null && trim((string) $indexRow->barcode) !== ''
+                ? trim((string) $indexRow->barcode)
+                : null,
+            'image_url' => $indexRow->image_url !== null && trim((string) $indexRow->image_url) !== ''
+                ? trim((string) $indexRow->image_url)
+                : null,
+        ];
     }
 
     private function resolveStaleRunningReceivingSnapshot(PutAwayReceivingSnapshot $snapshot): PutAwayReceivingSnapshot

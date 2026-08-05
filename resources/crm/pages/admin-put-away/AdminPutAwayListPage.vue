@@ -1,16 +1,21 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
-import InventoryTransferQtyModal from "../../components/inventory/InventoryTransferQtyModal.vue";
+import InventoryRestockTransferModal from "../../components/inventory/InventoryRestockTransferModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateTimeUs } from "../../utils/formatUserDates.js";
+import {
+  flattenProductLocations,
+  preferredWarehouseId,
+  receivingLocationsFromProduct,
+  resolveCartDestination,
+} from "../../utils/inventoryTransferLocations.js";
 
 const LIST_PAGE_SIZE = 20;
-const RECEIVING_LOCATION_NAME = "Receiving";
 const PUT_AWAY_REASON = "Inbound Receiving Adjustments";
 
 const toast = useToast();
@@ -33,13 +38,13 @@ const transferModalOpen = ref(false);
 const transferLoading = ref(false);
 const transferBusy = ref(false);
 const transferRow = ref(null);
-const transferPutAwayRow = ref(null);
 const transferProduct = ref(null);
-const transferFromLocation = ref(null);
+const transferFromLocationId = ref("");
 const transferForm = reactive({
-  transfer_type: "current",
+  destination_mode: "current",
   to_location_id: "",
   to_location: "",
+  cart_location: "",
   quantity: "",
   reason: PUT_AWAY_REASON,
 });
@@ -151,129 +156,45 @@ const emptyTableMessage = computed(() => {
   return "No products in Receiving. Receive inventory on an ASN to add SKUs here.";
 });
 
-const transferAllLocations = computed(() => {
-  const out = [];
-  const p = transferProduct.value;
-  if (!p?.warehouses) return out;
-  p.warehouses.forEach((wh) => {
-    (wh.locations || []).forEach((loc) => {
-      out.push({
-        ...loc,
-        quantity: Number(loc?.quantity || 0),
-        warehouse_id: wh.warehouse_id,
-        warehouse_name: wh.warehouse_name,
-      });
-    });
-  });
-  return out;
+const transferFromOptions = computed(() =>
+  receivingLocationsFromProduct(transferProduct.value, transferRow.value),
+);
+
+const transferFromLocation = computed(() => {
+  const id = String(transferFromLocationId.value || "");
+  if (!id) return null;
+  return (
+    transferFromOptions.value.find((loc) => String(loc.location_id || "") === id) || null
+  );
 });
 
-const transferDestinationOptions = computed(() => {
+const transferPickOptions = computed(() => {
   const source = transferFromLocation.value;
-  if (!source) return [];
-  const whId = String(source.warehouse_id || "");
-  const fromId = String(source.location_id || "");
-  return transferAllLocations.value.filter(
-    (loc) => String(loc.warehouse_id || "") === whId && String(loc.location_id || "") !== fromId,
+  const whId = source
+    ? String(source.warehouse_id || "")
+    : preferredWarehouseId(transferProduct.value, transferRow.value);
+  const fromId = String(source?.location_id || "");
+  return flattenProductLocations(transferProduct.value, { includeEmpty: true }).filter(
+    (loc) =>
+      loc.pickable === true &&
+      (!whId || String(loc.warehouse_id || "") === whId) &&
+      String(loc.location_id || "") !== fromId,
   );
 });
 
-function isReceivingLocation(loc) {
-  return String(loc?.location_name || "").trim().toLowerCase() === RECEIVING_LOCATION_NAME.toLowerCase();
-}
-
-function receivingQtyFromProduct(p) {
-  if (!p?.warehouses) return 0;
-  let total = 0;
-  p.warehouses.forEach((wh) => {
-    (wh.locations || []).forEach((loc) => {
-      if (isReceivingLocation(loc)) {
-        total += Number(loc?.quantity || 0);
-      }
-    });
-  });
-  return total;
-}
-
-function receivingLocationFromResponses(putAwayRow, product) {
-  const receivingQty = Math.max(
-    Number(putAwayRow?.receiving_qty ?? 0),
-    receivingQtyFromProduct(product),
-  );
-  const rowLoc = putAwayRow?.receiving_location;
-  if (rowLoc?.location_id && rowLoc?.warehouse_id) {
-    return {
-      location_id: String(rowLoc.location_id),
-      location_name: String(rowLoc.location_name || RECEIVING_LOCATION_NAME),
-      warehouse_id: String(rowLoc.warehouse_id),
-      quantity: receivingQty,
-    };
-  }
-
-  const p = product;
-  if (!p?.warehouses) return null;
-  for (const wh of p.warehouses) {
-    for (const loc of wh.locations || []) {
-      if (!isReceivingLocation(loc)) continue;
-      const locId = String(loc.location_id || "").trim();
-      if (!locId) continue;
-      return {
-        ...loc,
-        warehouse_id: wh.warehouse_id,
-        warehouse_name: wh.warehouse_name,
-        quantity: receivingQty,
-      };
-    }
-  }
-  return null;
-}
-
-function defaultTransferDestinationId(source) {
-  if (!source) return "";
-  const whId = String(source.warehouse_id || "");
-  const fromId = String(source.location_id || "");
-  const candidates = transferAllLocations.value.filter(
-    (loc) =>
-      String(loc.warehouse_id || "") === whId
-      && String(loc.location_id || "") !== fromId
-      && !isReceivingLocation(loc),
-  );
-  if (!candidates.length) return "";
-
-  const pickableWithStock = candidates
-    .filter((loc) => loc.pickable === true && Number(loc.quantity || 0) > 0)
-    .sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0));
-  if (pickableWithStock.length > 0) {
-    return String(pickableWithStock[0].location_id || "");
-  }
-
-  const pickable = candidates
-    .filter((loc) => loc.pickable === true)
-    .sort((a, b) =>
-      String(a.location_name || a.location_id || "").localeCompare(
-        String(b.location_name || b.location_id || ""),
-      ),
-    );
-  if (pickable.length > 0) {
-    return String(pickable[0].location_id || "");
-  }
-
-  const sorted = [...candidates].sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0));
-  return String(sorted[0].location_id || "");
-}
-
-function applyDefaultTransferDestination() {
-  const destId = defaultTransferDestinationId(transferFromLocation.value);
-  if (destId) {
-    transferForm.transfer_type = "current";
-    transferForm.to_location_id = destId;
-    transferForm.to_location = "";
-    return;
-  }
-  transferForm.transfer_type = "new";
+watch(transferFromLocationId, (id, prev) => {
+  if (String(id || "") === String(prev || "")) return;
   transferForm.to_location_id = "";
-  transferForm.to_location = "";
-}
+});
+
+watch(
+  () => transferForm.destination_mode,
+  () => {
+    transferForm.to_location_id = "";
+    transferForm.to_location = "";
+    transferForm.cart_location = "";
+  },
+);
 
 function applyListPayload(data, append = false) {
   const nextRows = Array.isArray(data?.rows) ? data.rows : [];
@@ -414,38 +335,44 @@ async function openTransfer(row) {
   }
   const accountIdForRow = Number(row.client_account_id || 0);
   transferRow.value = row;
-  transferPutAwayRow.value = null;
   transferProduct.value = null;
-  transferFromLocation.value = null;
-  transferForm.transfer_type = "current";
+  transferFromLocationId.value = "";
+  transferForm.destination_mode = "current";
   transferForm.to_location_id = "";
   transferForm.to_location = "";
+  transferForm.cart_location = "";
   transferForm.quantity = "";
-  transferForm.reason = defaultTransferReason.value;
+  transferForm.reason =
+    inventoryReasons.value.includes(PUT_AWAY_REASON)
+      ? PUT_AWAY_REASON
+      : defaultTransferReason.value;
   transferModalOpen.value = true;
   transferLoading.value = true;
   transferBusy.value = false;
   try {
     const sku = encodeURIComponent(String(row.sku || "").trim());
-    const [putAwayRes, productRes] = await Promise.all([
-      api.get(`/admin/put-away/products/${sku}`, {
-        params: { client_account_id: accountIdForRow },
-      }),
-      api.get(`/inventory/products/${sku}`, {
-        params: { client_account_id: accountIdForRow },
-      }),
-    ]);
-    transferPutAwayRow.value = putAwayRes.data?.row ?? null;
-    transferProduct.value = productRes.data?.product ?? null;
-    const fromLoc = receivingLocationFromResponses(transferPutAwayRow.value, transferProduct.value);
-    if (!fromLoc) {
+    let { data } = await api.get(`/inventory/products/${sku}`, {
+      params: { client_account_id: accountIdForRow },
+    });
+    let product = data?.product ?? null;
+    const hasLocations =
+      Array.isArray(product?.warehouses) &&
+      product.warehouses.some((wh) => Array.isArray(wh?.locations) && wh.locations.length > 0);
+    if (!hasLocations) {
+      ({ data } = await api.get(`/inventory/products/${sku}`, {
+        params: { client_account_id: accountIdForRow, refresh: 1 },
+      }));
+      product = data?.product ?? null;
+    }
+    transferProduct.value = product;
+    const receiving = receivingLocationsFromProduct(product, row);
+    if (!receiving.length) {
       transferModalOpen.value = false;
-      toast.error("Receiving location not found for this SKU.");
+      toast.error("No Receiving locations with quantity found.");
       return;
     }
-    transferFromLocation.value = fromLoc;
-    applyDefaultTransferDestination();
-    transferForm.quantity = String(fromLoc.quantity || row.receiving_qty || 0);
+    transferFromLocationId.value = String(receiving[0].location_id || "");
+    transferForm.quantity = "";
   } catch (e) {
     transferModalOpen.value = false;
     toast.errorFrom(e, "Could not load product for transfer.");
@@ -460,48 +387,61 @@ function fillTransferAllQty() {
 
 async function submitTransfer() {
   if (!transferRow.value || !transferFromLocation.value) return;
-  const maxQty = Number(transferFromLocation.value.quantity || 0);
   const qty = parseInt(String(transferForm.quantity || ""), 10);
   if (Number.isNaN(qty) || qty <= 0) {
     toast.error("Enter a valid transfer quantity.");
     return;
   }
-  if (qty > maxQty) {
-    toast.error(`Quantity cannot exceed available qty (${maxQty}).`);
-    return;
+
+  const destMode = String(transferForm.destination_mode || "current");
+  const body = {
+    sku: transferRow.value.sku,
+    warehouse_id: transferFromLocation.value.warehouse_id,
+    from_location_id: transferFromLocation.value.location_id,
+    quantity: qty,
+    reason: transferForm.reason,
+    background: 1,
+  };
+  const accountIdForRow = Number(transferRow.value.client_account_id || 0);
+  if (accountIdForRow > 0) {
+    body.client_account_id = accountIdForRow;
   }
-  if (transferForm.transfer_type === "current") {
-    if (!String(transferForm.to_location_id || "").trim()) {
-      toast.error("Select a destination location.");
+
+  if (destMode === "cart") {
+    const cartCode = String(transferForm.cart_location || "").trim();
+    if (!cartCode) {
+      toast.error("Select a transfer cart location.");
       return;
     }
-  } else if (!transferForm.to_location.trim()) {
-    toast.error("Enter destination location.");
-    return;
-  }
-  transferBusy.value = true;
-  try {
-    const body = {
-      sku: transferRow.value.sku,
-      warehouse_id: transferFromLocation.value.warehouse_id,
-      from_location_id: transferFromLocation.value.location_id,
-      quantity: qty,
-      reason: transferForm.reason,
-      client_account_id: Number(transferRow.value.client_account_id || 0),
-    };
-    if (transferForm.transfer_type === "current") {
-      body.to_location_id = String(transferForm.to_location_id).trim();
+    const dest = resolveCartDestination(transferProduct.value, transferRow.value, cartCode);
+    if (dest?.to_location_id) {
+      body.to_location_id = dest.to_location_id;
     } else {
-      body.to_location = transferForm.to_location.trim();
+      body.to_location = dest?.to_location || cartCode;
     }
+  } else if (destMode === "new") {
+    if (!String(transferForm.to_location || "").trim()) {
+      toast.error("Enter destination location.");
+      return;
+    }
+    body.to_location = String(transferForm.to_location).trim();
+  } else {
+    if (!String(transferForm.to_location_id || "").trim()) {
+      toast.error("Select a pick location.");
+      return;
+    }
+    body.to_location_id = String(transferForm.to_location_id).trim();
+  }
+
+  transferModalOpen.value = false;
+  transferBusy.value = false;
+  toast.success("Quantity transferred.");
+
+  try {
     await api.post("/inventory/transfer", body);
-    transferModalOpen.value = false;
-    toast.success("Quantity transferred.");
     await loadRows(true);
   } catch (e) {
     toast.errorFrom(e, "Could not transfer quantity.");
-  } finally {
-    transferBusy.value = false;
   }
 }
 
@@ -938,17 +878,22 @@ onMounted(async () => {
       </div>
     </div>
 
-    <InventoryTransferQtyModal
+    <InventoryRestockTransferModal
       :open="transferModalOpen"
       :busy="transferBusy"
       :loading="transferLoading"
-      :from-location="transferFromLocation"
-      v-model:transfer-type="transferForm.transfer_type"
+      mode="pending"
+      :from-options="transferFromOptions"
+      from-empty-label="Receiving Locations"
+      from-empty-message="No Receiving locations with quantity found."
+      v-model:from-location-id="transferFromLocationId"
+      v-model:destination-mode="transferForm.destination_mode"
       v-model:to-location-id="transferForm.to_location_id"
       v-model:to-location="transferForm.to_location"
+      v-model:cart-location="transferForm.cart_location"
       v-model:quantity="transferForm.quantity"
       v-model:reason="transferForm.reason"
-      :destination-options="transferDestinationOptions"
+      :pick-options="transferPickOptions"
       :reason-options="inventoryReasons"
       @close="transferModalOpen = false"
       @submit="submitTransfer"

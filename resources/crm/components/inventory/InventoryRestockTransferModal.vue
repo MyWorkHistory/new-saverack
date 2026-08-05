@@ -12,6 +12,10 @@ const props = defineProps({
   mode: { type: String, default: "pending" },
   fromOptions: { type: Array, default: () => [] },
   fromLocationId: { type: String, default: "" },
+  /** Empty option label for Transfer From (e.g. Backstock / Receiving). */
+  fromEmptyLabel: { type: String, default: "" },
+  /** Empty-state copy when no from locations. */
+  fromEmptyMessage: { type: String, default: "" },
   /** Destination mode: current | cart | new */
   destinationMode: { type: String, default: "current" },
   toLocationId: { type: String, default: "" },
@@ -46,6 +50,18 @@ const selectedFrom = computed(() => {
 
 const fromQty = computed(() => Number(selectedFrom.value?.quantity ?? 0));
 const showForm = computed(() => !props.loading && props.fromOptions.length > 0);
+
+const fromSelectEmptyLabel = computed(() => {
+  if (props.fromEmptyLabel) return props.fromEmptyLabel;
+  return isCartStatusMode.value ? "Transfer Cart Locations" : "Backstock Locations";
+});
+
+const emptyFromMessage = computed(() => {
+  if (props.fromEmptyMessage) return props.fromEmptyMessage;
+  return isCartStatusMode.value
+    ? "No transfer cart locations with quantity found."
+    : "No backstock locations with quantity found.";
+});
 
 function locationOptionLabel(loc) {
   const name = loc?.location_name || loc?.location_id || "—";
@@ -84,7 +100,7 @@ function setDestinationMode(mode) {
               @change="emit('update:fromLocationId', $event.target.value)"
             >
               <option value="">
-                {{ isCartStatusMode ? "Transfer Cart Locations" : "Backstock Locations" }}
+                {{ fromSelectEmptyLabel }}
               </option>
               <option
                 v-for="loc in fromOptions"
@@ -218,11 +234,7 @@ function setDestinationMode(mode) {
             </select>
           </template>
           <p v-else class="text-secondary small mb-0">
-            {{
-              isCartStatusMode
-                ? "No transfer cart locations with quantity found."
-                : "No backstock locations with quantity found."
-            }}
+            {{ emptyFromMessage }}
           </p>
         </div>
         <footer class="crm-vx-modal__footer restock-xfer-modal__footer">

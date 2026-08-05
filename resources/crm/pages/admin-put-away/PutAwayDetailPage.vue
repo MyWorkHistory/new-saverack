@@ -5,10 +5,19 @@ import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import InventoryRestockTransferModal from "../../components/inventory/InventoryRestockTransferModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { errorMessage as apiErrorMessage } from "../../utils/apiError.js";
 import { formatDateTimeUs } from "../../utils/formatUserDates.js";
+import {
+  backstockLocationsFromProduct,
+  flattenProductLocations,
+  isReceivingLocationName,
+  preferredWarehouseId,
+  receivingLocationsFromProduct,
+  resolveCartDestination,
+} from "../../utils/inventoryTransferLocations.js";
 
 const RECEIVING_LOCATION_NAME = "Receiving";
 const PUT_AWAY_REASON = "Inbound Receiving Adjustments";
@@ -31,13 +40,17 @@ const actionMenuLocationId = ref(null);
 const actionMenuRect = ref({ top: 0, left: 0 });
 
 const transferModalOpen = ref(false);
+const transferBusy = ref(false);
+const transferFromKind = ref("receiving");
+const transferFromLocationId = ref("");
 const activeLocation = ref(null);
 const updateModalOpen = ref(false);
 const updateForm = reactive({ quantity: "", reason: "Client-Requested Adjustments" });
 const transferForm = reactive({
-  transfer_type: "new",
+  destination_mode: "current",
   to_location_id: "",
   to_location: "",
+  cart_location: "",
   quantity: "",
   reason: PUT_AWAY_REASON,
 });
@@ -72,7 +85,7 @@ const defaultAddLocationReason = ref("Account Setup");
 const clientAccountId = computed(() => Number(route.query.client_account_id || 0));
 
 function isReceivingLocation(loc) {
-  return String(loc?.location_name || "").trim().toLowerCase() === RECEIVING_LOCATION_NAME.toLowerCase();
+  return isReceivingLocationName(loc?.location_name || loc?.location_id);
 }
 
 function receivingQtyFromProduct(p) {
@@ -163,22 +176,80 @@ const receivingLocation = computed(() => {
   return null;
 });
 
-const transferDestinationOptions = computed(() => {
-  const source = activeLocation.value;
-  if (!source) return [];
-  const whId = String(source.warehouse_id || "");
-  const fromId = String(source.location_id || "");
-  return allLocations.value.filter(
-    (loc) => String(loc.warehouse_id || "") === whId && String(loc.location_id || "") !== fromId,
+const transferFromOptions = computed(() => {
+  if (transferFromKind.value === "receiving") {
+    const options = receivingLocationsFromProduct(product.value);
+    if (options.length) return options;
+    if (receivingLocation.value?.location_id) {
+      return [
+        {
+          ...receivingLocation.value,
+          quantity: receivingQty.value,
+        },
+      ];
+    }
+    return [];
+  }
+  const options = [...backstockLocationsFromProduct(product.value)];
+  const loc = activeLocation.value;
+  if (loc) {
+    const qty = Number(loc.quantity || 0);
+    const id = String(loc.location_id || "");
+    if (id && qty > 0 && !options.some((o) => String(o.location_id || "") === id)) {
+      options.push({
+        ...loc,
+        quantity: qty,
+      });
+    }
+  }
+  return options;
+});
+
+const transferFromLocation = computed(() => {
+  const id = String(transferFromLocationId.value || "");
+  if (!id) return null;
+  return (
+    transferFromOptions.value.find((loc) => String(loc.location_id || "") === id) || null
   );
 });
 
-const transferSourceMaxQty = computed(() => {
-  const loc = activeLocation.value;
-  if (!loc) return 0;
-  if (isReceivingLocation(loc)) return receivingQty.value;
-  return Number(loc.quantity || 0);
+const transferPickOptions = computed(() => {
+  const source = transferFromLocation.value;
+  const whId = source
+    ? String(source.warehouse_id || "")
+    : preferredWarehouseId(product.value);
+  const fromId = String(source?.location_id || "");
+  return flattenProductLocations(product.value, { includeEmpty: true }).filter(
+    (loc) =>
+      loc.pickable === true &&
+      (!whId || String(loc.warehouse_id || "") === whId) &&
+      String(loc.location_id || "") !== fromId,
+  );
 });
+
+const transferFromEmptyLabel = computed(() =>
+  transferFromKind.value === "receiving" ? "Receiving Locations" : "",
+);
+
+const transferFromEmptyMessage = computed(() =>
+  transferFromKind.value === "receiving"
+    ? "No Receiving locations with quantity found."
+    : "",
+);
+
+watch(transferFromLocationId, (id, prev) => {
+  if (String(id || "") === String(prev || "")) return;
+  transferForm.to_location_id = "";
+});
+
+watch(
+  () => transferForm.destination_mode,
+  () => {
+    transferForm.to_location_id = "";
+    transferForm.to_location = "";
+    transferForm.cart_location = "";
+  },
+);
 
 function metricsAllZero() {
   const m = putAwayMetrics.value;
@@ -320,53 +391,6 @@ function applyServerRefreshTimestamp(meta) {
   }
 }
 
-function defaultTransferDestinationId(source) {
-  if (!source) return "";
-  const whId = String(source.warehouse_id || "");
-  const fromId = String(source.location_id || "");
-  const candidates = allLocations.value.filter(
-    (loc) =>
-      String(loc.warehouse_id || "") === whId
-      && String(loc.location_id || "") !== fromId
-      && !isReceivingLocation(loc),
-  );
-  if (!candidates.length) return "";
-
-  const pickableWithStock = candidates
-    .filter((loc) => loc.pickable === true && Number(loc.quantity || 0) > 0)
-    .sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0));
-  if (pickableWithStock.length > 0) {
-    return String(pickableWithStock[0].location_id || "");
-  }
-
-  const pickable = candidates
-    .filter((loc) => loc.pickable === true)
-    .sort((a, b) =>
-      String(a.location_name || a.location_id || "").localeCompare(
-        String(b.location_name || b.location_id || ""),
-      ),
-    );
-  if (pickable.length > 0) {
-    return String(pickable[0].location_id || "");
-  }
-
-  const sorted = [...candidates].sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0));
-  return String(sorted[0].location_id || "");
-}
-
-function applyDefaultTransferDestination() {
-  const destId = defaultTransferDestinationId(activeLocation.value);
-  if (destId) {
-    transferForm.transfer_type = "current";
-    transferForm.to_location_id = destId;
-    transferForm.to_location = "";
-    return;
-  }
-  transferForm.transfer_type = "new";
-  transferForm.to_location_id = "";
-  transferForm.to_location = "";
-}
-
 async function loadProduct({ refresh = false } = {}) {
   productLoadError.value = "";
   try {
@@ -480,17 +504,45 @@ function openUpdateQtyModal() {
   actionMenuLocationId.value = null;
 }
 
+function resetTransferForm() {
+  transferForm.destination_mode = "current";
+  transferForm.to_location_id = "";
+  transferForm.to_location = "";
+  transferForm.cart_location = "";
+  transferForm.quantity = "";
+  transferForm.reason =
+    inventoryReasons.value.includes(PUT_AWAY_REASON)
+      ? PUT_AWAY_REASON
+      : defaultTransferReason.value;
+  transferBusy.value = false;
+}
+
 function openTransferQtyModal() {
   const loc = currentMenuLocation();
   if (!loc) return;
   activeLocation.value = loc;
-  transferForm.transfer_type = "current";
-  transferForm.to_location_id = "";
-  transferForm.to_location = "";
-  transferForm.quantity = "";
-  transferForm.reason = defaultTransferReason.value;
+  const isReceiving = isReceivingLocation(loc);
+  transferFromKind.value = isReceiving ? "receiving" : "backstock";
+  resetTransferForm();
   transferModalOpen.value = true;
   actionMenuLocationId.value = null;
+
+  if (isReceiving) {
+    const receiving = receivingLocationsFromProduct(product.value);
+    const match = receiving.find(
+      (r) => String(r.location_id || "") === String(loc.location_id || ""),
+    );
+    transferFromLocationId.value = String(
+      (match || receiving[0])?.location_id || loc.location_id || "",
+    );
+  } else {
+    const options = transferFromOptions.value;
+    const preferredId = String(loc.location_id || "");
+    const inOptions = options.some((o) => String(o.location_id || "") === preferredId);
+    transferFromLocationId.value = inOptions
+      ? preferredId
+      : String(options[0]?.location_id || preferredId || "");
+  }
 }
 
 function openTransferAllModal() {
@@ -499,30 +551,26 @@ function openTransferAllModal() {
     return;
   }
   activeLocation.value = receivingLocation.value;
-  applyDefaultTransferDestination();
-  transferForm.quantity = String(receivingQty.value);
-  transferForm.reason = defaultTransferReason.value;
+  transferFromKind.value = "receiving";
+  resetTransferForm();
+  const receiving = receivingLocationsFromProduct(product.value);
+  const preferred = receivingLocation.value;
+  const match = receiving.find(
+    (r) => String(r.location_id || "") === String(preferred?.location_id || ""),
+  );
+  transferFromLocationId.value = String(
+    (match || receiving[0] || preferred)?.location_id || "",
+  );
   transferModalOpen.value = true;
   actionMenuLocationId.value = null;
 }
 
 function openPartialTransferModal() {
-  if (!canTransfer.value) {
-    toast.error("No quantity in Receiving to transfer.");
-    return;
-  }
-  activeLocation.value = receivingLocation.value;
-  transferForm.transfer_type = "new";
-  transferForm.to_location_id = "";
-  transferForm.to_location = "";
-  transferForm.quantity = "";
-  transferForm.reason = defaultTransferReason.value;
-  transferModalOpen.value = true;
-  actionMenuLocationId.value = null;
+  openTransferAllModal();
 }
 
 function fillTransferAllQty() {
-  transferForm.quantity = String(transferSourceMaxQty.value);
+  transferForm.quantity = String(transferFromLocation.value?.quantity ?? 0);
 }
 
 async function submitUpdateQty() {
@@ -558,53 +606,61 @@ async function submitUpdateQty() {
 }
 
 async function submitTransferQty() {
-  if (!product.value || !activeLocation.value) return;
-  const maxQty = transferSourceMaxQty.value;
+  if (!product.value || !transferFromLocation.value) return;
   const qty = parseInt(String(transferForm.quantity || ""), 10);
   if (Number.isNaN(qty) || qty <= 0) {
     toast.error("Enter a valid transfer quantity.");
     return;
   }
-  if (qty > maxQty) {
-    toast.error(`Quantity cannot exceed available qty (${maxQty}).`);
-    return;
+
+  const destMode = String(transferForm.destination_mode || "current");
+  const body = {
+    sku: product.value.sku,
+    warehouse_id: transferFromLocation.value.warehouse_id,
+    from_location_id: transferFromLocation.value.location_id,
+    quantity: qty,
+    reason: transferForm.reason,
+    background: 1,
+  };
+  if (clientAccountId.value > 0) {
+    body.client_account_id = clientAccountId.value;
   }
-  if (transferForm.transfer_type === "current") {
-    if (!String(transferForm.to_location_id || "").trim()) {
-      toast.error("Select a destination location.");
+
+  if (destMode === "cart") {
+    const cartCode = String(transferForm.cart_location || "").trim();
+    if (!cartCode) {
+      toast.error("Select a transfer cart location.");
       return;
     }
-  } else if (!transferForm.to_location.trim()) {
-    toast.error("Enter destination location.");
-    return;
-  }
-  saving.value = true;
-  try {
-    const body = {
-      sku: product.value.sku,
-      warehouse_id: activeLocation.value.warehouse_id,
-      from_location_id: activeLocation.value.location_id,
-      quantity: qty,
-      reason: transferForm.reason,
-    };
-    if (transferForm.transfer_type === "current") {
-      body.to_location_id = String(transferForm.to_location_id).trim();
+    const dest = resolveCartDestination(product.value, null, cartCode);
+    if (dest?.to_location_id) {
+      body.to_location_id = dest.to_location_id;
     } else {
-      body.to_location = transferForm.to_location.trim();
+      body.to_location = dest?.to_location || cartCode;
     }
-    if (clientAccountId.value > 0) {
-      body.client_account_id = clientAccountId.value;
+  } else if (destMode === "new") {
+    if (!String(transferForm.to_location || "").trim()) {
+      toast.error("Enter destination location.");
+      return;
     }
-    const { data } = await api.post("/inventory/transfer", body);
-    applyWarehouseSliceToProduct(data?.warehouse);
-    toast.success("Quantity transferred.");
-    transferModalOpen.value = false;
+    body.to_location = String(transferForm.to_location).trim();
+  } else {
+    if (!String(transferForm.to_location_id || "").trim()) {
+      toast.error("Select a pick location.");
+      return;
+    }
+    body.to_location_id = String(transferForm.to_location_id).trim();
+  }
+
+  transferModalOpen.value = false;
+  transferBusy.value = false;
+  toast.success("Quantity transferred.");
+
+  try {
+    await api.post("/inventory/transfer", body);
     await reloadProductData({ refresh: true });
-    applyWarehouseSliceToProduct(data?.warehouse);
   } catch (e) {
     toast.errorFrom(e, "Could not transfer quantity.");
-  } finally {
-    saving.value = false;
   }
 }
 
@@ -1051,94 +1107,26 @@ onUnmounted(() => {
       </div>
     </Teleport>
 
-    <Teleport to="body">
-      <div v-if="transferModalOpen" class="crm-vx-modal-overlay" @click.self="transferModalOpen = false">
-        <div class="crm-vx-modal crm-vx-modal--sm">
-          <header class="crm-vx-modal__head">
-            <h2 class="crm-vx-modal__title">Transfer QTY</h2>
-          </header>
-          <div class="crm-vx-modal__body">
-            <p class="small text-secondary mb-1">
-              Transfer From: {{ activeLocation?.location_name || activeLocation?.location_id || "—" }}
-            </p>
-            <p class="small text-secondary mb-3">QTY: {{ transferSourceMaxQty }}</p>
-            <label class="form-label small" for="put-away-transfer-type">Transfer Type</label>
-            <select id="put-away-transfer-type" v-model="transferForm.transfer_type" class="form-select mb-3">
-              <option value="current">Current Locations</option>
-              <option value="new">Transfer New</option>
-            </select>
-            <label class="form-label small" for="put-away-transfer-to">Transfer To</label>
-            <select
-              v-if="transferForm.transfer_type === 'current'"
-              id="put-away-transfer-to"
-              v-model="transferForm.to_location_id"
-              class="form-select mb-3"
-            >
-              <option value="">Select location</option>
-              <option
-                v-for="dest in transferDestinationOptions"
-                :key="`${dest.warehouse_id}-${dest.location_id}`"
-                :value="dest.location_id"
-              >
-                {{ dest.location_name || dest.location_id }}
-              </option>
-            </select>
-            <input
-              v-else
-              id="put-away-transfer-to"
-              v-model="transferForm.to_location"
-              type="text"
-              class="form-control mb-3"
-              placeholder="Type location name"
-            />
-            <div class="row g-2 align-items-end mb-3">
-              <div class="col-6">
-                <label class="form-label small" for="put-away-transfer-qty">QTY</label>
-                <input
-                  id="put-away-transfer-qty"
-                  v-model="transferForm.quantity"
-                  type="number"
-                  min="1"
-                  :max="transferSourceMaxQty"
-                  class="form-control"
-                />
-              </div>
-              <div class="col-6">
-                <button
-                  type="button"
-                  class="btn inventory-detail__transfer-all-btn w-100"
-                  @click="fillTransferAllQty"
-                >
-                  Transfer All
-                </button>
-              </div>
-            </div>
-            <label class="form-label small">Reason</label>
-            <select v-model="transferForm.reason" class="form-select">
-              <option v-for="reason in inventoryReasons" :key="reason" :value="reason">{{ reason }}</option>
-            </select>
-          </div>
-          <footer class="crm-vx-modal__footer">
-            <button
-              type="button"
-              class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-              :disabled="saving"
-              @click="transferModalOpen = false"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-              :disabled="saving"
-              @click="submitTransferQty"
-            >
-              {{ saving ? "Please wait..." : "Transfer" }}
-            </button>
-          </footer>
-        </div>
-      </div>
-    </Teleport>
+    <InventoryRestockTransferModal
+      :open="transferModalOpen"
+      :busy="transferBusy"
+      mode="pending"
+      :from-options="transferFromOptions"
+      :from-empty-label="transferFromEmptyLabel"
+      :from-empty-message="transferFromEmptyMessage"
+      v-model:from-location-id="transferFromLocationId"
+      v-model:destination-mode="transferForm.destination_mode"
+      v-model:to-location-id="transferForm.to_location_id"
+      v-model:to-location="transferForm.to_location"
+      v-model:cart-location="transferForm.cart_location"
+      v-model:quantity="transferForm.quantity"
+      v-model:reason="transferForm.reason"
+      :pick-options="transferPickOptions"
+      :reason-options="inventoryReasons"
+      @close="transferModalOpen = false"
+      @submit="submitTransferQty"
+      @transfer-all="fillTransferAllQty"
+    />
 
     <Teleport to="body">
       <div v-if="updateModalOpen" class="crm-vx-modal-overlay" @click.self="updateModalOpen = false">
@@ -1340,17 +1328,5 @@ onUnmounted(() => {
 }
 .inventory-detail__toggle--off .inventory-detail__toggle-track {
   background: #ef4444;
-}
-.inventory-detail__transfer-all-btn {
-  border: 1px solid var(--bs-primary);
-  color: var(--bs-primary);
-  background: transparent;
-  font-weight: 600;
-}
-.inventory-detail__transfer-all-btn:hover,
-.inventory-detail__transfer-all-btn:focus-visible {
-  background: var(--bs-primary);
-  border-color: var(--bs-primary);
-  color: #fff;
 }
 </style>

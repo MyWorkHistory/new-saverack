@@ -1569,9 +1569,8 @@ class PutAwayInventoryService
     }
 
     /**
-     * Enrich list rows from product locations. Only keep SKUs with qty at Receiving.
-     * Uses detail cache when fresh; otherwise live-fetches ShipHero for that page row.
-     * Never returns unverified snapshot-only Receiving qty.
+     * Fast list enrichment: local product cache only (never ShipHero).
+     * Snapshot already filters receiving_qty > 0. If cache proves Receiving is 0, prune.
      *
      * @param  list<array<string, mixed>>  $rows
      * @return list<array<string, mixed>>
@@ -1583,28 +1582,17 @@ class PutAwayInventoryService
         }
 
         $pairs = [];
-        $accountIds = [];
         foreach ($rows as $row) {
             $accountId = (int) ($row['client_account_id'] ?? 0);
             $sku = trim((string) ($row['sku'] ?? ''));
             if ($accountId > 0 && $sku !== '') {
                 $pairs[] = ['client_account_id' => $accountId, 'sku' => $sku];
-                $accountIds[$accountId] = true;
             }
         }
 
-        $productsByKey = $this->detailCache->getCachedProductsForPairs($pairs);
-
-        $customerByAccount = [];
-        if ($accountIds !== []) {
-            $accounts = ClientAccount::query()
-                ->whereIn('id', array_keys($accountIds))
-                ->get(['id', 'shiphero_customer_account_id']);
-            foreach ($accounts as $account) {
-                $sid = trim((string) $account->shiphero_customer_account_id);
-                $customerByAccount[(int) $account->id] = $sid !== '' ? $sid : '';
-            }
-        }
+        $productsByKey = $pairs !== []
+            ? $this->detailCache->getCachedProductsForPairs($pairs)
+            : [];
 
         $staleDeletes = [];
         $out = [];
@@ -1616,59 +1604,26 @@ class PutAwayInventoryService
             $row['backstock_location'] = null;
             $row['receiving_location'] = null;
 
-            if ($clientAccountId <= 0 || $sku === '') {
-                $staleDeletes[] = [$clientAccountId, $sku];
+            if ((int) ($row['receiving_qty'] ?? 0) <= 0) {
                 continue;
             }
 
-            $cacheKey = $clientAccountId.'|'.$this->detailCache->normalizeSku($sku);
-            $product = $productsByKey[$cacheKey] ?? null;
-
-            if (! is_array($product)) {
-                $customerId = $customerByAccount[$clientAccountId] ?? '';
-                if ($customerId === '') {
-                    $staleDeletes[] = [$clientAccountId, $sku];
-                    continue;
-                }
-                try {
-                    $product = $this->inventory->getProductDetailBySku($sku, null, $customerId, false);
-                } catch (Throwable $e) {
-                    report($e);
-                    $product = null;
-                }
+            if ($clientAccountId > 0 && $sku !== '') {
+                $cacheKey = $clientAccountId.'|'.$this->detailCache->normalizeSku($sku);
+                $product = $productsByKey[$cacheKey] ?? null;
                 if (is_array($product)) {
-                    $this->detailCache->putProduct($clientAccountId, $sku, $product);
-                    $productsByKey[$cacheKey] = $product;
+                    $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
+                    $liveReceiving = PutAwayRowBuilder::receivingQtyFromLocations($locations);
+                    if ($liveReceiving <= 0) {
+                        $staleDeletes[] = [$clientAccountId, $sku];
+                        continue;
+                    }
+                    $row['receiving_qty'] = $liveReceiving;
+                    $row['pick_location'] = PutAwayRowBuilder::pickLocationLabel($locations);
+                    $row['backstock_location'] = PutAwayRowBuilder::backstockLocationLabel($locations);
+                    $row['receiving_location'] = $this->receivingLocationFromProduct($product);
                 }
             }
-
-            if (! is_array($product)) {
-                // Cannot verify Receiving — hide until product locations are known.
-                continue;
-            }
-
-            $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
-            $liveReceiving = PutAwayRowBuilder::receivingQtyFromLocations($locations);
-            if ($liveReceiving <= 0) {
-                $staleDeletes[] = [$clientAccountId, $sku];
-                continue;
-            }
-
-            $row['receiving_qty'] = $liveReceiving;
-            $built = PutAwayRowBuilder::buildRow(
-                $sku,
-                (string) ($row['name'] ?? $sku),
-                isset($row['barcode']) ? (string) $row['barcode'] : null,
-                isset($row['image_url']) ? (string) $row['image_url'] : null,
-                $locations,
-                (int) ($row['on_hand'] ?? 0),
-                (int) ($row['backorder'] ?? 0)
-            );
-            $row['pickable_qty'] = (int) ($built['pickable_qty'] ?? 0);
-            $row['non_pickable_qty'] = (int) ($built['non_pickable_qty'] ?? 0);
-            $row['pick_location'] = $built['pick_location'] ?? null;
-            $row['backstock_location'] = $built['backstock_location'] ?? null;
-            $row['receiving_location'] = $this->receivingLocationFromProduct($product);
 
             $out[] = $row;
         }
@@ -1676,9 +1631,6 @@ class PutAwayInventoryService
         if ($staleDeletes !== []) {
             $snapshot = $this->ensureLocalReceivingSnapshot();
             foreach ($staleDeletes as [$accountId, $sku]) {
-                if ($accountId <= 0 || $sku === '') {
-                    continue;
-                }
                 PutAwayReceivingSnapshotRow::query()
                     ->where('put_away_receiving_snapshot_id', $snapshot->id)
                     ->where('client_account_id', $accountId)

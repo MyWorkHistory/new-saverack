@@ -259,7 +259,7 @@ class PutAwayApiTest extends TestCase
             ->assertJsonPath('row_count', 1);
     }
 
-    public function test_list_hides_rows_without_product_locations_to_verify_receiving(): void
+    public function test_list_rows_include_null_location_fields_without_product_cache(): void
     {
         $account = $this->account('no-cache');
         Sanctum::actingAs($this->staffUser());
@@ -277,14 +277,14 @@ class PutAwayApiTest extends TestCase
             'backorder' => 0,
         ]);
 
-        // Without product cache, live ShipHero lookup is mocked to miss — row must not appear.
-        $this->mock(\App\Services\ShipHeroInventoryService::class, function ($mock) {
-            $mock->shouldReceive('getProductDetailBySku')->andReturn(null);
-        });
-
+        // List stays local/fast: snapshot receiving_qty > 0 is enough without ShipHero.
         $this->getJson('/api/admin/put-away')
             ->assertOk()
-            ->assertJsonCount(0, 'rows');
+            ->assertJsonPath('rows.0.sku', 'NO-CACHE-SKU')
+            ->assertJsonPath('rows.0.receiving_qty', 4)
+            ->assertJsonPath('rows.0.pick_location', null)
+            ->assertJsonPath('rows.0.backstock_location', null)
+            ->assertJsonPath('rows.0.receiving_location', null);
     }
 
     public function test_list_rows_include_location_fields_when_product_cached(): void

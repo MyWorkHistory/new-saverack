@@ -505,17 +505,8 @@ onUnmounted(() => {
         </button>
       </div>
       <div
-        class="d-flex flex-wrap align-items-center justify-content-center justify-content-md-end gap-2 flex-shrink-0 w-100 w-md-auto"
+        class="d-flex flex-wrap align-items-center justify-content-center justify-content-md-end gap-2 flex-shrink-0"
       >
-        <input
-          v-model="productSearch"
-          type="search"
-          class="form-control staff-toolbar-search staff-toolbar-search--inline"
-          style="min-width: 14rem; max-width: 22rem"
-          placeholder="Search product, SKU, or barcode"
-          aria-label="Search bin items by product name, SKU, or barcode"
-          autocomplete="off"
-        />
         <CrmRefreshToolbarButton
           :disabled="loading"
           :loading="loading"
@@ -526,6 +517,19 @@ onUnmounted(() => {
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
+      <div class="staff-table-toolbar">
+        <div class="staff-table-toolbar--row admin-return-bin-detail-toolbar-row">
+          <input
+            v-model="productSearch"
+            type="search"
+            class="form-control staff-toolbar-search staff-toolbar-search--inline"
+            placeholder="Search product, SKU, or barcode"
+            aria-label="Search bin items by product name, SKU, or barcode"
+            autocomplete="off"
+          />
+        </div>
+      </div>
+
       <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
@@ -874,5 +878,17 @@ onUnmounted(() => {
 .return-bin-mobile-pick__loc {
   font-size: 0.875rem;
   line-height: 1.35;
+}
+
+.admin-return-bin-detail-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-return-bin-detail-toolbar-row .staff-toolbar-search {
+  flex: 1 1 16rem;
+  max-width: 28rem;
 }
 </style>

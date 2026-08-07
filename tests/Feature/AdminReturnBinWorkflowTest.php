@@ -277,6 +277,8 @@ class AdminReturnBinWorkflowTest extends TestCase
                 ],
             ],
         ]);
+        $mock->shouldReceive('resolveWarehouseLocation')->andReturn(null)->byDefault();
+        $mock->shouldReceive('resolveProductWarehouseLocation')->andReturn(null)->byDefault();
         $mock->shouldReceive('addLocationQuantity')
             ->once()
             ->with(
@@ -338,15 +340,20 @@ class AdminReturnBinWorkflowTest extends TestCase
             ],
         ]);
         $mock->shouldReceive('resolveWarehouseLocation')
-            ->once()
-            ->with('wh-1', 'E-12-025', 'sh-bin-xfer-new')
-            ->andReturn([
-                'id' => 'loc-e12',
-                'name' => 'E-12-025',
-                'type' => 'Bin (Small)',
-                'pickable' => true,
-                'sellable' => true,
-            ]);
+            ->andReturnUsing(function ($warehouseId, $locationInput, $customerId = null) {
+                if (trim((string) $locationInput) === 'E-12-025') {
+                    return [
+                        'id' => 'loc-e12',
+                        'name' => 'E-12-025',
+                        'type' => 'Bin (Small)',
+                        'pickable' => true,
+                        'sellable' => true,
+                    ];
+                }
+
+                return null;
+            });
+        $mock->shouldReceive('resolveProductWarehouseLocation')->andReturn(null)->byDefault();
         $mock->shouldReceive('addLocationQuantity')
             ->once()
             ->with(
@@ -388,6 +395,8 @@ class AdminReturnBinWorkflowTest extends TestCase
 
         $mock = Mockery::mock(ShipHeroInventoryService::class);
         $mock->shouldReceive('getProductDetailBySku')->andReturn(null);
+        $mock->shouldReceive('resolveWarehouseLocation')->andReturn(null)->byDefault();
+        $mock->shouldReceive('resolveProductWarehouseLocation')->andReturn(null)->byDefault();
         $mock->shouldReceive('addLocationQuantity')
             ->once()
             ->with(

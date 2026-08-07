@@ -9,8 +9,10 @@ use App\Models\ClientAccountReturnLine;
 use App\Models\Permission;
 use App\Models\ReturnBill;
 use App\Models\ReturnBin;
+use App\Models\ShipHeroOrderQueueIndex;
 use App\Models\User;
-use App\Services\ShipHeroOrderService;
+use App\Services\ReturnBinService;
+use App\Services\ShipHeroInventoryService;
 use App\Support\Billing\ReturnBillChargeCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -99,6 +101,38 @@ class AdminReturnProcessWorkflowTest extends TestCase
         ], $overrides));
     }
 
+    /**
+     * @return \Mockery\MockInterface&ShipHeroInventoryService
+     */
+    private function mockInventoryStaging()
+    {
+        config(['services.shiphero.returns_warehouse_id' => 'wh-returns-test']);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('getProductDetailBySku')->andReturn(null)->byDefault();
+        $mock->shouldReceive('resolveWarehouseLocation')
+            ->andReturnUsing(function ($warehouseId, $locationInput) {
+                $name = trim((string) $locationInput);
+
+                return [
+                    'id' => 'loc-'.strtolower(str_replace(' ', '-', $name)),
+                    'name' => $name,
+                ];
+            })
+            ->byDefault();
+        $mock->shouldReceive('resolveProductWarehouseLocation')->andReturn(null)->byDefault();
+        $mock->shouldReceive('addLocationQuantity')
+            ->andReturn([
+                'warehouse_id' => 'wh-returns-test',
+                'warehouse_name' => 'Main',
+                'locations' => [],
+            ])
+            ->byDefault();
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        return $mock;
+    }
+
     public function test_pending_list_returns_only_pending_returns(): void
     {
         $account = $this->account();
@@ -120,26 +154,24 @@ class AdminReturnProcessWorkflowTest extends TestCase
     public function test_order_lookup_not_returned_when_order_exists_without_return(): void
     {
         $account = $this->account();
+        ShipHeroOrderQueueIndex::query()->create([
+            'client_account_id' => $account->id,
+            'shiphero_order_id' => 'order-sh-999',
+            'queue_kind' => ShipHeroOrderQueueIndex::KIND_SHIPPED,
+            'order_number' => '84842',
+            'order_number_search' => '84842',
+            'recipient_name' => 'Emily Stewart',
+            'last_seen_at' => now(),
+            'indexed_at' => now(),
+        ]);
         Sanctum::actingAs($this->staffUser());
 
-        $mock = Mockery::mock(ShipHeroOrderService::class);
-        $mock->shouldReceive('listOrders')
-            ->once()
-            ->andReturn([
-                'rows' => [
-                    [
-                        'id' => 'order-sh-999',
-                        'order_number' => '84842',
-                        'recipient_name' => 'Emily Stewart',
-                    ],
-                ],
-            ]);
-        $this->app->instance(ShipHeroOrderService::class, $mock);
-
-        $this->getJson('/api/admin/returns/order-lookup?client_account_id='.$account->id.'&order_number=84842')
+        $this->getJson('/api/admin/returns/order-lookup?order_number=84842')
             ->assertOk()
             ->assertJsonPath('display_status', 'not_returned')
+            ->assertJsonPath('client_account_id', $account->id)
             ->assertJsonPath('order.order_number', '84842')
+            ->assertJsonPath('order.id', 'order-sh-999')
             ->assertJsonPath('return', null);
     }
 
@@ -147,26 +179,45 @@ class AdminReturnProcessWorkflowTest extends TestCase
     {
         $account = $this->account();
         $return = $this->returnForAccount($account);
+        ShipHeroOrderQueueIndex::query()->create([
+            'client_account_id' => $account->id,
+            'shiphero_order_id' => 'order-sh-100',
+            'queue_kind' => ShipHeroOrderQueueIndex::KIND_SHIPPED,
+            'order_number' => '84842',
+            'order_number_search' => '84842',
+            'recipient_name' => 'Emily Stewart',
+            'last_seen_at' => now(),
+            'indexed_at' => now(),
+        ]);
         Sanctum::actingAs($this->staffUser());
 
-        $mock = Mockery::mock(ShipHeroOrderService::class);
-        $mock->shouldReceive('listOrders')
-            ->once()
-            ->andReturn([
-                'rows' => [
-                    [
-                        'id' => 'order-sh-100',
-                        'order_number' => '84842',
-                        'recipient_name' => 'Emily Stewart',
-                    ],
-                ],
-            ]);
-        $this->app->instance(ShipHeroOrderService::class, $mock);
-
-        $this->getJson('/api/admin/returns/order-lookup?client_account_id='.$account->id.'&order_number=84842')
+        $this->getJson('/api/admin/returns/order-lookup?order_number=84842')
             ->assertOk()
             ->assertJsonPath('display_status', 'pending')
             ->assertJsonPath('return.id', $return->id);
+    }
+
+    public function test_order_lookup_works_without_client_account_id(): void
+    {
+        $account = $this->account('x');
+        ShipHeroOrderQueueIndex::query()->create([
+            'client_account_id' => $account->id,
+            'shiphero_order_id' => 'order-sh-db-1',
+            'queue_kind' => ShipHeroOrderQueueIndex::KIND_SHIPPED,
+            'order_number' => '#DB-77',
+            'order_number_search' => 'db-77',
+            'recipient_name' => 'Pat Lee',
+            'last_seen_at' => now(),
+            'indexed_at' => now(),
+        ]);
+        Sanctum::actingAs($this->staffUser());
+
+        $this->getJson('/api/admin/returns/order-lookup?order_number=DB-77')
+            ->assertOk()
+            ->assertJsonPath('client_account_id', $account->id)
+            ->assertJsonPath('client_account_company_name', 'Return Admin Co x')
+            ->assertJsonPath('order.id', 'order-sh-db-1')
+            ->assertJsonPath('display_status', 'not_returned');
     }
 
     public function test_rma_lookup_finds_returned_status(): void
@@ -185,18 +236,61 @@ class AdminReturnProcessWorkflowTest extends TestCase
             ->assertJsonPath('data.display_status', 'returned');
     }
 
-    public function test_process_return_requires_return_bin_id(): void
+    public function test_process_return_auto_assigns_return_cart_when_restocking(): void
     {
         $account = $this->account();
         $this->seedReturnFees($account);
         $return = $this->returnForAccount($account);
-        $lineA = $this->lineForReturn($return, ['sku' => 'A', 'return_qty' => 2]);
+        $lineA = $this->lineForReturn($return, ['sku' => 'A', 'return_qty' => 2, 'restock' => true]);
         Sanctum::actingAs($this->staffUser());
+        $mock = $this->mockInventoryStaging();
+        $mock->shouldReceive('addLocationQuantity')
+            ->once()
+            ->withArgs(function ($sku, $warehouseId, $locationId, $qty) {
+                return $sku === 'A'
+                    && $locationId === 'loc-return-cart'
+                    && (int) $qty === 2;
+            })
+            ->andReturn(['warehouse_id' => 'wh-returns-test', 'warehouse_name' => 'Main', 'locations' => []]);
 
         $this->postJson('/api/admin/returns/'.$return->id.'/process', [
             'line_ids' => [$lineA->id],
             'restock_by_line_id' => [$lineA->id => true],
-        ])->assertUnprocessable();
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', ClientAccountReturn::STATUS_RECEIVED)
+            ->assertJsonPath('return_bin_name', ReturnBinService::BIN_RETURN_CART);
+
+        $lineA->refresh();
+        $bin = ReturnBin::query()->find($lineA->return_bin_id);
+        $this->assertNotNull($bin);
+        $this->assertSame(ReturnBinService::BIN_RETURN_CART, $bin->name);
+        $this->assertSame(2, (int) $lineA->return_bin_remaining_qty);
+    }
+
+    public function test_process_return_auto_assigns_dispose_bin_when_not_restocking(): void
+    {
+        $account = $this->account();
+        $this->seedReturnFees($account);
+        $return = $this->returnForAccount($account);
+        $lineA = $this->lineForReturn($return, ['sku' => 'A', 'return_qty' => 1, 'restock' => false]);
+        Sanctum::actingAs($this->staffUser());
+        $mock = $this->mockInventoryStaging();
+        $mock->shouldReceive('addLocationQuantity')
+            ->once()
+            ->withArgs(function ($sku, $warehouseId, $locationId, $qty) {
+                return $sku === 'A'
+                    && $locationId === 'loc-dispose-bin'
+                    && (int) $qty === 1;
+            })
+            ->andReturn(['warehouse_id' => 'wh-returns-test', 'warehouse_name' => 'Main', 'locations' => []]);
+
+        $this->postJson('/api/admin/returns/'.$return->id.'/process', [
+            'line_ids' => [$lineA->id],
+            'restock_by_line_id' => [$lineA->id => false],
+        ])
+            ->assertOk()
+            ->assertJsonPath('return_bin_name', ReturnBinService::BIN_DISPOSE);
     }
 
     public function test_process_return_sets_received_and_zeros_unselected_lines(): void
@@ -209,6 +303,7 @@ class AdminReturnProcessWorkflowTest extends TestCase
         $bin = ReturnBin::query()->create(['name' => 'Process Bin 5']);
         $staff = $this->staffUser();
         Sanctum::actingAs($staff);
+        $this->mockInventoryStaging();
 
         $this->postJson('/api/admin/returns/'.$return->id.'/process', [
             'line_ids' => [$lineA->id],
@@ -259,12 +354,11 @@ class AdminReturnProcessWorkflowTest extends TestCase
             'return_fee_first_item' => 3.0,
             'return_fee_additional_item' => 1.0,
         ]);
-        $bin = ReturnBin::query()->create(['name' => 'Draft Bin 3']);
         Sanctum::actingAs($this->staffUser());
+        $this->mockInventoryStaging();
 
         $this->postJson('/api/admin/returns/'.$return->id.'/process-from-draft', [
             'return_type' => ClientAccountReturn::TYPE_DIRECT,
-            'return_bin_id' => $bin->id,
             'lines' => [
                 [
                     'sku' => 'SKU-X',
@@ -279,14 +373,55 @@ class AdminReturnProcessWorkflowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('status', ClientAccountReturn::STATUS_RECEIVED)
             ->assertJsonPath('return_fees.locked', true)
-            ->assertJsonPath('return_bin_id', $bin->id)
-            ->assertJsonPath('return_bin_name', 'Draft Bin 3');
+            ->assertJsonPath('return_bin_name', ReturnBinService::BIN_RETURN_CART);
 
         $return->refresh();
         $this->assertSame(ClientAccountReturn::STATUS_RECEIVED, $return->status);
-        $this->assertSame($bin->id, $return->return_bin_id);
         $this->assertNotNull($return->return_bill_id);
         $this->assertSame('unknown', $return->lines()->first()->return_reason);
+    }
+
+    public function test_process_from_draft_routes_restock_false_to_dispose_bin(): void
+    {
+        $account = $this->account();
+        $this->seedReturnFees($account);
+        $return = ClientAccountReturn::query()->create([
+            'client_account_id' => $account->id,
+            'rma_number' => 'AD0099',
+            'status' => ClientAccountReturn::STATUS_DRAFT,
+            'created_source' => ClientAccountReturn::SOURCE_ADMIN,
+            'return_type' => ClientAccountReturn::TYPE_DIRECT,
+            'shiphero_order_id' => 'order-admin-dispose',
+            'order_number' => '90099',
+            'customer_name' => 'Admin Customer',
+            'items_count' => 0,
+            'return_fee_first_item' => 3.0,
+            'return_fee_additional_item' => 1.0,
+        ]);
+        Sanctum::actingAs($this->staffUser());
+        $mock = $this->mockInventoryStaging();
+        $mock->shouldReceive('addLocationQuantity')
+            ->once()
+            ->withArgs(function ($sku, $warehouseId, $locationId) {
+                return $sku === 'SKU-D' && $locationId === 'loc-dispose-bin';
+            })
+            ->andReturn(['warehouse_id' => 'wh-returns-test', 'warehouse_name' => 'Main', 'locations' => []]);
+
+        $this->postJson('/api/admin/returns/'.$return->id.'/process-from-draft', [
+            'return_type' => ClientAccountReturn::TYPE_DIRECT,
+            'lines' => [
+                [
+                    'sku' => 'SKU-D',
+                    'name' => 'Product D',
+                    'order_qty' => 1,
+                    'return_qty' => 1,
+                    'return_reason' => 'unknown',
+                    'restock' => false,
+                ],
+            ],
+        ])
+            ->assertOk()
+            ->assertJsonPath('return_bin_name', ReturnBinService::BIN_DISPOSE);
     }
 
     public function test_process_from_draft_allows_different_bins_per_line(): void
@@ -313,6 +448,7 @@ class AdminReturnProcessWorkflowTest extends TestCase
         $binA = ReturnBin::query()->create(['name' => 'Bin A']);
         $binB = ReturnBin::query()->create(['name' => 'Bin B']);
         Sanctum::actingAs($this->staffUser());
+        $this->mockInventoryStaging();
 
         $this->postJson('/api/admin/returns/'.$return->id.'/process-from-draft', [
             'return_type' => ClientAccountReturn::TYPE_DIRECT,

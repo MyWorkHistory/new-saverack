@@ -48,27 +48,9 @@ const isProcessed = computed(() => {
   return s === "received" || s === "completed";
 });
 
-const returnBinOptions = ref([]);
-
-const binAssigning = ref(false);
-const selectedReturnBin = ref("");
-
-const clientAccountId = computed(() => Number(ret.value?.client_account_id || 0));
-
-async function loadReturnBins() {
-  try {
-    const { data } = await api.get("/admin/returns/bins");
-    returnBinOptions.value = Array.isArray(data?.data) ? data.data : [];
-  } catch {
-    returnBinOptions.value = [];
-  }
-}
-
 const lines = computed(() => (Array.isArray(ret.value?.lines) ? ret.value.lines : []));
 
-const hasStagedLines = computed(() =>
-  lines.value.some((line) => Number(line.return_qty) > 0),
-);
+const clientAccountId = computed(() => Number(ret.value?.client_account_id || 0));
 
 const selectedCount = computed(() => selected.value.size);
 const allSelected = computed(() => {
@@ -78,7 +60,6 @@ const allSelected = computed(() => {
 
 const canProcess = computed(() => {
   if (!isPending.value) return false;
-  if (!selectedReturnBin.value) return false;
   if (isStaffManagedPending.value) {
     return lines.value.some((line) => selected.value.has(line.id) && Number(line.return_qty) > 0);
   }
@@ -115,16 +96,16 @@ function feeAmountMissing(value) {
 function applyReturnData(data) {
   ret.value = data;
   returnFees.value = data?.return_fees || {};
-  selectedReturnBin.value =
-    data?.return_bin_id != null && data.return_bin_id !== ""
-      ? String(data.return_bin_id)
-      : "";
   const restockMap = {};
   for (const line of Array.isArray(data?.lines) ? data.lines : []) {
     restockMap[line.id] = line.restock !== false;
   }
   lineRestock.value = restockMap;
-  syncSelectionFromLines();
+  if (String(data?.status || "").toLowerCase() === "pending") {
+    selected.value = new Set((Array.isArray(data?.lines) ? data.lines : []).map((line) => line.id));
+  } else {
+    syncSelectionFromLines();
+  }
 }
 
 /**
@@ -366,10 +347,7 @@ async function submitUnknownSku() {
 async function load() {
   loading.value = true;
   try {
-    const [{ data }] = await Promise.all([
-      api.get(`/returns/${returnId.value}`),
-      loadReturnBins(),
-    ]);
+    const { data } = await api.get(`/returns/${returnId.value}`);
     applyReturnData(data);
     await ensureAccountReturnFees(data);
     setCrmPageMeta({
@@ -391,11 +369,6 @@ async function processReturn() {
     toast.error("Select at least one item to process.");
     return;
   }
-  const binId = Number(selectedReturnBin.value);
-  if (!binId || binId <= 0) {
-    toast.error("Select a return bin before processing.");
-    return;
-  }
   processing.value = true;
   try {
     const restockByLineId = {};
@@ -405,37 +378,17 @@ async function processReturn() {
     const payload = {
       line_ids: lineIds,
       restock_by_line_id: restockByLineId,
-      return_bin_id: binId,
     };
     if (returnFees.value.first_item != null) payload.first_item_fee = returnFees.value.first_item;
     if (returnFees.value.additional_item != null) payload.additional_item_fee = returnFees.value.additional_item;
     if (returnFees.value.non_compliant != null) payload.non_compliant_fee = returnFees.value.non_compliant;
-    const { data } = await api.post(`/admin/returns/${ret.value.id}/process`, payload);
-    applyReturnData(data);
+    await api.post(`/admin/returns/${ret.value.id}/process`, payload);
     toast.success("Return processed.");
+    router.push({ name: "admin-process-returns" });
   } catch (e) {
     toast.errorFrom(e, "Could not process return.");
   } finally {
     processing.value = false;
-  }
-}
-
-async function assignReturnBin() {
-  if (!ret.value?.id || !isProcessed.value) return;
-  const binId = Number(selectedReturnBin.value);
-  if (!binId || binId <= 0) return;
-  binAssigning.value = true;
-  try {
-    const { data } = await api.patch(`/admin/returns/${ret.value.id}/return-bin`, {
-      return_bin_id: binId,
-    });
-    applyReturnData(data);
-    const name = data?.return_bin_name || selectedReturnBin.value;
-    toast.success(`Assigned to Return Bin ${name}.`);
-  } catch (e) {
-    toast.errorFrom(e, "Could not assign return bin.");
-  } finally {
-    binAssigning.value = false;
   }
 }
 
@@ -479,52 +432,14 @@ onMounted(load);
             </button>
           </div>
           <div v-if="isPending" class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
-            <label class="small text-secondary mb-0 fw-medium" for="admin-return-bin-select">Return Bin</label>
-            <select
-              id="admin-return-bin-select"
-              v-model="selectedReturnBin"
-              class="form-select form-select-sm"
-              style="min-width: 10rem"
-              :disabled="processing"
-            >
-              <option value="">Select bin…</option>
-              <option v-for="bin in returnBinOptions" :key="bin.id" :value="String(bin.id)">
-                {{ bin.name }}
-              </option>
-            </select>
             <button
               type="button"
               class="btn btn-primary staff-page-primary btn-sm fw-semibold"
               :disabled="processing || !canProcess"
               @click="processReturn"
             >
-              {{ processing ? "Processing…" : "Process Return" }}
+              {{ processing ? "Processing…" : "Process" }}
             </button>
-          </div>
-          <div
-            v-else-if="isProcessed && hasStagedLines"
-            class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center"
-          >
-            <span v-if="ret.return_bin_name || ret.return_bin_id" class="small text-secondary mb-0">
-              Return Bin
-              <span class="fw-semibold text-body">{{ ret.return_bin_name || ret.return_bin_id }}</span>
-            </span>
-            <label class="small text-secondary mb-0 fw-medium" for="admin-return-bin-change">
-              {{ ret.return_bin_id ? "Change Bin" : "Return Bin" }}
-            </label>
-            <select
-              id="admin-return-bin-change"
-              v-model="selectedReturnBin"
-              class="form-select form-select-sm"
-              style="min-width: 10rem"
-              :disabled="binAssigning"
-              @change="assignReturnBin"
-            >
-              <option value="">Select bin…</option>
-              <option v-for="bin in returnBinOptions" :key="bin.id" :value="String(bin.id)">
-                {{ bin.name }}
-              </option>
-            </select>
           </div>
         </div>
       </div>

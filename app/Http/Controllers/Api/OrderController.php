@@ -601,7 +601,8 @@ class OrderController extends Controller
                 'user_id' => optional($request->user())->id,
             ]);
             if ($clientAccountId > 0 && ! $refresh) {
-                $cachedPayload = $this->orderDetailCache->getCachedOrderWithMeta($clientAccountId, $orderId);
+                // Prefer any cached detail (including overnight backfill); live-fetch only on miss or refresh.
+                $cachedPayload = $this->orderDetailCache->getCachedOrderWithMeta($clientAccountId, $orderId, true);
                 if ($cachedPayload !== null) {
                     return response()->json([
                         'order' => $this->enrichOrderDetailForResponse($clientAccountId, $cachedPayload['order']),

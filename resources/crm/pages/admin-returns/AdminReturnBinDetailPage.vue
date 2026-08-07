@@ -1,11 +1,12 @@
 <script setup>
-import { Transition, computed, inject, onMounted, onUnmounted, reactive, ref } from "vue";
+import { Transition, computed, inject, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarButton.vue";
-import ReturnBinAddQtyModal from "../../components/admin-returns/ReturnBinAddQtyModal.vue";
+import InventoryRestockTransferModal from "../../components/inventory/InventoryRestockTransferModal.vue";
+import { TRANSFER_CART_LOCATIONS } from "../../constants/restockTransferCart.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 
@@ -24,19 +25,20 @@ const binName = ref("");
 
 const lineMenuKey = ref(null);
 const lineMenuRect = ref({ top: 0, left: 0 });
-/** Mobile card accordion keys: `${rowKey}:pick` */
-const mobileAccordionOpen = ref({});
 
 const transferModalOpen = ref(false);
 const transferBusy = ref(false);
 const transferLoading = ref(false);
 const transferRow = ref(null);
 const transferProduct = ref(null);
+const transferFromLocationId = ref("");
 const transferForm = reactive({
   destination_mode: "current",
   to_location_id: "",
   to_location: "",
+  cart_location: "",
   quantity: "",
+  reason: "Return Restock",
 });
 
 const canTransfer = computed(() => {
@@ -61,36 +63,18 @@ function rowKey(row) {
   return `${row.sku}|${row.client_account_id}`;
 }
 
-const transferDestinationOptions = computed(() => {
-  const product = transferProduct.value;
-  if (!product) return [];
-  const all = flattenProductLocations(product).filter((loc) => Number(loc.quantity || 0) > 0);
-  const pickable = all.filter((loc) => loc.pickable === true);
-  return pickable.length ? pickable : all;
-});
-
-const transferWarehouseId = computed(() => {
-  const selectedId = String(transferForm.to_location_id || "").trim();
-  if (selectedId) {
-    const match = transferDestinationOptions.value.find(
-      (loc) => String(loc.location_id || "") === selectedId,
-    );
-    if (match?.warehouse_id) return String(match.warehouse_id);
-  }
-  const opts = transferDestinationOptions.value;
-  if (opts.length) return String(opts[0].warehouse_id || "");
-  const warehouses = Array.isArray(transferProduct.value?.warehouses)
-    ? transferProduct.value.warehouses
-    : [];
+function preferredWarehouseId(product) {
+  const warehouses = Array.isArray(product?.warehouses) ? product.warehouses : [];
   return warehouses[0]?.warehouse_id ? String(warehouses[0].warehouse_id) : "";
-});
+}
 
-function flattenProductLocations(product) {
+function flattenProductLocations(product, { includeEmpty = false } = {}) {
   const out = [];
   const warehouses = Array.isArray(product?.warehouses) ? product.warehouses : [];
   warehouses.forEach((wh) => {
     (wh.locations || []).forEach((loc) => {
-      if (Number(loc?.quantity || 0) <= 0) return;
+      const qty = Number(loc?.quantity || 0);
+      if (!includeEmpty && qty <= 0) return;
       out.push({
         ...loc,
         warehouse_id: wh.warehouse_id,
@@ -101,22 +85,63 @@ function flattenProductLocations(product) {
   return out;
 }
 
+function isTransferCartLocationName(name) {
+  const n = String(name || "").trim().toLowerCase();
+  return TRANSFER_CART_LOCATIONS.some((c) => c.toLowerCase() === n);
+}
+
+const transferFromOptions = computed(() => {
+  const staging = String(binName.value || "").trim().toLowerCase();
+  const all = flattenProductLocations(transferProduct.value, { includeEmpty: false });
+  if (staging) {
+    const matched = all.filter(
+      (loc) => String(loc.location_name || "").trim().toLowerCase() === staging,
+    );
+    if (matched.length) return matched;
+  }
+  return all.filter((loc) => loc.pickable === false);
+});
+
+const transferFromLocation = computed(() => {
+  const id = String(transferFromLocationId.value || "");
+  if (!id) return null;
+  return (
+    transferFromOptions.value.find((loc) => String(loc.location_id || "") === id) || null
+  );
+});
+
+const transferPickOptions = computed(() => {
+  const source = transferFromLocation.value;
+  const whId = source
+    ? String(source.warehouse_id || "")
+    : preferredWarehouseId(transferProduct.value);
+  const fromId = String(source?.location_id || "");
+  return flattenProductLocations(transferProduct.value, { includeEmpty: true }).filter(
+    (loc) =>
+      loc.pickable === true &&
+      (!whId || String(loc.warehouse_id || "") === whId) &&
+      String(loc.location_id || "") !== fromId,
+  );
+});
+
+watch(transferFromLocationId, (id, prev) => {
+  if (String(id || "") === String(prev || "")) return;
+  transferForm.to_location_id = "";
+});
+
+watch(
+  () => transferForm.destination_mode,
+  () => {
+    transferForm.to_location_id = "";
+    transferForm.to_location = "";
+    transferForm.cart_location = "";
+  },
+);
+
 function splitPickLocations(text) {
   const raw = String(text || "").trim();
   if (!raw || raw === "—") return [];
   return raw.split(",").map((part) => part.trim()).filter(Boolean);
-}
-
-function isMobileAccordionOpen(row) {
-  return Boolean(mobileAccordionOpen.value[`${rowKey(row)}:pick`]);
-}
-
-function toggleMobileAccordion(row) {
-  const key = `${rowKey(row)}:pick`;
-  mobileAccordionOpen.value = {
-    ...mobileAccordionOpen.value,
-    [key]: !mobileAccordionOpen.value[key],
-  };
 }
 
 function formatQty(value) {
@@ -124,6 +149,15 @@ function formatQty(value) {
   const n = Number(value);
   if (Number.isNaN(n)) return "0";
   return n.toLocaleString();
+}
+
+function inventoryDetailHref(row) {
+  const sku = String(row?.sku || "").trim();
+  if (!sku) return "#";
+  const query = {};
+  const accountId = Number(row?.client_account_id || 0);
+  if (accountId > 0) query.client_account_id = String(accountId);
+  return router.resolve({ name: "inventory-detail", params: { sku }, query }).href;
 }
 
 function closeLineMenu() {
@@ -180,10 +214,13 @@ async function openTransferFromMenu(row) {
   }
   transferRow.value = row;
   transferProduct.value = null;
+  transferFromLocationId.value = "";
   transferForm.destination_mode = "current";
   transferForm.to_location_id = "";
   transferForm.to_location = "";
+  transferForm.cart_location = "";
   transferForm.quantity = "";
+  transferForm.reason = "Return Restock";
   transferModalOpen.value = true;
   transferLoading.value = true;
   transferBusy.value = false;
@@ -195,6 +232,14 @@ async function openTransferFromMenu(row) {
     if (!transferProduct.value) {
       transferModalOpen.value = false;
       toast.error("Could not load product locations.");
+      return;
+    }
+    await Promise.resolve();
+    const opts = transferFromOptions.value;
+    if (opts.length === 1) {
+      transferFromLocationId.value = String(opts[0].location_id || "");
+    } else if (opts.length > 1) {
+      transferFromLocationId.value = String(opts[0].location_id || "");
     }
   } catch (e) {
     transferModalOpen.value = false;
@@ -205,43 +250,69 @@ async function openTransferFromMenu(row) {
 }
 
 function fillTransferAllQty() {
-  transferForm.quantity = String(transferRow.value?.qty ?? 0);
+  transferForm.quantity = String(transferFromLocation.value?.quantity ?? transferRow.value?.qty ?? 0);
+}
+
+function resolveCartDestination(product, cartCode) {
+  const code = String(cartCode || "").trim();
+  if (!code) return null;
+  const locs = flattenProductLocations(product, { includeEmpty: true }).filter((loc) =>
+    isTransferCartLocationName(loc.location_name),
+  );
+  const match = locs.find(
+    (loc) => String(loc.location_name || "").trim().toLowerCase() === code.toLowerCase(),
+  );
+  if (match?.location_id) {
+    return { to_location_id: String(match.location_id), to_location: match.location_name };
+  }
+  return { to_location: code };
 }
 
 async function submitTransfer() {
-  if (!transferRow.value) return;
+  if (!transferRow.value || !transferFromLocation.value) return;
   const qty = parseInt(String(transferForm.quantity || ""), 10);
   if (Number.isNaN(qty) || qty <= 0) {
     toast.error("Enter a valid transfer quantity.");
     return;
   }
-  if (transferForm.destination_mode === "current") {
-    if (!String(transferForm.to_location_id || "").trim()) {
-      toast.error("Select a destination location.");
+
+  const destMode = String(transferForm.destination_mode || "current");
+  const body = {
+    sku: transferRow.value.sku,
+    client_account_id: Number(transferRow.value.client_account_id || 0),
+    warehouse_id: transferFromLocation.value.warehouse_id,
+    from_location_id: transferFromLocation.value.location_id,
+    quantity: qty,
+  };
+
+  if (destMode === "cart") {
+    const cartCode = String(transferForm.cart_location || "").trim();
+    if (!cartCode) {
+      toast.error("Select a transfer cart location.");
       return;
     }
-  } else if (!transferForm.to_location.trim()) {
-    toast.error("Enter destination location.");
-    return;
+    const dest = resolveCartDestination(transferProduct.value, cartCode);
+    if (dest?.to_location_id) {
+      body.to_location_id = dest.to_location_id;
+    } else {
+      body.to_location = dest?.to_location || cartCode;
+    }
+  } else if (destMode === "new") {
+    if (!String(transferForm.to_location || "").trim()) {
+      toast.error("Enter destination location.");
+      return;
+    }
+    body.to_location = String(transferForm.to_location).trim();
+  } else {
+    if (!String(transferForm.to_location_id || "").trim()) {
+      toast.error("Select a pick location.");
+      return;
+    }
+    body.to_location_id = String(transferForm.to_location_id).trim();
   }
-  const warehouseId = transferWarehouseId.value;
-  if (!warehouseId) {
-    toast.error("Warehouse could not be resolved for this product.");
-    return;
-  }
+
   transferBusy.value = true;
   try {
-    const body = {
-      sku: transferRow.value.sku,
-      client_account_id: Number(transferRow.value.client_account_id || 0),
-      quantity: qty,
-      warehouse_id: warehouseId,
-    };
-    if (transferForm.destination_mode === "current") {
-      body.to_location_id = transferForm.to_location_id;
-    } else {
-      body.to_location = transferForm.to_location.trim();
-    }
     const { data } = await api.post(`/admin/returns/bins/${binId.value}/transfer`, body);
     rows.value = Array.isArray(data?.data) ? data.data : rows.value;
     transferModalOpen.value = false;
@@ -332,9 +403,14 @@ onUnmounted(() => {
                   />
                   <div v-else class="return-bin-product-thumb return-bin-product-thumb--empty" aria-hidden="true" />
                   <div class="return-bin-product-copy">
-                    <div class="return-bin-product-sku" :title="row.sku || undefined">
+                    <a
+                      class="return-bin-product-sku return-bin-product-sku--link"
+                      :href="inventoryDetailHref(row)"
+                      :title="row.sku || undefined"
+                      @click.stop
+                    >
                       {{ row.sku || "—" }}
-                    </div>
+                    </a>
                     <div class="return-bin-product-name" :title="row.name || undefined">
                       {{ row.name || "—" }}
                     </div>
@@ -426,9 +502,13 @@ onUnmounted(() => {
                 aria-hidden="true"
               />
               <div class="crm-mobile-item-card__copy">
-                <div class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain">
+                <a
+                  class="crm-mobile-item-card__sku return-bin-product-sku--link"
+                  :href="inventoryDetailHref(row)"
+                  @click.stop
+                >
                   {{ row.sku || "—" }}
-                </div>
+                </a>
                 <div class="crm-mobile-item-card__name">{{ row.name || "—" }}</div>
               </div>
             </div>
@@ -438,61 +518,24 @@ onUnmounted(() => {
               <span class="crm-mobile-item-card__qty-value">{{ formatQty(row.qty) }}</span>
             </div>
 
-            <div class="crm-mobile-item-card__accordion">
-              <button
-                type="button"
-                class="crm-mobile-item-card__accordion-btn"
-                :aria-expanded="isMobileAccordionOpen(row) ? 'true' : 'false'"
-                :disabled="!splitPickLocations(row.pick_location).length"
-                @click="toggleMobileAccordion(row)"
-              >
-                <span class="crm-mobile-item-card__accordion-icon" aria-hidden="true">
-                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                    />
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                    />
-                  </svg>
-                </span>
-                <span>Pick Location</span>
-                <svg
-                  class="crm-mobile-item-card__accordion-chevron"
-                  :class="{ 'is-open': isMobileAccordionOpen(row) }"
-                  width="16"
-                  height="16"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              <div
-                v-if="isMobileAccordionOpen(row) && splitPickLocations(row.pick_location).length"
-                class="crm-mobile-item-card__accordion-body"
-              >
+            <div class="return-bin-mobile-pick">
+              <div class="return-bin-mobile-pick__label">Pick Location</div>
+              <template v-if="splitPickLocations(row.pick_location).length">
                 <div
                   v-for="(location, index) in splitPickLocations(row.pick_location)"
                   :key="`${row.sku}-m-pick-${index}`"
-                  class="crm-mobile-item-card__loc"
+                  class="return-bin-mobile-pick__loc"
                 >
                   {{ location }}
                 </div>
-              </div>
+              </template>
+              <div v-else class="return-bin-mobile-pick__loc text-secondary">—</div>
             </div>
 
             <div v-if="canTransfer" class="crm-mobile-item-card__footer">
               <button
                 type="button"
-                class="crm-mobile-item-card__transfer"
+                class="btn btn-primary btn-sm staff-page-primary fw-semibold w-100"
                 @click="openTransferFromMenu(row)"
               >
                 Transfer
@@ -533,19 +576,23 @@ onUnmounted(() => {
       </Transition>
     </Teleport>
 
-    <ReturnBinAddQtyModal
+    <InventoryRestockTransferModal
       :open="transferModalOpen"
       :busy="transferBusy"
       :loading="transferLoading"
-      :bin-name="binName"
-      :sku="transferRow?.sku || ''"
-      :name="transferRow?.name || ''"
-      :available-qty="Number(transferRow?.qty || 0)"
+      mode="pending"
+      :from-options="transferFromOptions"
+      v-model:from-location-id="transferFromLocationId"
+      from-empty-label="Return Cart Locations"
+      from-empty-message="No Return Cart / Dispose Bin quantity found for this SKU."
       v-model:destination-mode="transferForm.destination_mode"
       v-model:to-location-id="transferForm.to_location_id"
       v-model:to-location="transferForm.to_location"
+      v-model:cart-location="transferForm.cart_location"
       v-model:quantity="transferForm.quantity"
-      :destination-options="transferDestinationOptions"
+      v-model:reason="transferForm.reason"
+      :pick-options="transferPickOptions"
+      :reason-options="['Return Restock']"
       @close="transferModalOpen = false"
       @submit="submitTransfer"
       @transfer-all="fillTransferAllQty"
@@ -554,66 +601,73 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.return-bin-product-col {
-  min-width: 16rem;
-  max-width: 28rem;
-  text-align: left !important;
-  vertical-align: middle;
-}
-
 .return-bin-product-cell {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
   gap: 0.75rem;
   min-width: 0;
-  text-align: left;
 }
 
 .return-bin-product-thumb {
-  width: 48px;
-  height: 48px;
-  border-radius: 0.4rem;
+  width: 40px;
+  height: 40px;
   object-fit: cover;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: #fff;
+  border-radius: 0.375rem;
+  border: 1px solid var(--bs-border-color, #dee2e6);
   flex-shrink: 0;
 }
 
 .return-bin-product-thumb--empty {
-  display: block;
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--bs-tertiary-bg, #f8f9fa);
 }
 
 .return-bin-product-copy {
   min-width: 0;
-  flex: 1 1 auto;
-  text-align: left;
 }
 
 .return-bin-product-sku {
+  display: block;
   font-weight: 600;
-  color: var(--bs-body-color);
-  line-height: 1.35;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
+}
+
+.return-bin-product-sku--link {
+  color: var(--bs-primary, #0d6efd);
+  text-decoration: none;
+}
+
+.return-bin-product-sku--link:hover {
+  text-decoration: underline;
 }
 
 .return-bin-product-name {
-  margin-top: 0.15rem;
-  font-size: 0.875rem;
-  line-height: 1.35;
-  color: var(--bs-secondary-color, #6c757d);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
+  font-size: 0.8125rem;
+  color: var(--bs-secondary-color, #6c757d);
 }
 
 .return-bin-pick-col {
-  max-width: 14rem;
-  text-align: left !important;
+  min-width: 8rem;
+}
+
+.return-bin-mobile-pick {
+  padding: 0.5rem 0.75rem 0;
+}
+
+.return-bin-mobile-pick__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--bs-secondary-color, #6c757d);
+  margin-bottom: 0.25rem;
+}
+
+.return-bin-mobile-pick__loc {
+  font-size: 0.875rem;
+  line-height: 1.35;
 }
 </style>

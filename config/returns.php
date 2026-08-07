@@ -32,4 +32,10 @@ return [
 
     'unknown_sku_label' => 'Unknown SKU',
 
+    /** ShipHero warehouse location names used when processing admin returns. */
+    'staging_locations' => [
+        'restock' => 'Return Cart',
+        'dispose' => 'Dispose Bin',
+    ],
+
 ];

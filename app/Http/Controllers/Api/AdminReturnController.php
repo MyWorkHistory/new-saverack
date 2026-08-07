@@ -7,6 +7,7 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountReturnLine;
 use App\Models\ReturnBin;
+use App\Models\ShipHeroOrderQueueIndex;
 use App\Models\User;
 use App\Services\ReturnBinService;
 use App\Services\ReturnFeeService;
@@ -191,7 +192,7 @@ class AdminReturnController extends Controller
     private function returnBinIdRules(): array
     {
         return [
-            'required',
+            'nullable',
             'integer',
             'exists:return_bins,id',
         ];
@@ -450,47 +451,50 @@ class AdminReturnController extends Controller
 
         $validated = $request->validate([
             'order_number' => ['required', 'string', 'max:255'],
-            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
         ]);
-
-        $account = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
-        Gate::authorize('view', $account);
-
-        $customerId = trim((string) $account->shiphero_customer_account_id);
-        if ($customerId === '') {
-            throw ValidationException::withMessages([
-                'client_account_id' => ['This account is not linked to ShipHero.'],
-            ]);
-        }
 
         $orderQuery = trim((string) $validated['order_number']);
         $normalizedOrder = $this->normalizeOrderNumber($orderQuery);
-
-        try {
-            $payload = $this->orders->listOrders([
-                'customer_account_id' => $customerId,
-                'tab' => 'manage',
-                'order_number' => ltrim($orderQuery, '#'),
-                'first' => 25,
+        if ($normalizedOrder === '') {
+            throw ValidationException::withMessages([
+                'order_number' => ['Enter a valid order number.'],
             ]);
-        } catch (RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 502);
         }
 
-        $rows = is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
-        $matched = array_values(array_filter($rows, fn ($row) => is_array($row) && $this->orderRowMatchesQuery($row, $orderQuery)));
-        if ($matched === [] && count($rows) === 1 && is_array($rows[0])) {
-            $matched = [$rows[0]];
+        /** @var User $user */
+        $user = $request->user();
+        $viewableIds = $this->viewableAccountIds($user);
+
+        $indexQuery = ShipHeroOrderQueueIndex::query()
+            ->where('order_number_search', $normalizedOrder)
+            ->orderByDesc('last_seen_at')
+            ->orderByDesc('id');
+
+        if (! empty($validated['client_account_id'])) {
+            $accountFilter = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
+            Gate::authorize('view', $accountFilter);
+            $indexQuery->where('client_account_id', $accountFilter->id);
+        } elseif (is_array($viewableIds)) {
+            if ($viewableIds === []) {
+                return response()->json(['message' => 'Order not found.'], 404);
+            }
+            $indexQuery->whereIn('client_account_id', $viewableIds);
         }
 
-        if ($matched === []) {
+        /** @var ShipHeroOrderQueueIndex|null $indexRow */
+        $indexRow = $indexQuery->first();
+        if ($indexRow === null) {
             return response()->json([
                 'message' => 'Order not found.',
             ], 404);
         }
 
-        $orderRow = $matched[0];
-        $shipheroOrderId = trim((string) ($orderRow['id'] ?? ''));
+        $account = ClientAccount::query()->findOrFail((int) $indexRow->client_account_id);
+        Gate::authorize('view', $account);
+
+        $shipheroOrderId = trim((string) ($indexRow->shiphero_order_id ?? ''));
+        $listPayload = is_array($indexRow->list_payload) ? $indexRow->list_payload : [];
 
         $return = ClientAccountReturn::query()
             ->where('client_account_id', $account->id)
@@ -508,20 +512,24 @@ class AdminReturnController extends Controller
             Gate::authorize('view', $return);
         }
 
-        $recipient = trim((string) ($orderRow['recipient_name'] ?? ''));
-        $ship = is_array($orderRow['shipping_address'] ?? null) ? $orderRow['shipping_address'] : [];
+        $recipient = trim((string) ($indexRow->recipient_name ?: ($listPayload['recipient_name'] ?? '')));
+        $ship = is_array($listPayload['shipping_address'] ?? null) ? $listPayload['shipping_address'] : [];
+        $companyName = trim((string) ($account->company_name ?? ''));
 
         return response()->json([
             'client_account_id' => $account->id,
+            'client_account_company_name' => $companyName !== '' ? $companyName : null,
             'display_status' => $this->displayStatusForReturn($return),
             'order' => [
-                'id' => $shipheroOrderId,
-                'order_number' => $orderRow['order_number'] ?? null,
-                'partner_order_id' => $orderRow['partner_order_id'] ?? null,
-                'legacy_id' => $orderRow['legacy_id'] ?? null,
+                'id' => $shipheroOrderId !== '' ? $shipheroOrderId : null,
+                'order_number' => $indexRow->order_number ?: ($listPayload['order_number'] ?? null),
+                'partner_order_id' => $listPayload['partner_order_id'] ?? null,
+                'legacy_id' => $listPayload['legacy_id'] ?? null,
                 'recipient_name' => $recipient !== '' ? $recipient : null,
-                'email' => $orderRow['email'] ?? null,
+                'email' => $listPayload['email'] ?? null,
                 'shipping_address' => $ship,
+                'queue_kind' => $indexRow->queue_kind,
+                'display_status' => $indexRow->display_status,
             ],
             'return' => $return !== null ? $this->serializeListRow($return) : null,
         ]);
@@ -694,7 +702,7 @@ class AdminReturnController extends Controller
             $lineIds,
             $restockMap,
             $request->user() instanceof User ? $request->user() : null,
-            (int) $validated['return_bin_id'],
+            isset($validated['return_bin_id']) ? (int) $validated['return_bin_id'] : null,
         );
 
         return response()->json($this->serializeReturnDetail($return));
@@ -1254,6 +1262,7 @@ class AdminReturnController extends Controller
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'quantity' => ['required', 'integer', 'min:1'],
             'warehouse_id' => ['required', 'string', 'max:255'],
+            'from_location_id' => ['nullable', 'string', 'max:255'],
             'to_location_id' => ['nullable', 'string', 'max:255'],
             'to_location' => ['nullable', 'string', 'max:255'],
         ]);

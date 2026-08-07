@@ -52,6 +52,12 @@ class Kernel extends ConsoleKernel
             ->dailyAt('02:30')
             ->timezone('America/New_York')
             ->withoutOverlapping(90);
+        // Continue overnight detail-cache backfill until caught up (throttled ShipHero getOrder).
+        $schedule->command('orders:backfill-order-details --from=2026-01-01 --limit=150 --sleep=2')
+            ->hourly()
+            ->timezone('America/New_York')
+            ->between('00:00', '06:59')
+            ->withoutOverlapping(90);
         $schedule->command('orders:refresh-home-dashboard --sync')
             ->dailyAt('07:05')
             ->timezone('America/New_York');

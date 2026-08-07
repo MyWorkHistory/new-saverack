@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -22,103 +22,66 @@ const reasonOptions = ref({});
 const returnFees = ref({});
 const defaultReason = ref("unknown");
 const selectedKeys = ref([]);
-const defaultReturnBin = ref("");
-const returnBinOptions = ref([]);
 
 const shipheroOrderId = computed(() => String(route.params.shipheroOrderId || ""));
 const clientAccountId = computed(() => Number(route.query.client_account_id || 0));
 
-const selectedCount = computed(() => selectedKeys.value.length);
 const allSelected = computed(() => {
   if (!formLines.value.length) return false;
   return formLines.value.every((_, idx) => selectedKeys.value.includes(idx));
 });
 
 const hasReturnQty = computed(() => formLines.value.some((l) => Number(l.return_qty) > 0));
-
-const allReturnedLinesHaveBin = computed(() =>
-  formLines.value.every((row) => {
-    if (Number(row.return_qty) <= 0) return true;
-    return Boolean(String(row.return_bin_id || "").trim());
-  }),
-);
-
-const canProcess = computed(() => hasReturnQty.value && allReturnedLinesHaveBin.value);
-
-async function loadReturnBins() {
-  try {
-    const { data } = await api.get("/admin/returns/bins");
-    returnBinOptions.value = Array.isArray(data?.data) ? data.data : [];
-  } catch {
-    returnBinOptions.value = [];
-  }
-}
+const canProcess = computed(() => hasReturnQty.value);
 
 function lineKey(idx) {
   return idx;
 }
 
-function toggleAll() {
-  if (allSelected.value) {
+function selectAllLines(select) {
+  if (!select) {
     selectedKeys.value = [];
-  } else {
-    selectedKeys.value = formLines.value.map((_, i) => i);
+    formLines.value = formLines.value.map((row) => ({
+      ...row,
+      return_qty: 0,
+    }));
+    return;
   }
+  selectedKeys.value = formLines.value.map((_, i) => i);
+  formLines.value = formLines.value.map((row) => ({
+    ...row,
+    return_qty: Number(row.order_qty) || 0,
+  }));
+}
+
+function toggleAll() {
+  selectAllLines(!allSelected.value);
 }
 
 function toggleOne(idx) {
   if (selectedKeys.value.includes(idx)) {
     selectedKeys.value = selectedKeys.value.filter((k) => k !== idx);
+    const row = formLines.value[idx];
+    if (row) row.return_qty = 0;
   } else {
     selectedKeys.value = [...selectedKeys.value, idx];
+    const row = formLines.value[idx];
+    if (row) row.return_qty = Number(row.order_qty) || 0;
   }
 }
 
-function applyDefaultBinToAll() {
-  const binId = String(defaultReturnBin.value || "").trim();
-  if (!binId) {
-    toast.error("Select a default return bin first.");
-    return;
-  }
-  formLines.value = formLines.value.map((row) => ({
-    ...row,
-    return_bin_id: binId,
-  }));
-}
-
-function returnAllSelected() {
-  const binId = String(defaultReturnBin.value || "").trim();
-  formLines.value = formLines.value.map((row, idx) => {
-    if (!selectedKeys.value.includes(idx)) return row;
-    return {
-      ...row,
-      return_qty: Number(row.order_qty) || 0,
-      return_bin_id: row.return_bin_id || binId,
-    };
-  });
-}
-
-function clampReturnQty(row) {
+function clampReturnQty(row, idx) {
   const max = Number(row.order_qty) || 0;
   let q = Number(row.return_qty) || 0;
   if (q < 0) q = 0;
   if (q > max) q = max;
   row.return_qty = q;
-  if (q > 0 && !String(row.return_bin_id || "").trim() && defaultReturnBin.value) {
-    row.return_bin_id = String(defaultReturnBin.value);
+  if (q > 0 && !selectedKeys.value.includes(idx)) {
+    selectedKeys.value = [...selectedKeys.value, idx];
+  } else if (q <= 0 && selectedKeys.value.includes(idx)) {
+    selectedKeys.value = selectedKeys.value.filter((k) => k !== idx);
   }
 }
-
-watch(defaultReturnBin, (binId) => {
-  const id = String(binId || "").trim();
-  if (!id) return;
-  formLines.value = formLines.value.map((row) => {
-    if (Number(row.return_qty) > 0 && !String(row.return_bin_id || "").trim()) {
-      return { ...row, return_bin_id: id };
-    }
-    return row;
-  });
-});
 
 function orderCustomerName(order) {
   const ship = order?.shipping_address || order?.ship_to || {};
@@ -139,23 +102,6 @@ async function copyRma() {
   }
 }
 
-async function openPdf(path, msg) {
-  try {
-    const { data } = await api.get(path, { responseType: "blob" });
-    const blob = new Blob([data], { type: "application/pdf" });
-    const url = window.URL.createObjectURL(blob);
-    window.open(url, "_blank", "noopener");
-    setTimeout(() => window.URL.revokeObjectURL(url), 30000);
-  } catch (e) {
-    toast.errorFrom(e, msg);
-  }
-}
-
-function openPackingSlip() {
-  if (!ret.value?.id || !hasReturnQty.value) return;
-  openPdf(`/returns/${ret.value.id}/packing-slip.pdf`, "Could not open return packing slip.");
-}
-
 async function cancelDraft() {
   if (!ret.value?.id) {
     router.push({ name: "admin-process-returns" });
@@ -166,17 +112,13 @@ async function cancelDraft() {
   } catch {
     /* ignore */
   }
-  router.push({ name: "user-return-create-search" });
+  router.push({ name: "admin-process-returns" });
 }
 
 async function processReturn() {
   if (!ret.value?.id) return;
   if (!hasReturnQty.value) {
     toast.error("Enter a return quantity for at least one item.");
-    return;
-  }
-  if (!allReturnedLinesHaveBin.value) {
-    toast.error("Select a return bin for each returned item.");
     return;
   }
   submitBusy.value = true;
@@ -190,24 +132,19 @@ async function processReturn() {
       return_qty: Number(row.return_qty) || 0,
       return_reason: Number(row.return_qty) > 0 ? row.return_reason || defaultReason.value : null,
       restock: row.restock !== false,
-      return_bin_id:
-        Number(row.return_qty) > 0 && row.return_bin_id ? Number(row.return_bin_id) : null,
     }));
     const payload = {
       return_type: returnType.value,
       warehouse_private_note: warehouseNote.value.trim() || null,
       lines,
     };
-    if (defaultReturnBin.value) {
-      payload.return_bin_id = Number(defaultReturnBin.value);
-    }
     if (returnFees.value.first_item != null) payload.first_item_fee = returnFees.value.first_item;
     if (returnFees.value.additional_item != null) {
       payload.additional_item_fee = returnFees.value.additional_item;
     }
-    const { data } = await api.post(`/admin/returns/${ret.value.id}/process-from-draft`, payload);
+    await api.post(`/admin/returns/${ret.value.id}/process-from-draft`, payload);
     toast.success("Return processed.");
-    router.push({ name: "admin-process-return-detail", params: { id: String(data.id) } });
+    router.push({ name: "admin-process-returns" });
   } catch (e) {
     toast.errorFrom(e, "Could not process return.");
   } finally {
@@ -222,12 +159,9 @@ async function init() {
   }
   loading.value = true;
   try {
-    const [orderRes] = await Promise.all([
-      api.get(`/orders/${encodeURIComponent(shipheroOrderId.value)}`, {
-        params: { client_account_id: clientAccountId.value },
-      }),
-      loadReturnBins(),
-    ]);
+    const orderRes = await api.get(`/orders/${encodeURIComponent(shipheroOrderId.value)}`, {
+      params: { client_account_id: clientAccountId.value },
+    });
     const order = orderRes.data?.order;
     if (!order) {
       toast.error("Order not found.");
@@ -255,11 +189,11 @@ async function init() {
       name: String(item.name || item.product_name || ""),
       image_url: item.image_url || null,
       order_qty: Math.max(0, Math.floor(Number(item.quantity) || 0)),
-      return_qty: 0,
+      return_qty: Math.max(0, Math.floor(Number(item.quantity) || 0)),
       return_reason: defaultReason.value,
       restock: true,
-      return_bin_id: "",
     }));
+    selectedKeys.value = formLines.value.map((_, i) => i);
   } catch (e) {
     toast.errorFrom(e, "Could not start return.");
     router.push({ name: "admin-process-returns" });
@@ -271,7 +205,7 @@ async function init() {
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Create Return",
-    description: "Select items and complete your return.",
+    description: "Select items and process the return.",
   });
   init();
 });
@@ -299,42 +233,10 @@ onMounted(() => {
               class="btn btn-link btn-sm text-secondary px-0 py-0 mt-1 text-decoration-none"
               @click="router.push({ name: 'admin-process-returns' })"
             >
-              &lt; Order
+              &lt; Process Returns
             </button>
           </div>
           <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
-            <label class="small text-secondary mb-0 fw-medium" for="admin-return-create-bin">
-              Default Bin
-            </label>
-            <select
-              id="admin-return-create-bin"
-              v-model="defaultReturnBin"
-              class="form-select form-select-sm"
-              style="min-width: 10rem"
-              :disabled="submitBusy"
-            >
-              <option value="">Select bin…</option>
-              <option v-for="bin in returnBinOptions" :key="bin.id" :value="String(bin.id)">
-                {{ bin.name }}
-              </option>
-            </select>
-            <button
-              type="button"
-              class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn"
-              :disabled="submitBusy || !defaultReturnBin"
-              title="Apply default bin to every line"
-              @click="applyDefaultBinToAll"
-            >
-              Apply To All
-            </button>
-            <button
-              type="button"
-              class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn"
-              :disabled="!hasReturnQty"
-              @click="openPackingSlip"
-            >
-              Return Packing Slip
-            </button>
             <button type="button" class="btn btn-outline-secondary btn-sm fw-semibold" @click="cancelDraft">
               Cancel
             </button>
@@ -370,20 +272,6 @@ onMounted(() => {
             </div>
           </div>
 
-          <div
-            v-if="selectedCount > 0"
-            class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
-          >
-            <span class="small staff-bulk-selection-bar__count me-md-1">{{ selectedCount }} selected</span>
-            <button
-              type="button"
-              class="btn btn-primary btn-sm staff-page-primary fw-semibold"
-              @click="returnAllSelected"
-            >
-              Return All Selected
-            </button>
-          </div>
-
           <div class="table-responsive staff-table-wrap">
             <table class="table table-hover align-middle mb-0 staff-data-table">
               <thead class="table-light staff-table-head">
@@ -401,7 +289,6 @@ onMounted(() => {
                   <th class="staff-table-head__th order-detail-page__items-col" scope="col">Item</th>
                   <th class="staff-table-head__th text-center" scope="col">Order Qty</th>
                   <th class="staff-table-head__th text-center" scope="col">Return Items</th>
-                  <th class="staff-table-head__th" scope="col">Return Bin</th>
                   <th class="staff-table-head__th" scope="col">Reason</th>
                   <th class="staff-table-head__th text-center" scope="col">Restock</th>
                 </tr>
@@ -447,25 +334,8 @@ onMounted(() => {
                       min="0"
                       :max="row.order_qty"
                       class="form-control form-control-sm text-center"
-                      @change="clampReturnQty(row)"
+                      @change="clampReturnQty(row, idx)"
                     />
-                  </td>
-                  <td class="user-return-page__bin-col">
-                    <select
-                      v-model="row.return_bin_id"
-                      class="form-select form-select-sm"
-                      :disabled="!row.return_qty || submitBusy"
-                      :aria-label="`Return bin for ${row.sku}`"
-                    >
-                      <option value="">Select bin…</option>
-                      <option
-                        v-for="bin in returnBinOptions"
-                        :key="`line-${idx}-bin-${bin.id}`"
-                        :value="String(bin.id)"
-                      >
-                        {{ bin.name }}
-                      </option>
-                    </select>
                   </td>
                   <td class="user-return-page__reason-col">
                     <select
@@ -489,7 +359,7 @@ onMounted(() => {
                   </td>
                 </tr>
                 <tr v-if="!formLines.length">
-                  <td colspan="7" class="text-center text-secondary py-4">No line items on this order.</td>
+                  <td colspan="6" class="text-center text-secondary py-4">No line items on this order.</td>
                 </tr>
               </tbody>
             </table>
@@ -550,10 +420,6 @@ onMounted(() => {
 .user-return-page__qty-col {
   width: 5.5rem;
 }
-.user-return-page__bin-col {
-  width: 9.5rem;
-  min-width: 0;
-}
 .user-return-page__reason-col {
   width: 9rem;
   min-width: 0;
@@ -575,7 +441,7 @@ onMounted(() => {
 }
 
 .user-return-detail-page .order-detail-page__items-col {
-  width: 28%;
+  width: 36%;
   min-width: 0;
   vertical-align: middle;
 }

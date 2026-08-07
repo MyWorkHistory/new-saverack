@@ -50,8 +50,11 @@ return [
         'attachment_public_base_url' => env('SHIPHERO_ATTACHMENT_PUBLIC_BASE_URL'),
         /** Optional warehouse id for admin restock report; defaults to first ShipHero warehouse. */
         'restock_warehouse_id' => env('SHIPHERO_RESTOCK_WAREHOUSE_ID'),
+        /** Optional warehouse id for admin returns staging (Return Cart / Dispose Bin). */
+        'returns_warehouse_id' => env('SHIPHERO_RETURNS_WAREHOUSE_ID'),
         /** Optional warehouse id for admin put away; defaults to restock warehouse. */
         'put_away_warehouse_id' => env('SHIPHERO_PUT_AWAY_WAREHOUSE_ID'),
+
         /**
          * Order queue index page size (Ready to Ship / on-hold / etc.).
          * Keep low — listOrders with line items can cost ~13 credits/order; first=100 often exceeds the credit bucket.

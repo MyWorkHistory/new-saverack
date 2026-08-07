@@ -36,7 +36,7 @@ class ReturnProcessingService
         array $lineIds,
         array $restockByLineId,
         ?User $actor,
-        int $binId
+        ?int $binId = null
     ): ClientAccountReturn {
         if ($return->status !== ClientAccountReturn::STATUS_PENDING) {
             throw ValidationException::withMessages([
@@ -56,7 +56,17 @@ class ReturnProcessingService
         return DB::transaction(function () use ($return, $lines, $lineIds, $restockByLineId, $actor, $binId) {
             $this->applyLineSelection($lines, $lineIds, $restockByLineId, true, $return);
             $this->finalizeProcessedReturn($return, $actor);
-            $this->bins->assignReturnToBin($return->fresh(['lines']), $binId);
+            $fresh = $return->fresh(['lines']);
+            if ($binId !== null && $binId > 0) {
+                $this->bins->assignReturnToBin($fresh, $binId);
+            } else {
+                $binIdByLineId = $this->bins->resolveStagingBinIdsForReturn($fresh);
+                $this->bins->assignLinesToBins($fresh, $binIdByLineId);
+            }
+            $this->bins->addProcessedQtyToShipHeroStaging(
+                $return->fresh(['lines', 'clientAccount']),
+                $actor
+            );
 
             return $return->fresh(['lines', 'clientAccount', 'returnBill', 'returnBin']);
         });
@@ -113,9 +123,19 @@ class ReturnProcessingService
                 if ((int) $line->return_qty <= 0) {
                     continue;
                 }
-                $binIdByLineId[(int) $line->id] = (int) ($normalizedLines[$index]['return_bin_id'] ?? 0);
+                $explicit = (int) ($normalizedLines[$index]['return_bin_id'] ?? 0);
+                if ($explicit > 0) {
+                    $binIdByLineId[(int) $line->id] = $explicit;
+                    continue;
+                }
+                $stagingBin = $this->bins->stagingBinForRestock((bool) $line->restock);
+                $binIdByLineId[(int) $line->id] = (int) $stagingBin->id;
             }
             $this->bins->assignLinesToBins($fresh, $binIdByLineId);
+            $this->bins->addProcessedQtyToShipHeroStaging(
+                $return->fresh(['lines', 'clientAccount']),
+                $actor
+            );
 
             return $return->fresh(['lines', 'clientAccount', 'returnBill', 'returnBin']);
         });
@@ -184,7 +204,7 @@ class ReturnProcessingService
     }
 
     /**
-     * Apply header bin fallback and require a bin on every returned line.
+     * Apply optional header/line bin ids. When omitted, staging bins are assigned later by restock flag.
      *
      * @param  array<int, array<string, mixed>>  $normalizedLines
      * @return array<int, array<string, mixed>>
@@ -201,12 +221,7 @@ class ReturnProcessingService
             if ($binId <= 0) {
                 $binId = $fallback;
             }
-            if ($binId <= 0) {
-                throw ValidationException::withMessages([
-                    'return_bin_id' => ['Select a return bin for each returned item.'],
-                ]);
-            }
-            $normalizedLines[$i]['return_bin_id'] = $binId;
+            $normalizedLines[$i]['return_bin_id'] = $binId > 0 ? $binId : null;
         }
 
         return $normalizedLines;

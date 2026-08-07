@@ -15,12 +15,157 @@ use RuntimeException;
 
 class ReturnBinService
 {
+    public const BIN_RETURN_CART = 'Return Cart';
+
+    public const BIN_DISPOSE = 'Dispose Bin';
+
     /** @var ShipHeroInventoryService */
     private $inventory;
 
-    public function __construct(ShipHeroInventoryService $inventory)
+    /** @var InventoryRestockReportService */
+    private $restockReports;
+
+    public function __construct(ShipHeroInventoryService $inventory, InventoryRestockReportService $restockReports)
     {
         $this->inventory = $inventory;
+        $this->restockReports = $restockReports;
+    }
+
+    public function restockStagingLocationName(): string
+    {
+        $name = trim((string) config('returns.staging_locations.restock', self::BIN_RETURN_CART));
+
+        return $name !== '' ? $name : self::BIN_RETURN_CART;
+    }
+
+    public function disposeStagingLocationName(): string
+    {
+        $name = trim((string) config('returns.staging_locations.dispose', self::BIN_DISPOSE));
+
+        return $name !== '' ? $name : self::BIN_DISPOSE;
+    }
+
+    public function stagingLocationName(bool $restock): string
+    {
+        return $restock ? $this->restockStagingLocationName() : $this->disposeStagingLocationName();
+    }
+
+    public function findOrCreateNamedBin(string $name): ReturnBin
+    {
+        $name = $this->normalizeBinName($name);
+        $existing = ReturnBin::query()->where('name', $name)->first();
+        if ($existing instanceof ReturnBin) {
+            return $existing;
+        }
+
+        return ReturnBin::query()->create(['name' => $name]);
+    }
+
+    public function stagingBinForRestock(bool $restock): ReturnBin
+    {
+        return $this->findOrCreateNamedBin($this->stagingLocationName($restock));
+    }
+
+    /**
+     * Map each returned line to Return Cart or Dispose Bin CRM tracking bins.
+     *
+     * @return array<int, int> line id => return_bin id
+     */
+    public function resolveStagingBinIdsForReturn(ClientAccountReturn $return): array
+    {
+        $binIdByLineId = [];
+        $cache = [];
+        foreach ($return->lines as $line) {
+            if ((int) $line->return_qty <= 0) {
+                continue;
+            }
+            $restock = (bool) $line->restock;
+            $key = $restock ? '1' : '0';
+            if (! isset($cache[$key])) {
+                $cache[$key] = (int) $this->stagingBinForRestock($restock)->id;
+            }
+            $binIdByLineId[(int) $line->id] = $cache[$key];
+        }
+
+        return $binIdByLineId;
+    }
+
+    /**
+     * Add processed return qty into ShipHero Return Cart / Dispose Bin locations.
+     */
+    public function addProcessedQtyToShipHeroStaging(ClientAccountReturn $return, ?User $actor): void
+    {
+        $return->loadMissing(['lines', 'clientAccount']);
+        $account = $return->clientAccount;
+        if (! $account instanceof ClientAccount) {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['Return account is required.'],
+            ]);
+        }
+        $customerId = trim((string) $account->shiphero_customer_account_id);
+        if ($customerId === '') {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['This account is not linked to ShipHero.'],
+            ]);
+        }
+
+        $warehouseId = $this->resolveReturnsWarehouseId();
+
+        foreach ($return->lines as $line) {
+            $qty = (int) $line->return_qty;
+            if ($qty <= 0) {
+                continue;
+            }
+            $sku = trim((string) $line->sku);
+            if ($sku === '') {
+                continue;
+            }
+
+            $locationName = $this->stagingLocationName((bool) $line->restock);
+            $resolved = $this->resolveInventoryLocation($sku, $warehouseId, $locationName, $customerId);
+            if (! is_array($resolved) || trim((string) ($resolved['id'] ?? '')) === '') {
+                throw new RuntimeException(
+                    'Could not resolve ShipHero location "'.$locationName.'" for SKU '.$sku.'.'
+                );
+            }
+
+            $locationId = trim((string) $resolved['id']);
+            $resolvedName = trim((string) ($resolved['name'] ?? '')) ?: $locationName;
+            $reason = $this->restockReasonForReturn($return, $actor);
+
+            $this->inventory->addLocationQuantity(
+                $sku,
+                $warehouseId,
+                $locationId,
+                $qty,
+                $reason,
+                $customerId
+            );
+
+            // Staging destination is the CRM bin + ShipHero location; keep product pick
+            // locations on the line for the Return Bin detail "Pick Location" column.
+            $existingPick = trim((string) ($line->pick_location ?? ''));
+            if ($existingPick === '' || $existingPick === '—') {
+                $line->pick_location = $resolvedName;
+                $line->save();
+            }
+        }
+    }
+
+    public function resolveReturnsWarehouseId(): string
+    {
+        foreach ([
+            config('services.shiphero.returns_warehouse_id'),
+            config('services.shiphero.put_away_warehouse_id'),
+            config('services.shiphero.restock_warehouse_id'),
+        ] as $candidate) {
+            $id = trim((string) $candidate);
+            if ($id !== '') {
+                return $id;
+            }
+        }
+
+        return $this->restockReports->resolveWarehouseIdForApi(null);
     }
 
     /**
@@ -355,12 +500,24 @@ class ReturnBinService
             $resolvedLocationName = $this->resolveLocationNameById($sku, $warehouseId, $toLocationId, $customerId);
         }
 
+        $fromLocationId = trim((string) ($payload['from_location_id'] ?? ''));
+        if ($fromLocationId === '') {
+            $stagingName = trim((string) $bin->name);
+            if ($stagingName !== '') {
+                $fromResolved = $this->resolveInventoryLocation($sku, $warehouseId, $stagingName, $customerId);
+                if (is_array($fromResolved) && trim((string) ($fromResolved['id'] ?? '')) !== '') {
+                    $fromLocationId = trim((string) $fromResolved['id']);
+                }
+            }
+        }
+
         return DB::transaction(function () use (
             $bin,
             $sku,
             $clientAccountId,
             $quantity,
             $warehouseId,
+            $fromLocationId,
             $toLocationId,
             $resolvedLocationName,
             $customerId,
@@ -396,14 +553,26 @@ class ReturnBinService
                 }
                 $reason = $this->restockReasonForReturn($parentReturn, $actor);
 
-                $this->inventory->addLocationQuantity(
-                    $sku,
-                    $warehouseId,
-                    $toLocationId,
-                    $chunk,
-                    $reason,
-                    $customerId
-                );
+                if ($fromLocationId !== '') {
+                    $this->inventory->transferLocationQuantity(
+                        $sku,
+                        $warehouseId,
+                        $fromLocationId,
+                        $toLocationId,
+                        $chunk,
+                        $reason,
+                        $customerId
+                    );
+                } else {
+                    $this->inventory->addLocationQuantity(
+                        $sku,
+                        $warehouseId,
+                        $toLocationId,
+                        $chunk,
+                        $reason,
+                        $customerId
+                    );
+                }
 
                 $line->return_bin_remaining_qty = $lineRemaining - $chunk;
                 if ($resolvedLocationName !== '') {

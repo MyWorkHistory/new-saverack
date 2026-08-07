@@ -37,13 +37,13 @@ class ShipHeroOrderDetailCacheService
     /**
      * @return array{order: array<string, mixed>, cached_at: string|null}|null
      */
-    public function getCachedOrderWithMeta(int $clientAccountId, string $orderId): ?array
+    public function getCachedOrderWithMeta(int $clientAccountId, string $orderId, bool $allowStale = false): ?array
     {
         if (! $this->tableAvailable()) {
             return null;
         }
         try {
-            $row = $this->findFreshRow($clientAccountId, $orderId);
+            $row = $this->findCachedRow($clientAccountId, $orderId, $allowStale);
             if ($row === null || ! is_array($row->order_json)) {
                 return null;
             }
@@ -64,18 +64,42 @@ class ShipHeroOrderDetailCacheService
     /**
      * @return array<string, mixed>|null
      */
-    public function getCachedOrder(int $clientAccountId, string $orderId): ?array
+    public function getCachedOrder(int $clientAccountId, string $orderId, bool $allowStale = false): ?array
     {
-        $payload = $this->getCachedOrderWithMeta($clientAccountId, $orderId);
+        $payload = $this->getCachedOrderWithMeta($clientAccountId, $orderId, $allowStale);
 
         return $payload !== null ? $payload['order'] : null;
     }
 
-    public function getCachedAtIso(int $clientAccountId, string $orderId): ?string
+    public function getCachedAtIso(int $clientAccountId, string $orderId, bool $allowStale = false): ?string
     {
-        $payload = $this->getCachedOrderWithMeta($clientAccountId, $orderId);
+        $payload = $this->getCachedOrderWithMeta($clientAccountId, $orderId, $allowStale);
 
         return $payload !== null ? $payload['cached_at'] : null;
+    }
+
+    public function hasCachedOrder(int $clientAccountId, string $orderId): bool
+    {
+        if (! $this->tableAvailable()) {
+            return false;
+        }
+        try {
+            $id = $this->normalizeOrderId($orderId);
+            if ($clientAccountId <= 0 || $id === '') {
+                return false;
+            }
+
+            return ShipHeroOrderDetailCache::query()
+                ->where('client_account_id', $clientAccountId)
+                ->where('order_id', $id)
+                ->whereNotNull('synced_at')
+                ->whereNotNull('order_json')
+                ->exists();
+        } catch (Throwable $e) {
+            $this->logCacheFailure('exists', $e);
+
+            return false;
+        }
     }
 
     /**
@@ -134,7 +158,7 @@ class ShipHeroOrderDetailCacheService
         return self::$tableAvailable;
     }
 
-    private function findFreshRow(int $clientAccountId, string $orderId): ?ShipHeroOrderDetailCache
+    private function findCachedRow(int $clientAccountId, string $orderId, bool $allowStale = false): ?ShipHeroOrderDetailCache
     {
         if ($clientAccountId <= 0) {
             return null;
@@ -153,9 +177,11 @@ class ShipHeroOrderDetailCacheService
             return null;
         }
 
-        $cutoff = Carbon::now()->subMinutes(self::TTL_MINUTES);
-        if ($row->synced_at->lt($cutoff)) {
-            return null;
+        if (! $allowStale) {
+            $cutoff = Carbon::now()->subMinutes(self::TTL_MINUTES);
+            if ($row->synced_at->lt($cutoff)) {
+                return null;
+            }
         }
 
         return $row;

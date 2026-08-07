@@ -2,7 +2,6 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
-import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import AdminReturnNonCompliantDrawer from "../../components/admin-returns/AdminReturnNonCompliantDrawer.vue";
 import AdminReturnThirdPartyModal from "../../components/admin-returns/AdminReturnThirdPartyModal.vue";
@@ -19,7 +18,6 @@ const router = useRouter();
 
 const accounts = ref([]);
 const accountsLoading = ref(false);
-const accountFilter = ref("");
 const orderNumber = ref("");
 const rmaNumber = ref("");
 const loading = ref(true);
@@ -50,17 +48,8 @@ const accountOptions = computed(() =>
     })),
 );
 
-const accountNameById = computed(() => {
-  const map = new Map();
-  accountOptions.value.forEach((a) => map.set(Number(a.id), a.name));
-  return map;
-});
-
 const canSearch = computed(() => {
-  const hasRma = rmaNumber.value.trim() !== "";
-  const hasOrder = orderNumber.value.trim() !== "";
-  if (hasRma) return true;
-  return hasOrder && Boolean(accountFilter.value);
+  return rmaNumber.value.trim() !== "" || orderNumber.value.trim() !== "";
 });
 
 async function loadAccounts() {
@@ -84,9 +73,7 @@ async function loadPending() {
   loading.value = true;
   searchMode.value = false;
   try {
-    const params = {};
-    if (accountFilter.value) params.client_account_id = Number(accountFilter.value);
-    const { data } = await api.get("/admin/returns/pending", { params });
+    const { data } = await api.get("/admin/returns/pending");
     results.value = Array.isArray(data?.data) ? data.data : [];
   } catch (e) {
     toast.errorFrom(e, "Could not load pending returns.");
@@ -121,10 +108,6 @@ async function search() {
     toast.error("Enter an order number or RMA number.");
     return;
   }
-  if (order && !accountFilter.value) {
-    toast.error("Select an account to search by order number.");
-    return;
-  }
 
   searching.value = true;
   searchMode.value = true;
@@ -132,9 +115,9 @@ async function search() {
 
   try {
     if (rma) {
-      const params = { rma_number: rma };
-      if (accountFilter.value) params.client_account_id = Number(accountFilter.value);
-      const { data } = await api.get("/admin/returns/rma-lookup", { params });
+      const { data } = await api.get("/admin/returns/rma-lookup", {
+        params: { rma_number: rma },
+      });
       results.value = data?.data ? [data.data] : [];
       return;
     }
@@ -142,21 +125,20 @@ async function search() {
     const { data } = await api.get("/admin/returns/order-lookup", {
       params: {
         order_number: order.replace(/^#+/, ""),
-        client_account_id: Number(accountFilter.value),
       },
     });
 
     const ret = data?.return;
     const ord = data?.order || {};
-    const accountId = Number(data?.client_account_id || accountFilter.value);
+    const accountId = Number(data?.client_account_id || 0);
     results.value = [
       {
         id: ret?.id ?? null,
         rma_number: ret?.rma_number ?? null,
         order_number: ord.order_number || order,
-        client_account_id: accountId,
+        client_account_id: accountId || ret?.client_account_id || null,
         client_account_company_name:
-          ret?.client_account_company_name || accountNameById.value.get(accountId) || "—",
+          ret?.client_account_company_name || data?.client_account_company_name || "—",
         customer_name: ret?.customer_name || ord.recipient_name || "—",
         items_count: ret?.items_count ?? null,
         display_status: data?.display_status || "not_returned",
@@ -179,7 +161,7 @@ function clearSearch() {
 }
 
 function openNonCompliant() {
-  ncAccountId.value = accountFilter.value || "";
+  ncAccountId.value = "";
   ncDeclaredItems.value = 1;
   ncReason.value = "";
   nonCompliantOpen.value = true;
@@ -221,7 +203,7 @@ async function submitNonCompliant() {
 }
 
 function openThirdParty() {
-  tpAccountId.value = accountFilter.value || "";
+  tpAccountId.value = "";
   tpThirdPartyType.value = "";
   thirdPartyOpen.value = true;
 }
@@ -275,7 +257,7 @@ onMounted(() => {
       <div>
         <h1 class="h4 mb-1 fw-semibold text-body">Process Returns</h1>
         <p class="small admin-returns-list__subtitle mb-0">
-          Pending returns are listed below. Search by order number (ShipHero) or RMA number (database).
+          Pending returns are listed below. Search by order number or RMA number.
         </p>
       </div>
       <div class="d-flex flex-wrap gap-2 align-items-center">
@@ -309,20 +291,6 @@ onMounted(() => {
     >
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row admin-returns-toolbar-row">
-          <div class="admin-returns-toolbar-account">
-            <CrmSearchableSelect
-              v-model="accountFilter"
-              class="staff-toolbar-search staff-toolbar-search--inline w-100"
-              appearance="staff"
-              aria-label="Client account"
-              :options="accountOptions"
-              :disabled="accountsLoading || searching || loading"
-              placeholder="All accounts"
-              empty-label="All accounts"
-              search-placeholder="Search accounts…"
-              :allow-empty="true"
-            />
-          </div>
           <div class="admin-returns-toolbar-order">
             <input
               id="admin-process-return-order"
@@ -454,11 +422,6 @@ onMounted(() => {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
-}
-
-.admin-returns-toolbar-account {
-  flex: 0 0 auto;
-  width: min(280px, 100%);
 }
 
 .admin-returns-toolbar-order,

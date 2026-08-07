@@ -5,12 +5,19 @@ import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSyncToolbar from "../../components/common/CrmSyncToolbar.vue";
+import InventoryRestockTransferModal from "../../components/inventory/InventoryRestockTransferModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates.js";
 import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
 import { errorMessage as apiErrorMessage } from "../../utils/apiError.js";
 import { buildOrderDetailReturnTo } from "../../utils/orderDetailReturn.js";
+import {
+  backstockLocationsFromProduct,
+  flattenProductLocations,
+  preferredWarehouseId,
+  resolveCartDestination,
+} from "../../utils/inventoryTransferLocations.js";
 
 const route = useRoute();
 const toast = useToast();
@@ -45,13 +52,16 @@ const actionMenuRect = ref({ top: 0, left: 0 });
 
 const updateModalOpen = ref(false);
 const transferModalOpen = ref(false);
+const transferBusy = ref(false);
+const transferFromLocationId = ref("");
 const addLocationModalOpen = ref(false);
 const activeLocation = ref(null);
 const updateForm = reactive({ quantity: "", reason: "Client-Requested Adjustments" });
 const transferForm = reactive({
-  transfer_type: "current",
+  destination_mode: "current",
   to_location_id: "",
   to_location: "",
+  cart_location: "",
   quantity: "",
   reason: "Restock",
 });
@@ -227,15 +237,57 @@ const locationBinTypeOptions = computed(() => {
   return [...types].sort((a, b) => a.localeCompare(b));
 });
 
-const transferDestinationOptions = computed(() => {
-  const source = activeLocation.value;
-  if (!source) return [];
-  const whId = String(source.warehouse_id || "");
-  const fromId = String(source.location_id || "");
-  return allLocations.value.filter(
-    (loc) => String(loc.warehouse_id || "") === whId && String(loc.location_id || "") !== fromId,
+const transferFromOptions = computed(() => {
+  const options = [...backstockLocationsFromProduct(product.value)];
+  const loc = activeLocation.value;
+  if (loc) {
+    const qty = Number(loc.quantity || 0);
+    const id = String(loc.location_id || "");
+    if (id && qty > 0 && !options.some((o) => String(o.location_id || "") === id)) {
+      options.push({
+        ...loc,
+        quantity: qty,
+      });
+    }
+  }
+  return options;
+});
+
+const transferFromLocation = computed(() => {
+  const id = String(transferFromLocationId.value || "");
+  if (!id) return null;
+  return (
+    transferFromOptions.value.find((loc) => String(loc.location_id || "") === id) || null
   );
 });
+
+const transferPickOptions = computed(() => {
+  const source = transferFromLocation.value;
+  const whId = source
+    ? String(source.warehouse_id || "")
+    : preferredWarehouseId(product.value);
+  const fromId = String(source?.location_id || "");
+  return flattenProductLocations(product.value, { includeEmpty: true }).filter(
+    (loc) =>
+      loc.pickable === true &&
+      (!whId || String(loc.warehouse_id || "") === whId) &&
+      String(loc.location_id || "") !== fromId,
+  );
+});
+
+watch(transferFromLocationId, (id, prev) => {
+  if (String(id || "") === String(prev || "")) return;
+  transferForm.to_location_id = "";
+});
+
+watch(
+  () => transferForm.destination_mode,
+  () => {
+    transferForm.to_location_id = "";
+    transferForm.to_location = "";
+    transferForm.cart_location = "";
+  },
+);
 
 const filteredLocations = computed(() => {
   let rows = allLocations.value;
@@ -752,17 +804,26 @@ function openTransferQtyModal() {
   const loc = currentMenuLocation();
   if (!loc) return;
   activeLocation.value = loc;
-  transferForm.transfer_type = "current";
+  transferForm.destination_mode = "current";
   transferForm.to_location_id = "";
   transferForm.to_location = "";
+  transferForm.cart_location = "";
   transferForm.quantity = "";
   transferForm.reason = defaultTransferReason.value;
+  transferBusy.value = false;
   transferModalOpen.value = true;
   actionMenuLocationId.value = null;
+
+  const preferredId = String(loc.location_id || "");
+  const options = transferFromOptions.value;
+  const inOptions = options.some((o) => String(o.location_id || "") === preferredId);
+  transferFromLocationId.value = inOptions
+    ? preferredId
+    : String(options[0]?.location_id || preferredId || "");
 }
 
 function fillTransferAllQty() {
-  transferForm.quantity = String(activeLocation.value?.quantity ?? 0);
+  transferForm.quantity = String(transferFromLocation.value?.quantity ?? 0);
 }
 
 function focusAddLocationQtyInput() {
@@ -865,49 +926,63 @@ async function submitAddLocationQty() {
 }
 
 async function submitTransferQty() {
-  if (!activeLocation.value || !product.value) return;
+  if (!transferFromLocation.value || !product.value) return;
   const qty = parseInt(String(transferForm.quantity || ""), 10);
   if (Number.isNaN(qty) || qty <= 0) {
     toast.error("Enter a valid transfer quantity.");
     return;
   }
-  if (transferForm.transfer_type === "current") {
-    if (!String(transferForm.to_location_id || "").trim()) {
-      toast.error("Select a destination location.");
+
+  const destMode = String(transferForm.destination_mode || "current");
+  const body = {
+    sku: product.value.sku,
+    warehouse_id: transferFromLocation.value.warehouse_id,
+    from_location_id: transferFromLocation.value.location_id,
+    quantity: qty,
+    reason: transferForm.reason,
+    background: 1,
+  };
+  if (route.query.client_account_id) {
+    body.client_account_id = Number(route.query.client_account_id);
+  } else if (detailClientAccountId.value > 0) {
+    body.client_account_id = detailClientAccountId.value;
+  }
+
+  if (destMode === "cart") {
+    const cartCode = String(transferForm.cart_location || "").trim();
+    if (!cartCode) {
+      toast.error("Select a transfer cart location.");
       return;
     }
-  } else if (!transferForm.to_location.trim()) {
-    toast.error("Enter destination location.");
-    return;
-  }
-  saving.value = true;
-  try {
-    const body = {
-      sku: product.value.sku,
-      warehouse_id: activeLocation.value.warehouse_id,
-      from_location_id: activeLocation.value.location_id,
-      quantity: qty,
-      reason: transferForm.reason,
-    };
-    if (transferForm.transfer_type === "current") {
-      body.to_location_id = String(transferForm.to_location_id).trim();
+    const dest = resolveCartDestination(product.value, null, cartCode);
+    if (dest?.to_location_id) {
+      body.to_location_id = dest.to_location_id;
     } else {
-      body.to_location = transferForm.to_location.trim();
+      body.to_location = dest?.to_location || cartCode;
     }
-    if (route.query.client_account_id) {
-      body.client_account_id = Number(route.query.client_account_id);
+  } else if (destMode === "new") {
+    if (!String(transferForm.to_location || "").trim()) {
+      toast.error("Enter destination location.");
+      return;
     }
-    const { data } = await api.post("/inventory/transfer", body);
-    const warehouseSlice = data?.warehouse;
-    applyWarehouseSliceToProduct(warehouseSlice);
-    toast.success("Quantity transferred.");
-    transferModalOpen.value = false;
+    body.to_location = String(transferForm.to_location).trim();
+  } else {
+    if (!String(transferForm.to_location_id || "").trim()) {
+      toast.error("Select a pick location.");
+      return;
+    }
+    body.to_location_id = String(transferForm.to_location_id).trim();
+  }
+
+  transferModalOpen.value = false;
+  transferBusy.value = false;
+  toast.success("Quantity transferred.");
+
+  try {
+    await api.post("/inventory/transfer", body);
     await loadProduct({ refresh: true });
-    applyWarehouseSliceToProduct(warehouseSlice);
   } catch (e) {
     toast.errorFrom(e, "Could not transfer quantity.");
-  } finally {
-    saving.value = false;
   }
 }
 
@@ -1715,83 +1790,25 @@ async function togglePickable(loc) {
         </div>
       </Teleport>
 
-      <Teleport v-if="canManageInventoryLocations" to="body">
-        <div v-if="transferModalOpen" class="crm-vx-modal-overlay" @click.self="transferModalOpen = false">
-          <div class="crm-vx-modal crm-vx-modal--sm">
-            <header class="crm-vx-modal__head">
-              <h2 class="crm-vx-modal__title">Transfer QTY</h2>
-            </header>
-            <div class="crm-vx-modal__body">
-              <p class="small text-secondary mb-1">
-                Transfer From: {{ activeLocation?.location_name || activeLocation?.location_id || "—" }}
-              </p>
-              <p class="small text-secondary mb-3">QTY: {{ activeLocation?.quantity ?? 0 }}</p>
-              <label class="form-label small" for="transfer-type">Transfer Type</label>
-              <select id="transfer-type" v-model="transferForm.transfer_type" class="form-select mb-3">
-                <option value="current">Current Locations</option>
-                <option value="new">Transfer New</option>
-              </select>
-              <label class="form-label small" for="transfer-to">Transfer To</label>
-              <select
-                v-if="transferForm.transfer_type === 'current'"
-                id="transfer-to"
-                v-model="transferForm.to_location_id"
-                class="form-select mb-3"
-              >
-                <option value="">Select location</option>
-                <option
-                  v-for="dest in transferDestinationOptions"
-                  :key="`${dest.warehouse_id}-${dest.location_id}`"
-                  :value="dest.location_id"
-                >
-                  {{ dest.location_name || dest.location_id }}
-                </option>
-              </select>
-              <input
-                v-else
-                id="transfer-to"
-                v-model="transferForm.to_location"
-                type="text"
-                class="form-control mb-3"
-                placeholder="Type location name"
-              />
-              <div class="row g-2 align-items-end mb-3">
-                <div class="col-6">
-                  <label class="form-label small" for="transfer-qty">QTY</label>
-                  <input
-                    id="transfer-qty"
-                    v-model="transferForm.quantity"
-                    type="number"
-                    min="1"
-                    class="form-control"
-                  />
-                </div>
-                <div class="col-6">
-                  <button
-                    type="button"
-                    class="btn inventory-detail__transfer-all-btn w-100"
-                    @click="fillTransferAllQty"
-                  >
-                    Transfer All
-                  </button>
-                </div>
-              </div>
-              <label class="form-label small">Reason</label>
-              <select v-model="transferForm.reason" class="form-select">
-                <option v-for="reason in inventoryReasons" :key="reason" :value="reason">{{ reason }}</option>
-              </select>
-            </div>
-            <footer class="crm-vx-modal__footer">
-              <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" :disabled="saving" @click="transferModalOpen = false">
-                Cancel
-              </button>
-              <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--primary" :disabled="saving" @click="submitTransferQty">
-                {{ saving ? "Please wait..." : "Transfer" }}
-              </button>
-            </footer>
-          </div>
-        </div>
-      </Teleport>
+      <InventoryRestockTransferModal
+        v-if="canManageInventoryLocations"
+        :open="transferModalOpen"
+        :busy="transferBusy"
+        mode="pending"
+        :from-options="transferFromOptions"
+        v-model:from-location-id="transferFromLocationId"
+        v-model:destination-mode="transferForm.destination_mode"
+        v-model:to-location-id="transferForm.to_location_id"
+        v-model:to-location="transferForm.to_location"
+        v-model:cart-location="transferForm.cart_location"
+        v-model:quantity="transferForm.quantity"
+        v-model:reason="transferForm.reason"
+        :pick-options="transferPickOptions"
+        :reason-options="inventoryReasons"
+        @close="transferModalOpen = false"
+        @submit="submitTransferQty"
+        @transfer-all="fillTransferAllQty"
+      />
 
       <Teleport v-if="canManageInventoryLocations" to="body">
         <div v-if="addLocationModalOpen" class="crm-vx-modal-overlay" @click.self="addLocationModalOpen = false">
@@ -1909,18 +1926,6 @@ async function togglePickable(loc) {
 .inventory-detail__toggle-label {
   min-width: 22px;
   text-align: left;
-}
-.inventory-detail__transfer-all-btn {
-  border: 1px solid var(--bs-primary);
-  color: var(--bs-primary);
-  background: transparent;
-  font-weight: 600;
-}
-.inventory-detail__transfer-all-btn:hover,
-.inventory-detail__transfer-all-btn:focus-visible {
-  background: var(--bs-primary);
-  border-color: var(--bs-primary);
-  color: #fff;
 }
 .inventory-detail__toggle--on {
   border-color: rgba(34, 197, 94, 0.45);

@@ -93,6 +93,7 @@ function statusBadgeClass(status) {
     return "bg-secondary-subtle text-secondary";
   }
   if (s === "not_qualified") return "bg-body-secondary text-body-secondary";
+  if (s === "account_created") return "bg-success-subtle text-success";
   return "bg-body-secondary text-body-secondary";
 }
 

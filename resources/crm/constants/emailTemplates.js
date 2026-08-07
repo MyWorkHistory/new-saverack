@@ -6,6 +6,7 @@ export const EMAIL_TEMPLATE_CATEGORIES = [
   "non_responsive",
   "not_interested",
   "not_qualified",
+  "account_created",
 ];
 
 export const EMAIL_TEMPLATE_CATEGORY_LABELS = {
@@ -16,6 +17,7 @@ export const EMAIL_TEMPLATE_CATEGORY_LABELS = {
   non_responsive: "Non-Responsive",
   not_interested: "Not Interested",
   not_qualified: "Not Qualified",
+  account_created: "Account Created",
 };
 
 /** Icon name + accent colors for category group headers and pills. */
@@ -61,6 +63,12 @@ export const EMAIL_TEMPLATE_CATEGORY_META = {
     accent: "#6b7280",
     softBg: "#f3f4f6",
     softText: "#4b5563",
+  },
+  account_created: {
+    icon: "check",
+    accent: "#059669",
+    softBg: "#d1fae5",
+    softText: "#047857",
   },
 };
 

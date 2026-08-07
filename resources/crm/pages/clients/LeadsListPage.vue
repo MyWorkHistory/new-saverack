@@ -322,6 +322,7 @@ function statusBadgeClass(status) {
   if (s === "non_responsive") return "bg-secondary-subtle text-secondary";
   if (s === "not_interested") return "bg-secondary-subtle text-secondary";
   if (s === "not_qualified") return "bg-body-secondary text-body-secondary";
+  if (s === "account_created") return "bg-success-subtle text-success";
   return "bg-body-secondary text-body-secondary";
 }
 
@@ -545,6 +546,8 @@ onUnmounted(() => {
                 <RouterLink
                   :to="{ name: 'lead-detail', params: { id: row.id } }"
                   class="fw-semibold text-decoration-none text-body"
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
                   {{ row.company_name }}
                 </RouterLink>
@@ -670,6 +673,8 @@ onUnmounted(() => {
                 <RouterLink
                   :to="{ name: 'lead-detail', params: { id: row.id } }"
                   class="crm-mobile-item-card__sku text-decoration-none"
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
                   {{ row.company_name }}
                 </RouterLink>
@@ -765,6 +770,8 @@ onUnmounted(() => {
             class="staff-row-menu__item"
             role="menuitem"
             :to="{ name: 'lead-detail', params: { id: manageMenuRow.id } }"
+            target="_blank"
+            rel="noopener noreferrer"
             @click="closeManageMenu"
           >
             View

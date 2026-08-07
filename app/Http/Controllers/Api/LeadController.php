@@ -59,11 +59,13 @@ class LeadController extends Controller
 
         $validated = $request->validate([
             'company_name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255'],
+            'email' => ['required', 'email', 'max:255', Rule::unique('leads', 'email')],
             'website' => ['nullable', 'string', 'max:255'],
             'name' => ['nullable', 'string', 'max:255'],
             'comment' => ['nullable', 'string', 'max:20000'],
             'follow_up_days' => ['nullable', 'integer', Rule::in(Lead::FOLLOW_UP_DAY_OPTIONS)],
+        ], [
+            'email.unique' => 'Email already exist',
         ]);
 
         $lead = $this->leads->create($validated, $request->user());
@@ -106,13 +108,15 @@ class LeadController extends Controller
             'status' => ['sometimes', 'string', Rule::in(Lead::STATUSES)],
             'follow_up_days' => ['sometimes', 'nullable', 'integer', Rule::in(Lead::FOLLOW_UP_DAY_OPTIONS)],
             'company_name' => ['sometimes', 'string', 'max:255'],
-            'email' => ['sometimes', 'email', 'max:255'],
+            'email' => ['sometimes', 'email', 'max:255', Rule::unique('leads', 'email')->ignore($lead->id)],
             'website' => ['nullable', 'string', 'max:255'],
             'name' => ['nullable', 'string', 'max:255'],
             'comment' => ['nullable', 'string', 'max:20000'],
             'created_at' => ['sometimes', 'date'],
             'email_template_id' => ['sometimes', 'nullable'],
             'record_status_event' => ['sometimes', 'boolean'],
+        ], [
+            'email.unique' => 'Email already exist',
         ]);
 
         if (array_key_exists('email_template_id', $validated)) {

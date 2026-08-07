@@ -20,6 +20,8 @@ class EmailTemplate extends Model
 
     public const CATEGORY_NOT_QUALIFIED = 'not_qualified';
 
+    public const CATEGORY_ACCOUNT_CREATED = 'account_created';
+
     /** @var list<string> */
     public const CATEGORIES = [
         self::CATEGORY_CONTACTED,
@@ -29,6 +31,7 @@ class EmailTemplate extends Model
         self::CATEGORY_NON_RESPONSIVE,
         self::CATEGORY_NOT_INTERESTED,
         self::CATEGORY_NOT_QUALIFIED,
+        self::CATEGORY_ACCOUNT_CREATED,
     ];
 
     /** @var array<string, string> */
@@ -40,6 +43,7 @@ class EmailTemplate extends Model
         self::CATEGORY_NON_RESPONSIVE => 'Non-Responsive',
         self::CATEGORY_NOT_INTERESTED => 'Not Interested',
         self::CATEGORY_NOT_QUALIFIED => 'Not Qualified',
+        self::CATEGORY_ACCOUNT_CREATED => 'Account Created',
     ];
 
     protected $fillable = [

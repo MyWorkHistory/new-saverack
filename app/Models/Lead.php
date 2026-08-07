@@ -23,6 +23,8 @@ class Lead extends Model
 
     public const STATUS_NOT_QUALIFIED = 'not_qualified';
 
+    public const STATUS_ACCOUNT_CREATED = 'account_created';
+
     /** @var list<string> */
     public const STATUSES = [
         self::STATUS_OPEN,
@@ -33,6 +35,7 @@ class Lead extends Model
         self::STATUS_NON_RESPONSIVE,
         self::STATUS_NOT_INTERESTED,
         self::STATUS_NOT_QUALIFIED,
+        self::STATUS_ACCOUNT_CREATED,
     ];
 
     /** Statuses shown as directory summary cards. */
@@ -92,6 +95,7 @@ class Lead extends Model
             self::STATUS_NON_RESPONSIVE => 'Non-Responsive',
             self::STATUS_NOT_INTERESTED => 'Not Interested',
             self::STATUS_NOT_QUALIFIED => 'Not Qualified',
+            self::STATUS_ACCOUNT_CREATED => 'Account Created',
         ];
 
         return $labels[$status] ?? str_replace('_', ' ', ucwords($status, '_'));

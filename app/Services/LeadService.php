@@ -146,6 +146,13 @@ class LeadService
      */
     public function create(array $data, ?User $actor = null): Lead
     {
+        $email = trim((string) ($data['email'] ?? ''));
+        if ($email !== '' && $this->emailAlreadyExists($email)) {
+            throw ValidationException::withMessages([
+                'email' => ['Email already exist'],
+            ]);
+        }
+
         $followUpDays = Lead::normalizeFollowUpDays(
             array_key_exists('follow_up_days', $data)
                 ? $data['follow_up_days']
@@ -213,6 +220,8 @@ class LeadService
             $errors['email'] = ['Email is required in the pasted text.'];
         } elseif (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $errors['email'] = ['Email in the pasted text is invalid.'];
+        } elseif ($this->emailAlreadyExists($email)) {
+            $errors['email'] = ['Email already exist'];
         }
 
         if ($errors !== []) {
@@ -275,7 +284,13 @@ class LeadService
                 continue;
             }
             if ($key === 'company_name' || $key === 'email') {
-                $lead->{$key} = trim((string) $data[$key]);
+                $value = trim((string) $data[$key]);
+                if ($key === 'email' && $this->emailAlreadyExists($value, (int) $lead->id)) {
+                    throw ValidationException::withMessages([
+                        'email' => ['Email already exist'],
+                    ]);
+                }
+                $lead->{$key} = $value;
             } else {
                 $lead->{$key} = $this->nullableTrim($data[$key]);
             }
@@ -829,6 +844,21 @@ class LeadService
         }
 
         return number_format((float) $amount, 4, '.', '');
+    }
+
+    private function emailAlreadyExists(string $email, ?int $ignoreLeadId = null): bool
+    {
+        $normalized = strtolower(trim($email));
+        if ($normalized === '') {
+            return false;
+        }
+
+        $query = Lead::query()->whereRaw('LOWER(email) = ?', [$normalized]);
+        if ($ignoreLeadId !== null && $ignoreLeadId > 0) {
+            $query->where('id', '!=', $ignoreLeadId);
+        }
+
+        return $query->exists();
     }
 
     /**

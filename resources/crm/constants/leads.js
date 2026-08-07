@@ -7,6 +7,7 @@ export const LEAD_STATUSES = [
   "non_responsive",
   "not_interested",
   "not_qualified",
+  "account_created",
 ];
 
 export const LEAD_FOLLOW_UP_DAY_OPTIONS = [1, 3, 5, 7, 10, 15, 30, 60, 90];
@@ -23,6 +24,7 @@ export const LEAD_STATUS_LABELS = {
   non_responsive: "Non-Responsive",
   not_interested: "Not Interested",
   not_qualified: "Not Qualified",
+  account_created: "Account Created",
 };
 
 export function leadStatusLabel(status) {

@@ -22,6 +22,7 @@ const PRODUCT_CACHE_PREFIX = "return-bin-product:v1:";
 
 const loading = ref(true);
 const rows = ref([]);
+const productSearch = ref("");
 const binId = computed(() => Number(route.params.binId || 0));
 const binName = ref("");
 
@@ -73,6 +74,26 @@ const transferFromEmptyMessage = computed(() => {
   const name = transferFromEmptyLabel.value;
   return `No ${name} quantity found for this SKU.`;
 });
+
+const filteredRows = computed(() => {
+  const q = String(productSearch.value || "")
+    .trim()
+    .toLowerCase();
+  if (!q) return rows.value;
+  return rows.value.filter((row) => rowMatchesProductSearch(row, q));
+});
+
+function rowMatchesProductSearch(row, q) {
+  const sku = String(row?.sku || "").toLowerCase();
+  const name = String(row?.name || "").toLowerCase();
+  if (sku.includes(q) || name.includes(q)) return true;
+  const product = readProductCache(row?.sku, row?.client_account_id);
+  if (!product || typeof product !== "object") return false;
+  const barcode = String(product.barcode || product.barcode_search || "").toLowerCase();
+  if (barcode && barcode.includes(q)) return true;
+  const barcodes = Array.isArray(product.barcodes) ? product.barcodes : [];
+  return barcodes.some((b) => String(b || "").toLowerCase().includes(q));
+}
 
 function rowKey(row) {
   return `${row.sku}|${row.client_account_id}`;
@@ -484,8 +505,17 @@ onUnmounted(() => {
         </button>
       </div>
       <div
-        class="d-flex flex-wrap align-items-center justify-content-center justify-content-md-end gap-2 flex-shrink-0"
+        class="d-flex flex-wrap align-items-center justify-content-center justify-content-md-end gap-2 flex-shrink-0 w-100 w-md-auto"
       >
+        <input
+          v-model="productSearch"
+          type="search"
+          class="form-control staff-toolbar-search staff-toolbar-search--inline"
+          style="min-width: 14rem; max-width: 22rem"
+          placeholder="Search product, SKU, or barcode"
+          aria-label="Search bin items by product name, SKU, or barcode"
+          autocomplete="off"
+        />
         <CrmRefreshToolbarButton
           :disabled="loading"
           :loading="loading"
@@ -519,7 +549,7 @@ onUnmounted(() => {
                 </div>
               </td>
             </tr>
-            <tr v-for="row in rows" v-else :key="`${row.sku}-${row.client_account_id}`">
+            <tr v-for="row in filteredRows" v-else :key="`${row.sku}-${row.client_account_id}`">
               <td class="return-bin-product-col text-start">
                 <div class="return-bin-product-cell">
                   <img
@@ -577,8 +607,14 @@ onUnmounted(() => {
                 </div>
               </td>
             </tr>
-            <tr v-if="!loading && !rows.length">
-              <td colspan="4" class="px-4 py-5 text-center text-secondary">No items in this bin.</td>
+            <tr v-if="!loading && !filteredRows.length">
+              <td colspan="4" class="px-4 py-5 text-center text-secondary">
+                {{
+                  productSearch.trim()
+                    ? "No items match your search."
+                    : "No items in this bin."
+                }}
+              </td>
             </tr>
           </tbody>
         </table>
@@ -590,10 +626,16 @@ onUnmounted(() => {
             <CrmLoadingSpinner message="Loading bin items…" />
           </div>
         </div>
-        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">No items in this bin.</div>
+        <div v-else-if="!filteredRows.length" class="crm-mobile-item-card__empty">
+          {{
+            productSearch.trim()
+              ? "No items match your search."
+              : "No items in this bin."
+          }}
+        </div>
         <template v-else>
           <article
-            v-for="row in rows"
+            v-for="row in filteredRows"
             :key="`mobile-${row.sku}-${row.client_account_id}`"
             class="crm-mobile-item-card"
           >

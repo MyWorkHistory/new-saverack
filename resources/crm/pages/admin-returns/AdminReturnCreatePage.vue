@@ -147,7 +147,6 @@ async function processReturn() {
     router.push({ name: "admin-process-returns" });
   } catch (e) {
     toast.errorFrom(e, "Could not process return.");
-  } finally {
     submitBusy.value = false;
   }
 }
@@ -286,7 +285,7 @@ onMounted(() => {
                       @change="toggleAll"
                     />
                   </th>
-                  <th class="staff-table-head__th order-detail-page__items-col" scope="col">Item</th>
+                  <th class="staff-table-head__th order-detail-page__items-col text-start" scope="col">Item</th>
                   <th class="staff-table-head__th text-center" scope="col">Order Qty</th>
                   <th class="staff-table-head__th text-center" scope="col">Return Items</th>
                   <th class="staff-table-head__th" scope="col">Reason</th>
@@ -304,7 +303,7 @@ onMounted(() => {
                       @change="toggleOne(idx)"
                     />
                   </td>
-                  <td>
+                  <td class="order-detail-page__item-td text-start">
                     <div class="d-flex align-items-center gap-2 order-detail-page__item-cell">
                       <img
                         v-if="row.image_url"

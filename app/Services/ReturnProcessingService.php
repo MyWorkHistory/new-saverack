@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\AddReturnQtyToShipHeroStagingJob;
 use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountReturnLine;
 use App\Models\User;
@@ -53,7 +54,7 @@ class ReturnProcessingService
             $this->assertStaffManagedLinesReady($lines, $lineIds);
         }
 
-        return DB::transaction(function () use ($return, $lines, $lineIds, $restockByLineId, $actor, $binId) {
+        $processed = DB::transaction(function () use ($return, $lines, $lineIds, $restockByLineId, $actor, $binId) {
             $this->applyLineSelection($lines, $lineIds, $restockByLineId, true, $return);
             $this->finalizeProcessedReturn($return, $actor);
             $fresh = $return->fresh(['lines']);
@@ -63,13 +64,13 @@ class ReturnProcessingService
                 $binIdByLineId = $this->bins->resolveStagingBinIdsForReturn($fresh);
                 $this->bins->assignLinesToBins($fresh, $binIdByLineId);
             }
-            $this->bins->addProcessedQtyToShipHeroStaging(
-                $return->fresh(['lines', 'clientAccount']),
-                $actor
-            );
 
             return $return->fresh(['lines', 'clientAccount', 'returnBill', 'returnBin']);
         });
+
+        $this->dispatchShipHeroStaging($processed, $actor);
+
+        return $processed;
     }
 
     /**
@@ -98,7 +99,7 @@ class ReturnProcessingService
 
         $normalizedLines = $this->resolveLineBinIds($normalizedLines, $binId);
 
-        return DB::transaction(function () use ($return, $normalizedLines, $returnType, $warehouseNote, $firstItemFee, $additionalItemFee, $actor) {
+        $processed = DB::transaction(function () use ($return, $normalizedLines, $returnType, $warehouseNote, $firstItemFee, $additionalItemFee, $actor) {
             if ($returnType !== null && $returnType !== '') {
                 $return->return_type = $returnType;
             }
@@ -132,13 +133,25 @@ class ReturnProcessingService
                 $binIdByLineId[(int) $line->id] = (int) $stagingBin->id;
             }
             $this->bins->assignLinesToBins($fresh, $binIdByLineId);
-            $this->bins->addProcessedQtyToShipHeroStaging(
-                $return->fresh(['lines', 'clientAccount']),
-                $actor
-            );
 
             return $return->fresh(['lines', 'clientAccount', 'returnBill', 'returnBin']);
         });
+
+        $this->dispatchShipHeroStaging($processed, $actor);
+
+        return $processed;
+    }
+
+    private function dispatchShipHeroStaging(?ClientAccountReturn $return, ?User $actor): void
+    {
+        if (! $return instanceof ClientAccountReturn || (int) $return->id <= 0) {
+            return;
+        }
+
+        AddReturnQtyToShipHeroStagingJob::dispatch(
+            (int) $return->id,
+            $actor !== null ? (int) $actor->id : null
+        )->afterResponse();
     }
 
     /**

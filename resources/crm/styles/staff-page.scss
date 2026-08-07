@@ -231,6 +231,20 @@ button.billing-inv-summary-card:hover:not(:disabled) .staff-stat-card__icon {
   vertical-align: middle;
 }
 
+/* Process/Create return: Item column left-aligned next to the checkbox. */
+.user-return-detail-page .staff-table-wrap .table.staff-data-table > thead > tr > th.order-detail-page__items-col,
+.user-return-detail-page .staff-table-wrap .table.staff-data-table > tbody > tr > td.order-detail-page__item-td,
+.admin-returns-detail-page .staff-table-wrap .table.staff-data-table > thead > tr > th.order-detail-page__items-col,
+.admin-returns-detail-page .staff-table-wrap .table.staff-data-table > tbody > tr > td.order-detail-page__item-td {
+  text-align: left !important;
+}
+
+.user-return-detail-page .order-detail-page__item-cell,
+.admin-returns-detail-page .order-detail-page__item-cell {
+  justify-content: flex-start;
+  text-align: left;
+}
+
 .user-return-page .staff-table-wrap .staff-sort-btn,
 .admin-returns-page .staff-table-wrap .staff-sort-btn {
   display: inline-flex;

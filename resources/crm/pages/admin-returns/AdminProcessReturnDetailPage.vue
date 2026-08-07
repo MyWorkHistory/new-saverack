@@ -387,7 +387,6 @@ async function processReturn() {
     router.push({ name: "admin-process-returns" });
   } catch (e) {
     toast.errorFrom(e, "Could not process return.");
-  } finally {
     processing.value = false;
   }
 }
@@ -502,7 +501,7 @@ onMounted(load);
                       @change="toggleAll"
                     />
                   </th>
-                  <th class="staff-table-head__th order-detail-page__items-col" scope="col">Item</th>
+                  <th class="staff-table-head__th order-detail-page__items-col text-start" scope="col">Item</th>
                   <th v-if="!isStaffManagedPending" class="staff-table-head__th text-center" scope="col">Order Qty</th>
                   <th class="staff-table-head__th text-center" scope="col">Return Qty</th>
                   <th class="staff-table-head__th" scope="col">Reason</th>
@@ -522,7 +521,7 @@ onMounted(load);
                       @change="toggleOne(line.id)"
                     />
                   </td>
-                  <td>
+                  <td class="order-detail-page__item-td text-start">
                     <div class="d-flex align-items-center gap-2 order-detail-page__item-cell">
                       <img
                         v-if="line.image_url"

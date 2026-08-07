@@ -519,4 +519,64 @@ class AdminReturnProcessWorkflowTest extends TestCase
 
         $this->getJson('/api/admin/returns/pending')->assertForbidden();
     }
+
+    public function test_remove_return_bin_item_reduces_crm_and_shiphero_qty(): void
+    {
+        $account = $this->account();
+        $bin = ReturnBin::query()->create(['name' => ReturnBinService::BIN_RETURN_CART]);
+        $return = $this->returnForAccount($account, [
+            'status' => ClientAccountReturn::STATUS_RECEIVED,
+            'processed_at' => now(),
+            'return_bin_id' => $bin->id,
+        ]);
+        $line = $this->lineForReturn($return, [
+            'sku' => 'SKU-DEL',
+            'return_qty' => 3,
+            'return_bin_id' => $bin->id,
+            'return_bin_remaining_qty' => 3,
+            'restock' => true,
+        ]);
+        Sanctum::actingAs($this->staffUser(['returns.update']));
+
+        $mock = $this->mockInventoryStaging();
+        $mock->shouldReceive('getProductDetailBySku')
+            ->once()
+            ->andReturn([
+                'warehouses' => [[
+                    'warehouse_id' => 'wh-returns-test',
+                    'warehouse_name' => 'Main',
+                    'locations' => [[
+                        'location_id' => 'loc-return-cart',
+                        'location_name' => ReturnBinService::BIN_RETURN_CART,
+                        'quantity' => 3,
+                        'pickable' => false,
+                    ]],
+                ]],
+            ]);
+        $mock->shouldReceive('replaceLocationQuantity')
+            ->once()
+            ->withArgs(function ($sku, $warehouseId, $locationId, $qty) {
+                return $sku === 'SKU-DEL'
+                    && $warehouseId === 'wh-returns-test'
+                    && $locationId === 'loc-return-cart'
+                    && (int) $qty === 1;
+            })
+            ->andReturn([
+                'warehouse_id' => 'wh-returns-test',
+                'warehouse_name' => 'Main',
+                'locations' => [],
+            ]);
+
+        $this->postJson('/api/admin/returns/bins/'.$bin->id.'/remove', [
+            'sku' => 'SKU-DEL',
+            'client_account_id' => $account->id,
+            'quantity' => 2,
+        ])
+            ->assertOk()
+            ->assertJsonPath('removed_qty', 2)
+            ->assertJsonPath('remaining_qty', 1);
+
+        $this->assertSame(1, (int) $line->fresh()->return_bin_remaining_qty);
+        $this->assertSame($bin->id, (int) $line->fresh()->return_bin_id);
+    }
 }

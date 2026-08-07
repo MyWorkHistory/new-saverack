@@ -2,11 +2,11 @@
 import { Transition, computed, inject, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
+import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarButton.vue";
 import InventoryRestockTransferModal from "../../components/inventory/InventoryRestockTransferModal.vue";
-import { TRANSFER_CART_LOCATIONS } from "../../constants/restockTransferCart.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 
@@ -16,7 +16,9 @@ const route = useRoute();
 const crmUser = inject("crmUser", ref(null));
 
 const LINE_MENU_W = 180;
-const LINE_MENU_H = 120;
+const LINE_MENU_H = 140;
+const PRODUCT_CACHE_TTL_MS = 30 * 60 * 1000;
+const PRODUCT_CACHE_PREFIX = "return-bin-product:v1:";
 
 const loading = ref(true);
 const rows = ref([]);
@@ -36,10 +38,16 @@ const transferForm = reactive({
   destination_mode: "current",
   to_location_id: "",
   to_location: "",
-  cart_location: "",
   quantity: "",
   reason: "Return Restock",
 });
+
+const deleteOpen = ref(false);
+const deleteBusy = ref(false);
+const deleteRow = ref(null);
+const deleteQty = ref("");
+
+let prefetchGeneration = 0;
 
 const canTransfer = computed(() => {
   const u = crmUser.value;
@@ -59,8 +67,52 @@ const lineMenuRow = computed(() => {
   return rows.value.find((r) => rowKey(r) === key) ?? null;
 });
 
+const transferFromEmptyLabel = computed(() => String(binName.value || "Return Cart").trim() || "Return Cart");
+
+const transferFromEmptyMessage = computed(() => {
+  const name = transferFromEmptyLabel.value;
+  return `No ${name} quantity found for this SKU.`;
+});
+
 function rowKey(row) {
   return `${row.sku}|${row.client_account_id}`;
+}
+
+function productCacheKey(sku, accountId) {
+  return `${PRODUCT_CACHE_PREFIX}${Number(accountId) || 0}:${String(sku || "").trim()}`;
+}
+
+function readProductCache(sku, accountId) {
+  try {
+    const raw = sessionStorage.getItem(productCacheKey(sku, accountId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const fetchedAt = Number(parsed?.fetchedAt || 0);
+    if (!fetchedAt || Date.now() - fetchedAt > PRODUCT_CACHE_TTL_MS) return null;
+    return parsed?.product && typeof parsed.product === "object" ? parsed.product : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeProductCache(sku, accountId, product) {
+  if (!product || typeof product !== "object") return;
+  try {
+    sessionStorage.setItem(
+      productCacheKey(sku, accountId),
+      JSON.stringify({ fetchedAt: Date.now(), product }),
+    );
+  } catch {
+    /* ignore quota */
+  }
+}
+
+function invalidateProductCache(sku, accountId) {
+  try {
+    sessionStorage.removeItem(productCacheKey(sku, accountId));
+  } catch {
+    /* ignore */
+  }
 }
 
 function preferredWarehouseId(product) {
@@ -85,21 +137,12 @@ function flattenProductLocations(product, { includeEmpty = false } = {}) {
   return out;
 }
 
-function isTransferCartLocationName(name) {
-  const n = String(name || "").trim().toLowerCase();
-  return TRANSFER_CART_LOCATIONS.some((c) => c.toLowerCase() === n);
-}
-
 const transferFromOptions = computed(() => {
   const staging = String(binName.value || "").trim().toLowerCase();
-  const all = flattenProductLocations(transferProduct.value, { includeEmpty: false });
-  if (staging) {
-    const matched = all.filter(
-      (loc) => String(loc.location_name || "").trim().toLowerCase() === staging,
-    );
-    if (matched.length) return matched;
-  }
-  return all.filter((loc) => loc.pickable === false);
+  if (!staging) return [];
+  return flattenProductLocations(transferProduct.value, { includeEmpty: false }).filter(
+    (loc) => String(loc.location_name || "").trim().toLowerCase() === staging,
+  );
 });
 
 const transferFromLocation = computed(() => {
@@ -134,7 +177,6 @@ watch(
   () => {
     transferForm.to_location_id = "";
     transferForm.to_location = "";
-    transferForm.cart_location = "";
   },
 );
 
@@ -181,6 +223,58 @@ function onDocumentClick(event) {
   closeLineMenu();
 }
 
+function applyTransferFromSelection() {
+  const opts = transferFromOptions.value;
+  transferFromLocationId.value = opts.length
+    ? String(opts[0].location_id || "")
+    : "";
+  if (!String(transferForm.quantity || "").trim()) {
+    transferForm.quantity = String(
+      transferFromLocation.value?.quantity ?? transferRow.value?.qty ?? 0,
+    );
+  }
+}
+
+async function fetchProductForRow(row, { force = false } = {}) {
+  const sku = String(row?.sku || "").trim();
+  const accountId = Number(row?.client_account_id || 0);
+  if (!sku || accountId <= 0) return null;
+  if (!force) {
+    const cached = readProductCache(sku, accountId);
+    if (cached) return cached;
+  }
+  const { data } = await api.get(`/inventory/products/${encodeURIComponent(sku)}`, {
+    params: { client_account_id: accountId },
+  });
+  const product = data?.product ?? null;
+  if (product) writeProductCache(sku, accountId, product);
+  return product;
+}
+
+async function prefetchProductLocations() {
+  const generation = ++prefetchGeneration;
+  const unique = [];
+  const seen = new Set();
+  for (const row of rows.value) {
+    const key = rowKey(row);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(row);
+  }
+  for (const row of unique) {
+    if (generation !== prefetchGeneration) return;
+    const sku = String(row?.sku || "").trim();
+    const accountId = Number(row?.client_account_id || 0);
+    if (!sku || accountId <= 0) continue;
+    if (readProductCache(sku, accountId)) continue;
+    try {
+      await fetchProductForRow(row);
+    } catch {
+      /* keep going */
+    }
+  }
+}
+
 async function load() {
   if (binId.value <= 0) {
     toast.error("Invalid return bin.");
@@ -188,6 +282,7 @@ async function load() {
     return;
   }
   loading.value = true;
+  prefetchGeneration += 1;
   try {
     const { data } = await api.get(`/admin/returns/bins/${binId.value}/items`);
     binName.value = String(data?.bin?.name || "").trim() || `Bin ${binId.value}`;
@@ -196,6 +291,7 @@ async function load() {
       title: `Save Rack | ${binName.value}`,
       description: "Items in a return bin awaiting restock.",
     });
+    void prefetchProductLocations();
   } catch (e) {
     toast.errorFrom(e, "Could not load bin items.");
     rows.value = [];
@@ -213,34 +309,35 @@ async function openTransferFromMenu(row) {
     return;
   }
   transferRow.value = row;
-  transferProduct.value = null;
-  transferFromLocationId.value = "";
   transferForm.destination_mode = "current";
   transferForm.to_location_id = "";
   transferForm.to_location = "";
-  transferForm.cart_location = "";
-  transferForm.quantity = "";
+  transferForm.quantity = String(row.qty ?? "");
   transferForm.reason = "Return Restock";
-  transferModalOpen.value = true;
-  transferLoading.value = true;
   transferBusy.value = false;
+  transferModalOpen.value = true;
+
+  const cached = readProductCache(row.sku, accountId);
+  if (cached) {
+    transferProduct.value = cached;
+    applyTransferFromSelection();
+    transferLoading.value = false;
+    return;
+  }
+
+  transferProduct.value = null;
+  transferFromLocationId.value = "";
+  transferLoading.value = true;
   try {
-    const { data } = await api.get(`/inventory/products/${encodeURIComponent(row.sku)}`, {
-      params: { client_account_id: accountId },
-    });
-    transferProduct.value = data?.product ?? null;
+    const product = await fetchProductForRow(row);
+    transferProduct.value = product;
     if (!transferProduct.value) {
       transferModalOpen.value = false;
       toast.error("Could not load product locations.");
       return;
     }
     await Promise.resolve();
-    const opts = transferFromOptions.value;
-    if (opts.length === 1) {
-      transferFromLocationId.value = String(opts[0].location_id || "");
-    } else if (opts.length > 1) {
-      transferFromLocationId.value = String(opts[0].location_id || "");
-    }
+    applyTransferFromSelection();
   } catch (e) {
     transferModalOpen.value = false;
     toast.errorFrom(e, "Could not load product for transfer.");
@@ -250,22 +347,13 @@ async function openTransferFromMenu(row) {
 }
 
 function fillTransferAllQty() {
-  transferForm.quantity = String(transferFromLocation.value?.quantity ?? transferRow.value?.qty ?? 0);
-}
-
-function resolveCartDestination(product, cartCode) {
-  const code = String(cartCode || "").trim();
-  if (!code) return null;
-  const locs = flattenProductLocations(product, { includeEmpty: true }).filter((loc) =>
-    isTransferCartLocationName(loc.location_name),
+  const fromQty = Number(transferFromLocation.value?.quantity ?? 0);
+  const crmQty = Number(transferRow.value?.qty ?? 0);
+  const max = Math.min(
+    fromQty > 0 ? fromQty : crmQty,
+    crmQty > 0 ? crmQty : fromQty,
   );
-  const match = locs.find(
-    (loc) => String(loc.location_name || "").trim().toLowerCase() === code.toLowerCase(),
-  );
-  if (match?.location_id) {
-    return { to_location_id: String(match.location_id), to_location: match.location_name };
-  }
-  return { to_location: code };
+  transferForm.quantity = String(max > 0 ? max : transferFromLocation.value?.quantity ?? crmQty ?? 0);
 }
 
 async function submitTransfer() {
@@ -285,19 +373,7 @@ async function submitTransfer() {
     quantity: qty,
   };
 
-  if (destMode === "cart") {
-    const cartCode = String(transferForm.cart_location || "").trim();
-    if (!cartCode) {
-      toast.error("Select a transfer cart location.");
-      return;
-    }
-    const dest = resolveCartDestination(transferProduct.value, cartCode);
-    if (dest?.to_location_id) {
-      body.to_location_id = dest.to_location_id;
-    } else {
-      body.to_location = dest?.to_location || cartCode;
-    }
-  } else if (destMode === "new") {
+  if (destMode === "new") {
     if (!String(transferForm.to_location || "").trim()) {
       toast.error("Enter destination location.");
       return;
@@ -315,12 +391,63 @@ async function submitTransfer() {
   try {
     const { data } = await api.post(`/admin/returns/bins/${binId.value}/transfer`, body);
     rows.value = Array.isArray(data?.data) ? data.data : rows.value;
+    invalidateProductCache(transferRow.value.sku, transferRow.value.client_account_id);
     transferModalOpen.value = false;
     toast.success("Transferred to inventory.");
+    void prefetchProductLocations();
   } catch (e) {
     toast.errorFrom(e, "Could not transfer item.");
   } finally {
     transferBusy.value = false;
+  }
+}
+
+function openDeleteFromMenu(row) {
+  if (!row?.sku) return;
+  closeLineMenu();
+  deleteRow.value = row;
+  deleteQty.value = String(row.qty ?? 1);
+  deleteOpen.value = true;
+}
+
+function closeDelete() {
+  if (deleteBusy.value) return;
+  deleteOpen.value = false;
+  deleteRow.value = null;
+  deleteQty.value = "";
+}
+
+async function confirmDelete() {
+  const row = deleteRow.value;
+  if (!row) return;
+  const qty = parseInt(String(deleteQty.value || ""), 10);
+  if (Number.isNaN(qty) || qty <= 0) {
+    toast.error("Enter a valid quantity.");
+    return;
+  }
+  const max = Number(row.qty || 0);
+  if (max > 0 && qty > max) {
+    toast.error(`Quantity cannot exceed ${max}.`);
+    return;
+  }
+
+  deleteBusy.value = true;
+  try {
+    const { data } = await api.post(`/admin/returns/bins/${binId.value}/remove`, {
+      sku: row.sku,
+      client_account_id: Number(row.client_account_id || 0),
+      quantity: qty,
+    });
+    rows.value = Array.isArray(data?.data) ? data.data : rows.value;
+    invalidateProductCache(row.sku, row.client_account_id);
+    deleteOpen.value = false;
+    deleteRow.value = null;
+    toast.success("Item removed from bin.");
+    void prefetchProductLocations();
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete item.");
+  } finally {
+    deleteBusy.value = false;
   }
 }
 
@@ -334,6 +461,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  prefetchGeneration += 1;
   document.removeEventListener("click", onDocumentClick);
 });
 </script>
@@ -572,6 +700,15 @@ onUnmounted(() => {
           >
             Transfer
           </button>
+          <button
+            v-if="canTransfer"
+            type="button"
+            class="staff-row-menu__item staff-row-menu__item--danger"
+            role="menuitem"
+            @click="openDeleteFromMenu(lineMenuRow)"
+          >
+            Delete
+          </button>
         </div>
       </Transition>
     </Teleport>
@@ -581,14 +718,14 @@ onUnmounted(() => {
       :busy="transferBusy"
       :loading="transferLoading"
       mode="pending"
+      :allow-transfer-cart="false"
       :from-options="transferFromOptions"
       v-model:from-location-id="transferFromLocationId"
-      from-empty-label="Return Cart Locations"
-      from-empty-message="No Return Cart / Dispose Bin quantity found for this SKU."
+      :from-empty-label="transferFromEmptyLabel"
+      :from-empty-message="transferFromEmptyMessage"
       v-model:destination-mode="transferForm.destination_mode"
       v-model:to-location-id="transferForm.to_location_id"
       v-model:to-location="transferForm.to_location"
-      v-model:cart-location="transferForm.cart_location"
       v-model:quantity="transferForm.quantity"
       v-model:reason="transferForm.reason"
       :pick-options="transferPickOptions"
@@ -597,6 +734,32 @@ onUnmounted(() => {
       @submit="submitTransfer"
       @transfer-all="fillTransferAllQty"
     />
+
+    <ConfirmModal
+      :open="deleteOpen"
+      form
+      danger
+      title="Delete From Bin"
+      :subtitle="deleteRow?.sku || ''"
+      confirm-label="Delete"
+      :busy="deleteBusy"
+      @close="closeDelete"
+      @confirm="confirmDelete"
+    >
+      <label class="form-label small" for="return-bin-delete-qty">Quantity</label>
+      <input
+        id="return-bin-delete-qty"
+        v-model="deleteQty"
+        type="number"
+        min="1"
+        class="form-control"
+        :disabled="deleteBusy"
+        :max="deleteRow?.qty || undefined"
+      />
+      <p class="small text-secondary mt-2 mb-0">
+        Removes quantity from this {{ binName || "bin" }} in CRM and ShipHero.
+      </p>
+    </ConfirmModal>
   </div>
 </template>
 

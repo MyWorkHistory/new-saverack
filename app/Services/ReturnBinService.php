@@ -606,6 +606,176 @@ class ReturnBinService
         });
     }
 
+    /**
+     * Remove qty from CRM bin tracking and reduce ShipHero staging location stock.
+     *
+     * @return array{removed_qty: int, remaining_qty: int}
+     */
+    public function removeFromBin(ReturnBin $bin, array $payload, ?User $actor): array
+    {
+        $sku = trim((string) ($payload['sku'] ?? ''));
+        $clientAccountId = (int) ($payload['client_account_id'] ?? 0);
+        $quantity = (int) ($payload['quantity'] ?? 0);
+
+        if ($sku === '' || $clientAccountId <= 0) {
+            throw ValidationException::withMessages([
+                'sku' => ['SKU and client account are required.'],
+            ]);
+        }
+        if ($quantity <= 0) {
+            throw ValidationException::withMessages([
+                'quantity' => ['Enter a quantity greater than zero.'],
+            ]);
+        }
+
+        $available = (int) ClientAccountReturnLine::query()
+            ->join('client_account_returns', 'client_account_returns.id', '=', 'client_account_return_lines.client_account_return_id')
+            ->where('client_account_return_lines.return_bin_id', $bin->id)
+            ->where('client_account_return_lines.return_bin_remaining_qty', '>', 0)
+            ->where('client_account_return_lines.sku', $sku)
+            ->where('client_account_returns.client_account_id', $clientAccountId)
+            ->sum('client_account_return_lines.return_bin_remaining_qty');
+
+        if ($quantity > $available) {
+            throw ValidationException::withMessages([
+                'quantity' => ['Quantity exceeds available items in this bin ('.$available.').'],
+            ]);
+        }
+
+        $account = ClientAccount::query()->findOrFail($clientAccountId);
+        $customerId = trim((string) $account->shiphero_customer_account_id);
+        if ($customerId === '') {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['This account is not linked to ShipHero.'],
+            ]);
+        }
+
+        $stagingName = trim((string) $bin->name);
+        if ($stagingName === '') {
+            throw ValidationException::withMessages([
+                'bin' => ['Return bin name is missing.'],
+            ]);
+        }
+
+        try {
+            $product = $this->inventory->getProductDetailBySku($sku, null, $customerId);
+        } catch (\Throwable $e) {
+            throw ValidationException::withMessages([
+                'sku' => ['Could not load product locations from ShipHero.'],
+            ]);
+        }
+        if (! is_array($product)) {
+            throw ValidationException::withMessages([
+                'sku' => ['Product not found in ShipHero.'],
+            ]);
+        }
+
+        $stagingLoc = null;
+        foreach ($this->flattenProductLocations($product) as $loc) {
+            $name = trim((string) ($loc['location_name'] ?? ''));
+            if (strcasecmp($name, $stagingName) !== 0) {
+                continue;
+            }
+            if ((int) ($loc['quantity'] ?? 0) <= 0) {
+                continue;
+            }
+            $stagingLoc = $loc;
+            break;
+        }
+        if ($stagingLoc === null) {
+            throw ValidationException::withMessages([
+                'quantity' => ['No '.$stagingName.' quantity found for this SKU in ShipHero.'],
+            ]);
+        }
+
+        $warehouseId = trim((string) ($stagingLoc['warehouse_id'] ?? ''));
+        $fromLocationId = trim((string) ($stagingLoc['location_id'] ?? ''));
+        $shipHeroQty = (int) ($stagingLoc['quantity'] ?? 0);
+        if ($warehouseId === '' || $fromLocationId === '') {
+            throw ValidationException::withMessages([
+                'quantity' => ['Could not resolve the '.$stagingName.' location for this SKU.'],
+            ]);
+        }
+        if ($shipHeroQty < $quantity) {
+            throw ValidationException::withMessages([
+                'quantity' => ['ShipHero '.$stagingName.' only has '.$shipHeroQty.' available.'],
+            ]);
+        }
+
+        $reason = InventoryAdjustmentActor::reasonWithActor($stagingName.' Delete', $actor);
+
+        return DB::transaction(function () use (
+            $bin,
+            $sku,
+            $clientAccountId,
+            $quantity,
+            $warehouseId,
+            $fromLocationId,
+            $shipHeroQty,
+            $customerId,
+            $reason
+        ) {
+            $this->inventory->replaceLocationQuantity(
+                $sku,
+                $warehouseId,
+                $fromLocationId,
+                max(0, $shipHeroQty - $quantity),
+                $reason,
+                $customerId
+            );
+
+            $remainingToRemove = $quantity;
+            $removed = 0;
+
+            $lines = ClientAccountReturnLine::query()
+                ->where('return_bin_id', $bin->id)
+                ->where('return_bin_remaining_qty', '>', 0)
+                ->where('sku', $sku)
+                ->whereHas('clientAccountReturn', function ($query) use ($clientAccountId) {
+                    $query->where('client_account_id', $clientAccountId);
+                })
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($lines as $line) {
+                if ($remainingToRemove <= 0) {
+                    break;
+                }
+                $lineRemaining = (int) $line->return_bin_remaining_qty;
+                if ($lineRemaining <= 0) {
+                    continue;
+                }
+                $chunk = min($lineRemaining, $remainingToRemove);
+                $line->return_bin_remaining_qty = $lineRemaining - $chunk;
+                if ((int) $line->return_bin_remaining_qty <= 0) {
+                    $line->return_bin_id = null;
+                    $line->return_bin_number = null;
+                }
+                $line->save();
+                $removed += $chunk;
+                $remainingToRemove -= $chunk;
+            }
+
+            if ($removed !== $quantity) {
+                throw new RuntimeException('Could not remove the requested quantity from the return bin.');
+            }
+
+            $remainingAfter = (int) ClientAccountReturnLine::query()
+                ->join('client_account_returns', 'client_account_returns.id', '=', 'client_account_return_lines.client_account_return_id')
+                ->where('client_account_return_lines.return_bin_id', $bin->id)
+                ->where('client_account_return_lines.return_bin_remaining_qty', '>', 0)
+                ->where('client_account_return_lines.sku', $sku)
+                ->where('client_account_returns.client_account_id', $clientAccountId)
+                ->sum('client_account_return_lines.return_bin_remaining_qty');
+
+            return [
+                'removed_qty' => $removed,
+                'remaining_qty' => $remainingAfter,
+            ];
+        });
+    }
+
     public function restockReasonForReturn(ClientAccountReturn $return, ?User $actor): string
     {
         $prefix = $return->isNonCompliant()

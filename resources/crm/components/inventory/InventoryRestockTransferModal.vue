@@ -25,6 +25,8 @@ const props = defineProps({
   reason: { type: String, default: "Restock" },
   pickOptions: { type: Array, default: () => [] },
   reasonOptions: { type: Array, default: () => ["Restock"] },
+  /** When false, hide Transfer Cart destination control (returns). Restock keeps true. */
+  allowTransferCart: { type: Boolean, default: true },
 });
 
 const emit = defineEmits([
@@ -50,6 +52,12 @@ const selectedFrom = computed(() => {
 
 const fromQty = computed(() => Number(selectedFrom.value?.quantity ?? 0));
 const showForm = computed(() => !props.loading && props.fromOptions.length > 0);
+const fromLocked = computed(
+  () => props.fromOptions.length === 1 && String(props.fromLocationId || "") !== "",
+);
+const showTransferCartControl = computed(
+  () => props.allowTransferCart && !isCartStatusMode.value,
+);
 
 const fromSelectEmptyLabel = computed(() => {
   if (props.fromEmptyLabel) return props.fromEmptyLabel;
@@ -92,7 +100,11 @@ function setDestinationMode(mode) {
           </div>
           <template v-else-if="showForm">
             <label class="form-label small" for="restock-xfer-from">Transfer From</label>
+            <p v-if="fromLocked" id="restock-xfer-from" class="form-control-plaintext fw-medium mb-3 py-1">
+              {{ locationOptionLabel(selectedFrom) }}
+            </p>
             <select
+              v-else
               id="restock-xfer-from"
               :value="fromLocationId"
               class="form-select mb-3"
@@ -129,9 +141,10 @@ function setDestinationMode(mode) {
               </option>
             </select>
 
-            <!-- Pending: Transfer Cart / New Location toggles -->
+            <!-- Pending: Transfer Cart (restock only) / New Location toggles -->
             <div v-if="!isCartStatusMode" class="restock-xfer-modal__mode-row mb-3">
               <button
+                v-if="showTransferCartControl"
                 type="button"
                 class="restock-xfer-modal__mode-btn"
                 :class="{ 'is-active': destinationMode === 'cart' }"
@@ -165,7 +178,7 @@ function setDestinationMode(mode) {
               </button>
             </div>
 
-            <template v-if="destinationMode === 'cart' && !isCartStatusMode">
+            <template v-if="destinationMode === 'cart' && showTransferCartControl">
               <label class="form-label small" for="restock-xfer-cart">Transfer Location</label>
               <select
                 id="restock-xfer-cart"

@@ -1295,4 +1295,44 @@ class AdminReturnController extends Controller
             'data' => $this->returnBins->listBinItems($returnBin),
         ]));
     }
+
+    public function removeReturnBinItem(Request $request, ReturnBin $returnBin): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('viewAny', ClientAccountReturn::class);
+
+        $validated = $request->validate([
+            'sku' => ['required', 'string', 'max:255'],
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'quantity' => ['required', 'integer', 'min:1'],
+        ]);
+
+        try {
+            $result = $this->returnBins->removeFromBin(
+                $returnBin,
+                $validated,
+                $request->user() instanceof User ? $request->user() : null
+            );
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not remove item from return bin.',
+            ], 502);
+        }
+
+        return response()->json(array_merge($result, [
+            'bin' => [
+                'id' => (int) $returnBin->id,
+                'name' => (string) $returnBin->name,
+            ],
+            'data' => $this->returnBins->listBinItems($returnBin),
+        ]));
+    }
 }

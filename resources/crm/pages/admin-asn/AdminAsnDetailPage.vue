@@ -5,6 +5,7 @@ import api from "../../services/api";
 import AdminAsnReceivingFeesModal from "../../components/admin-asn/AdminAsnReceivingFeesModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmNoteAuthorAvatar from "../../components/common/CrmNoteAuthorAvatar.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
 import { asnCatalogApiBase } from "../../composables/useAsnProductCatalog.js";
@@ -13,9 +14,10 @@ import { useToast } from "../../composables/useToast.js";
 import { errorMessage } from "../../utils/apiError.js";
 import { ASN_CARRIER_OPTIONS } from "../../utils/asnCarrierOptions.js";
 import { formatAsnDisplay, formatAsnHeading } from "../../utils/formatAsnDisplay.js";
-import { formatDateUs } from "../../utils/formatUserDates.js";
+import { formatDateTimeUs, formatDateUs } from "../../utils/formatUserDates.js";
 import { formatCents } from "../../utils/formatMoney.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
+import { noteAuthorFromRecord } from "../../utils/noteAuthor.js";
 
 const toast = useToast();
 const route = useRoute();
@@ -92,6 +94,16 @@ const addNewSkuQty = ref(1);
 const notesDraft = ref("");
 const notesSaveBusy = ref(false);
 
+const internalNotes = ref([]);
+const internalNoteBody = ref("");
+const internalNoteSubmitting = ref(false);
+const internalNoteError = ref("");
+
+const asnAttachments = ref([]);
+const attachmentUploading = ref(false);
+const attachmentFileInput = ref(null);
+const attachmentError = ref("");
+
 const lineMenuOpenId = ref(null);
 const lineMenuRect = ref({ top: 0, left: 0 });
 const LINE_MENU_W = 200;
@@ -126,6 +138,28 @@ const canManageReceivingFees = computed(() => {
     keys.includes("receiving.update")
   );
 });
+
+const showBillReceivingFeesBanner = computed(
+  () => Boolean(asn.value?.asn_billing_enabled),
+);
+
+const sortedInternalNotes = computed(() => {
+  const list = Array.isArray(internalNotes.value) ? [...internalNotes.value] : [];
+  return list.sort((a, b) => Number(b.id) - Number(a.id));
+});
+
+const canManageAsnNotes = computed(() => canManageReceivingFees.value);
+
+function noteAuthor(record) {
+  return noteAuthorFromRecord(record);
+}
+
+function canModifyInternalNote(note) {
+  const u = crmUser.value;
+  if (!u || !canManageAsnNotes.value) return false;
+  if (crmIsAdmin(u) || u.is_crm_owner) return true;
+  return Number(note?.user?.id ?? note?.user_id) === Number(u.id);
+}
 
 const canCreateAsn = computed(() => {
   const u = crmUser.value;
@@ -679,6 +713,8 @@ async function loadAsn() {
       title: `Save Rack | ${formatAsnDisplay(data.asn_number)}`,
       description: "ASN receiving detail.",
     });
+    void loadInternalNotes();
+    void loadAsnAttachments();
     const needsSpecs = (data.lines || []).some((l) => !l.specs_cached_at);
     const draft = String(data.status || "").toLowerCase() === "draft";
     if (needsSpecs && !isNonCompliant.value && !draft) {
@@ -688,6 +724,114 @@ async function loadAsn() {
     toast.errorFrom(e, "Could not load ASN.");
   } finally {
     loading.value = false;
+  }
+}
+
+async function loadInternalNotes() {
+  const id = asnId.value;
+  if (!id) {
+    internalNotes.value = [];
+    return;
+  }
+  try {
+    const { data } = await api.get(`/admin/asns/${id}/notes`);
+    internalNotes.value = Array.isArray(data?.data) ? data.data : [];
+  } catch {
+    internalNotes.value = [];
+  }
+}
+
+async function loadAsnAttachments() {
+  const id = asnId.value;
+  if (!id) {
+    asnAttachments.value = [];
+    return;
+  }
+  try {
+    const { data } = await api.get(`/admin/asns/${id}/attachments`);
+    asnAttachments.value = Array.isArray(data?.data) ? data.data : [];
+  } catch {
+    asnAttachments.value = [];
+  }
+}
+
+async function submitInternalNote() {
+  const body = String(internalNoteBody.value || "").trim();
+  if (!body) {
+    internalNoteError.value = "Note text is required.";
+    return;
+  }
+  internalNoteError.value = "";
+  internalNoteSubmitting.value = true;
+  try {
+    const { data } = await api.post(`/admin/asns/${asnId.value}/notes`, { body });
+    internalNotes.value = [data, ...internalNotes.value.filter((n) => n.id !== data.id)];
+    internalNoteBody.value = "";
+    toast.success("Note added.");
+  } catch (e) {
+    internalNoteError.value = errorMessage(e, "Could not add note.");
+  } finally {
+    internalNoteSubmitting.value = false;
+  }
+}
+
+async function deleteInternalNote(note) {
+  if (!note?.id) return;
+  try {
+    await api.delete(`/admin/asns/${asnId.value}/notes/${note.id}`);
+    internalNotes.value = internalNotes.value.filter((n) => n.id !== note.id);
+    toast.success("Note deleted.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete note.");
+  }
+}
+
+async function onAsnAttachmentFilesSelected(e) {
+  const files = Array.from(e?.target?.files || []);
+  if (attachmentFileInput.value) attachmentFileInput.value.value = "";
+  if (!files.length) return;
+
+  attachmentError.value = "";
+  attachmentUploading.value = true;
+  try {
+    for (const file of files) {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post(`/admin/asns/${asnId.value}/attachments`, fd);
+      asnAttachments.value = [data, ...asnAttachments.value.filter((a) => a.id !== data.id)];
+    }
+    toast.success(files.length === 1 ? "File uploaded." : "Files uploaded.");
+  } catch (err) {
+    attachmentError.value = errorMessage(err, "Could not upload file.");
+  } finally {
+    attachmentUploading.value = false;
+  }
+}
+
+async function viewAsnAttachment(attachment) {
+  if (!attachment?.id) return;
+  try {
+    const response = await api.get(`/admin/asns/${asnId.value}/attachments/${attachment.id}`, {
+      responseType: "blob",
+    });
+    const type = attachment.mime || response.data?.type || "application/octet-stream";
+    const blob = new Blob([response.data], { type });
+    const url = window.URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener");
+    setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+  } catch (e) {
+    toast.errorFrom(e, "Could not open file.");
+  }
+}
+
+async function deleteAsnAttachment(attachment) {
+  if (!attachment?.id) return;
+  try {
+    await api.delete(`/admin/asns/${asnId.value}/attachments/${attachment.id}`);
+    asnAttachments.value = asnAttachments.value.filter((a) => a.id !== attachment.id);
+    toast.success("File deleted.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete file.");
   }
 }
 
@@ -1961,6 +2105,14 @@ onUnmounted(() => {
           </p>
         </div>
 
+        <div
+          v-if="showBillReceivingFeesBanner"
+          class="asn-detail-page__billing-callout"
+          role="status"
+        >
+          <p class="asn-detail-page__billing-callout-text">Bill Receiving Fees</p>
+        </div>
+
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <div class="d-flex align-items-center gap-2 mb-3 asn-detail-page__section-head">
             <span class="asn-detail-page__section-icon asn-detail-page__section-icon--fees" aria-hidden="true">
@@ -2033,6 +2185,140 @@ onUnmounted(() => {
           >
             View Bill
           </RouterLink>
+        </div>
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <div class="d-flex align-items-center gap-2 mb-3 asn-detail-page__section-head">
+            <span class="asn-detail-page__section-icon asn-detail-page__section-icon--note" aria-hidden="true">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                />
+              </svg>
+            </span>
+            <div class="min-w-0">
+              <h3 class="h6 fw-semibold mb-0">Internal Notes</h3>
+              <p class="small text-secondary mb-0">Staff-only notes for this ASN</p>
+            </div>
+          </div>
+
+          <ul v-if="sortedInternalNotes.length" class="list-unstyled mb-0 pb-3 border-bottom">
+            <li
+              v-for="c in sortedInternalNotes"
+              :key="c.id"
+              class="d-flex gap-3 mb-3"
+            >
+              <CrmNoteAuthorAvatar
+                :name="noteAuthor(c).name"
+                :email="noteAuthor(c).email"
+                :avatar-url="noteAuthor(c).avatarUrl"
+                size="sm"
+              />
+              <div class="min-w-0 flex-grow-1">
+                <div class="d-flex flex-wrap align-items-baseline gap-2 mb-1">
+                  <span class="small fw-medium text-body">{{ noteAuthor(c).name }}</span>
+                  <span class="small text-secondary">{{ formatDateTimeUs(c.created_at) }}</span>
+                  <button
+                    v-if="canModifyInternalNote(c)"
+                    type="button"
+                    class="btn btn-link btn-sm text-danger p-0 ms-auto"
+                    @click="deleteInternalNote(c)"
+                  >
+                    Delete
+                  </button>
+                </div>
+                <p class="mt-1 mb-0 small text-body" style="white-space: pre-wrap">{{ c.body }}</p>
+              </div>
+            </li>
+          </ul>
+          <p v-else class="text-secondary small border-bottom pb-3 mb-0">No notes yet.</p>
+
+          <div v-if="canManageAsnNotes" class="pt-3">
+            <label class="form-label small text-secondary" for="admin-asn-add-note">Add Note</label>
+            <textarea
+              id="admin-asn-add-note"
+              v-model="internalNoteBody"
+              rows="3"
+              class="form-control form-control-sm"
+              placeholder="Write an update…"
+              :disabled="internalNoteSubmitting"
+            />
+            <div class="mt-2">
+              <button
+                type="button"
+                class="btn btn-sm btn-primary staff-page-primary"
+                :disabled="internalNoteSubmitting || !String(internalNoteBody || '').trim()"
+                @click="submitInternalNote"
+              >
+                {{ internalNoteSubmitting ? "Adding…" : "Add Note" }}
+              </button>
+            </div>
+            <p v-if="internalNoteError" class="text-danger small mt-2 mb-0">{{ internalNoteError }}</p>
+          </div>
+        </div>
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <div class="d-flex align-items-center gap-2 mb-3 asn-detail-page__section-head">
+            <span class="asn-detail-page__section-icon asn-detail-page__section-icon--info" aria-hidden="true">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
+              </svg>
+            </span>
+            <div class="min-w-0">
+              <h3 class="h6 fw-semibold mb-0">Files</h3>
+              <p class="small text-secondary mb-0">Staff-only image uploads</p>
+            </div>
+          </div>
+
+          <ul v-if="asnAttachments.length" class="list-unstyled mb-0 pb-3 border-bottom">
+            <li
+              v-for="file in asnAttachments"
+              :key="file.id"
+              class="d-flex align-items-center gap-2 mb-2"
+            >
+              <button
+                type="button"
+                class="btn btn-link btn-sm text-decoration-none p-0 text-start flex-grow-1 min-w-0"
+                @click="viewAsnAttachment(file)"
+              >
+                <span class="text-truncate d-inline-block mw-100">{{ file.original_name }}</span>
+              </button>
+              <button
+                v-if="canManageAsnNotes"
+                type="button"
+                class="btn btn-link btn-sm text-danger text-decoration-none p-0 flex-shrink-0"
+                @click="deleteAsnAttachment(file)"
+              >
+                Delete
+              </button>
+            </li>
+          </ul>
+          <p v-else class="text-secondary small border-bottom pb-3 mb-0">No files yet.</p>
+
+          <div v-if="canManageAsnNotes" class="pt-3">
+            <label class="form-label small text-secondary" for="admin-asn-upload-files">Upload Images</label>
+            <input
+              id="admin-asn-upload-files"
+              ref="attachmentFileInput"
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              class="form-control form-control-sm"
+              multiple
+              :disabled="attachmentUploading"
+              @change="onAsnAttachmentFilesSelected"
+            />
+            <p v-if="attachmentUploading" class="small text-secondary mt-2 mb-0">Uploading…</p>
+            <p v-if="attachmentError" class="text-danger small mt-2 mb-0">{{ attachmentError }}</p>
+            <p class="text-secondary small mt-2 mb-0">JPEG, PNG, GIF, or WebP (max 5 MB each).</p>
+          </div>
         </div>
       </div>
     </div>

@@ -419,6 +419,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{asn}/bill-items', [AdminAsnController::class, 'storeBillItem'])->middleware('can:receiving_asn.create');
         Route::put('/{asn}/bill-items/{item}', [AdminAsnController::class, 'updateBillItem'])->middleware('can:receiving_asn.update');
         Route::delete('/{asn}/bill-items/{item}', [AdminAsnController::class, 'destroyBillItem'])->middleware('can:receiving_asn.delete');
+        Route::get('/{asn}/notes', [AdminAsnController::class, 'notesIndex'])->middleware('can:receiving_asn.view');
+        Route::post('/{asn}/notes', [AdminAsnController::class, 'storeNote'])->middleware('can:receiving_asn.update');
+        Route::patch('/{asn}/notes/{note}', [AdminAsnController::class, 'updateNote'])->middleware('can:receiving_asn.update');
+        Route::delete('/{asn}/notes/{note}', [AdminAsnController::class, 'destroyNote'])->middleware('can:receiving_asn.update');
+        Route::get('/{asn}/attachments', [AdminAsnController::class, 'attachmentsIndex'])->middleware('can:receiving_asn.view');
+        Route::post('/{asn}/attachments', [AdminAsnController::class, 'storeAttachment'])->middleware('can:receiving_asn.update');
+        Route::get('/{asn}/attachments/{attachment}', [AdminAsnController::class, 'showAttachment'])->middleware('can:receiving_asn.view');
+        Route::delete('/{asn}/attachments/{attachment}', [AdminAsnController::class, 'destroyAttachment'])->middleware('can:receiving_asn.update');
     });
 
     Route::prefix('admin/put-away')->group(function () {

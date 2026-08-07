@@ -50,6 +50,7 @@ const form = reactive({
   default_payment_type: "",
   postage_option: DEFAULT_POSTAGE_OPTION,
   packaging_option: DEFAULT_PACKAGING_OPTION,
+  asn_billing_enabled: false,
   payment_terms_days: 1,
   cc_fee_percent: "3.50",
   stripe_customer_id: "",
@@ -111,9 +112,9 @@ const modalSubtitle = computed(() => {
     case "address":
       return "Street, city, and country.";
     case "billing":
-      return "Default payment type, Stripe customer ID, payment terms, postage, and packaging.";
+      return "Default payment type, Stripe customer ID, payment terms, postage, packaging, and ASN billing.";
     case "payment":
-      return "Default payment type, Stripe customer ID, payment terms, postage, and packaging.";
+      return "Default payment type, Stripe customer ID, payment terms, postage, packaging, and ASN billing.";
     case "settings":
       return "WhatsApp API ID and ShipHero customer account ID.";
     default:
@@ -170,6 +171,7 @@ async function load() {
     form.default_payment_type = data.default_payment_type || "";
     form.postage_option = data.postage_option || DEFAULT_POSTAGE_OPTION;
     form.packaging_option = data.packaging_option || DEFAULT_PACKAGING_OPTION;
+    form.asn_billing_enabled = Boolean(data.asn_billing_enabled);
     form.payment_terms_days = Number(data.payment_terms_days) > 0 ? Number(data.payment_terms_days) : 1;
     form.cc_fee_percent =
       data.cc_fee_percent != null && data.cc_fee_percent !== ""
@@ -230,6 +232,7 @@ function buildPatch() {
       default_payment_type: trimOrNull(form.default_payment_type),
       postage_option: form.postage_option || DEFAULT_POSTAGE_OPTION,
       packaging_option: form.packaging_option || DEFAULT_PACKAGING_OPTION,
+      asn_billing_enabled: Boolean(form.asn_billing_enabled),
       payment_terms_days: Math.max(1, Number(form.payment_terms_days) || 1),
       cc_fee_percent: trimOrNull(form.cc_fee_percent),
       stripe_customer_id: trimOrNull(form.stripe_customer_id),
@@ -268,6 +271,7 @@ function buildPatch() {
       default_payment_type: trimOrNull(form.default_payment_type),
       postage_option: form.postage_option || DEFAULT_POSTAGE_OPTION,
       packaging_option: form.packaging_option || DEFAULT_PACKAGING_OPTION,
+      asn_billing_enabled: Boolean(form.asn_billing_enabled),
       payment_terms_days: Math.max(1, Number(form.payment_terms_days) || 1),
       cc_fee_percent: trimOrNull(form.cc_fee_percent),
       stripe_customer_id: trimOrNull(form.stripe_customer_id),
@@ -678,6 +682,19 @@ async function onSubmit() {
                           >
                             {{ opt.label }}
                           </option>
+                        </select>
+                      </div>
+                      <div class="col-12">
+                        <label class="form-label small mb-1 text-secondary" for="cae-asn-billing"
+                          >ASN Billing</label
+                        >
+                        <select
+                          id="cae-asn-billing"
+                          v-model="form.asn_billing_enabled"
+                          class="form-select"
+                        >
+                          <option :value="false">OFF</option>
+                          <option :value="true">ON</option>
                         </select>
                       </div>
                     </div>

@@ -122,6 +122,8 @@ class ClientAccountUpdateRequest extends FormRequest
             'contract_date' => ['sometimes', 'nullable', 'date'],
             'default_payment_type' => ['sometimes', 'nullable', 'string', Rule::in(ClientAccount::DEFAULT_PAYMENT_TYPES)],
             'postage_option' => ['sometimes', 'string', Rule::in(ClientAccountBillingPreferences::postageKeys())],
+            'packaging_option' => ['sometimes', 'string', Rule::in(ClientAccountBillingPreferences::packagingKeys())],
+            'asn_billing_enabled' => ['sometimes', 'boolean'],
             'payment_terms_days' => ['sometimes', 'integer', 'min:1', 'max:'.ClientAccountBillingPreferences::MAX_PAYMENT_TERMS_DAYS],
             'cc_fee_percent' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
             'stripe_customer_id' => ['sometimes', 'nullable', 'string', 'max:191'],

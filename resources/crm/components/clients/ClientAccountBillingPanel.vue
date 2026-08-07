@@ -86,6 +86,12 @@ const preferenceRows = computed(() => [
     icon: "box",
   },
   {
+    key: "asn_billing",
+    label: "ASN Billing",
+    value: props.account.asn_billing_enabled ? "ON" : "OFF",
+    icon: "asn",
+  },
+  {
     key: "stripe",
     label: "Stripe customer ID",
     value: display(props.account.stripe_customer_id),
@@ -527,6 +533,19 @@ watch(() => props.accountId, load);
                   >
                     <path d="M12 22V12M12 12L3 7l9-5 9 5-9 5z" />
                     <path d="M3 7v10l9 5 9-5V7" />
+                  </svg>
+                  <svg
+                    v-else-if="row.icon === 'asn'"
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.75"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
+                    <rect x="9" y="3" width="6" height="4" rx="1" />
+                    <path d="M9 12h6M9 16h4" />
                   </svg>
                   <svg
                     v-else

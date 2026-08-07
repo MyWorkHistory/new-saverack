@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
+use App\Models\ClientAccountAsnAttachment;
 use App\Models\ClientAccountAsnLine;
+use App\Models\ClientAccountAsnNote;
 use App\Models\ClientAccountAsnTracking;
 use App\Models\AsnBill;
 use App\Models\AsnBillItem;
@@ -18,6 +20,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -120,6 +123,9 @@ class AdminAsnController extends Controller
             'accepted_qty' => $asn->accepted_qty,
             'rejected_qty' => $asn->rejected_qty,
             'warehouse_notes' => $asn->warehouse_notes,
+            'asn_billing_enabled' => $asn->clientAccount
+                ? (bool) $asn->clientAccount->asn_billing_enabled
+                : false,
             'non_compliant_fee' => $asn->non_compliant_fee,
             'custom_bill_id' => $asn->custom_bill_id,
             'asn_bill_id' => $asn->asn_bill_id,
@@ -596,5 +602,233 @@ class AdminAsnController extends Controller
         if ((int) $line->client_account_asn_id !== (int) $asn->id) {
             abort(404);
         }
+    }
+
+    public function notesIndex(Request $request, ClientAccountAsn $asn): JsonResponse
+    {
+        $this->assertStaff($request);
+        $this->authorizeAsn($request, $asn);
+
+        $notes = ClientAccountAsnNote::query()
+            ->where('client_account_asn_id', $asn->id)
+            ->with(['user:id,name,email', 'user.profile:id,user_id,avatar_path'])
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (ClientAccountAsnNote $note) => $this->serializeNote($note))
+            ->values()
+            ->all();
+
+        return response()->json(['data' => $notes]);
+    }
+
+    public function storeNote(Request $request, ClientAccountAsn $asn): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::forUser($request->user())->authorize('update', $asn);
+
+        $validated = $request->validate([
+            'body' => ['required', 'string', 'max:65535'],
+        ]);
+
+        $note = ClientAccountAsnNote::query()->create([
+            'client_account_asn_id' => $asn->id,
+            'user_id' => $request->user()->id,
+            'body' => $validated['body'],
+        ]);
+        $note->load(['user:id,name,email', 'user.profile:id,user_id,avatar_path']);
+
+        return response()->json($this->serializeNote($note), 201);
+    }
+
+    public function updateNote(Request $request, ClientAccountAsn $asn, ClientAccountAsnNote $note): JsonResponse
+    {
+        $this->assertStaff($request);
+        $this->assertNoteBelongs($asn, $note);
+        $this->assertCanModifyNote($request->user(), $asn, $note);
+
+        $validated = $request->validate([
+            'body' => ['required', 'string', 'max:65535'],
+        ]);
+
+        $note->update(['body' => $validated['body']]);
+        $note->refresh();
+        $note->load(['user:id,name,email', 'user.profile:id,user_id,avatar_path']);
+
+        return response()->json($this->serializeNote($note));
+    }
+
+    public function destroyNote(Request $request, ClientAccountAsn $asn, ClientAccountAsnNote $note): JsonResponse
+    {
+        $this->assertStaff($request);
+        $this->assertNoteBelongs($asn, $note);
+        $this->assertCanModifyNote($request->user(), $asn, $note);
+
+        $note->delete();
+
+        return response()->json(['message' => 'Note deleted.']);
+    }
+
+    public function attachmentsIndex(Request $request, ClientAccountAsn $asn): JsonResponse
+    {
+        $this->assertStaff($request);
+        $this->authorizeAsn($request, $asn);
+
+        $rows = ClientAccountAsnAttachment::query()
+            ->where('client_account_asn_id', $asn->id)
+            ->with(['uploadedBy:id,name'])
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (ClientAccountAsnAttachment $a) => $this->serializeAttachment($a))
+            ->values()
+            ->all();
+
+        return response()->json(['data' => $rows]);
+    }
+
+    public function storeAttachment(Request $request, ClientAccountAsn $asn): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::forUser($request->user())->authorize('update', $asn);
+
+        $validated = $request->validate([
+            'file' => [
+                'required',
+                'file',
+                'max:5120',
+                'mimetypes:image/jpeg,image/png,image/gif,image/webp',
+            ],
+        ]);
+
+        $file = $validated['file'];
+        $path = $file->store('asn-attachments/'.$asn->id, 'local');
+
+        try {
+            $attachment = ClientAccountAsnAttachment::query()->create([
+                'client_account_asn_id' => $asn->id,
+                'uploaded_by_user_id' => $request->user()->id,
+                'original_name' => $file->getClientOriginalName(),
+                'path' => $path,
+                'mime' => $file->getClientMimeType(),
+                'size' => (int) $file->getSize(),
+            ]);
+        } catch (\Throwable $e) {
+            Storage::disk('local')->delete($path);
+            throw $e;
+        }
+
+        $attachment->load(['uploadedBy:id,name']);
+
+        return response()->json($this->serializeAttachment($attachment), 201);
+    }
+
+    public function showAttachment(Request $request, ClientAccountAsn $asn, ClientAccountAsnAttachment $attachment)
+    {
+        $this->assertStaff($request);
+        $this->authorizeAsn($request, $asn);
+        $this->assertAttachmentBelongs($asn, $attachment);
+
+        $disk = Storage::disk('local');
+        if (! $disk->exists((string) $attachment->path)) {
+            abort(404);
+        }
+
+        return $disk->response(
+            (string) $attachment->path,
+            $attachment->original_name ?: 'attachment',
+            ['Content-Type' => $attachment->mime ?: 'application/octet-stream']
+        );
+    }
+
+    public function destroyAttachment(
+        Request $request,
+        ClientAccountAsn $asn,
+        ClientAccountAsnAttachment $attachment
+    ): JsonResponse {
+        $this->assertStaff($request);
+        Gate::forUser($request->user())->authorize('update', $asn);
+        $this->assertAttachmentBelongs($asn, $attachment);
+
+        $path = $attachment->path;
+        $attachment->delete();
+
+        if ($path !== null && $path !== '') {
+            Storage::disk('local')->delete((string) $path);
+        }
+
+        return response()->json(['message' => 'Attachment deleted.']);
+    }
+
+    private function assertNoteBelongs(ClientAccountAsn $asn, ClientAccountAsnNote $note): void
+    {
+        if ((int) $note->client_account_asn_id !== (int) $asn->id) {
+            abort(404);
+        }
+    }
+
+    private function assertAttachmentBelongs(ClientAccountAsn $asn, ClientAccountAsnAttachment $attachment): void
+    {
+        if ((int) $attachment->client_account_asn_id !== (int) $asn->id) {
+            abort(404);
+        }
+    }
+
+    private function assertCanModifyNote(User $user, ClientAccountAsn $asn, ClientAccountAsnNote $note): void
+    {
+        Gate::forUser($user)->authorize('update', $asn);
+
+        if ($user->isAdministrator() || $user->isCrmOwner()) {
+            return;
+        }
+
+        if ((int) $note->user_id === (int) $user->id) {
+            return;
+        }
+
+        abort(403, 'You may only edit or delete your own notes.');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeNote(ClientAccountAsnNote $note): array
+    {
+        $u = $note->relationLoaded('user') ? $note->user : null;
+        $avatarUrl = null;
+        if ($u !== null && $u->relationLoaded('profile') && $u->profile !== null) {
+            $avatarUrl = $u->profile->avatar_url;
+        }
+
+        return [
+            'id' => $note->id,
+            'user_id' => $note->user_id,
+            'body' => $note->body,
+            'created_at' => $note->created_at !== null ? $note->created_at->toIso8601String() : null,
+            'updated_at' => $note->updated_at !== null ? $note->updated_at->toIso8601String() : null,
+            'user' => $u !== null
+                ? [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'email' => $u->email,
+                    'avatar_url' => $avatarUrl,
+                ]
+                : null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeAttachment(ClientAccountAsnAttachment $attachment): array
+    {
+        $uploader = $attachment->relationLoaded('uploadedBy') ? $attachment->uploadedBy : null;
+
+        return [
+            'id' => $attachment->id,
+            'original_name' => $attachment->original_name,
+            'mime' => $attachment->mime,
+            'size' => $attachment->size,
+            'created_at' => $attachment->created_at !== null ? $attachment->created_at->toIso8601String() : null,
+            'uploaded_by_name' => $uploader !== null ? trim((string) $uploader->name) : null,
+        ];
     }
 }

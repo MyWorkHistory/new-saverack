@@ -97,4 +97,18 @@ class ClientAccountAsn extends Model
     {
         return $this->belongsTo(AsnBill::class, 'asn_bill_id');
     }
+
+    public function notes(): HasMany
+    {
+        return $this->hasMany(ClientAccountAsnNote::class, 'client_account_asn_id')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
+    }
+
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(ClientAccountAsnAttachment::class, 'client_account_asn_id')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
+    }
 }

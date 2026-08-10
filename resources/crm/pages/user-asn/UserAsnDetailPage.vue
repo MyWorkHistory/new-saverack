@@ -99,6 +99,57 @@ const asnHeading = computed(() => formatAsnHeading(asn.value?.asn_number));
 const asnLabel = computed(() => formatAsnLabel(asn.value?.asn_number));
 const totalLines = computed(() => (Array.isArray(asn.value?.lines) ? asn.value.lines.length : 0));
 
+const linesSortBy = ref("product");
+const linesSortDir = ref("asc");
+
+const sortedLines = computed(() => {
+  const list = Array.isArray(asn.value?.lines) ? [...asn.value.lines] : [];
+  const key = String(linesSortBy.value || "product");
+  const dir = linesSortDir.value === "desc" ? -1 : 1;
+  list.sort((a, b) => {
+    let cmp = 0;
+    if (key === "expected_qty") {
+      cmp = Number(a?.expected_qty || 0) - Number(b?.expected_qty || 0);
+    } else {
+      const aName = String(a?.name || "").toLowerCase();
+      const bName = String(b?.name || "").toLowerCase();
+      cmp = aName.localeCompare(bName);
+      if (cmp === 0) {
+        cmp = String(a?.sku || "")
+          .toLowerCase()
+          .localeCompare(String(b?.sku || "").toLowerCase());
+      }
+    }
+    if (cmp === 0) {
+      cmp = Number(a?.id || 0) - Number(b?.id || 0);
+    }
+    return cmp * dir;
+  });
+  return list;
+});
+
+function toggleLinesSort(column) {
+  if (linesSortBy.value === column) {
+    linesSortDir.value = linesSortDir.value === "asc" ? "desc" : "asc";
+  } else {
+    linesSortBy.value = column;
+    linesSortDir.value = "asc";
+  }
+}
+
+function linesSortIndicator(column) {
+  if (linesSortBy.value !== column) return "";
+  return linesSortDir.value === "asc" ? "↑" : "↓";
+}
+
+function linesThAriaSort(column) {
+  return linesSortBy.value === column
+    ? linesSortDir.value === "asc"
+      ? "ascending"
+      : "descending"
+    : "none";
+}
+
 function inventoryDetailTo(sku) {
   const s = String(sku || "").trim();
   if (!s) return null;
@@ -761,18 +812,42 @@ onUnmounted(() => {
             <table class="table table-hover align-middle mb-0 staff-data-table">
               <thead class="table-light staff-table-head">
                 <tr>
-                  <th class="staff-table-head__th order-detail-page__items-col">Product</th>
-                  <th class="staff-table-head__th text-end" style="width: 9rem">Expected QTY</th>
+                  <th
+                    class="staff-table-head__th staff-table-head__th--sort order-detail-page__items-col"
+                    scope="col"
+                    :aria-sort="linesThAriaSort('product')"
+                  >
+                    <button type="button" class="staff-sort-btn" @click="toggleLinesSort('product')">
+                      Product
+                      <span v-if="linesSortIndicator('product')" class="staff-sort-ind">{{
+                        linesSortIndicator("product")
+                      }}</span>
+                    </button>
+                  </th>
+                  <th
+                    class="staff-table-head__th staff-table-head__th--sort text-end"
+                    scope="col"
+                    style="width: 9rem"
+                    :aria-sort="linesThAriaSort('expected_qty')"
+                  >
+                    <button type="button" class="staff-sort-btn ms-auto" @click="toggleLinesSort('expected_qty')">
+                      Expected QTY
+                      <span v-if="linesSortIndicator('expected_qty')" class="staff-sort-ind">{{
+                        linesSortIndicator("expected_qty")
+                      }}</span>
+                    </button>
+                  </th>
                   <th
                     v-if="isDraft"
                     class="staff-table-head__th text-center user-asn-detail-lines-actions-col"
+                    scope="col"
                   >
                     Actions
                   </th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="line in asn.lines" :key="line.id">
+                <tr v-for="line in sortedLines" :key="line.id">
                   <td class="order-detail-page__items-col">
                     <div class="order-detail-page__item-cell">
                       <img

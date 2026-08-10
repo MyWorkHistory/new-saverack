@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -9,7 +9,10 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateTimeUs } from "../../utils/formatUserDates.js";
 import {
+  backstockLocationsFromProduct,
   flattenProductLocations,
+  isReceivingLocationName,
+  pickLocationsFromProduct,
   preferredWarehouseId,
   receivingLocationsFromProduct,
   resolveCartDestination,
@@ -17,6 +20,8 @@ import {
 
 const LIST_PAGE_SIZE = 20;
 const PUT_AWAY_REASON = "Inbound Receiving Adjustments";
+const PRODUCT_CACHE_PREFIX = "put-away-product:v1:";
+const PRODUCT_CACHE_TTL_MS = 30 * 60 * 1000;
 
 const toast = useToast();
 const router = useRouter();
@@ -25,6 +30,7 @@ const route = useRoute();
 const rows = ref([]);
 const loading = ref(false);
 const loadingMore = ref(false);
+const syncBusy = ref(false);
 const accountsLoading = ref(false);
 const accounts = ref([]);
 const selectedAccountId = ref("");
@@ -33,6 +39,7 @@ const searchCommitted = ref("");
 const searchSkipNext = ref(0);
 const pageInfo = ref({ has_next_page: false, end_cursor: null });
 const meta = ref({ computed_at: null, row_count: 0, source: null, status: null });
+let prefetchGeneration = 0;
 
 const transferModalOpen = ref(false);
 const transferLoading = ref(false);
@@ -122,6 +129,139 @@ function locationLines(value) {
   return splitLocationText(value).map(formatLocationDisplay);
 }
 
+function productCacheKey(sku, accountId) {
+  return `${PRODUCT_CACHE_PREFIX}${Number(accountId) || 0}:${String(sku || "").trim()}`;
+}
+
+function readProductCache(sku, accountId) {
+  try {
+    const raw = sessionStorage.getItem(productCacheKey(sku, accountId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const fetchedAt = Number(parsed?.fetchedAt || 0);
+    if (!fetchedAt || Date.now() - fetchedAt > PRODUCT_CACHE_TTL_MS) return null;
+    return parsed?.product && typeof parsed.product === "object" ? parsed.product : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeProductCache(sku, accountId, product) {
+  if (!product || typeof product !== "object") return;
+  try {
+    sessionStorage.setItem(
+      productCacheKey(sku, accountId),
+      JSON.stringify({ fetchedAt: Date.now(), product }),
+    );
+  } catch {
+    /* ignore quota */
+  }
+}
+
+function invalidateProductCache(sku, accountId) {
+  try {
+    sessionStorage.removeItem(productCacheKey(sku, accountId));
+  } catch {
+    /* ignore */
+  }
+}
+
+function locationName(loc) {
+  return String(loc?.location_name || loc?.location_id || "").trim();
+}
+
+function pickLocationLabelFromProduct(product, row = null) {
+  const parts = pickLocationsFromProduct(product, row)
+    .filter((loc) => Number(loc?.quantity || 0) > 0)
+    .map((loc) => {
+      const name = locationName(loc);
+      const qty = Number(loc?.quantity || 0);
+      return name ? `${name} (${qty})` : "";
+    })
+    .filter(Boolean);
+  return parts.length ? parts.join(", ") : null;
+}
+
+function backstockLocationLabelFromProduct(product, row = null) {
+  const candidates = backstockLocationsFromProduct(product, row)
+    .filter((loc) => !isReceivingLocationName(locationName(loc)))
+    .map((loc) => ({
+      name: locationName(loc),
+      quantity: Number(loc?.quantity || 0),
+    }))
+    .filter((c) => c.name && c.quantity > 0);
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => a.quantity - b.quantity || a.name.localeCompare(b.name));
+  const low = candidates[0];
+  return `${low.name} (${low.quantity})`;
+}
+
+function applyLocationsToRow(row, product) {
+  if (!row || !product) return;
+  const pick = pickLocationLabelFromProduct(product, row);
+  const backstock = backstockLocationLabelFromProduct(product, row);
+  if (pick) row.pick_location = pick;
+  if (backstock) row.backstock_location = backstock;
+
+  const locs = flattenProductLocations(product, { includeEmpty: false });
+  let pickable = 0;
+  let nonPickable = 0;
+  for (const loc of locs) {
+    const qty = Math.max(0, Number(loc?.quantity || 0));
+    if (loc?.pickable === true) pickable += qty;
+    else if (loc?.pickable === false) nonPickable += qty;
+  }
+  if (pickable > 0 || Number(row.pickable_qty || 0) === 0) row.pickable_qty = pickable;
+  if (nonPickable > 0 || Number(row.non_pickable_qty || 0) === 0) row.non_pickable_qty = nonPickable;
+}
+
+async function fetchProductForRow(row, { force = false } = {}) {
+  const sku = String(row?.sku || "").trim();
+  const accountIdForRow = Number(row?.client_account_id || 0);
+  if (!sku || accountIdForRow <= 0) return null;
+  if (!force) {
+    const cached = readProductCache(sku, accountIdForRow);
+    if (cached) return cached;
+  }
+  const { data } = await api.get(`/inventory/products/${encodeURIComponent(sku)}`, {
+    params: { client_account_id: accountIdForRow },
+  });
+  const product = data?.product ?? null;
+  if (product) writeProductCache(sku, accountIdForRow, product);
+  return product;
+}
+
+async function prefetchProductLocations() {
+  const generation = ++prefetchGeneration;
+  const unique = [];
+  const seen = new Set();
+  for (const row of rows.value) {
+    const key = `${Number(row?.client_account_id || 0)}|${String(row?.sku || "").trim()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(row);
+  }
+  for (const row of unique) {
+    if (generation !== prefetchGeneration) return;
+    const sku = String(row?.sku || "").trim();
+    const accountIdForRow = Number(row?.client_account_id || 0);
+    if (!sku || accountIdForRow <= 0) continue;
+    try {
+      const product = await fetchProductForRow(row);
+      if (generation !== prefetchGeneration) return;
+      if (product) {
+        const match = rows.value.find(
+          (r) =>
+            String(r.sku) === sku && Number(r.client_account_id || 0) === accountIdForRow,
+        );
+        if (match) applyLocationsToRow(match, product);
+      }
+    } catch {
+      /* keep going */
+    }
+  }
+}
+
 /** Mobile accordion keys: `${accountId}|${sku}:pick` | `:backstock` */
 const mobileAccordionOpen = ref({});
 
@@ -206,6 +346,14 @@ function applyListPayload(data, append = false) {
   } else if (!append) {
     searchSkipNext.value = 0;
   }
+  for (const row of nextRows) {
+    const sku = String(row?.sku || "").trim();
+    const accountIdForRow = Number(row?.client_account_id || 0);
+    if (!sku || accountIdForRow <= 0) continue;
+    const cached = readProductCache(sku, accountIdForRow);
+    if (cached) applyLocationsToRow(row, cached);
+  }
+  void prefetchProductLocations();
 }
 
 function putAwayDetailTo(row) {
@@ -299,6 +447,7 @@ async function loadRows(reset = false, { forceRefresh = false } = {}) {
     loading.value = true;
     pageInfo.value = { has_next_page: false, end_cursor: null };
     searchSkipNext.value = 0;
+    prefetchGeneration += 1;
   } else {
     loadingMore.value = true;
   }
@@ -309,6 +458,20 @@ async function loadRows(reset = false, { forceRefresh = false } = {}) {
   } finally {
     loading.value = false;
     loadingMore.value = false;
+  }
+}
+
+async function syncReceivingNow() {
+  if (syncBusy.value || loading.value) return;
+  syncBusy.value = true;
+  try {
+    await api.post("/admin/put-away/refresh");
+    await loadRows(true, { forceRefresh: true });
+    toast.success("Put Away synced from Receiving.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not sync Put Away.");
+  } finally {
+    syncBusy.value = false;
   }
 }
 
@@ -328,6 +491,7 @@ function onAccountChange() {
   searchCommitted.value = "";
   searchSkipNext.value = 0;
   rows.value = [];
+  prefetchGeneration += 1;
   loadRows(true);
 }
 
@@ -350,24 +514,36 @@ async function openTransfer(row) {
       ? PUT_AWAY_REASON
       : defaultTransferReason.value;
   transferModalOpen.value = true;
-  transferLoading.value = true;
   transferBusy.value = false;
+
+  const cached = readProductCache(row.sku, accountIdForRow);
+  if (cached) {
+    const receivingCached = receivingLocationsFromProduct(cached, row);
+    if (receivingCached.length) {
+      transferProduct.value = cached;
+      transferFromLocationId.value = String(receivingCached[0].location_id || "");
+      transferForm.quantity = "";
+      transferLoading.value = false;
+      return;
+    }
+  }
+
+  transferLoading.value = true;
   try {
-    const sku = encodeURIComponent(String(row.sku || "").trim());
-    let { data } = await api.get(`/inventory/products/${sku}`, {
-      params: { client_account_id: accountIdForRow },
-    });
-    let product = data?.product ?? null;
-    const hasLocations =
+    let product = await fetchProductForRow(row, { force: !cached });
+    let hasLocations =
       Array.isArray(product?.warehouses) &&
       product.warehouses.some((wh) => Array.isArray(wh?.locations) && wh.locations.length > 0);
     if (!hasLocations) {
-      ({ data } = await api.get(`/inventory/products/${sku}`, {
+      const sku = encodeURIComponent(String(row.sku || "").trim());
+      const { data } = await api.get(`/inventory/products/${sku}`, {
         params: { client_account_id: accountIdForRow, refresh: 1 },
-      }));
+      });
       product = data?.product ?? null;
+      if (product) writeProductCache(row.sku, accountIdForRow, product);
     }
     transferProduct.value = product;
+    if (product) applyLocationsToRow(row, product);
     const receiving = receivingLocationsFromProduct(product, row);
     if (!receiving.length) {
       transferModalOpen.value = false;
@@ -462,6 +638,7 @@ async function submitTransfer() {
   transferBusy.value = true;
   // Instant UI: drop row if Receiving is empty, otherwise show remaining qty.
   applyLocalTransferResult(rowSnapshot, qty);
+  invalidateProductCache(rowSnapshot?.sku, rowSnapshot?.client_account_id);
   toast.success("Quantity transferred.");
 
   try {
@@ -486,6 +663,10 @@ onMounted(async () => {
   }
   await Promise.all([loadAccounts(), loadAdjustmentReasons(), loadRows(true)]);
 });
+
+onUnmounted(() => {
+  prefetchGeneration += 1;
+});
 </script>
 
 <template>
@@ -501,6 +682,14 @@ onMounted(async () => {
         <p v-if="lastUpdatedLabel" class="small text-secondary mb-0">
           Last Updated: {{ lastUpdatedLabel }}
         </p>
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn"
+          :disabled="syncBusy || loading"
+          @click="syncReceivingNow"
+        >
+          {{ syncBusy ? "Syncing…" : "Sync" }}
+        </button>
       </div>
     </div>
 
@@ -556,7 +745,7 @@ onMounted(async () => {
       <div class="staff-table-wrap put-away-list-table-wrap d-none d-lg-block">
         <table
           class="table table-hover align-middle mb-0 staff-data-table user-inv-table put-away-list-table"
-          :class="{ 'put-away-list-table--syncing': loading || loadingMore }"
+          :class="{ 'put-away-list-table--syncing': loading || loadingMore || syncBusy || syncBusy }"
         >
           <thead class="table-light staff-table-head">
             <tr>
@@ -691,7 +880,7 @@ onMounted(async () => {
 
       <div
         class="crm-mobile-item-cards d-lg-none"
-        :class="{ 'put-away-list-table--syncing': loading || loadingMore }"
+        :class="{ 'put-away-list-table--syncing': loading || loadingMore || syncBusy }"
         aria-label="Put away items"
       >
         <div v-if="!rows.length" class="crm-mobile-item-card__empty">{{ emptyTableMessage }}</div>
@@ -897,7 +1086,7 @@ onMounted(async () => {
             <div class="crm-mobile-item-card__footer">
               <button
                 type="button"
-                class="crm-mobile-item-card__transfer"
+                class="btn btn-primary btn-sm staff-page-primary w-100 crm-mobile-item-card__transfer crm-mobile-item-card__transfer--primary"
                 :disabled="!canTransferRow(row) || transferLoading || transferBusy"
                 @click="openTransfer(row)"
               >
@@ -1146,5 +1335,22 @@ onMounted(async () => {
 
 .admin-put-away-list-page .asn-line-thumb-link:hover .asn-line-thumb {
   opacity: 0.88;
+}
+
+.admin-put-away-list-page .crm-mobile-item-card__transfer--primary {
+  color: #fff;
+  background-color: var(--bs-primary);
+  border-top: 0;
+  border-radius: 0.5rem;
+  font-weight: 600;
+}
+
+.admin-put-away-list-page .crm-mobile-item-card__transfer--primary:disabled {
+  opacity: 0.55;
+}
+
+.admin-put-away-list-page .crm-mobile-item-card__footer {
+  border-top: 0;
+  padding-top: 0.5rem;
 }
 </style>

@@ -131,7 +131,17 @@ const bulkMenuOpen = ref(false);
 const bulkSendOpen = ref(false);
 const bulkVoidOpen = ref(false);
 const bulkDeleteOpen = ref(false);
+const bulkStatusOpen = ref(false);
+const bulkStatusValue = ref("open");
 const bulkBusy = ref(false);
+
+const BULK_STATUS_OPTIONS = [
+  { value: "draft", label: "Draft" },
+  { value: "open", label: "Open" },
+  { value: "processing", label: "Processing" },
+  { value: "paid", label: "Paid" },
+  { value: "void", label: "Void" },
+];
 const rows = ref([]);
 const pagination = ref({ current_page: 1, last_page: 1, total: 0 });
 const meta = ref({ statuses: [], client_accounts: [] });
@@ -815,6 +825,17 @@ function closeBulkDelete() {
   bulkDeleteOpen.value = false;
 }
 
+function openBulkStatusModal() {
+  if (!canUpdate.value || !selectedIds.value.length || bulkBusy.value) return;
+  bulkStatusValue.value = "open";
+  bulkStatusOpen.value = true;
+}
+
+function closeBulkStatus() {
+  if (bulkBusy.value) return;
+  bulkStatusOpen.value = false;
+}
+
 const bulkSendMessage = computed(() => {
   const n = selectedDraftCount.value;
   const total = selectedIds.value.length;
@@ -829,6 +850,13 @@ const bulkVoidMessage = computed(() => {
   const n = selectedIds.value.length;
   return n
     ? `Void ${n} selected invoice${n === 1 ? "" : "s"}? Invoices with payments recorded cannot be voided.`
+    : "";
+});
+
+const bulkStatusSubtitle = computed(() => {
+  const n = selectedIds.value.length;
+  return n
+    ? `Update status for ${n} selected invoice${n === 1 ? "" : "s"}.`
     : "";
 });
 
@@ -878,6 +906,37 @@ async function confirmBulkSend() {
   }
 }
 
+async function confirmBulkStatus() {
+  const ids = [...selectedIds.value];
+  const status = String(bulkStatusValue.value || "").trim().toLowerCase();
+  if (!ids.length || !status) return;
+  bulkBusy.value = true;
+  let ok = 0;
+  let fail = 0;
+  for (const id of ids) {
+    try {
+      await api.post(`/invoices/${id}/status`, { status });
+      ok++;
+    } catch {
+      fail++;
+    }
+  }
+  bulkStatusOpen.value = false;
+  selectedIds.value = [];
+  await loadSummary();
+  await fetchRows();
+  bulkBusy.value = false;
+  const label =
+    BULK_STATUS_OPTIONS.find((o) => o.value === status)?.label || status;
+  if (ok && fail === 0) {
+    toast.success(`Updated ${ok} invoice${ok === 1 ? "" : "s"} to ${label}.`);
+  } else if (ok) {
+    toast.success(`Updated ${ok} to ${label}; ${fail} failed.`);
+  } else {
+    toast.error("No invoices were updated. Check status and payments.");
+  }
+}
+
 async function confirmBulkVoid() {
   const ids = [...selectedIds.value];
   if (!ids.length) return;
@@ -886,8 +945,7 @@ async function confirmBulkVoid() {
   let fail = 0;
   for (const id of ids) {
     try {
-      await api.post(`/invoices/${id}/void`);
-      ok++;
+      await api.post(`/invoices/${id}/void`);      ok++;
     } catch {
       fail++;
     }
@@ -1254,6 +1312,15 @@ onUnmounted(() => {
                 v-if="canUpdate"
                 type="button"
                 class="btn btn-outline-secondary staff-toolbar-btn"
+                :disabled="!selectedIds.length || loading || bulkBusy"
+                @click="openBulkStatusModal"
+              >
+                Bulk Edit Status
+              </button>
+              <button
+                v-if="canUpdate"
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn"
                 :disabled="!selectedDraftCount || loading || bulkBusy"
                 @click="bulkSendOpen = true"
               >
@@ -1318,6 +1385,18 @@ onUnmounted(() => {
                   type="button"
                   class="dropdown-item small"
                   role="menuitem"
+                  :disabled="!selectedIds.length || loading || bulkBusy"
+                  @click="
+                    bulkMenuOpen = false;
+                    openBulkStatusModal();
+                  "
+                >
+                  Bulk Edit Status
+                </button>
+                <button
+                  type="button"
+                  class="dropdown-item small"
+                  role="menuitem"
                   :disabled="!selectedDraftCount || loading || bulkBusy"
                   @click="
                     bulkMenuOpen = false;
@@ -1352,6 +1431,15 @@ onUnmounted(() => {
                 </button>
               </div>
             </div>
+            <button
+              v-if="canUpdate && !canDelete"
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn d-lg-none flex-shrink-0"
+              :disabled="!selectedIds.length || loading || bulkBusy"
+              @click="openBulkStatusModal"
+            >
+              Bulk Edit Status
+            </button>
             <button
               v-if="canUpdate && !canDelete"
               type="button"
@@ -2002,6 +2090,32 @@ onUnmounted(() => {
       @close="closeDeleteModal"
       @confirm="confirmDelete"
     />
+
+    <ConfirmModal
+      :open="bulkStatusOpen"
+      title="Bulk Edit Status"
+      :subtitle="bulkStatusSubtitle"
+      confirm-label="Update Status"
+      cancel-label="Cancel"
+      :busy="bulkBusy"
+      :danger="false"
+      form
+      @close="closeBulkStatus"
+      @confirm="confirmBulkStatus"
+    >
+      <label class="form-label small mb-1 text-secondary" for="inv-bulk-status">Status</label>
+      <select
+        id="inv-bulk-status"
+        v-model="bulkStatusValue"
+        class="form-select"
+        :disabled="bulkBusy"
+        required
+      >
+        <option v-for="opt in BULK_STATUS_OPTIONS" :key="opt.value" :value="opt.value">
+          {{ opt.label }}
+        </option>
+      </select>
+    </ConfirmModal>
 
     <ConfirmModal
       :open="bulkSendOpen"

@@ -114,9 +114,9 @@ async function copyTemplateBody(row) {
   copyBusyId[id] = true;
   try {
     await navigator.clipboard.writeText(body);
-    toast.success("Template copied.");
+    toast.success("Text copied.");
   } catch {
-    toast.error("Could not copy template.");
+    toast.error("Could not copy text.");
   } finally {
     copyBusyId[id] = false;
   }
@@ -276,11 +276,21 @@ async function copyTemplateBody(row) {
                   <td class="text-secondary small">{{ lastSentFor(row) }}</td>
                   <td class="staff-actions-cell text-center" @click.stop>
                     <div
-                      v-if="canManage && !readOnlyActions"
-                      data-email-template-actions
-                      class="staff-actions-inner staff-actions-inner--single justify-content-center"
+                      class="staff-actions-inner justify-content-center gap-2 flex-wrap"
+                      :data-email-template-actions="canManage && !readOnlyActions ? '' : undefined"
                     >
                       <button
+                        v-if="row.body"
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        title="Copy Text"
+                        :disabled="!!copyBusyId[row.id]"
+                        @click="copyTemplateBody(row)"
+                      >
+                        Copy Text
+                      </button>
+                      <button
+                        v-if="canManage && !readOnlyActions"
                         type="button"
                         class="staff-action-btn staff-action-btn--more"
                         :class="{ 'is-open': manageOpenId === row.id }"
@@ -291,37 +301,27 @@ async function copyTemplateBody(row) {
                       >
                         <CrmIconRowActions variant="horizontal" />
                       </button>
+                      <span
+                        v-if="!row.body && !(canManage && !readOnlyActions)"
+                        class="text-secondary"
+                      >—</span>
                     </div>
-                    <button
-                      v-else-if="readOnlyActions && row.body"
-                      type="button"
-                      class="btn btn-link btn-sm p-0 text-secondary"
-                      title="Copy Template"
-                      aria-label="Copy template"
-                      :disabled="!!copyBusyId[row.id]"
-                      @click="copyTemplateBody(row)"
-                    >
-                      <svg
-                        width="18"
-                        height="18"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.75"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                        />
-                      </svg>
-                    </button>
-                    <span v-else class="text-secondary">—</span>
                   </td>
                 </tr>
                 <tr v-if="expandable && isRowExpanded(row.id)">
                   <td colspan="5" class="email-templates-list__body-cell">
+                    <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
+                      <span class="small text-secondary">Template body</span>
+                      <button
+                        v-if="row.body"
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary flex-shrink-0"
+                        :disabled="!!copyBusyId[row.id]"
+                        @click="copyTemplateBody(row)"
+                      >
+                        Copy Text
+                      </button>
+                    </div>
                     <pre class="email-templates-list__body mb-0">{{ row.body || "—" }}</pre>
                   </td>
                 </tr>

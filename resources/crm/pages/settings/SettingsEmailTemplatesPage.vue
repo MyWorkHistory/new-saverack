@@ -191,6 +191,7 @@ onUnmounted(() => {
       :can-manage="canUpdate"
       :manage-open-id="manageOpenId"
       :manage-menu-rect="manageMenuRect"
+      expandable
       @toggle-group="toggleGroup"
       @open-manage="openManage"
       @edit="openEdit"

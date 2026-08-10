@@ -98,6 +98,37 @@ TEXT;
             'Can you send over some details on what this would look like for us?'
         );
         $response->assertJsonPath('status', Lead::STATUS_OPEN);
+        $response->assertJsonPath('referral', Lead::REFERRAL_BIZY);
+    }
+
+    public function test_quick_add_google_format_sets_referral(): void
+    {
+        $this->staffWithLeads();
+
+        $text = <<<'TEXT'
+Full Name	:	Cherrie, Deas
+Company Name	:	TALAA LLC
+Email	:	Info@rheeboutique.com
+Phone Number	:	8136679100
+Store Website URL	:	rheeboutique.com
+Tell us about any special requirements	:	Hello.
+
+Subject: Partnership
+TEXT;
+
+        $response = $this->postJson('/api/leads/quick-add', [
+            'text' => $text,
+            'referral' => Lead::REFERRAL_GOOGLE,
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('referral', Lead::REFERRAL_GOOGLE);
+        $response->assertJsonPath('referral_label', 'Google');
+        $response->assertJsonPath('name', 'Cherrie Deas');
+        $response->assertJsonPath('company_name', 'TALAA LLC');
+        $response->assertJsonPath('email', 'Info@rheeboutique.com');
+        $response->assertJsonPath('website', 'rheeboutique.com');
+        $this->assertStringContainsString('Phone: 8136679100', (string) $response->json('comment'));
     }
 
     public function test_meta_directory_stats_and_status_filter(): void
@@ -106,6 +137,7 @@ TEXT;
 
         Lead::query()->create([
             'status' => Lead::STATUS_OPEN,
+            'referral' => Lead::REFERRAL_BIZY,
             'company_name' => 'Open Co',
             'email' => 'open@test.com',
             'follow_up_days' => 1,
@@ -113,6 +145,7 @@ TEXT;
         ]);
         Lead::query()->create([
             'status' => Lead::STATUS_CONTACTED,
+            'referral' => Lead::REFERRAL_GOOGLE,
             'company_name' => 'Contacted Co',
             'email' => 'contacted@test.com',
             'follow_up_days' => 3,
@@ -120,6 +153,7 @@ TEXT;
         ]);
         Lead::query()->create([
             'status' => Lead::STATUS_NOT_INTERESTED,
+            'referral' => Lead::REFERRAL_BIZY,
             'company_name' => 'Closed Co',
             'email' => 'closed@test.com',
             'follow_up_days' => 7,
@@ -131,11 +165,17 @@ TEXT;
         $meta->assertJsonPath('directory_stats.open', 1);
         $meta->assertJsonPath('directory_stats.contacted', 1);
         $this->assertArrayNotHasKey('not_interested', $meta->json('directory_stats'));
+        $meta->assertJsonPath('referrals.0', Lead::REFERRAL_BIZY);
 
         $list = $this->getJson('/api/leads?status=open');
         $list->assertOk();
         $list->assertJsonPath('total', 1);
         $list->assertJsonPath('data.0.company_name', 'Open Co');
+
+        $byReferral = $this->getJson('/api/leads?referral=google');
+        $byReferral->assertOk();
+        $byReferral->assertJsonPath('total', 1);
+        $byReferral->assertJsonPath('data.0.referral', Lead::REFERRAL_GOOGLE);
     }
 
     public function test_can_update_status_and_follow_up_days(): void

@@ -44,6 +44,7 @@ class LeadController extends Controller
 
         return response()->json($this->leads->paginate($request->only([
             'status',
+            'referral',
             'search',
             'q',
             'per_page',
@@ -64,6 +65,7 @@ class LeadController extends Controller
             'name' => ['nullable', 'string', 'max:255'],
             'comment' => ['nullable', 'string', 'max:20000'],
             'follow_up_days' => ['nullable', 'integer', Rule::in(Lead::FOLLOW_UP_DAY_OPTIONS)],
+            'referral' => ['sometimes', 'string', Rule::in(Lead::REFERRALS)],
         ], [
             'email.unique' => 'Email already exist',
         ]);
@@ -79,9 +81,14 @@ class LeadController extends Controller
 
         $validated = $request->validate([
             'text' => ['required', 'string', 'max:50000'],
+            'referral' => ['sometimes', 'string', Rule::in(Lead::REFERRALS)],
         ]);
 
-        $lead = $this->leads->createFromQuickAddText((string) $validated['text'], $request->user());
+        $lead = $this->leads->createFromQuickAddText(
+            (string) $validated['text'],
+            $request->user(),
+            Lead::normalizeReferral($validated['referral'] ?? Lead::REFERRAL_BIZY)
+        );
 
         return response()->json($this->leads->toDetailArray($lead), 201);
     }
@@ -106,6 +113,7 @@ class LeadController extends Controller
 
         $validated = $request->validate([
             'status' => ['sometimes', 'string', Rule::in(Lead::STATUSES)],
+            'referral' => ['sometimes', 'string', Rule::in(Lead::REFERRALS)],
             'follow_up_days' => ['sometimes', 'nullable', 'integer', Rule::in(Lead::FOLLOW_UP_DAY_OPTIONS)],
             'company_name' => ['sometimes', 'string', 'max:255'],
             'email' => ['sometimes', 'email', 'max:255', Rule::unique('leads', 'email')->ignore($lead->id)],

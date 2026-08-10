@@ -10,6 +10,8 @@ export const LEAD_STATUSES = [
   "account_created",
 ];
 
+export const LEAD_REFERRALS = ["bizy", "google"];
+
 export const LEAD_FOLLOW_UP_DAY_OPTIONS = [1, 3, 5, 7, 10, 15, 30, 60, 90];
 
 /** Sentinel for Follow Up Off in selects (serialized as null to the API). */
@@ -27,9 +29,19 @@ export const LEAD_STATUS_LABELS = {
   account_created: "Account Created",
 };
 
+export const LEAD_REFERRAL_LABELS = {
+  bizy: "Bizy",
+  google: "Google",
+};
+
 export function leadStatusLabel(status) {
   const key = String(status || "").toLowerCase();
   return LEAD_STATUS_LABELS[key] || String(status || "").replace(/_/g, " ");
+}
+
+export function leadReferralLabel(referral) {
+  const key = String(referral || "").toLowerCase();
+  return LEAD_REFERRAL_LABELS[key] || String(referral || "").replace(/_/g, " ");
 }
 
 export function formatFollowUpDays(days) {

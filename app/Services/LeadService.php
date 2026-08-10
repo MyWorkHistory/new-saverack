@@ -62,6 +62,7 @@ class LeadService
 
         return [
             'statuses' => Lead::STATUSES,
+            'referrals' => Lead::REFERRALS,
             'follow_up_day_options' => Lead::FOLLOW_UP_DAY_OPTIONS,
             'directory_stats' => $directoryStats,
         ];
@@ -127,6 +128,11 @@ class LeadService
             $query->where('status', $status);
         }
 
+        $referral = strtolower(trim((string) ($filters['referral'] ?? 'all')));
+        if ($referral !== '' && $referral !== 'all' && in_array($referral, Lead::REFERRALS, true)) {
+            $query->where('referral', $referral);
+        }
+
         $search = trim((string) ($filters['search'] ?? $filters['q'] ?? ''));
         if ($search !== '') {
             $like = '%'.$search.'%';
@@ -162,6 +168,7 @@ class LeadService
         $lead = DB::transaction(function () use ($data, $followUpDays, $actor) {
             $lead = Lead::query()->create([
                 'status' => Lead::STATUS_OPEN,
+                'referral' => Lead::normalizeReferral($data['referral'] ?? Lead::REFERRAL_BIZY),
                 'company_name' => trim((string) $data['company_name']),
                 'email' => trim((string) $data['email']),
                 'website' => $this->nullableTrim($data['website'] ?? null),
@@ -206,9 +213,10 @@ class LeadService
         return $lead;
     }
 
-    public function createFromQuickAddText(string $text, ?User $actor = null): Lead
+    public function createFromQuickAddText(string $text, ?User $actor = null, string $referral = Lead::REFERRAL_BIZY): Lead
     {
-        $parsed = LeadQuickAddParser::parse($text);
+        $referral = Lead::normalizeReferral($referral);
+        $parsed = LeadQuickAddParser::parse($text, $referral);
         $company = trim((string) ($parsed['company_name'] ?? ''));
         $email = trim((string) ($parsed['email'] ?? ''));
 
@@ -232,7 +240,9 @@ class LeadService
             'company_name' => $company,
             'email' => $email,
             'website' => $parsed['website'] ?? null,
+            'name' => $parsed['name'] ?? null,
             'comment' => $parsed['comment'] ?? null,
+            'referral' => $referral,
         ], $actor);
     }
 
@@ -244,6 +254,7 @@ class LeadService
         $fields = [];
         $before = [
             'status' => $lead->status,
+            'referral' => $lead->referral,
             'follow_up_days' => $lead->follow_up_days,
             'company_name' => $lead->company_name,
             'email' => $lead->email,
@@ -268,6 +279,11 @@ class LeadService
             }
             $lead->status = $status;
             $fields[] = 'status';
+        }
+
+        if (array_key_exists('referral', $data)) {
+            $lead->referral = Lead::normalizeReferral($data['referral']);
+            $fields[] = 'referral';
         }
 
         if (array_key_exists('follow_up_days', $data)) {
@@ -720,6 +736,8 @@ class LeadService
             'id' => $lead->id,
             'status' => $lead->status,
             'status_label' => Lead::statusLabel((string) $lead->status),
+            'referral' => Lead::normalizeReferral($lead->referral ?? Lead::REFERRAL_BIZY),
+            'referral_label' => Lead::referralLabel((string) ($lead->referral ?? Lead::REFERRAL_BIZY)),
             'company_name' => $lead->company_name,
             'email' => $lead->email,
             'website' => $lead->website,

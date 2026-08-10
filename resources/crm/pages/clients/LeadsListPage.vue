@@ -15,10 +15,12 @@ import LeadStatusUpdateModal from "../../components/leads/LeadStatusUpdateModal.
 import LeadSummaryCards from "../../components/leads/LeadSummaryCards.vue";
 import {
   LEAD_FOLLOW_UP_DAY_OPTIONS,
+  LEAD_REFERRALS,
   LEAD_STATUSES,
   followUpPayloadValue,
   formatFollowUpRemaining,
   leadInitials,
+  leadReferralLabel,
   leadStatusLabel,
 } from "../../constants/leads.js";
 
@@ -56,6 +58,7 @@ const followUpDayOptions = ref([...LEAD_FOLLOW_UP_DAY_OPTIONS]);
 const query = ref({
   search: "",
   status: "all",
+  referral: "all",
   page: 1,
   per_page: 25,
   sort_by: "follow_up_at",
@@ -126,6 +129,9 @@ async function fetchRows() {
     };
     if (query.value.status && query.value.status !== "all") {
       params.status = query.value.status;
+    }
+    if (query.value.referral && query.value.referral !== "all") {
+      params.referral = query.value.referral;
     }
     const search = String(query.value.search || "").trim();
     if (search) params.search = search;
@@ -382,7 +388,7 @@ watch(
 );
 
 watch(
-  () => [query.value.status, query.value.page, query.value.sort_by, query.value.sort_dir],
+  () => [query.value.status, query.value.referral, query.value.page, query.value.sort_by, query.value.sort_dir],
   () => {
     fetchRows();
   },
@@ -481,6 +487,28 @@ onUnmounted(() => {
             placeholder="Search leads"
             autocomplete="off"
           />
+          <select
+            v-model="query.status"
+            class="form-select staff-toolbar-search staff-toolbar-search--inline"
+            aria-label="Filter by status"
+            @change="query.page = 1"
+          >
+            <option value="all">All Statuses</option>
+            <option v-for="st in statuses" :key="st" :value="st">
+              {{ leadStatusLabel(st) }}
+            </option>
+          </select>
+          <select
+            v-model="query.referral"
+            class="form-select staff-toolbar-search staff-toolbar-search--inline"
+            aria-label="Filter by referral"
+            @change="query.page = 1"
+          >
+            <option value="all">All Referrals</option>
+            <option v-for="ref in LEAD_REFERRALS" :key="ref" :value="ref">
+              {{ leadReferralLabel(ref) }}
+            </option>
+          </select>
         </div>
       </div>
 
@@ -494,6 +522,7 @@ onUnmounted(() => {
               <th class="staff-table-head__th" scope="col">Status</th>
               <th class="staff-table-head__th" scope="col" style="width: 3rem"></th>
               <th class="staff-table-head__th" scope="col">Company Name</th>
+              <th class="staff-table-head__th" scope="col">Referral</th>
               <th class="staff-table-head__th" scope="col">Email</th>
               <th class="staff-table-head__th" scope="col">Website</th>
               <th class="staff-table-head__th text-center" scope="col">Follow Up</th>
@@ -503,7 +532,7 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr v-if="!rows.length">
-              <td colspan="8" class="px-4 py-5 text-center text-secondary">No leads found.</td>
+              <td colspan="9" class="px-4 py-5 text-center text-secondary">No leads found.</td>
             </tr>
             <tr v-for="row in rows" :key="row.id" class="align-middle">
               <td>
@@ -551,6 +580,9 @@ onUnmounted(() => {
                 >
                   {{ row.company_name }}
                 </RouterLink>
+              </td>
+              <td class="text-body staff-table-cell__meta">
+                {{ row.referral_label || leadReferralLabel(row.referral) || "—" }}
               </td>
               <td
                 class="text-body staff-table-cell__meta text-truncate"
@@ -682,6 +714,12 @@ onUnmounted(() => {
             </div>
 
             <div class="crm-mobile-item-card__meta">
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Referral</span>
+                <span class="crm-mobile-item-card__meta-value">
+                  {{ row.referral_label || leadReferralLabel(row.referral) || "—" }}
+                </span>
+              </div>
               <div class="crm-mobile-item-card__meta-row">
                 <span class="crm-mobile-item-card__meta-label">Email</span>
                 <span class="crm-mobile-item-card__meta-value">

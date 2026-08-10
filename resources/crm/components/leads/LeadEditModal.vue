@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onUnmounted, watch } from "vue";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
+import { LEAD_REFERRALS, leadReferralLabel } from "../../constants/leads.js";
 
 const props = defineProps({
   busy: { type: Boolean, default: false },
@@ -16,6 +17,7 @@ const form = defineModel("form", {
     website: "",
     name: "",
     company_name: "",
+    referral: "bizy",
   }),
 });
 
@@ -71,6 +73,7 @@ watch(open, (o) => {
     website: props.lead.website || "",
     name: props.lead.name || "",
     company_name: props.lead.company_name || "",
+    referral: String(props.lead.referral || "bizy").toLowerCase() === "google" ? "google" : "bizy",
   };
 });
 </script>
@@ -123,6 +126,21 @@ watch(open, (o) => {
                 class="d-flex flex-column gap-3"
                 @submit.prevent="emit('save')"
               >
+                <div>
+                  <label class="form-label small mb-1 text-secondary" for="lead-edit-referral">
+                    Referral
+                  </label>
+                  <select
+                    id="lead-edit-referral"
+                    v-model="form.referral"
+                    class="form-select"
+                    :disabled="busy"
+                  >
+                    <option v-for="key in LEAD_REFERRALS" :key="key" :value="key">
+                      {{ leadReferralLabel(key) }}
+                    </option>
+                  </select>
+                </div>
                 <div>
                   <label class="form-label small mb-1 text-secondary" for="lead-edit-company">
                     Company

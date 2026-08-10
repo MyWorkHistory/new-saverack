@@ -19,6 +19,7 @@ import {
   formatFollowUpDays,
   formatFollowUpRemaining,
   leadInitials,
+  leadReferralLabel,
   leadStatusLabel,
 } from "../../constants/leads.js";
 import { EMAIL_TEMPLATE_CATEGORIES } from "../../constants/emailTemplates.js";
@@ -169,6 +170,7 @@ const editForm = ref({
   website: "",
   name: "",
   company_name: "",
+  referral: "bizy",
 });
 
 const noteBody = ref("");
@@ -444,6 +446,7 @@ async function saveEditModal() {
       email: String(editForm.value.email || "").trim(),
       website: String(editForm.value.website || "").trim() || null,
       name: String(editForm.value.name || "").trim() || null,
+      referral: String(editForm.value.referral || "bizy").toLowerCase() === "google" ? "google" : "bizy",
       created_at: editForm.value.created_at || undefined,
     });
     lead.value = data;
@@ -843,6 +846,12 @@ onMounted(async () => {
                 <dt class="staff-user-profile__dt">Created Date</dt>
                 <dd class="staff-user-profile__dd text-end">
                   {{ formatDateUs(lead.created_at) }}
+                </dd>
+              </div>
+              <div>
+                <dt class="staff-user-profile__dt">Referral</dt>
+                <dd class="staff-user-profile__dd text-end">
+                  {{ lead.referral_label || leadReferralLabel(lead.referral) || "—" }}
                 </dd>
               </div>
               <div>

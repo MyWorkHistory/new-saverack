@@ -7,6 +7,7 @@ import {
   CRM_BTN_SECONDARY,
   CRM_DIALOG_FOOTER_CLASS_DRAWER,
 } from "../../constants/dialogFooter.js";
+import { LEAD_REFERRALS, leadReferralLabel } from "../../constants/leads.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -16,7 +17,22 @@ const props = defineProps({
 const emit = defineEmits(["update:open", "submit"]);
 
 const text = ref("");
+const referral = ref("bizy");
 const errorMsg = ref("");
+
+const isGoogle = computed(() => referral.value === "google");
+
+const subtitle = computed(() =>
+  isGoogle.value
+    ? "Paste Google lead fields (Full Name, Company, Email, Phone, Website, requirements)."
+    : "Paste Company, Website, Email, and Email Thread.",
+);
+
+const placeholder = computed(() =>
+  isGoogle.value
+    ? "Full Name\t:\tLast, First\nCompany Name\t:\t…\nEmail\t:\t…\nPhone Number\t:\t…\nStore Website URL\t:\t…\nTell us about any special requirements\t:\t…\n\nSubject: …"
+    : "Paste company, website, email, and any email thread…",
+);
 
 const canSubmit = computed(() => String(text.value || "").trim() !== "" && !props.busy);
 
@@ -25,6 +41,7 @@ watch(
   (open) => {
     if (open) {
       text.value = "";
+      referral.value = "bizy";
       errorMsg.value = "";
     }
   },
@@ -40,7 +57,10 @@ function submit() {
     return;
   }
   errorMsg.value = "";
-  emit("submit", { text: String(text.value).trim() });
+  emit("submit", {
+    text: String(text.value).trim(),
+    referral: referral.value,
+  });
 }
 </script>
 
@@ -48,7 +68,7 @@ function submit() {
   <CrmRightDrawer
     :open="open"
     title="Quick Add"
-    subtitle="Paste Company, Website, Email, and Email Thread."
+    :subtitle="subtitle"
     :busy="busy"
     max-width="xl"
     form-id="lead-quick-add-form"
@@ -57,6 +77,31 @@ function submit() {
   >
     <div class="d-flex flex-column gap-3">
       <p v-if="errorMsg" class="alert alert-danger py-2 mb-0 small">{{ errorMsg }}</p>
+
+      <div>
+        <span class="form-label d-block">Referral</span>
+        <div class="d-flex flex-wrap gap-3">
+          <div
+            v-for="key in LEAD_REFERRALS"
+            :key="key"
+            class="form-check"
+          >
+            <input
+              :id="`lead-quick-add-referral-${key}`"
+              v-model="referral"
+              class="form-check-input"
+              type="radio"
+              name="lead-quick-add-referral"
+              :value="key"
+              :disabled="busy"
+            />
+            <label class="form-check-label" :for="`lead-quick-add-referral-${key}`">
+              {{ leadReferralLabel(key) }}
+            </label>
+          </div>
+        </div>
+      </div>
+
       <div>
         <label class="form-label" for="lead-quick-add-text">Paste Lead Info</label>
         <textarea
@@ -65,7 +110,7 @@ function submit() {
           class="form-control font-monospace"
           rows="14"
           :disabled="busy"
-          placeholder="Paste company, website, email, and any email thread…"
+          :placeholder="placeholder"
         />
       </div>
     </div>

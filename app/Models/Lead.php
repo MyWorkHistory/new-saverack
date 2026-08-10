@@ -25,6 +25,10 @@ class Lead extends Model
 
     public const STATUS_ACCOUNT_CREATED = 'account_created';
 
+    public const REFERRAL_BIZY = 'bizy';
+
+    public const REFERRAL_GOOGLE = 'google';
+
     /** @var list<string> */
     public const STATUSES = [
         self::STATUS_OPEN,
@@ -36,6 +40,12 @@ class Lead extends Model
         self::STATUS_NOT_INTERESTED,
         self::STATUS_NOT_QUALIFIED,
         self::STATUS_ACCOUNT_CREATED,
+    ];
+
+    /** @var list<string> */
+    public const REFERRALS = [
+        self::REFERRAL_BIZY,
+        self::REFERRAL_GOOGLE,
     ];
 
     /** Statuses shown as directory summary cards. */
@@ -54,6 +64,7 @@ class Lead extends Model
 
     protected $fillable = [
         'status',
+        'referral',
         'company_name',
         'email',
         'website',
@@ -99,6 +110,26 @@ class Lead extends Model
         ];
 
         return $labels[$status] ?? str_replace('_', ' ', ucwords($status, '_'));
+    }
+
+    public static function referralLabel(string $referral): string
+    {
+        $labels = [
+            self::REFERRAL_BIZY => 'Bizy',
+            self::REFERRAL_GOOGLE => 'Google',
+        ];
+
+        return $labels[strtolower(trim($referral))] ?? ucfirst(trim($referral));
+    }
+
+    public static function normalizeReferral($referral): string
+    {
+        $value = strtolower(trim((string) ($referral ?? '')));
+        if (in_array($value, self::REFERRALS, true)) {
+            return $value;
+        }
+
+        return self::REFERRAL_BIZY;
     }
 
     /**

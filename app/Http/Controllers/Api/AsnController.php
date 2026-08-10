@@ -8,6 +8,7 @@ use App\Models\ClientAccountAsn;
 use App\Models\ClientAccountAsnLine;
 use App\Models\ClientAccountAsnTracking;
 use App\Models\ClientAccountAsnVendorLine;
+use App\Models\ShipHeroInventoryProductIndex;
 use App\Models\User;
 use App\Services\AsnReceivingService;
 use App\Services\OrderDashboardSnapshotService;
@@ -769,6 +770,380 @@ class AsnController extends Controller
         $this->recalcLineAggregates($asn->fresh());
 
         return response()->json($this->serializeLine($line), 201);
+    }
+
+    /**
+     * Import ASN product lines from a CSV (Name, SKU, Expected QTY).
+     * Only existing catalog SKUs are accepted; quantities merge onto matching lines.
+     */
+    public function importLinesCsv(Request $request, ClientAccountAsn $asn): JsonResponse
+    {
+        $this->authorizeAsn($request, $asn);
+        $portal = $this->isPortalUser($request);
+        $canAddLines = $asn->status === ClientAccountAsn::STATUS_DRAFT
+            || (! $portal && $asn->status === ClientAccountAsn::STATUS_NON_COMPLIANT);
+        if (! $canAddLines) {
+            throw ValidationException::withMessages([
+                'status' => ['Products can only be added while the ASN is in draft.'],
+            ]);
+        }
+
+        $validated = $request->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+        ]);
+
+        $path = $validated['file']->getRealPath();
+        if (! is_string($path) || $path === '' || ! is_readable($path)) {
+            throw ValidationException::withMessages([
+                'file' => ['Could not read the uploaded CSV file.'],
+            ]);
+        }
+
+        $parsed = $this->parseAsnLinesCsv($path);
+        $errors = $parsed['errors'];
+        $rows = $parsed['rows'];
+
+        $imported = 0;
+        $updated = 0;
+        $productCache = [];
+        $clientAccountId = (int) $asn->client_account_id;
+        $shipheroCustomerId = null;
+
+        $asn->load('lines');
+        /** @var array<string, ClientAccountAsnLine> $linesBySku */
+        $linesBySku = [];
+        foreach ($asn->lines as $existingLine) {
+            $key = mb_strtolower(trim((string) $existingLine->sku));
+            if ($key !== '') {
+                $linesBySku[$key] = $existingLine;
+            }
+        }
+        $maxSort = (int) $asn->lines->max('sort_order');
+
+        DB::transaction(function () use (
+            $request,
+            $asn,
+            $rows,
+            &$errors,
+            &$imported,
+            &$updated,
+            &$productCache,
+            &$linesBySku,
+            &$maxSort,
+            &$shipheroCustomerId,
+            $clientAccountId
+        ) {
+            foreach ($rows as $row) {
+                $rowNum = (int) $row['row'];
+                $sku = (string) $row['sku'];
+                $skuKey = mb_strtolower($sku);
+                $qty = (int) $row['expected_qty'];
+                $csvName = (string) ($row['name'] ?? '');
+
+                if (! array_key_exists($skuKey, $productCache)) {
+                    $productCache[$skuKey] = $this->resolveExistingCatalogProductForAsnCsv(
+                        $clientAccountId,
+                        $sku,
+                        $request,
+                        $shipheroCustomerId
+                    );
+                }
+                $product = $productCache[$skuKey];
+                if ($product === null) {
+                    $errors[] = [
+                        'row' => $rowNum,
+                        'sku' => $sku,
+                        'message' => 'SKU does not exist and must be created first',
+                    ];
+
+                    continue;
+                }
+
+                if (isset($linesBySku[$skuKey])) {
+                    $line = $linesBySku[$skuKey];
+                    $line->expected_qty = (int) $line->expected_qty + $qty;
+                    $line->save();
+                    $updated++;
+
+                    continue;
+                }
+
+                $name = $csvName !== '' ? $csvName : (string) ($product['name'] ?? '');
+                if ($name === '') {
+                    $name = $sku;
+                }
+                if (mb_strlen($name) > 512) {
+                    $name = mb_substr($name, 0, 512);
+                }
+
+                $line = new ClientAccountAsnLine;
+                $line->client_account_asn_id = $asn->id;
+                $productId = isset($product['shiphero_product_id'])
+                    ? trim((string) $product['shiphero_product_id'])
+                    : '';
+                $line->shiphero_product_id = $productId !== '' ? $productId : null;
+                if (isset($product['shiphero_legacy_id']) && (int) $product['shiphero_legacy_id'] > 0) {
+                    $line->shiphero_legacy_id = (int) $product['shiphero_legacy_id'];
+                }
+                $line->sku = (string) ($product['sku'] ?? $sku);
+                $line->name = $name;
+                $imageUrl = isset($product['image_url']) ? trim((string) $product['image_url']) : '';
+                if ($imageUrl !== '' && strlen($imageUrl) > 2048) {
+                    $imageUrl = substr($imageUrl, 0, 2048);
+                }
+                $line->image_url = $imageUrl !== '' ? $imageUrl : null;
+                $line->expected_qty = $qty;
+                $line->accepted_qty = 0;
+                $line->rejected_qty = 0;
+                $line->sort_order = ++$maxSort;
+                $line->save();
+
+                $linesBySku[$skuKey] = $line;
+                $imported++;
+            }
+        });
+
+        $this->recalcLineAggregates($asn->fresh());
+        $skipped = count($errors);
+
+        return response()->json([
+            'imported' => $imported,
+            'updated' => $updated,
+            'skipped' => $skipped,
+            'errors' => $errors,
+            'asn' => $this->serializeAsn($asn->fresh(['lines', 'trackings', 'vendorLines', 'clientAccount'])),
+        ]);
+    }
+
+    /**
+     * @return array{rows: list<array{row: int, name: string, sku: string, expected_qty: int}>, errors: list<array{row: int, sku: string, message: string}>}
+     */
+    private function parseAsnLinesCsv(string $path): array
+    {
+        $fh = fopen($path, 'rb');
+        if ($fh === false) {
+            throw ValidationException::withMessages([
+                'file' => ['Could not read the uploaded CSV file.'],
+            ]);
+        }
+
+        try {
+            $headerRow = fgetcsv($fh);
+            if ($headerRow === false || $headerRow === [null] || count($headerRow) === 0) {
+                throw ValidationException::withMessages([
+                    'file' => ['CSV is empty.'],
+                ]);
+            }
+
+            $map = $this->mapAsnLinesCsvHeaders($headerRow);
+            if (! isset($map['sku']) || ! isset($map['expected_qty'])) {
+                throw ValidationException::withMessages([
+                    'file' => ['CSV must include SKU and Expected QTY columns.'],
+                ]);
+            }
+
+            $rows = [];
+            $errors = [];
+            $rowNum = 1;
+            while (($raw = fgetcsv($fh)) !== false) {
+                $rowNum++;
+                if ($this->asnCsvRowIsEmpty($raw)) {
+                    continue;
+                }
+
+                $sku = isset($map['sku'], $raw[$map['sku']])
+                    ? trim((string) $raw[$map['sku']])
+                    : '';
+                $name = isset($map['name'], $raw[$map['name']])
+                    ? trim((string) $raw[$map['name']])
+                    : '';
+                $qtyRaw = isset($map['expected_qty'], $raw[$map['expected_qty']])
+                    ? trim((string) $raw[$map['expected_qty']])
+                    : '';
+
+                if ($sku === '') {
+                    $errors[] = [
+                        'row' => $rowNum,
+                        'sku' => '',
+                        'message' => 'SKU is required.',
+                    ];
+
+                    continue;
+                }
+
+                if ($qtyRaw === '' || ! is_numeric($qtyRaw) || (int) $qtyRaw < 1) {
+                    $errors[] = [
+                        'row' => $rowNum,
+                        'sku' => $sku,
+                        'message' => 'Enter an expected quantity of at least 1.',
+                    ];
+
+                    continue;
+                }
+
+                $qty = (int) $qtyRaw;
+                if ($qty > 99999999) {
+                    $errors[] = [
+                        'row' => $rowNum,
+                        'sku' => $sku,
+                        'message' => 'Expected quantity is too large.',
+                    ];
+
+                    continue;
+                }
+
+                if (mb_strlen($sku) > 255) {
+                    $errors[] = [
+                        'row' => $rowNum,
+                        'sku' => mb_substr($sku, 0, 255),
+                        'message' => 'SKU is too long.',
+                    ];
+
+                    continue;
+                }
+
+                $rows[] = [
+                    'row' => $rowNum,
+                    'name' => $name,
+                    'sku' => $sku,
+                    'expected_qty' => $qty,
+                ];
+            }
+
+            if ($rows === [] && $errors === []) {
+                throw ValidationException::withMessages([
+                    'file' => ['CSV has no data rows.'],
+                ]);
+            }
+
+            return ['rows' => $rows, 'errors' => $errors];
+        } finally {
+            fclose($fh);
+        }
+    }
+
+    /**
+     * @param  list<string|null>  $headerRow
+     * @return array{name?: int, sku?: int, expected_qty?: int}
+     */
+    private function mapAsnLinesCsvHeaders(array $headerRow): array
+    {
+        $aliases = [
+            'name' => ['name'],
+            'sku' => ['sku'],
+            'expected_qty' => ['expected qty', 'expected_qty', 'expected quantity', 'expectedquantity'],
+        ];
+
+        $map = [];
+        foreach ($headerRow as $index => $raw) {
+            $normalized = mb_strtolower(trim((string) $raw));
+            $normalized = preg_replace('/^\xEF\xBB\xBF/', '', $normalized) ?? $normalized;
+            $normalized = str_replace('_', ' ', $normalized);
+            $normalized = preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
+            foreach ($aliases as $field => $names) {
+                if (in_array($normalized, $names, true) && ! isset($map[$field])) {
+                    $map[$field] = (int) $index;
+                    break;
+                }
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * @param  list<string|null>  $row
+     */
+    private function asnCsvRowIsEmpty(array $row): bool
+    {
+        foreach ($row as $cell) {
+            if (trim((string) ($cell ?? '')) !== '') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Resolve an existing catalog product for the ASN client account (index, then ShipHero detail).
+     * Does not create products.
+     *
+     * @param  string|null  $shipheroCustomerId  resolved once and reused
+     * @return array{shiphero_product_id: ?string, shiphero_legacy_id: ?int, sku: string, name: string, image_url: ?string}|null
+     */
+    private function resolveExistingCatalogProductForAsnCsv(
+        int $clientAccountId,
+        string $sku,
+        Request $request,
+        ?string &$shipheroCustomerId
+    ): ?array {
+        $skuSearch = mb_strtolower(trim($sku));
+        if ($skuSearch === '') {
+            return null;
+        }
+
+        try {
+            $indexRow = ShipHeroInventoryProductIndex::query()
+                ->where('client_account_id', $clientAccountId)
+                ->where('sku_search', $skuSearch)
+                ->orderByDesc('synced_at')
+                ->first();
+            if ($indexRow !== null) {
+                $productId = trim((string) ($indexRow->shiphero_product_id ?? ''));
+
+                return [
+                    'shiphero_product_id' => $productId !== '' ? $productId : null,
+                    'shiphero_legacy_id' => null,
+                    'sku' => trim((string) $indexRow->sku) !== '' ? trim((string) $indexRow->sku) : $sku,
+                    'name' => trim((string) ($indexRow->name ?? '')),
+                    'image_url' => $indexRow->image_url !== null ? trim((string) $indexRow->image_url) : null,
+                ];
+            }
+        } catch (Throwable $e) {
+            report($e);
+        }
+
+        if ($shipheroCustomerId === null) {
+            $account = ClientAccount::query()->find($clientAccountId);
+            if ($account === null) {
+                return null;
+            }
+            try {
+                Gate::forUser($request->user())->authorize('view', $account);
+            } catch (Throwable $e) {
+                return null;
+            }
+            $sid = $account->shiphero_customer_account_id;
+            $shipheroCustomerId = is_string($sid) && trim($sid) !== '' ? trim($sid) : '';
+        }
+
+        if ($shipheroCustomerId === '') {
+            return null;
+        }
+
+        $detail = $this->inventory->getProductDetailBySku($sku, null, $shipheroCustomerId, false);
+        if (! is_array($detail) || empty($detail['id'])) {
+            return null;
+        }
+
+        $legacyRaw = $detail['shiphero_legacy_id'] ?? null;
+        $legacyId = null;
+        if (is_int($legacyRaw) && $legacyRaw > 0) {
+            $legacyId = $legacyRaw;
+        } elseif (is_numeric($legacyRaw) && (int) $legacyRaw > 0) {
+            $legacyId = (int) $legacyRaw;
+        }
+
+        return [
+            'shiphero_product_id' => trim((string) $detail['id']),
+            'shiphero_legacy_id' => $legacyId,
+            'sku' => trim((string) ($detail['sku'] ?? $sku)) !== ''
+                ? trim((string) ($detail['sku'] ?? $sku))
+                : $sku,
+            'name' => trim((string) ($detail['name'] ?? '')),
+            'image_url' => isset($detail['image_url']) ? trim((string) $detail['image_url']) : null,
+        ];
     }
 
     public function updateLine(Request $request, ClientAccountAsn $asn, ClientAccountAsnLine $line): JsonResponse

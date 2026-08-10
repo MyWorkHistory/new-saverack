@@ -76,6 +76,11 @@ const reopenBusy = ref(false);
 
 const lineBusy = ref(false);
 const addPanelOpen = ref(false);
+const csvImportOpen = ref(false);
+const csvImportBusy = ref(false);
+const csvImportFile = ref(null);
+const csvImportFileInput = ref(null);
+const csvImportError = ref("");
 const markReadyOpen = ref(false);
 const markReadyBusy = ref(false);
 const markReadyBoxes = ref(0);
@@ -1225,6 +1230,87 @@ async function addFromCatalog({ product, quantity }) {
   }
 }
 
+function openCsvImportModal() {
+  if (!canAddProducts.value || csvImportBusy.value) return;
+  csvImportFile.value = null;
+  csvImportError.value = "";
+  csvImportOpen.value = true;
+  nextTick(() => {
+    if (csvImportFileInput.value) {
+      csvImportFileInput.value.value = "";
+    }
+  });
+}
+
+function closeCsvImportModal(force = false) {
+  if (csvImportBusy.value && !force) return;
+  csvImportOpen.value = false;
+  csvImportFile.value = null;
+  csvImportError.value = "";
+}
+
+function onCsvImportFileChange(event) {
+  csvImportFile.value = event.target?.files?.[0] ?? null;
+  csvImportError.value = "";
+}
+
+async function submitCsvImport() {
+  if (!asn.value || !canAddProducts.value) return;
+  if (!csvImportFile.value) {
+    csvImportError.value = "Choose a CSV file to import.";
+    return;
+  }
+
+  csvImportBusy.value = true;
+  csvImportError.value = "";
+  try {
+    const formData = new FormData();
+    formData.append("file", csvImportFile.value);
+    const { data } = await api.post(`/asns/${asnId.value}/lines/import-csv`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+
+    const imported = Number(data?.imported ?? 0);
+    const updated = Number(data?.updated ?? 0);
+    const errors = Array.isArray(data?.errors) ? data.errors : [];
+
+    if (imported > 0) {
+      toast.success(`Imported ${imported} product${imported === 1 ? "" : "s"}.`);
+    }
+    if (updated > 0) {
+      toast.success(`Updated ${updated} line${updated === 1 ? "" : "s"}.`);
+    }
+    if (imported === 0 && updated === 0 && errors.length === 0) {
+      toast.warning("No products were imported.");
+    }
+    if (errors.length > 0) {
+      const sample = errors
+        .slice(0, 5)
+        .map((err) => {
+          const sku = String(err?.sku || "").trim();
+          const row = err?.row != null ? `Row ${err.row}` : "Row ?";
+          const msg = String(err?.message || "Could not import row.").trim();
+          return sku ? `${row}: ${sku} — ${msg}` : `${row}: ${msg}`;
+        })
+        .join(" ");
+      const more = errors.length > 5 ? ` (+${errors.length - 5} more)` : "";
+      toast.error(`${errors.length} row${errors.length === 1 ? "" : "s"} skipped. ${sample}${more}`, 10000);
+    }
+
+    if (data?.asn) {
+      applyAsnPayload(data.asn);
+      syncDraftsFromAsn();
+    }
+    await loadAsn();
+    closeCsvImportModal(true);
+  } catch (e) {
+    csvImportError.value = errorMessage(e, "Could not import CSV.");
+    toast.errorFrom(e, "Could not import CSV.");
+  } finally {
+    csvImportBusy.value = false;
+  }
+}
+
 async function saveLineExpectedQty(line, rawQty) {
   if (!asn.value || !canAddProducts.value || !line?.id) return;
   const qty = Math.max(0, Number(rawQty) || 0);
@@ -1544,13 +1630,24 @@ onUnmounted(() => {
                 </svg>
               </button>
             </div>
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-primary"
-              @click="addPanelOpen = !addPanelOpen"
-            >
-              {{ addPanelOpen ? "Hide Add Products" : "Add Products" }}
-            </button>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                :disabled="csvImportBusy || lineBusy"
+                @click="openCsvImportModal"
+              >
+                Import CSV
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-primary"
+                :disabled="csvImportBusy || lineBusy"
+                @click="addPanelOpen = !addPanelOpen"
+              >
+                {{ addPanelOpen ? "Hide Add Products" : "Add Products" }}
+              </button>
+            </div>
           </div>
 
           <div v-show="addPanelOpen" class="border-bottom">
@@ -1558,7 +1655,7 @@ onUnmounted(() => {
               :client-account-id="clientAccountId"
               :asn-id="asnRouteId"
               :active="addPanelOpen"
-              :busy="lineBusy"
+              :busy="lineBusy || csvImportBusy"
               show-add-new-sku
               qty-label="Expected QTY"
               search-input-id="admin-asn-catalog-search"
@@ -1698,7 +1795,17 @@ onUnmounted(() => {
               <button
                 v-if="isNonCompliant"
                 type="button"
+                class="btn btn-outline-secondary"
+                :disabled="csvImportBusy || lineBusy"
+                @click="openCsvImportModal"
+              >
+                Import CSV
+              </button>
+              <button
+                v-if="isNonCompliant"
+                type="button"
                 class="btn btn-outline-primary"
+                :disabled="csvImportBusy || lineBusy"
                 @click="addPanelOpen = !addPanelOpen"
               >
                 {{ addPanelOpen ? "Hide Add Products" : "Add Products" }}
@@ -1711,7 +1818,7 @@ onUnmounted(() => {
               :client-account-id="clientAccountId"
               :asn-id="asnRouteId"
               :active="addPanelOpen"
-              :busy="lineBusy"
+              :busy="lineBusy || csvImportBusy"
               show-add-new-sku
               qty-label="Expected QTY"
               search-input-id="admin-asn-noncompliant-catalog-search"
@@ -2662,6 +2769,57 @@ onUnmounted(() => {
       <label class="form-label small mb-1" for="admin-asn-new-sku-qty">Expected QTY</label>
       <input id="admin-asn-new-sku-qty" v-model.number="addNewSkuQty" type="number" min="1" class="form-control form-control-sm" />
     </ConfirmModal>
+
+    <Teleport to="body">
+      <Transition name="crm-vx-confirm">
+        <div
+          v-if="csvImportOpen"
+          class="crm-vx-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-asn-csv-import-title"
+          @click.self="closeCsvImportModal"
+        >
+          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+            <header class="crm-vx-modal__head border-bottom">
+              <h2 id="admin-asn-csv-import-title" class="crm-vx-modal__title mb-0">Import CSV</h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <label class="form-label" for="admin-asn-csv-import-file">CSV File</label>
+              <input
+                id="admin-asn-csv-import-file"
+                ref="csvImportFileInput"
+                type="file"
+                class="form-control"
+                accept=".csv,text/csv,text/plain"
+                :disabled="csvImportBusy"
+                @change="onCsvImportFileChange"
+              />
+              <p class="small text-secondary mt-2 mb-0">Columns: Name, SKU, Expected QTY</p>
+              <p v-if="csvImportError" class="text-danger small mt-2 mb-0">{{ csvImportError }}</p>
+            </div>
+            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="csvImportBusy"
+                @click="closeCsvImportModal"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="csvImportBusy"
+                @click="submitCsvImport"
+              >
+                {{ csvImportBusy ? "Importing…" : "Import CSV" }}
+              </button>
+            </footer>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <div
       v-if="markReadyOpen"

@@ -408,6 +408,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/non-compliant', [AdminAsnController::class, 'storeNonCompliant'])->middleware('can:receiving_asn.create');
         Route::get('/{asn}/product-catalog', [AsnController::class, 'productCatalog'])->middleware('can:receiving_asn.view');
         Route::post('/{asn}/catalog-products', [AsnController::class, 'storeCatalogProduct'])->middleware('can:receiving_asn.update');
+        Route::post('/{asn}/lines/import-csv', [AsnController::class, 'importLinesCsv'])->middleware('can:receiving_asn.update');
         Route::get('/{asn}', [AdminAsnController::class, 'show'])->middleware('can:receiving_asn.view');
         Route::patch('/{asn}/status', [AdminAsnController::class, 'updateStatus'])->middleware('can:receiving_asn.update');
         Route::post('/{asn}/enrich-specs', [AdminAsnController::class, 'enrichSpecs'])->middleware('can:receiving_asn.update');
@@ -483,6 +484,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{asn}', [AsnController::class, 'destroy'])->middleware('can:asns.delete');
         Route::patch('/{asn}/warehouse-notes', [AsnController::class, 'updateWarehouseNotes'])->middleware('can:asns.update');
         Route::post('/{asn}/lines', [AsnController::class, 'storeLine'])->middleware('can:asns.create');
+        Route::post('/{asn}/lines/import-csv', [AsnController::class, 'importLinesCsv'])->middleware('can:asns.create');
         Route::patch('/{asn}/lines/{line}', [AsnController::class, 'updateLine'])->middleware('can:asns.update');
         Route::delete('/{asn}/lines/{line}', [AsnController::class, 'destroyLine'])->middleware('can:asns.delete');
         Route::put('/{asn}/trackings', [AsnController::class, 'syncTrackings'])->middleware('can:asns.update');

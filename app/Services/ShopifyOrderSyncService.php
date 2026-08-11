@@ -47,7 +47,6 @@ query OpenOrders($cursor: String) {
         createdAt
         updatedAt
         cancelledAt
-        customer { firstName lastName email phone }
         shippingAddress {
           name firstName lastName address1 address2 city province country zip phone
         }
@@ -140,7 +139,6 @@ query OrderById($id: ID!) {
     createdAt
     updatedAt
     cancelledAt
-    customer { firstName lastName email phone }
     shippingAddress {
       name firstName lastName address1 address2 city province country zip phone
     }
@@ -260,7 +258,7 @@ GQL
                     'shopify_created_at' => $this->parseTime($node['createdAt'] ?? $node['created_at'] ?? null),
                     'shopify_updated_at' => $this->parseTime($node['updatedAt'] ?? $node['updated_at'] ?? null),
                     'cancelled_at' => $this->parseTime($node['cancelledAt'] ?? $node['cancelled_at'] ?? null),
-                    'customer_json' => is_array($node['customer'] ?? null) ? $node['customer'] : null,
+                    'customer_json' => $this->customerJsonFromOrderNode($node),
                     'shipping_address_json' => is_array($node['shippingAddress'] ?? $node['shipping_address'] ?? null)
                         ? ($node['shippingAddress'] ?? $node['shipping_address'])
                         : null,
@@ -502,6 +500,47 @@ GQL
         $connection->save();
 
         return $count;
+    }
+
+    /**
+     * Prefer explicit customer payload when present (e.g. webhooks / future read_customers).
+     * Otherwise build a minimal blob from order email + shipping address (no read_customers needed).
+     *
+     * @param  array<string, mixed>  $node
+     * @return array<string, mixed>|null
+     */
+    private function customerJsonFromOrderNode(array $node): ?array
+    {
+        if (is_array($node['customer'] ?? null)) {
+            return $node['customer'];
+        }
+
+        $shipping = $node['shippingAddress'] ?? $node['shipping_address'] ?? null;
+        $email = trim((string) ($node['email'] ?? ''));
+        if (! is_array($shipping) && $email === '') {
+            return null;
+        }
+
+        $first = is_array($shipping) ? trim((string) ($shipping['firstName'] ?? $shipping['first_name'] ?? '')) : '';
+        $last = is_array($shipping) ? trim((string) ($shipping['lastName'] ?? $shipping['last_name'] ?? '')) : '';
+        $name = is_array($shipping) ? trim((string) ($shipping['name'] ?? '')) : '';
+        if ($name === '') {
+            $name = trim($first.' '.$last);
+        }
+
+        $out = array_filter([
+            'email' => $email !== '' ? $email : null,
+            'first_name' => $first !== '' ? $first : null,
+            'last_name' => $last !== '' ? $last : null,
+            'display_name' => $name !== '' ? $name : null,
+            'phone' => is_array($shipping) && trim((string) ($shipping['phone'] ?? '')) !== ''
+                ? trim((string) $shipping['phone'])
+                : null,
+        ], static function ($v) {
+            return $v !== null && $v !== '';
+        });
+
+        return $out === [] ? null : $out;
     }
 
     private function parseTime($value): ?Carbon

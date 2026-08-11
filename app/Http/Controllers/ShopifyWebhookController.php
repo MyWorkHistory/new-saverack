@@ -13,7 +13,10 @@ use Illuminate\Support\Facades\Log;
 
 class ShopifyWebhookController extends Controller
 {
-    public function handle(Request $request, ShopifyWebhookVerifier $verifier): JsonResponse|Response
+    /**
+     * @return JsonResponse|Response
+     */
+    public function handle(Request $request, ShopifyWebhookVerifier $verifier)
     {
         if ($request->isMethod('HEAD')) {
             return response('', 200);

@@ -17,7 +17,10 @@ class ShopifyGid
         return $value;
     }
 
-    public static function of(string $resource, string|int $id): string
+    /**
+     * @param  string|int  $id
+     */
+    public static function of(string $resource, $id): string
     {
         $numeric = self::toId((string) $id);
         $resource = trim($resource);

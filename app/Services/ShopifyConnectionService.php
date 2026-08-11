@@ -16,11 +16,18 @@ class ShopifyConnectionService
         'ORDERS_CREATE',
         'ORDERS_UPDATED',
         'ORDERS_CANCELLED',
-        'FULFILLMENTS_CREATE',
-        'FULFILLMENTS_UPDATE',
         'PRODUCTS_CREATE',
         'PRODUCTS_UPDATE',
         'INVENTORY_LEVELS_UPDATE',
+        // Optional: requires read_fulfillments (orders/updated covers most CRM needs without it)
+        'FULFILLMENTS_CREATE',
+        'FULFILLMENTS_UPDATE',
+    ];
+
+    /** @var list<string> */
+    public const OPTIONAL_WEBHOOK_TOPICS = [
+        'FULFILLMENTS_CREATE',
+        'FULFILLMENTS_UPDATE',
     ];
 
     /** @var ShopifyClient */
@@ -200,15 +207,16 @@ class ShopifyConnectionService
         RunShopifyBootstrapImportJob::dispatch((int) $connection->id, $registerWebhooks);
     }
 
-    public function registerWebhooks(ClientAccountShopifyConnection $connection): int
+    /**
+     * @return array{created:int, skipped:list<string>}
+     */
+    public function registerWebhooks(ClientAccountShopifyConnection $connection): array
     {
-        $callback = trim((string) config('services.shopify.webhook_url', ''));
-        if ($callback === '') {
-            throw new RuntimeException('SHOPIFY_WEBHOOK_URL is not configured.');
-        }
+        $callback = $this->resolvedWebhookCallbackUrl();
 
         $client = $this->client->forConnection($connection);
         $created = 0;
+        $skipped = [];
 
         foreach (self::WEBHOOK_TOPICS as $topic) {
             $data = $client->graphql(
@@ -236,16 +244,81 @@ GQL
             $errors = is_array($payload['userErrors'] ?? null) ? $payload['userErrors'] : [];
             if ($errors !== []) {
                 $msg = (string) ($errors[0]['message'] ?? 'Webhook create failed');
+                $lower = strtolower($msg);
                 // Already exists is fine for re-connect.
-                if (! str_contains(strtolower($msg), 'already') && ! str_contains(strtolower($msg), 'taken')) {
-                    throw new RuntimeException($topic.': '.$msg);
+                if (str_contains($lower, 'already') || str_contains($lower, 'taken')) {
+                    $created++;
+                    continue;
                 }
-            } else {
-                $created++;
+                // Missing scope / topic not allowed for this app — skip optional topics.
+                $denied = str_contains($lower, 'cannot create')
+                    || str_contains($lower, 'access')
+                    || str_contains($lower, 'scope');
+                if ($denied && in_array($topic, self::OPTIONAL_WEBHOOK_TOPICS, true)) {
+                    $skipped[] = $topic.': '.$msg;
+                    Log::warning('shopify.webhooks.topic_skipped', [
+                        'connection_id' => $connection->id,
+                        'topic' => $topic,
+                        'message' => $msg,
+                    ]);
+                    continue;
+                }
+                throw new RuntimeException($topic.': '.$msg);
+            }
+
+            $created++;
+        }
+
+        if ($created === 0) {
+            throw new RuntimeException('No Shopify webhook topics could be registered.');
+        }
+
+        return ['created' => $created, 'skipped' => $skipped];
+    }
+
+    /**
+     * Absolute HTTPS URL Shopify can POST to. Prefer SHOPIFY_WEBHOOK_URL; else APP_URL + /api/shopify/webhook.
+     */
+    public function resolvedWebhookCallbackUrl(): string
+    {
+        $callback = trim((string) config('services.shopify.webhook_url', ''), " \t\n\r\0\x0B\"'");
+        if ($callback === '') {
+            $appUrl = rtrim(trim((string) config('app.url', ''), " \t\n\r\0\x0B\"'"), '/');
+            if ($appUrl !== '') {
+                $callback = $appUrl.'/api/shopify/webhook';
             }
         }
 
-        return $created;
+        if ($callback === '') {
+            throw new RuntimeException(
+                'SHOPIFY_WEBHOOK_URL is not configured. Set e.g. SHOPIFY_WEBHOOK_URL=https://app.saverack.com/api/shopify/webhook'
+            );
+        }
+
+        // Relative path → prefix APP_URL
+        if (str_starts_with($callback, '/')) {
+            $appUrl = rtrim(trim((string) config('app.url', ''), " \t\n\r\0\x0B\"'"), '/');
+            if ($appUrl === '') {
+                throw new RuntimeException(
+                    'SHOPIFY_WEBHOOK_URL is a path ('.$callback.') but APP_URL is empty. Use a full https URL.'
+                );
+            }
+            $callback = $appUrl.$callback;
+        }
+
+        if (! preg_match('#^https://#i', $callback)) {
+            throw new RuntimeException(
+                'Shopify webhook callback must be an https URL. Got: '.$callback
+            );
+        }
+
+        if (filter_var($callback, FILTER_VALIDATE_URL) === false) {
+            throw new RuntimeException(
+                'SHOPIFY_WEBHOOK_URL is not a valid URL: '.$callback
+            );
+        }
+
+        return $callback;
     }
 
     private function normalizeDomain(string $domain): string

@@ -34,8 +34,12 @@ class ShopifyRegisterWebhooksCommand extends Command
         foreach ($rows as $connection) {
             $this->line('Registering for #'.$connection->id.' '.$connection->normalizedShopDomain());
             try {
-                $count = $connections->registerWebhooks($connection);
-                $this->info('  Created/confirmed '.$count.' topic registration(s).');
+                $this->line('  Callback: '.$connections->resolvedWebhookCallbackUrl());
+                $result = $connections->registerWebhooks($connection);
+                $this->info('  Created/confirmed '.$result['created'].' topic registration(s).');
+                foreach ($result['skipped'] as $skip) {
+                    $this->warn('  Skipped '.$skip);
+                }
             } catch (Throwable $e) {
                 $this->error('  '.$e->getMessage());
             }

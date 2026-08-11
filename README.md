@@ -243,6 +243,7 @@ Per-client Shopify custom-app connection stores credentials on `client_account_s
    - `read_merchant_managed_fulfillment_orders`, `write_merchant_managed_fulfillment_orders`
    - `read_locations`
    - Optional: `read_customers` (not required; order sync uses email + shipping address)
+   - Optional: `read_fulfillments` (only if you want fulfillments/* webhooks; orders/updated is enough for Phase 1)
 2. `.env`:
    - `SHOPIFY_API_VERSION=2025-01`
    - `SHOPIFY_WEBHOOK_URL=https://your-domain/api/shopify/webhook`

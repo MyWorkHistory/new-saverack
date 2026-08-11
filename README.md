@@ -251,7 +251,7 @@ Per-client Shopify custom-app connection stores credentials on `client_account_s
 5. Ensure queue workers drain default `database` jobs (`ProcessShopifyWebhookJob`)
 6. Optional: `php artisan shopify:register-webhooks --account=ID`
 
-**Nav:** Webmaster → Shopify Orders | Shopify Inventory (admin / CRM owner only)
+**Nav:** Admin → Shopify → Orders | Inventory (below Webmaster; admin / CRM owner only)
 
 **Schedule:** `shopify:sync-recent` and `shopify:reprocess-pending-webhooks` every 5 minutes
 

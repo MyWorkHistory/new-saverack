@@ -39,9 +39,14 @@ const canViewUsers = computed(() => !isPortal.value && isCrmAdmin.value);
 const canViewSettings = computed(() => !isPortal.value && isCrmAdmin.value);
 
 const canViewWebmaster = computed(() => !isPortal.value && isCrmAdmin.value);
+const canViewShopify = computed(() => !isPortal.value && isCrmAdmin.value);
 
 const showAdminNavSection = computed(
-  () => canViewUsers.value || canViewSettings.value || canViewWebmaster.value,
+  () =>
+    canViewUsers.value ||
+    canViewSettings.value ||
+    canViewWebmaster.value ||
+    canViewShopify.value,
 );
 
 const canViewClients = computed(() => {
@@ -235,7 +240,7 @@ const ordersGroupOpen = ref(route.path.startsWith("/admin/orders"));
 const inventoryGroupOpen = ref(route.path.startsWith("/admin/inventory"));
 const receivingGroupOpen = ref(route.path.startsWith("/admin/receiving"));
 const returnsGroupOpen = ref(route.path.startsWith("/admin/returns"));
-const webmasterGroupOpen = ref(route.path.startsWith("/admin/webmaster"));
+const shopifyGroupOpen = ref(route.path.startsWith("/admin/shopify"));
 watch(
   () => route.path,
   (p) => {
@@ -260,8 +265,8 @@ watch(
     if (p.startsWith("/admin/receiving")) {
       receivingGroupOpen.value = true;
     }
-    if (p.startsWith("/admin/webmaster")) {
-      webmasterGroupOpen.value = true;
+    if (p.startsWith("/admin/shopify")) {
+      shopifyGroupOpen.value = true;
     }
   },
 );
@@ -280,9 +285,9 @@ function navActive(mode) {
   if (mode === "settings-terms") return p.startsWith("/admin/settings/terms");
   if (mode === "settings-email-templates") return p.startsWith("/admin/settings/email-templates");
   if (mode === "webmaster") return p.startsWith("/admin/webmaster");
-  if (mode === "webmaster-tasks") return p === "/admin/webmaster" || p.startsWith("/admin/webmaster/tasks");
-  if (mode === "webmaster-shopify-orders") return p.startsWith("/admin/webmaster/shopify/orders");
-  if (mode === "webmaster-shopify-inventory") return p.startsWith("/admin/webmaster/shopify/inventory");
+  if (mode === "shopify") return p.startsWith("/admin/shopify");
+  if (mode === "shopify-orders") return p.startsWith("/admin/shopify/orders");
+  if (mode === "shopify-inventory") return p.startsWith("/admin/shopify/inventory");
   if (mode === "clients") return p.startsWith("/admin/clients");
   if (mode === "clients-accounts") return p.startsWith("/admin/clients/accounts");
   if (mode === "clients-users") return p.startsWith("/admin/clients/users");
@@ -1378,17 +1383,39 @@ function collapseNav() {
           </RouterLink>
         </li>
         <li v-if="canViewWebmaster">
+          <RouterLink
+            to="/admin/webmaster"
+            class="vx-nav-link"
+            :title="!isExpanded ? 'Webmaster' : undefined"
+            @click="closeMobile"
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.224 2.3c.307.575.21 1.278-.234 1.733l-.793.792c-.39.39-.601.918-.601 1.467v.224c0 .99.66 1.86 1.617 2.12l1.218.304c.517.129.88.596.88 1.114v2.593c0 .55-.398 1.02-.94 1.11l-1.281.213a1.125 1.125 0 0 1-.87.645l-.135.045a1.125 1.125 0 0 0-.53.315l-.792.793a1.125 1.125 0 0 1-1.733-.234l-1.224-2.3a1.125 1.125 0 0 0-.49-.37l-.286-.107a1.125 1.125 0 0 1-.633-1.326l.302-.774a1.125 1.125 0 0 0-.216-.883l-.792-.792a1.125 1.125 0 0 0-.883-.216l-.774.302a1.125 1.125 0 0 1-1.326-.633l-.107-.286a1.125 1.125 0 0 0-.37-.49l-2.3-1.224a1.125 1.125 0 0 1-.234-1.733l.793-.792c.196-.324.257-.72.124-1.075l-.456-1.217a1.125 1.125 0 0 1 .49-1.37l2.3-1.224c.162-.086.312-.2.444-.324L9.594 3.94ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+              />
+            </svg>
+            <span v-if="isExpanded">Webmaster</span>
+          </RouterLink>
+        </li>
+        <li v-if="canViewShopify">
           <div class="vx-nav-group">
             <button
               type="button"
               class="vx-nav-link vx-nav-group__toggle"
-              :class="{ 'vx-nav-link--active': navActive('webmaster') }"
-              :title="!isExpanded ? 'Webmaster' : undefined"
-              :aria-expanded="isExpanded ? webmasterGroupOpen : undefined"
+              :class="{ 'vx-nav-link--active': navActive('shopify') }"
+              :title="!isExpanded ? 'Shopify' : undefined"
+              :aria-expanded="isExpanded ? shopifyGroupOpen : undefined"
               @click="
                 isExpanded
-                  ? (webmasterGroupOpen = !webmasterGroupOpen)
-                  : (router.push('/admin/webmaster'), closeMobile())
+                  ? (shopifyGroupOpen = !shopifyGroupOpen)
+                  : (router.push('/admin/shopify/orders'), closeMobile())
               "
             >
               <svg
@@ -1400,14 +1427,14 @@ function collapseNav() {
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
-                  d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.224 2.3c.307.575.21 1.278-.234 1.733l-.793.792c-.39.39-.601.918-.601 1.467v.224c0 .99.66 1.86 1.617 2.12l1.218.304c.517.129.88.596.88 1.114v2.593c0 .55-.398 1.02-.94 1.11l-1.281.213a1.125 1.125 0 0 1-.87.645l-.135.045a1.125 1.125 0 0 0-.53.315l-.792.793a1.125 1.125 0 0 1-1.733-.234l-1.224-2.3a1.125 1.125 0 0 0-.49-.37l-.286-.107a1.125 1.125 0 0 1-.633-1.326l.302-.774a1.125 1.125 0 0 0-.216-.883l-.792-.792a1.125 1.125 0 0 0-.883-.216l-.774.302a1.125 1.125 0 0 1-1.326-.633l-.107-.286a1.125 1.125 0 0 0-.37-.49l-2.3-1.224a1.125 1.125 0 0 1-.234-1.733l.793-.792c.196-.324.257-.72.124-1.075l-.456-1.217a1.125 1.125 0 0 1 .49-1.37l2.3-1.224c.162-.086.312-.2.444-.324L9.594 3.94ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+                  d="M13.5 21v-7.5a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 .75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349M3.75 21V9.349m0 0a3.001 3.001 0 0 0 3.75-.615A2.993 2.993 0 0 0 9.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 0 0 2.25 1.016c.896 0 1.7-.393 2.25-1.015a3.001 3.001 0 0 0 3.75.614m-16.5 0a3.004 3.004 0 0 1-.621-4.72l1.189-1.19A1.5 1.5 0 0 1 5.378 3h13.243a1.5 1.5 0 0 1 1.06.44l1.19 1.189a3 3 0 0 1-.621 4.72M6.75 18h3.75a.75.75 0 0 0 .75-.75V13.5a.75.75 0 0 0-.75-.75H6.75a.75.75 0 0 0-.75.75v3.75c0 .414.336.75.75.75Z"
                 />
               </svg>
-              <span v-if="isExpanded">Webmaster</span>
+              <span v-if="isExpanded">Shopify</span>
               <svg
                 v-if="isExpanded"
                 class="vx-nav-chevron"
-                :class="{ 'vx-nav-chevron--open': webmasterGroupOpen }"
+                :class="{ 'vx-nav-chevron--open': shopifyGroupOpen }"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -1421,37 +1448,27 @@ function collapseNav() {
               </svg>
             </button>
             <ul
-              v-if="isExpanded && webmasterGroupOpen"
+              v-if="isExpanded && shopifyGroupOpen"
               class="vx-nav-sublist"
             >
               <li>
                 <RouterLink
-                  to="/admin/webmaster"
+                  to="/admin/shopify/orders"
                   class="vx-nav-link vx-nav-sublink"
-                  :class="{ 'vx-nav-link--active': navActive('webmaster-tasks') }"
+                  :class="{ 'vx-nav-link--active': navActive('shopify-orders') }"
                   @click="closeMobile"
                 >
-                  Tasks
+                  Orders
                 </RouterLink>
               </li>
               <li>
                 <RouterLink
-                  to="/admin/webmaster/shopify/orders"
+                  to="/admin/shopify/inventory"
                   class="vx-nav-link vx-nav-sublink"
-                  :class="{ 'vx-nav-link--active': navActive('webmaster-shopify-orders') }"
+                  :class="{ 'vx-nav-link--active': navActive('shopify-inventory') }"
                   @click="closeMobile"
                 >
-                  Shopify Orders
-                </RouterLink>
-              </li>
-              <li>
-                <RouterLink
-                  to="/admin/webmaster/shopify/inventory"
-                  class="vx-nav-link vx-nav-sublink"
-                  :class="{ 'vx-nav-link--active': navActive('webmaster-shopify-inventory') }"
-                  @click="closeMobile"
-                >
-                  Shopify Inventory
+                  Inventory
                 </RouterLink>
               </li>
             </ul>

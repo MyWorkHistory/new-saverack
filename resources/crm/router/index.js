@@ -19,10 +19,10 @@ import UserPermissionsPage from "../pages/users/UserPermissionsPage.vue";
 import UserHistoryPage from "../pages/users/UserHistoryPage.vue";
 import WebmasterTasksPage from "../pages/webmaster/WebmasterTasksPage.vue";
 import WebmasterTaskDetailPage from "../pages/webmaster/WebmasterTaskDetailPage.vue";
-import ShopifyOrdersPage from "../pages/webmaster/ShopifyOrdersPage.vue";
-import ShopifyOrderDetailPage from "../pages/webmaster/ShopifyOrderDetailPage.vue";
-import ShopifyInventoryPage from "../pages/webmaster/ShopifyInventoryPage.vue";
-import ShopifyInventoryDetailPage from "../pages/webmaster/ShopifyInventoryDetailPage.vue";
+import ShopifyOrdersPage from "../pages/shopify/ShopifyOrdersPage.vue";
+import ShopifyOrderDetailPage from "../pages/shopify/ShopifyOrderDetailPage.vue";
+import ShopifyInventoryPage from "../pages/shopify/ShopifyInventoryPage.vue";
+import ShopifyInventoryDetailPage from "../pages/shopify/ShopifyInventoryDetailPage.vue";
 import SettingsPricingPage from "../pages/settings/SettingsPricingPage.vue";
 import SettingsTermsPage from "../pages/settings/SettingsTermsPage.vue";
 import SettingsEmailTemplatesPage from "../pages/settings/SettingsEmailTemplatesPage.vue";
@@ -94,19 +94,19 @@ const meta = {
     title: "Save Rack | Webmaster Task",
     description: "Webmaster Task Details.",
   },
-  webmasterShopifyOrders: {
+  shopifyOrders: {
     title: "Save Rack | Shopify Orders",
     description: "Shopify orders from connected stores.",
   },
-  webmasterShopifyOrderDetail: {
+  shopifyOrderDetail: {
     title: "Save Rack | Shopify Order",
     description: "Shopify order detail.",
   },
-  webmasterShopifyInventory: {
+  shopifyInventory: {
     title: "Save Rack | Shopify Inventory",
     description: "Shopify inventory from connected stores.",
   },
-  webmasterShopifyInventoryDetail: {
+  shopifyInventoryDetail: {
     title: "Save Rack | Shopify Variant",
     description: "Edit Shopify variant.",
   },
@@ -958,30 +958,47 @@ const routes = [
     meta: meta.webmasterTask,
   },
   {
-    path: "/admin/webmaster/shopify/orders",
-    name: "webmaster-shopify-orders",
+    path: "/admin/shopify/orders",
+    name: "shopify-orders",
     component: ShopifyOrdersPage,
-    meta: meta.webmasterShopifyOrders,
+    meta: meta.shopifyOrders,
+  },
+  {
+    path: "/admin/shopify/orders/:id",
+    name: "shopify-order-detail",
+    component: ShopifyOrderDetailPage,
+    props: true,
+    meta: meta.shopifyOrderDetail,
+  },
+  {
+    path: "/admin/shopify/inventory",
+    name: "shopify-inventory",
+    component: ShopifyInventoryPage,
+    meta: meta.shopifyInventory,
+  },
+  {
+    path: "/admin/shopify/inventory/:id",
+    name: "shopify-inventory-detail",
+    component: ShopifyInventoryDetailPage,
+    props: true,
+    meta: meta.shopifyInventoryDetail,
+  },
+  // Legacy redirects from first nav placement under Webmaster
+  {
+    path: "/admin/webmaster/shopify/orders",
+    redirect: "/admin/shopify/orders",
   },
   {
     path: "/admin/webmaster/shopify/orders/:id",
-    name: "webmaster-shopify-order-detail",
-    component: ShopifyOrderDetailPage,
-    props: true,
-    meta: meta.webmasterShopifyOrderDetail,
+    redirect: (to) => `/admin/shopify/orders/${to.params.id}`,
   },
   {
     path: "/admin/webmaster/shopify/inventory",
-    name: "webmaster-shopify-inventory",
-    component: ShopifyInventoryPage,
-    meta: meta.webmasterShopifyInventory,
+    redirect: "/admin/shopify/inventory",
   },
   {
     path: "/admin/webmaster/shopify/inventory/:id",
-    name: "webmaster-shopify-inventory-detail",
-    component: ShopifyInventoryDetailPage,
-    props: true,
-    meta: meta.webmasterShopifyInventoryDetail,
+    redirect: (to) => `/admin/shopify/inventory/${to.params.id}`,
   },
   {
     path: "/users/welcome",
@@ -2085,6 +2102,16 @@ router.beforeEach(async (to) => {
   }
 
   if (to.path === "/admin/webmaster" || to.path.startsWith("/admin/webmaster/")) {
+    const ok = await ensureWebmasterRouteAccess();
+    if (!ok) {
+      if (!localStorage.getItem("auth_token")) {
+        return { name: "login", query: { redirect: to.fullPath } };
+      }
+      return { path: "/admin/home" };
+    }
+  }
+
+  if (to.path === "/admin/shopify" || to.path.startsWith("/admin/shopify/")) {
     const ok = await ensureWebmasterRouteAccess();
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {

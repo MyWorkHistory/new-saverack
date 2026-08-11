@@ -12,6 +12,8 @@ class ClientAccountShopifyConnection extends Model
 
     public const STATUS_CONNECTED = 'connected';
 
+    public const STATUS_IMPORTING = 'importing';
+
     public const STATUS_ERROR = 'error';
 
     protected $table = 'client_account_shopify_connections';

@@ -248,8 +248,10 @@ Per-client Shopify custom-app connection stores credentials on `client_account_s
    - `SHOPIFY_WEBHOOK_SECRET=` (custom app shared secret used for HMAC)
 3. `php artisan migrate --force`
 4. CRM Admin → Client Account → Settings → **Shopify** → **Connect And Import**
-5. Ensure queue workers drain default `database` jobs (`ProcessShopifyWebhookJob`)
+   - Connect verifies the shop quickly, then queues `RunShopifyBootstrapImportJob` (status **Importing** until done).
+5. Ensure queue workers drain default `database` jobs (`ProcessShopifyWebhookJob`, `RunShopifyBootstrapImportJob`)
 6. Optional: `php artisan shopify:register-webhooks --account=ID`
+   - Or run a synchronous re-import via `php artisan shopify:import-connection {account}`
 
 **Nav:** Admin → Shopify → Orders | Inventory (below Webmaster; admin / CRM owner only)
 

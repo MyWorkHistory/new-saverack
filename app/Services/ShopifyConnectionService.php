@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\RunShopifyBootstrapImportJob;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountShopifyConnection;
 use Illuminate\Support\Facades\Log;
@@ -62,9 +63,14 @@ class ShopifyConnectionService
             ];
         }
 
+        $status = (string) $connection->status;
+
         return [
-            'connected' => $connection->status === ClientAccountShopifyConnection::STATUS_CONNECTED,
-            'status' => $connection->status,
+            'connected' => in_array($status, [
+                ClientAccountShopifyConnection::STATUS_CONNECTED,
+                ClientAccountShopifyConnection::STATUS_IMPORTING,
+            ], true),
+            'status' => $status,
             'shop_domain' => $connection->normalizedShopDomain(),
             'shop_name' => $connection->shop_name,
             'api_version' => $connection->api_version,
@@ -78,6 +84,8 @@ class ShopifyConnectionService
     }
 
     /**
+     * Verify credentials quickly, then queue bootstrap import (avoids Cloudflare/PHP request timeouts).
+     *
      * @param  array{shop_domain:string, admin_api_access_token?:string|null, webhook_secret?:string|null, api_version?:string|null, import?:bool}  $input
      */
     public function connectAndImport(ClientAccount $account, array $input): ClientAccountShopifyConnection
@@ -112,7 +120,6 @@ class ShopifyConnectionService
         try {
             $shop = $this->client->forConnection($connection)->shopInfo();
             $connection->shop_name = $shop['name'] ?? $connection->shop_name;
-            $connection->status = ClientAccountShopifyConnection::STATUS_CONNECTED;
             $connection->connected_at = $connection->connected_at ?? now();
             $connection->save();
         } catch (Throwable $e) {
@@ -124,8 +131,13 @@ class ShopifyConnectionService
 
         $shouldImport = ! array_key_exists('import', $input) || (bool) $input['import'];
         if ($shouldImport) {
-            $this->bootstrap->importAll($connection);
+            $this->queueBootstrapImport($connection, true);
+
+            return $connection->fresh();
         }
+
+        $connection->status = ClientAccountShopifyConnection::STATUS_CONNECTED;
+        $connection->save();
 
         try {
             $this->registerWebhooks($connection);
@@ -149,7 +161,24 @@ class ShopifyConnectionService
         $connection->save();
     }
 
+    /**
+     * Queue a full re-import (HTTP-safe). Prefer this over running importAll in a web request.
+     */
     public function syncNow(ClientAccountShopifyConnection $connection): ClientAccountShopifyConnection
+    {
+        if (! $connection->hasCredentials()) {
+            throw new RuntimeException('Shopify connection has no credentials.');
+        }
+
+        $this->queueBootstrapImport($connection, false);
+
+        return $connection->fresh();
+    }
+
+    /**
+     * Synchronous import for artisan / tests.
+     */
+    public function syncNowInline(ClientAccountShopifyConnection $connection): ClientAccountShopifyConnection
     {
         if (! $connection->hasCredentials()) {
             throw new RuntimeException('Shopify connection has no credentials.');
@@ -158,6 +187,17 @@ class ShopifyConnectionService
         $this->bootstrap->importAll($connection);
 
         return $connection->fresh();
+    }
+
+    public function queueBootstrapImport(
+        ClientAccountShopifyConnection $connection,
+        bool $registerWebhooks = true
+    ): void {
+        $connection->status = ClientAccountShopifyConnection::STATUS_IMPORTING;
+        $connection->last_error = null;
+        $connection->save();
+
+        RunShopifyBootstrapImportJob::dispatch((int) $connection->id, $registerWebhooks);
     }
 
     public function registerWebhooks(ClientAccountShopifyConnection $connection): int

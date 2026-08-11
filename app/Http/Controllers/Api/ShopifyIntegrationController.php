@@ -59,13 +59,19 @@ class ShopifyIntegrationController extends Controller
                 'connection' => $connections->toPublicArray(
                     $connections->getForAccount((int) $clientAccount->id)
                 ),
-            ], 502);
+            ], 422);
         }
 
+        $status = (string) ($connection->status ?? '');
+        $importQueued = $status === \App\Models\ClientAccountShopifyConnection::STATUS_IMPORTING;
+
         return response()->json([
-            'message' => 'Shopify connected.',
+            'message' => $importQueued
+                ? 'Shopify connected. Catalog and order import is running in the background.'
+                : 'Shopify connected.',
             'connection' => $connections->toPublicArray($connection),
-        ]);
+            'import_queued' => $importQueued,
+        ], $importQueued ? 202 : 200);
     }
 
     public function disconnect(Request $request, ClientAccount $clientAccount, ShopifyConnectionService $connections): JsonResponse
@@ -100,13 +106,14 @@ class ShopifyIntegrationController extends Controller
         } catch (Throwable $e) {
             report($e);
 
-            return response()->json(['message' => $e->getMessage()], 502);
+            return response()->json(['message' => $e->getMessage()], 422);
         }
 
         return response()->json([
-            'message' => 'Shopify import completed.',
+            'message' => 'Shopify import queued. Refresh in a moment to see synced data.',
             'connection' => $connections->toPublicArray($connection),
-        ]);
+            'import_queued' => true,
+        ], 202);
     }
 
     public function syncConnection(Request $request, ClientAccount $clientAccount, ShopifyConnectionService $connections): JsonResponse

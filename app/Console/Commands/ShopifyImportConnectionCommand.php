@@ -31,7 +31,7 @@ class ShopifyImportConnectionCommand extends Command
         }
 
         try {
-            $connections->syncNow($connection);
+            $connections->syncNowInline($connection);
         } catch (Throwable $e) {
             $this->error($e->getMessage());
 

@@ -95,7 +95,7 @@ After recreating or wiping the database, local ShipHero index tables are empty. 
 
 ### Live ShipHero sync (scheduled + webhooks + UI)
 
-Near-real-time updates use webhooks when available, lightweight scheduled jobs as fallback, and revision polling in the CRM UI (~30s).
+Near-real-time updates use webhooks when available, lightweight scheduled jobs as fallback (≤5 min for orders), and revision polling in the CRM UI (~5s on admin Home).
 
 **Production prerequisites**
 
@@ -105,23 +105,37 @@ Near-real-time updates use webhooks when available, lightweight scheduled jobs a
    * * * * * cd /path/to/app && php artisan schedule:run >> /dev/null 2>&1
    ```
 
-2. Persistent queue worker:
+2. Persistent queue worker (long jobs) **and** a default-queue drain for webhooks:
 
    ```bash
    php artisan queue:work database-long --timeout=3700 --tries=1 --sleep=3
    ```
 
+   Webhook jobs (`ProcessShipHeroOrderWebhookJob`) use the default `database` connection — the every-minute `queue:work database --stop-when-empty` cron below must stay healthy or Home counts wait for the 5‑min backup.
+
 3. `.env`: `SHIPHERO_REFRESH_TOKEN`, `SHIPHERO_WEBHOOK_URL`, `SHIPHERO_WEBHOOK_SECRET`, `QUEUE_CONNECTION=database`
 
 4. Register webhooks after deploy: `php artisan shiphero:register-webhooks`
+
+**Pre-deploy / morning drift checklist**
+
+```bash
+php artisan crm:diagnose-shiphero
+php artisan schedule:list
+php artisan shiphero:register-webhooks   # idempotent; confirm order + inventory types healthy
+```
+
+Check for: unprocessed `shiphero_webhook_events`, pending `ProcessShipHeroOrderWebhookJob` rows, and last run timestamps for `orders:sync-recent-updates` / `orders:reprocess-pending-webhooks`.
 
 **Scheduled cadence (America/New_York)**
 
 | Window | Cadence | Commands |
 |--------|---------|----------|
-| 7am–5pm | Every 15 min | `orders:sync-recent-updates`, `inventory:sync-catalog-incremental` |
+| All day | Every 5 min | `orders:sync-recent-updates` (webhook fallback; 15‑min lookback) |
+| All day | Every 5 min | `orders:reprocess-pending-webhooks` (redispatch stuck order webhook events) |
+| 7am–5pm | Every 15 min | `inventory:sync-catalog-incremental` |
 | 7am–5pm | Every 30 min | `orders:import-dashboard-queues` (awaiting + shipped; full index rebuild + admin + portal cache) |
-| Off-hours | Every 30 min | `orders:sync-recent-updates`, `inventory:sync-catalog-incremental` |
+| Off-hours | Every 30 min | `inventory:sync-catalog-incremental` |
 | Off-hours | Hourly | `orders:import-dashboard-queues` |
 | 2:00am nightly | Once | `orders:sync-queue-index --sync` (full index safety net) |
 | 2:30am nightly | Once | `orders:import-dashboard-queues --tabs=all` (dashboard + portal parity after index sync) |
@@ -151,7 +165,7 @@ Scheduled `orders:import-dashboard-queues` matches the manual gold path (`orders
 php artisan crm:diagnose-shiphero
 ```
 
-Reports `QUEUE_CONNECTION`, pending/failed jobs, last scheduled sync run times, pending webhook events, sync status, index counts, and sample inventory revision counters.
+Reports `QUEUE_CONNECTION`, pending/failed jobs, last scheduled sync run times, pending webhook events, sync status, index counts, and sample inventory revision counters. If order webhooks are stuck: `php artisan orders:reprocess-pending-webhooks` (also scheduled every 5 minutes).
 
 **cPanel: queue worker must stay running**
 
@@ -228,9 +242,9 @@ If that line is missing, pull latest code (`git pull`) and reload PHP-FPM / clea
 
 | Step | Expected |
 |------|----------|
-| `php artisan schedule:list` | 15-min sync-recent-updates 7–17 ET; 30-min import-dashboard-queues; nightly index + full import at 2am/2:30am |
+| `php artisan schedule:list` | 5-min `orders:sync-recent-updates` + `orders:reprocess-pending-webhooks`; 15/30‑min inventory incremental; 30-min import-dashboard-queues; nightly index + full import at 2am/2:30am |
 | `HEAD /api/shiphero/webhook` | 200 |
-| Ship order in ShipHero | `shiphero.webhook.processed` in log; Home/Fulfillment counts update within ~30s |
+| Ship order in ShipHero | `shiphero.webhook.processed` in log; Home/Fulfillment counts update within ~5s after the job drains |
 | Change inventory qty in ShipHero | `shiphero.inventory_webhook.processed` in log; Products list updates within ~30s |
 | `GET /api/inventory-beta/revision?client_account_id=` | `{ "revision": N }` increments after webhook/sync |
 
@@ -242,7 +256,7 @@ If that line is missing, pull latest code (`git pull`) and reload PHP-FPM / clea
 2. `php artisan migrate --force` (creates `shiphero_webhook_events`)
 3. Ensure queue worker processes `ProcessShipHeroOrderWebhookJob` and `ProcessShipHeroInventoryWebhookJob` (same worker as other jobs)
 4. Register webhooks: `php artisan shiphero:register-webhooks`
-5. Scheduled fallback: see **Live ShipHero sync** above (`orders:sync-recent-updates`, `orders:import-dashboard-queues`, inventory incremental sync)
+5. Scheduled fallback: see **Live ShipHero sync** above (`orders:sync-recent-updates`, `orders:reprocess-pending-webhooks`, `orders:import-dashboard-queues`, inventory incremental sync)
 
 **Smoke test after deploy**
 
@@ -250,7 +264,7 @@ If that line is missing, pull latest code (`git pull`) and reload PHP-FPM / clea
 |------|----------|
 | `HEAD /api/shiphero/webhook` | 200 (ShipHero endpoint validation) |
 | Ship one order in ShipHero | Row in `shiphero_webhook_events`; `shiphero.webhook.processed` in log |
-| Portal home within ~30s | `GET /api/orders/queue-counts/revision` revision increments; snapshot counts update |
+| Portal home within ~5–30s | `GET /api/orders/queue-counts/revision` revision increments; snapshot counts update |
 | `GET /api/orders/queue-counts/snapshot?client_account_id=` | Single fast response from `shiphero_order_queue_index` |
 
 Subscribed webhook types: Shipment Update, Order Canceled, Order Allocated, Order Deallocated, Order Packed Out, Inventory Update, Inventory Change.

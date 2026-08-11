@@ -106,6 +106,7 @@ class DiagnoseShipHeroCommand extends Command
     {
         return [
             'orders:sync-recent-updates' => 'shiphero:schedule:last_run:orders_sync_recent_updates',
+            'orders:reprocess-pending-webhooks' => ReprocessPendingWebhooksCommand::LAST_RUN_CACHE_KEY,
             'orders:import-dashboard-queues' => ImportDashboardQueuesCommand::LAST_RUN_CACHE_KEY,
             'orders:sync-queue-index --sync' => 'shiphero:schedule:last_run:orders_sync_queue_index',
             'inventory:sync-catalog-incremental' => 'shiphero:schedule:last_run:inventory_sync_catalog_incremental',
@@ -206,6 +207,8 @@ class DiagnoseShipHeroCommand extends Command
                     $this->warn('  Error: '.$oldest->processing_error);
                 }
             }
+            $this->line('  Reprocess stuck order webhooks: php artisan orders:reprocess-pending-webhooks');
+            $this->line('  Ensure default-queue workers drain ProcessShipHeroOrderWebhookJob (not only database-long).');
         }
 
         $recentErrors = (int) ShipHeroWebhookEvent::query()

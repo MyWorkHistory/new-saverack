@@ -25,18 +25,22 @@ class Kernel extends ConsoleKernel
         $schedule->command('inventory:refresh-restock-report')
             ->dailyAt('14:30')
             ->timezone('America/New_York');
-        $lightweightSync = [
-            'orders:sync-recent-updates',
-            'inventory:sync-catalog-incremental',
-        ];
-        foreach ($lightweightSync as $command) {
-            $schedule->command($command)
-                ->cron('*/15 7-17 * * *')
-                ->timezone('America/New_York');
-            $schedule->command($command)
-                ->cron('*/30 0-6,18-23 * * *')
-                ->timezone('America/New_York');
-        }
+        // Webhook fallback: reconcile recently updated orders every 5 minutes (lookback remains 15m).
+        $schedule->command('orders:sync-recent-updates')
+            ->cron('*/5 * * * *')
+            ->timezone('America/New_York')
+            ->withoutOverlapping(10);
+        $schedule->command('orders:reprocess-pending-webhooks')
+            ->cron('*/5 * * * *')
+            ->timezone('America/New_York')
+            ->withoutOverlapping(5);
+        // Inventory catalog incremental stays on the lighter 15/30 cadence.
+        $schedule->command('inventory:sync-catalog-incremental')
+            ->cron('*/15 7-17 * * *')
+            ->timezone('America/New_York');
+        $schedule->command('inventory:sync-catalog-incremental')
+            ->cron('*/30 0-6,18-23 * * *')
+            ->timezone('America/New_York');
         $schedule->command('orders:import-dashboard-queues')
             ->cron('*/30 7-17 * * *')
             ->timezone('America/New_York')

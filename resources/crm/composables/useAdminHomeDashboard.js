@@ -2,7 +2,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import api from "../services/api";
 
 const POLL_MS = 3000;
-const REVISION_POLL_MS = 30000;
+const REVISION_POLL_MS = 5000;
 
 const SHIPHERO_SECTION_KEYS = [
   "ready_to_ship",

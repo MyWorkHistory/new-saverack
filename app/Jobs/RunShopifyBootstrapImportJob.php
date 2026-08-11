@@ -40,20 +40,31 @@ class RunShopifyBootstrapImportJob implements ShouldQueue
     ): void {
         $connection = ClientAccountShopifyConnection::query()->find($this->connectionId);
         if ($connection === null || ! $connection->hasCredentials()) {
+            Log::warning('shopify.bootstrap.skipped', [
+                'connection_id' => $this->connectionId,
+                'reason' => 'missing_connection_or_credentials',
+            ]);
+
             return;
         }
 
+        Log::info('shopify.bootstrap.started', [
+            'connection_id' => $connection->id,
+            'shop' => $connection->normalizedShopDomain(),
+        ]);
+
         try {
-            $bootstrap->importAll($connection);
+            $result = $bootstrap->importAll($connection);
 
             if ($this->registerWebhooks) {
                 try {
-                    $connections->registerWebhooks($connection);
+                    $connections->registerWebhooks($connection->fresh() ?? $connection);
                 } catch (Throwable $e) {
                     Log::warning('shopify.webhooks.register_failed', [
                         'connection_id' => $connection->id,
                         'message' => $e->getMessage(),
                     ]);
+                    $connection->refresh();
                     $connection->last_error = mb_substr(
                         'Import completed but webhook registration failed: '.$e->getMessage(),
                         0,
@@ -62,14 +73,41 @@ class RunShopifyBootstrapImportJob implements ShouldQueue
                     $connection->save();
                 }
             }
+
+            Log::info('shopify.bootstrap.finished', [
+                'connection_id' => $connection->id,
+                'result' => $result,
+            ]);
         } catch (Throwable $e) {
             report($e);
-            $connection->refresh();
-            $connection->status = ClientAccountShopifyConnection::STATUS_ERROR;
-            $connection->last_error = mb_substr($e->getMessage(), 0, 1000);
-            $connection->save();
+            $this->markFailed($e->getMessage());
 
             throw $e;
         }
+    }
+
+    public function failed(?Throwable $e): void
+    {
+        $message = $e !== null && $e->getMessage() !== ''
+            ? $e->getMessage()
+            : 'Shopify import job failed.';
+        $this->markFailed($message);
+    }
+
+    private function markFailed(string $message): void
+    {
+        $connection = ClientAccountShopifyConnection::query()->find($this->connectionId);
+        if ($connection === null) {
+            return;
+        }
+        if ($connection->status === ClientAccountShopifyConnection::STATUS_CONNECTED
+            && $connection->last_sync_at !== null) {
+            // Import finished; failure was likely webhook registration after status flip.
+            return;
+        }
+
+        $connection->status = ClientAccountShopifyConnection::STATUS_ERROR;
+        $connection->last_error = mb_substr($message, 0, 1000);
+        $connection->save();
     }
 }

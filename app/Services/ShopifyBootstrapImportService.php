@@ -36,10 +36,11 @@ class ShopifyBootstrapImportService
     public function importAll(ClientAccountShopifyConnection $connection): array
     {
         $api = $this->client->forConnection($connection);
+        // Orders first so CRM lists are usable even if catalog sync is slow/large.
         $locations = $this->importLocations($connection, $api);
+        $orderCount = $this->orders->importOpenOrders($connection, $api);
         $catalog = $this->products->importActiveProducts($connection, $api);
         $levels = $this->importInventoryLevels($connection, $api);
-        $orderCount = $this->orders->importOpenOrders($connection, $api);
 
         $connection->last_sync_at = now();
         $connection->last_product_sync_at = now();
@@ -65,14 +66,13 @@ class ShopifyBootstrapImportService
             $data = $api->graphql(
                 <<<'GQL'
 query Locations($cursor: String) {
-  locations(first: 50, after: $cursor, includeLegacy: true) {
+  locations(first: 50, after: $cursor) {
     pageInfo { hasNextPage endCursor }
     edges {
       node {
         id
         name
         isActive
-        isLegacy
         address {
           address1
           address2
@@ -108,7 +108,7 @@ GQL
                     [
                         'name' => (string) ($node['name'] ?? ''),
                         'active' => (bool) ($node['isActive'] ?? true),
-                        'legacy' => (bool) ($node['isLegacy'] ?? false),
+                        'legacy' => false,
                         'address_json' => is_array($node['address'] ?? null) ? $node['address'] : null,
                     ]
                 );

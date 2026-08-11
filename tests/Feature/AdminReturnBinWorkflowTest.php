@@ -279,11 +279,12 @@ class AdminReturnBinWorkflowTest extends TestCase
         ]);
         $mock->shouldReceive('resolveWarehouseLocation')->andReturn(null)->byDefault();
         $mock->shouldReceive('resolveProductWarehouseLocation')->andReturn(null)->byDefault();
-        $mock->shouldReceive('addLocationQuantity')
+        $mock->shouldReceive('transferLocationQuantity')
             ->once()
             ->with(
                 'SKU-X',
                 'wh-1',
+                'loc-return-cart',
                 'loc-pick-1',
                 2,
                 Mockery::on(fn (string $reason) => str_contains($reason, 'Return Restock RMA# XF0001')),
@@ -299,7 +300,9 @@ class AdminReturnBinWorkflowTest extends TestCase
             'client_account_id' => $account->id,
             'quantity' => 2,
             'warehouse_id' => 'wh-1',
+            'from_location_id' => 'loc-return-cart',
             'to_location_id' => 'loc-pick-1',
+            'background' => false,
         ])
             ->assertOk()
             ->assertJsonPath('transferred_qty', 2)
@@ -310,7 +313,9 @@ class AdminReturnBinWorkflowTest extends TestCase
             'client_account_id' => $account->id,
             'quantity' => 99,
             'warehouse_id' => 'wh-1',
+            'from_location_id' => 'loc-return-cart',
             'to_location_id' => 'loc-pick-1',
+            'background' => false,
         ])->assertUnprocessable();
     }
 
@@ -354,11 +359,12 @@ class AdminReturnBinWorkflowTest extends TestCase
                 return null;
             });
         $mock->shouldReceive('resolveProductWarehouseLocation')->andReturn(null)->byDefault();
-        $mock->shouldReceive('addLocationQuantity')
+        $mock->shouldReceive('transferLocationQuantity')
             ->once()
             ->with(
                 'SKU-NEW-LOC',
                 'wh-1',
+                'loc-return-cart',
                 'loc-e12',
                 2,
                 Mockery::type('string'),
@@ -374,7 +380,9 @@ class AdminReturnBinWorkflowTest extends TestCase
             'client_account_id' => $account->id,
             'quantity' => 2,
             'warehouse_id' => 'wh-1',
+            'from_location_id' => 'loc-return-cart',
             'to_location' => 'E-12-025',
+            'background' => false,
         ])
             ->assertOk()
             ->assertJsonPath('transferred_qty', 2)
@@ -397,11 +405,12 @@ class AdminReturnBinWorkflowTest extends TestCase
         $mock->shouldReceive('getProductDetailBySku')->andReturn(null);
         $mock->shouldReceive('resolveWarehouseLocation')->andReturn(null)->byDefault();
         $mock->shouldReceive('resolveProductWarehouseLocation')->andReturn(null)->byDefault();
-        $mock->shouldReceive('addLocationQuantity')
+        $mock->shouldReceive('transferLocationQuantity')
             ->once()
             ->with(
                 'SKU-NC',
                 'wh-1',
+                'loc-return-cart',
                 'loc-1',
                 1,
                 Mockery::on(fn (string $reason) => str_contains($reason, 'Return Restock (Non-Compliant)')),
@@ -417,7 +426,9 @@ class AdminReturnBinWorkflowTest extends TestCase
             'client_account_id' => $account->id,
             'quantity' => 1,
             'warehouse_id' => 'wh-1',
+            'from_location_id' => 'loc-return-cart',
             'to_location_id' => 'loc-1',
+            'background' => false,
         ])->assertOk();
     }
 }

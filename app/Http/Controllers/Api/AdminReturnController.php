@@ -1226,13 +1226,42 @@ class AdminReturnController extends Controller
         $this->assertStaff($request);
         Gate::authorize('viewAny', ClientAccountReturn::class);
 
-        return response()->json([
+        $display = $this->returnBins->listBinItemsForDisplay($returnBin);
+
+        return response()->json(array_merge([
             'bin' => [
                 'id' => (int) $returnBin->id,
                 'name' => (string) $returnBin->name,
             ],
-            'data' => $this->returnBins->listBinItems($returnBin),
-        ]);
+        ], $display));
+    }
+
+    public function syncReturnBinItems(Request $request, ReturnBin $returnBin): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('viewAny', ClientAccountReturn::class);
+
+        try {
+            $display = $this->returnBins->syncBinItemsFromShipHero($returnBin);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not sync Return Cart from ShipHero.',
+            ], 502);
+        }
+
+        return response()->json(array_merge([
+            'bin' => [
+                'id' => (int) $returnBin->id,
+                'name' => (string) $returnBin->name,
+            ],
+            'message' => 'Synced from ShipHero.',
+        ], $display));
     }
 
     public function assignReturnBin(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
@@ -1261,10 +1290,11 @@ class AdminReturnController extends Controller
             'sku' => ['required', 'string', 'max:255'],
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'quantity' => ['required', 'integer', 'min:1'],
-            'warehouse_id' => ['required', 'string', 'max:255'],
+            'warehouse_id' => ['nullable', 'string', 'max:255'],
             'from_location_id' => ['nullable', 'string', 'max:255'],
             'to_location_id' => ['nullable', 'string', 'max:255'],
             'to_location' => ['nullable', 'string', 'max:255'],
+            'background' => ['nullable', 'boolean'],
         ]);
 
         try {
@@ -1287,13 +1317,17 @@ class AdminReturnController extends Controller
             ], 502);
         }
 
+        $queued = (bool) ($result['queued'] ?? false);
+
         return response()->json(array_merge($result, [
             'bin' => [
                 'id' => (int) $returnBin->id,
                 'name' => (string) $returnBin->name,
             ],
-            'data' => $this->returnBins->listBinItems($returnBin),
-        ]));
+            'message' => $queued
+                ? 'Transfer queued. Item removed from Return Cart; ShipHero updates in the background.'
+                : 'Transferred to inventory.',
+        ]), $queued ? 202 : 200);
     }
 
     public function removeReturnBinItem(Request $request, ReturnBin $returnBin): JsonResponse
@@ -1327,12 +1361,17 @@ class AdminReturnController extends Controller
             ], 502);
         }
 
-        return response()->json(array_merge($result, [
-            'bin' => [
-                'id' => (int) $returnBin->id,
-                'name' => (string) $returnBin->name,
+        return response()->json(array_merge(
+            $result,
+            [
+                'bin' => [
+                    'id' => (int) $returnBin->id,
+                    'name' => (string) $returnBin->name,
+                ],
             ],
-            'data' => $this->returnBins->listBinItems($returnBin),
-        ]));
+            $this->returnBins->listBinItemsForDisplay($returnBin)
+        ));
     }
+
 }
+

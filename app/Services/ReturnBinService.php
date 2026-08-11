@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\TransferReturnBinItemJob;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountReturnLine;
@@ -25,10 +26,17 @@ class ReturnBinService
     /** @var InventoryRestockReportService */
     private $restockReports;
 
-    public function __construct(ShipHeroInventoryService $inventory, InventoryRestockReportService $restockReports)
-    {
+    /** @var ReturnBinLocationSyncService */
+    private $locationSync;
+
+    public function __construct(
+        ShipHeroInventoryService $inventory,
+        InventoryRestockReportService $restockReports,
+        ReturnBinLocationSyncService $locationSync
+    ) {
         $this->inventory = $inventory;
         $this->restockReports = $restockReports;
+        $this->locationSync = $locationSync;
     }
 
     public function restockStagingLocationName(): string
@@ -321,8 +329,51 @@ class ReturnBinService
                 'client_account_id' => (int) $row->client_account_id,
                 'client_account_company_name' => trim((string) $row->client_account_company_name),
                 'pick_location' => $pick !== '' ? $pick : '—',
+                'warehouse_id' => null,
+                'from_location_id' => null,
             ];
         })->values()->all();
+    }
+
+    /**
+     * Prefer ShipHero location snapshot when available.
+     *
+     * @return array{
+     *   data: list<array<string, mixed>>,
+     *   source: string,
+     *   synced_at: ?string,
+     *   warehouse_id: ?string,
+     *   location_id: ?string,
+     *   needs_sync: bool
+     * }
+     */
+    public function listBinItemsForDisplay(ReturnBin $bin): array
+    {
+        return $this->locationSync->listForDisplay($bin, function (ReturnBin $b) {
+            return $this->listBinItems($b);
+        });
+    }
+
+    /**
+     * Sync what is in the ShipHero location named like this bin (e.g. Return Cart).
+     *
+     * @return array{
+     *   data: list<array<string, mixed>>,
+     *   source: string,
+     *   synced_at: string,
+     *   warehouse_id: string,
+     *   location_id: ?string,
+     *   needs_sync: bool
+     * }
+     */
+    public function syncBinItemsFromShipHero(ReturnBin $bin): array
+    {
+        return $this->locationSync->syncFromShipHero($bin);
+    }
+
+    public function adjustCachedBinItemQty(ReturnBin $bin, string $sku, int $clientAccountId, int $delta): void
+    {
+        $this->locationSync->adjustCachedItemQty($bin, $sku, $clientAccountId, $delta);
     }
 
     /**
@@ -424,8 +475,10 @@ class ReturnBinService
     }
 
     /**
+     * Fast path: decrement CRM + optimistic ShipHero cache, transfer once in background.
+     *
      * @param  array<string, mixed>  $payload
-     * @return array{transferred_qty: int, remaining_qty: int}
+     * @return array<string, mixed>
      */
     public function transferFromBin(ReturnBin $bin, array $payload, ?User $actor): array
     {
@@ -435,6 +488,7 @@ class ReturnBinService
         $warehouseId = trim((string) ($payload['warehouse_id'] ?? ''));
         $toLocationId = trim((string) ($payload['to_location_id'] ?? ''));
         $toLocationName = trim((string) ($payload['to_location'] ?? ''));
+        $background = ! array_key_exists('background', $payload) || (bool) $payload['background'];
 
         if ($sku === '' || $clientAccountId <= 0) {
             throw ValidationException::withMessages([
@@ -447,27 +501,11 @@ class ReturnBinService
             ]);
         }
         if ($warehouseId === '') {
-            throw ValidationException::withMessages([
-                'warehouse_id' => ['Warehouse is required.'],
-            ]);
+            $warehouseId = $this->locationSync->resolveReturnsWarehouseId();
         }
         if ($toLocationId === '' && $toLocationName === '') {
             throw ValidationException::withMessages([
                 'to_location' => ['Select or enter a destination location.'],
-            ]);
-        }
-
-        $available = (int) ClientAccountReturnLine::query()
-            ->join('client_account_returns', 'client_account_returns.id', '=', 'client_account_return_lines.client_account_return_id')
-            ->where('client_account_return_lines.return_bin_id', $bin->id)
-            ->where('client_account_return_lines.return_bin_remaining_qty', '>', 0)
-            ->where('client_account_return_lines.sku', $sku)
-            ->where('client_account_returns.client_account_id', $clientAccountId)
-            ->sum('client_account_return_lines.return_bin_remaining_qty');
-
-        if ($quantity > $available) {
-            throw ValidationException::withMessages([
-                'quantity' => ['Quantity exceeds available items in this bin ('.$available.').'],
             ]);
         }
 
@@ -476,6 +514,28 @@ class ReturnBinService
         if ($customerId === '') {
             throw ValidationException::withMessages([
                 'client_account_id' => ['This account is not linked to ShipHero.'],
+            ]);
+        }
+
+        $display = $this->listBinItemsForDisplay($bin);
+        $shipQty = $this->qtyOnDisplayForSku($display['data'], $sku, $clientAccountId);
+        $crmAvailable = (int) ClientAccountReturnLine::query()
+            ->join('client_account_returns', 'client_account_returns.id', '=', 'client_account_return_lines.client_account_return_id')
+            ->where('client_account_return_lines.return_bin_id', $bin->id)
+            ->where('client_account_return_lines.return_bin_remaining_qty', '>', 0)
+            ->where('client_account_return_lines.sku', $sku)
+            ->where('client_account_returns.client_account_id', $clientAccountId)
+            ->sum('client_account_return_lines.return_bin_remaining_qty');
+
+        $maxAllowed = max($shipQty, $crmAvailable);
+        if ($maxAllowed <= 0) {
+            throw ValidationException::withMessages([
+                'quantity' => ['No quantity available in this bin for that SKU.'],
+            ]);
+        }
+        if ($quantity > $maxAllowed) {
+            throw ValidationException::withMessages([
+                'quantity' => ['Quantity exceeds available items in this bin ('.$maxAllowed.').'],
             ]);
         }
 
@@ -501,6 +561,15 @@ class ReturnBinService
         }
 
         $fromLocationId = trim((string) ($payload['from_location_id'] ?? ''));
+        if ($fromLocationId === '' && is_string($display['location_id'] ?? null)) {
+            $fromLocationId = trim((string) $display['location_id']);
+        }
+        if ($fromLocationId === '') {
+            $fromRowId = $this->fromLocationIdOnDisplay($display['data'], $sku, $clientAccountId);
+            if ($fromRowId !== '') {
+                $fromLocationId = $fromRowId;
+            }
+        }
         if ($fromLocationId === '') {
             $stagingName = trim((string) $bin->name);
             if ($stagingName !== '') {
@@ -510,18 +579,81 @@ class ReturnBinService
                 }
             }
         }
+        if ($fromLocationId === '') {
+            throw ValidationException::withMessages([
+                'from_location_id' => ['Could not resolve the '.$bin->name.' location in ShipHero.'],
+            ]);
+        }
 
-        return DB::transaction(function () use (
+        $reason = 'Return Restock';
+        $this->decrementCrmBinQty(
             $bin,
             $sku,
             $clientAccountId,
             $quantity,
-            $warehouseId,
-            $fromLocationId,
-            $toLocationId,
             $resolvedLocationName,
-            $customerId,
-            $actor
+            $actor,
+            $reason
+        );
+
+        $this->adjustCachedBinItemQty($bin, $sku, $clientAccountId, -$quantity);
+
+        $queued = false;
+        if ($background) {
+            TransferReturnBinItemJob::dispatch([
+                'return_bin_id' => (int) $bin->id,
+                'sku' => $sku,
+                'client_account_id' => $clientAccountId,
+                'warehouse_id' => $warehouseId,
+                'from_location_id' => $fromLocationId,
+                'to_location_id' => $toLocationId,
+                'quantity' => $quantity,
+                'reason' => $reason,
+                'shiphero_customer_id' => $customerId,
+            ]);
+            $queued = true;
+        } else {
+            $this->inventory->transferLocationQuantity(
+                $sku,
+                $warehouseId,
+                $fromLocationId,
+                $toLocationId,
+                $quantity,
+                $reason,
+                $customerId
+            );
+        }
+
+        $fresh = $this->listBinItemsForDisplay($bin);
+        $remainingAfter = $this->qtyOnDisplayForSku($fresh['data'], $sku, $clientAccountId);
+
+        return array_merge($fresh, [
+            'transferred_qty' => $quantity,
+            'remaining_qty' => $remainingAfter,
+            'queued' => $queued,
+        ]);
+    }
+
+    /**
+     * @return int CRM qty actually decremented
+     */
+    private function decrementCrmBinQty(
+        ReturnBin $bin,
+        string $sku,
+        int $clientAccountId,
+        int $quantity,
+        string $resolvedLocationName,
+        ?User $actor,
+        string &$reason
+    ): int {
+        return (int) DB::transaction(function () use (
+            $bin,
+            $sku,
+            $clientAccountId,
+            $quantity,
+            $resolvedLocationName,
+            $actor,
+            &$reason
         ) {
             $remainingToTransfer = $quantity;
             $transferred = 0;
@@ -551,27 +683,8 @@ class ReturnBinService
                 if (! $parentReturn instanceof ClientAccountReturn) {
                     $parentReturn = ClientAccountReturn::query()->findOrFail($line->client_account_return_id);
                 }
-                $reason = $this->restockReasonForReturn($parentReturn, $actor);
-
-                if ($fromLocationId !== '') {
-                    $this->inventory->transferLocationQuantity(
-                        $sku,
-                        $warehouseId,
-                        $fromLocationId,
-                        $toLocationId,
-                        $chunk,
-                        $reason,
-                        $customerId
-                    );
-                } else {
-                    $this->inventory->addLocationQuantity(
-                        $sku,
-                        $warehouseId,
-                        $toLocationId,
-                        $chunk,
-                        $reason,
-                        $customerId
-                    );
+                if ($transferred === 0) {
+                    $reason = $this->restockReasonForReturn($parentReturn, $actor);
                 }
 
                 $line->return_bin_remaining_qty = $lineRemaining - $chunk;
@@ -587,23 +700,50 @@ class ReturnBinService
                 $remainingToTransfer -= $chunk;
             }
 
-            if ($transferred !== $quantity) {
-                throw new RuntimeException('Could not transfer the requested quantity from the return bin.');
-            }
-
-            $remainingAfter = (int) ClientAccountReturnLine::query()
-                ->join('client_account_returns', 'client_account_returns.id', '=', 'client_account_return_lines.client_account_return_id')
-                ->where('client_account_return_lines.return_bin_id', $bin->id)
-                ->where('client_account_return_lines.return_bin_remaining_qty', '>', 0)
-                ->where('client_account_return_lines.sku', $sku)
-                ->where('client_account_returns.client_account_id', $clientAccountId)
-                ->sum('client_account_return_lines.return_bin_remaining_qty');
-
-            return [
-                'transferred_qty' => $transferred,
-                'remaining_qty' => $remainingAfter,
-            ];
+            return $transferred;
         });
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     */
+    private function qtyOnDisplayForSku(array $rows, string $sku, int $clientAccountId): int
+    {
+        $skuKey = mb_strtolower(trim($sku));
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            if (
+                mb_strtolower(trim((string) ($row['sku'] ?? ''))) === $skuKey
+                && (int) ($row['client_account_id'] ?? 0) === $clientAccountId
+            ) {
+                return max(0, (int) ($row['qty'] ?? 0));
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     */
+    private function fromLocationIdOnDisplay(array $rows, string $sku, int $clientAccountId): string
+    {
+        $skuKey = mb_strtolower(trim($sku));
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            if (
+                mb_strtolower(trim((string) ($row['sku'] ?? ''))) === $skuKey
+                && (int) ($row['client_account_id'] ?? 0) === $clientAccountId
+            ) {
+                return trim((string) ($row['from_location_id'] ?? ''));
+            }
+        }
+
+        return '';
     }
 
     /**
@@ -768,6 +908,8 @@ class ReturnBinService
                 ->where('client_account_return_lines.sku', $sku)
                 ->where('client_account_returns.client_account_id', $clientAccountId)
                 ->sum('client_account_return_lines.return_bin_remaining_qty');
+
+            $this->adjustCachedBinItemQty($bin, $sku, $clientAccountId, -$removed);
 
             return [
                 'removed_qty' => $removed,

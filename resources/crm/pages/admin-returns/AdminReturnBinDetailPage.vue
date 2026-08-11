@@ -21,10 +21,15 @@ const PRODUCT_CACHE_TTL_MS = 30 * 60 * 1000;
 const PRODUCT_CACHE_PREFIX = "return-bin-product:v1:";
 
 const loading = ref(true);
+const syncing = ref(false);
 const rows = ref([]);
 const productSearch = ref("");
 const binId = computed(() => Number(route.params.binId || 0));
 const binName = ref("");
+const listSource = ref("crm");
+const syncedAt = ref("");
+const binWarehouseId = ref("");
+const binLocationId = ref("");
 
 const lineMenuKey = ref(null);
 const lineMenuRect = ref({ top: 0, left: 0 });
@@ -47,8 +52,6 @@ const deleteOpen = ref(false);
 const deleteBusy = ref(false);
 const deleteRow = ref(null);
 const deleteQty = ref("");
-
-let prefetchGeneration = 0;
 
 const canTransfer = computed(() => {
   const u = crmUser.value;
@@ -159,10 +162,26 @@ function flattenProductLocations(product, { includeEmpty = false } = {}) {
 }
 
 const transferFromOptions = computed(() => {
-  const staging = String(binName.value || "").trim().toLowerCase();
-  if (!staging) return [];
+  const row = transferRow.value;
+  const staging = String(binName.value || "").trim() || "Return Cart";
+  const fromId = String(row?.from_location_id || binLocationId.value || "").trim();
+  const warehouseId = String(row?.warehouse_id || binWarehouseId.value || "").trim();
+  const qty = Number(row?.qty || 0);
+
+  // Prefer synced ShipHero Return Cart location so Transfer opens without waiting on product prefetch.
+  if (fromId && warehouseId && qty > 0) {
+    return [
+      {
+        location_id: fromId,
+        location_name: staging,
+        warehouse_id: warehouseId,
+        quantity: qty,
+      },
+    ];
+  }
+
   return flattenProductLocations(transferProduct.value, { includeEmpty: false }).filter(
-    (loc) => String(loc.location_name || "").trim().toLowerCase() === staging,
+    (loc) => String(loc.location_name || "").trim().toLowerCase() === staging.toLowerCase(),
   );
 });
 
@@ -272,27 +291,30 @@ async function fetchProductForRow(row, { force = false } = {}) {
   return product;
 }
 
-async function prefetchProductLocations() {
-  const generation = ++prefetchGeneration;
-  const unique = [];
-  const seen = new Set();
-  for (const row of rows.value) {
-    const key = rowKey(row);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    unique.push(row);
-  }
-  for (const row of unique) {
-    if (generation !== prefetchGeneration) return;
-    const sku = String(row?.sku || "").trim();
-    const accountId = Number(row?.client_account_id || 0);
-    if (!sku || accountId <= 0) continue;
-    if (readProductCache(sku, accountId)) continue;
-    try {
-      await fetchProductForRow(row);
-    } catch {
-      /* keep going */
-    }
+function applyListPayload(data) {
+  binName.value = String(data?.bin?.name || "").trim() || `Bin ${binId.value}`;
+  rows.value = Array.isArray(data?.data) ? data.data : [];
+  listSource.value = String(data?.source || "crm");
+  syncedAt.value = String(data?.synced_at || "");
+  binWarehouseId.value = String(data?.warehouse_id || "");
+  binLocationId.value = String(data?.location_id || "");
+  setCrmPageMeta({
+    title: `Save Rack | ${binName.value}`,
+    description: "Items in a return bin awaiting restock.",
+  });
+}
+
+async function syncFromShipHero({ quiet = false } = {}) {
+  if (binId.value <= 0) return;
+  syncing.value = true;
+  try {
+    const { data } = await api.post(`/admin/returns/bins/${binId.value}/sync`);
+    applyListPayload(data);
+    if (!quiet) toast.success(data?.message || "Synced From ShipHero.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not sync from ShipHero.");
+  } finally {
+    syncing.value = false;
   }
 }
 
@@ -303,16 +325,12 @@ async function load() {
     return;
   }
   loading.value = true;
-  prefetchGeneration += 1;
   try {
     const { data } = await api.get(`/admin/returns/bins/${binId.value}/items`);
-    binName.value = String(data?.bin?.name || "").trim() || `Bin ${binId.value}`;
-    rows.value = Array.isArray(data?.data) ? data.data : [];
-    setCrmPageMeta({
-      title: `Save Rack | ${binName.value}`,
-      description: "Items in a return bin awaiting restock.",
-    });
-    void prefetchProductLocations();
+    applyListPayload(data);
+    if (data?.needs_sync) {
+      void syncFromShipHero({ quiet: true });
+    }
   } catch (e) {
     toast.errorFrom(e, "Could not load bin items.");
     rows.value = [];
@@ -326,7 +344,7 @@ async function openTransferFromMenu(row) {
   closeLineMenu();
   const accountId = Number(row.client_account_id || 0);
   if (accountId <= 0) {
-    toast.error("Account is missing for this item.");
+    toast.error("Account is missing for this item. Sync Return Cart first.");
     return;
   }
   transferRow.value = row;
@@ -338,11 +356,30 @@ async function openTransferFromMenu(row) {
   transferBusy.value = false;
   transferModalOpen.value = true;
 
+  const hasSyncedFrom =
+    String(row.from_location_id || binLocationId.value || "").trim() !== "" &&
+    String(row.warehouse_id || binWarehouseId.value || "").trim() !== "";
+
   const cached = readProductCache(row.sku, accountId);
   if (cached) {
     transferProduct.value = cached;
     applyTransferFromSelection();
     transferLoading.value = false;
+    return;
+  }
+
+  // With synced Return Cart location we can open Transfer immediately; load product for pick destinations in background.
+  if (hasSyncedFrom) {
+    transferProduct.value = null;
+    applyTransferFromSelection();
+    transferLoading.value = false;
+    void fetchProductForRow(row)
+      .then((product) => {
+        if (transferRow.value && rowKey(transferRow.value) === rowKey(row)) {
+          transferProduct.value = product;
+        }
+      })
+      .catch(() => {});
     return;
   }
 
@@ -392,6 +429,7 @@ async function submitTransfer() {
     warehouse_id: transferFromLocation.value.warehouse_id,
     from_location_id: transferFromLocation.value.location_id,
     quantity: qty,
+    background: true,
   };
 
   if (destMode === "new") {
@@ -409,14 +447,27 @@ async function submitTransfer() {
   }
 
   transferBusy.value = true;
+  const prevRows = rows.value;
+  // Optimistic remove/reduce from Return Cart list immediately.
+  rows.value = prevRows
+    .map((row) => {
+      if (rowKey(row) !== rowKey(transferRow.value)) return row;
+      const nextQty = Number(row.qty || 0) - qty;
+      if (nextQty <= 0) return null;
+      return { ...row, qty: nextQty };
+    })
+    .filter(Boolean);
+
   try {
     const { data } = await api.post(`/admin/returns/bins/${binId.value}/transfer`, body);
-    rows.value = Array.isArray(data?.data) ? data.data : rows.value;
+    if (Array.isArray(data?.data)) {
+      applyListPayload(data);
+    }
     invalidateProductCache(transferRow.value.sku, transferRow.value.client_account_id);
     transferModalOpen.value = false;
-    toast.success("Transferred to inventory.");
-    void prefetchProductLocations();
+    toast.success(data?.message || "Transfer Queued.");
   } catch (e) {
+    rows.value = prevRows;
     toast.errorFrom(e, "Could not transfer item.");
   } finally {
     transferBusy.value = false;
@@ -463,8 +514,7 @@ async function confirmDelete() {
     invalidateProductCache(row.sku, row.client_account_id);
     deleteOpen.value = false;
     deleteRow.value = null;
-    toast.success("Item removed from bin.");
-    void prefetchProductLocations();
+    toast.success("Item Removed From Bin.");
   } catch (e) {
     toast.errorFrom(e, "Could not delete item.");
   } finally {
@@ -482,7 +532,6 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  prefetchGeneration += 1;
   document.removeEventListener("click", onDocumentClick);
 });
 </script>
@@ -508,10 +557,11 @@ onUnmounted(() => {
         class="d-flex flex-wrap align-items-center justify-content-center justify-content-md-end gap-2 flex-shrink-0"
       >
         <CrmRefreshToolbarButton
-          :disabled="loading"
-          :loading="loading"
-          title="Refresh bin items"
-          @click="load"
+          :disabled="loading || syncing"
+          :loading="syncing"
+          label="Sync"
+          title="Sync Return Cart from ShipHero"
+          @click="syncFromShipHero()"
         />
       </div>
     </div>

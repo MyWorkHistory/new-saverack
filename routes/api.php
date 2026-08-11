@@ -360,6 +360,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/bins/{returnBin}/clear', [AdminReturnController::class, 'clearReturnBin'])->middleware('can:returns.update');
         Route::delete('/bins/{returnBin}', [AdminReturnController::class, 'destroyReturnBin'])->middleware('can:returns.update');
         Route::get('/bins/{returnBin}/items', [AdminReturnController::class, 'listReturnBinItems'])->middleware('can:returns.view');
+        Route::post('/bins/{returnBin}/sync', [AdminReturnController::class, 'syncReturnBinItems'])->middleware('can:returns.view');
         Route::post('/bins/{returnBin}/transfer', [AdminReturnController::class, 'transferReturnBinItem'])->middleware('can:returns.update');
         Route::post('/bins/{returnBin}/remove', [AdminReturnController::class, 'removeReturnBinItem'])->middleware('can:returns.update');
         Route::post('/{clientAccountReturn}/lines', [AdminReturnController::class, 'storeLine'])->middleware('can:returns.create');

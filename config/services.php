@@ -105,6 +105,13 @@ return [
         'webhook_customer_account_id' => env('SHIPHERO_WEBHOOK_CUSTOMER_ACCOUNT_ID'),
     ],
 
+    'shopify' => [
+        'api_version' => env('SHOPIFY_API_VERSION', '2025-01'),
+        'webhook_url' => env('SHOPIFY_WEBHOOK_URL'),
+        /** Fallback HMAC secret when connection.webhook_secret is empty (custom app). */
+        'webhook_secret' => env('SHOPIFY_WEBHOOK_SECRET'),
+    ],
+
     'whatsapp' => [
         'endpoint' => env('WHATSAPP_ENDPOINT', 'https://api.periskope.app/v1/message/send'),
         'token' => env('WHATSAPP_TOKEN'),

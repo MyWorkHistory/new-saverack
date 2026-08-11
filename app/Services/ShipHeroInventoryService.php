@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
+use Throwable;
 
 class ShipHeroInventoryService
 {
@@ -6143,23 +6144,66 @@ GQL;
             throw new RuntimeException('Transfer quantity exceeds source location quantity.');
         }
 
+        $debitedFromQty = max(0, $fromQty - $quantity);
         $this->replaceLocationQuantity(
             $sku,
             $warehouseId,
             $fromLocationId,
-            max(0, $fromQty - $quantity),
+            $debitedFromQty,
             $reason,
             $mutationCustomerId
         );
 
-        return $this->replaceLocationQuantity(
-            $sku,
-            $warehouseId,
-            $toLocationId,
-            max(0, $toQty + $quantity),
-            $reason,
-            $mutationCustomerId
-        );
+        try {
+            return $this->replaceLocationQuantity(
+                $sku,
+                $warehouseId,
+                $toLocationId,
+                max(0, $toQty + $quantity),
+                $reason,
+                $mutationCustomerId
+            );
+        } catch (Throwable $creditError) {
+            // Avoid leaving qty deducted from source with nowhere to go.
+            try {
+                $this->replaceLocationQuantity(
+                    $sku,
+                    $warehouseId,
+                    $fromLocationId,
+                    $fromQty,
+                    $reason.' (transfer rollback)',
+                    $mutationCustomerId
+                );
+            } catch (Throwable $rollbackError) {
+                Log::error('inventory.transfer.credit_failed_and_rollback_failed', [
+                    'sku' => $sku,
+                    'warehouse_id' => $warehouseId,
+                    'from_location_id' => $fromLocationId,
+                    'to_location_id' => $toLocationId,
+                    'quantity' => $quantity,
+                    'credit_error' => $creditError->getMessage(),
+                    'rollback_error' => $rollbackError->getMessage(),
+                ]);
+
+                throw new RuntimeException(
+                    'Transfer failed after reducing source quantity, and automatic restore also failed. '.
+                    'Check ShipHero for SKU '.$sku.'. Original error: '.$creditError->getMessage(),
+                    0,
+                    $creditError
+                );
+            }
+
+            Log::warning('inventory.transfer.credit_failed_restored_source', [
+                'sku' => $sku,
+                'warehouse_id' => $warehouseId,
+                'from_location_id' => $fromLocationId,
+                'to_location_id' => $toLocationId,
+                'quantity' => $quantity,
+                'credit_error' => $creditError->getMessage(),
+            ]);
+
+            throw $creditError;
+        }
     }
 
     /**

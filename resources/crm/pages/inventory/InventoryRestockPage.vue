@@ -714,12 +714,30 @@ async function submitTransfer() {
   }
 
   const row = transferRow.value;
-  const previousStatus = rowStatus(row);
-  body.restock_previous_status = previousStatus;
+  // Apply CRM status only after ShipHero transfer succeeds (job or sync).
+  body.restock_next_status = nextStatus;
 
-  // Close immediately and optimistically update status while ShipHero runs in background.
+  transferBusy.value = true;
+  try {
+    await api.post("/inventory/transfer", body);
+  } catch (e) {
+    transferBusy.value = false;
+    toast.errorFrom(e, "Could not transfer quantity.");
+    return;
+  }
+
+  // Close after queue/accept; keep prior status until job applies next status.
+  const previousStatus = rowStatus(row);
+  const previousLabel = row.status_label;
   transferModalOpen.value = false;
   transferBusy.value = false;
+  toast.success(
+    nextStatus === RESTOCK_STATUS_TRANSFER_CART
+      ? "Transfer queued to cart. Status updates when ShipHero finishes."
+      : "Transfer queued. Marked complete when ShipHero finishes.",
+  );
+
+  // Soft preview only; snapshot polls reconcile to persisted status / transfer_error.
   row.status = nextStatus;
   row.status_label =
     nextStatus === RESTOCK_STATUS_TRANSFER_CART
@@ -727,42 +745,18 @@ async function submitTransfer() {
       : nextStatus === RESTOCK_STATUS_COMPLETE
         ? "Complete"
         : "Pending";
-  toast.success(
-    nextStatus === RESTOCK_STATUS_TRANSFER_CART
-      ? "Transferred to cart."
-      : "Transferred and marked complete.",
-  );
 
-  try {
-    const { data: statusData } = await api.post("/inventory/restock-beta/status", {
-      sku: row.sku,
-      status: nextStatus,
-    });
-    applySnapshot(statusData, { silent: true });
-  } catch (e) {
-    row.status = previousStatus;
-    toast.errorFrom(e, "Could not update restock status.");
-    return;
-  }
-
-  try {
-    await api.post("/inventory/transfer", body);
-    // Pick up any async failure rollback / transfer_error toast.
+  const pollMs = [3000, 8000, 20000];
+  pollMs.forEach((ms, index) => {
     window.setTimeout(() => {
-      loadSnapshot({ showSpinner: false });
-    }, 4000);
-  } catch (e) {
-    try {
-      const { data } = await api.post("/inventory/restock-beta/status", {
-        sku: row.sku,
-        status: previousStatus,
+      loadSnapshot({ showSpinner: false }).catch(() => {
+        if (index === pollMs.length - 1) {
+          row.status = previousStatus;
+          row.status_label = previousLabel;
+        }
       });
-      applySnapshot(data, { silent: true });
-    } catch {
-      row.status = previousStatus;
-    }
-    toast.errorFrom(e, "Could not transfer quantity.");
-  }
+    }, ms);
+  });
 }
 
 async function loadAdjustmentReasons() {

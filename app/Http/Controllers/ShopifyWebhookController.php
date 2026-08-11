@@ -1,0 +1,79 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Jobs\ProcessShopifyWebhookJob;
+use App\Models\ClientAccountShopifyConnection;
+use App\Models\ShopifyWebhookEvent;
+use App\Services\ShopifyWebhookVerifier;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Log;
+
+class ShopifyWebhookController extends Controller
+{
+    public function handle(Request $request, ShopifyWebhookVerifier $verifier): JsonResponse|Response
+    {
+        if ($request->isMethod('HEAD')) {
+            return response('', 200);
+        }
+
+        $raw = (string) $request->getContent();
+        $hmac = (string) $request->header('X-Shopify-Hmac-Sha256', '');
+        $shopDomain = strtolower(trim((string) $request->header('X-Shopify-Shop-Domain', '')));
+        $topic = strtolower(trim((string) $request->header('X-Shopify-Topic', '')));
+        $webhookId = trim((string) $request->header('X-Shopify-Webhook-Id', ''));
+
+        $connection = null;
+        if ($shopDomain !== '') {
+            $connection = ClientAccountShopifyConnection::query()
+                ->where('shop_domain', $shopDomain)
+                ->first();
+        }
+
+        $secret = '';
+        if ($connection !== null && is_string($connection->webhook_secret) && trim($connection->webhook_secret) !== '') {
+            $secret = trim($connection->webhook_secret);
+        } else {
+            $secret = trim((string) config('services.shopify.webhook_secret', ''));
+        }
+
+        if ($secret === '') {
+            Log::warning('shopify.webhook.missing_secret', ['shop' => $shopDomain]);
+
+            return response()->json(['message' => 'Webhook secret is not configured.'], 500);
+        }
+
+        if (! $verifier->verify($raw, $hmac, $secret)) {
+            Log::warning('shopify.webhook.invalid_hmac', ['shop' => $shopDomain, 'topic' => $topic]);
+
+            return response()->json(['message' => 'Invalid HMAC.'], 401);
+        }
+
+        $decoded = json_decode($raw, true);
+        if (! is_array($decoded)) {
+            return response()->json(['message' => 'Invalid JSON.'], 400);
+        }
+
+        $eventId = $webhookId !== ''
+            ? $webhookId
+            : hash('sha256', $topic.'|'.$shopDomain.'|'.$raw);
+
+        if (ShopifyWebhookEvent::query()->where('event_id', $eventId)->exists()) {
+            return response()->json(['ok' => true, 'duplicate' => true]);
+        }
+
+        $event = ShopifyWebhookEvent::query()->create([
+            'event_id' => $eventId,
+            'topic' => $topic !== '' ? $topic : 'unknown',
+            'shop_domain' => $shopDomain !== '' ? $shopDomain : null,
+            'connection_id' => $connection !== null ? (int) $connection->id : null,
+            'payload' => $decoded,
+        ]);
+
+        ProcessShopifyWebhookJob::dispatch((int) $event->id)->afterResponse();
+
+        return response()->json(['ok' => true]);
+    }
+}

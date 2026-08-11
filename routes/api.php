@@ -49,7 +49,9 @@ use App\Http\Controllers\Api\TutorialPhotoController;
 use App\Http\Controllers\Api\ResourceCalendarEventController;
 use App\Http\Controllers\Api\ResourcePhotoController;
 use App\Http\Controllers\Api\WholesaleOrderController;
+use App\Http\Controllers\Api\ShopifyIntegrationController;
 use App\Http\Controllers\ShipHeroWebhookController;
+use App\Http\Controllers\ShopifyWebhookController;
 use App\Http\Controllers\StripeWebhookController;
 use App\Http\Controllers\PublicPaymentMethodController;
 use Illuminate\Support\Facades\Route;
@@ -64,6 +66,7 @@ Route::prefix('auth')->group(function () {
 
 Route::post('stripe/webhook', [StripeWebhookController::class, 'handle']);
 Route::match(['post', 'head'], 'shiphero/webhook', [ShipHeroWebhookController::class, 'handle']);
+Route::match(['post', 'head'], 'shopify/webhook', [ShopifyWebhookController::class, 'handle']);
 
 Route::middleware('throttle:public-payment-method')->prefix('public/payment-method')->group(function () {
     Route::post('{token}/setup-intent', [PublicPaymentMethodController::class, 'setupIntent']);
@@ -629,6 +632,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('tasks', WebmasterTaskController::class);
     });
 
+    Route::prefix('shopify')->group(function () {
+        Route::get('/orders', [ShopifyIntegrationController::class, 'ordersIndex']);
+        Route::get('/orders/{shopifyOrder}', [ShopifyIntegrationController::class, 'ordersShow']);
+        Route::post('/orders/{shopifyOrder}/fulfill', [ShopifyIntegrationController::class, 'fulfillOrder']);
+        Route::get('/inventory', [ShopifyIntegrationController::class, 'inventoryIndex']);
+        Route::get('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'inventoryShow']);
+        Route::patch('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'updateVariant']);
+    });
+
     Route::prefix('resources')->group(function () {
         Route::get('/tutorials/meta', [TutorialController::class, 'meta']);
         Route::post('/tutorials/{tutorial}/send-slack', [TutorialController::class, 'sendToSlack']);
@@ -783,6 +795,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('client-accounts/{client_account}/shiphero-stores/{store_key}', [ClientAccountShipHeroStoreController::class, 'destroy'])
         ->where('store_key', '[^/]+')
         ->name('client-accounts.shiphero-stores.destroy');
+
+    Route::get('client-accounts/{client_account}/shopify-connection', [ShopifyIntegrationController::class, 'showConnection']);
+    Route::put('client-accounts/{client_account}/shopify-connection', [ShopifyIntegrationController::class, 'upsertConnection']);
+    Route::delete('client-accounts/{client_account}/shopify-connection', [ShopifyIntegrationController::class, 'disconnect']);
+    Route::post('client-accounts/{client_account}/shopify-connection/import', [ShopifyIntegrationController::class, 'importConnection']);
+    Route::post('client-accounts/{client_account}/shopify-connection/sync', [ShopifyIntegrationController::class, 'syncConnection']);
+
     Route::apiResource('client-accounts', ClientAccountController::class);
     Route::match(['put', 'patch'], 'users/{user}/permissions', [UserController::class, 'updatePermissions'])
         ->name('users.permissions.update');

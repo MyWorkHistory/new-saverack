@@ -307,6 +307,11 @@ class ClientAccount extends Model
         return $this->hasMany(ClientStore::class, 'client_account_id');
     }
 
+    public function shopifyConnection(): HasOne
+    {
+        return $this->hasOne(ClientAccountShopifyConnection::class, 'client_account_id');
+    }
+
     /** CRM notes / activity comments (attachments supported). */
     public function comments(): HasMany
     {

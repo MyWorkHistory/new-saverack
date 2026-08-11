@@ -14,6 +14,7 @@ import ClientAccountOrdersPanel from "../../components/clients/ClientAccountOrde
 import ClientAccountInventoryPanel from "../../components/clients/ClientAccountInventoryPanel.vue";
 import ClientAccountAsnPanel from "../../components/clients/ClientAccountAsnPanel.vue";
 import AccountDetailSectionHead from "../../components/clients/AccountDetailSectionHead.vue";
+import ClientAccountShopifyPanel from "../../components/clients/ClientAccountShopifyPanel.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmNoteAuthorAvatar from "../../components/common/CrmNoteAuthorAvatar.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
@@ -2181,6 +2182,12 @@ onUnmounted(() => {
                   </dl>
                 </div>
               </div>
+
+              <ClientAccountShopifyPanel
+                v-if="account?.id && (crmIsAdmin(crmUser) || crmUser?.is_crm_owner)"
+                :account-id="account.id"
+                :can-edit="canUpdateAccount && (crmIsAdmin(crmUser) || !!crmUser?.is_crm_owner)"
+              />
             </div>
           </template>
         </div>

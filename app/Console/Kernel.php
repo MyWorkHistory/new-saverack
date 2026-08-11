@@ -34,6 +34,14 @@ class Kernel extends ConsoleKernel
             ->cron('*/5 * * * *')
             ->timezone('America/New_York')
             ->withoutOverlapping(5);
+        $schedule->command('shopify:sync-recent')
+            ->cron('*/5 * * * *')
+            ->timezone('America/New_York')
+            ->withoutOverlapping(10);
+        $schedule->command('shopify:reprocess-pending-webhooks')
+            ->cron('*/5 * * * *')
+            ->timezone('America/New_York')
+            ->withoutOverlapping(5);
         // Inventory catalog incremental stays on the lighter 15/30 cadence.
         $schedule->command('inventory:sync-catalog-incremental')
             ->cron('*/15 7-17 * * *')

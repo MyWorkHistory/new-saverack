@@ -406,13 +406,17 @@ class InventoryApiTest extends TestCase
             'to_location_id' => 'LOC-B',
             'quantity' => 4,
             'background' => true,
-            'restock_previous_status' => 'pending',
+            'restock_next_status' => 'complete',
         ])
             ->assertStatus(202)
             ->assertJsonPath('queued', true)
             ->assertJsonPath('ok', true);
 
-        Bus::assertDispatched(TransferInventoryLocationJob::class);
+        Bus::assertDispatched(TransferInventoryLocationJob::class, function (TransferInventoryLocationJob $job) {
+            return $job->sku === 'SKU-1'
+                && $job->restockNextStatus === 'complete'
+                && $job->restockPreviousStatus === null;
+        });
     }
 
     public function test_product_detail_returns_cache_when_refresh_omitted(): void

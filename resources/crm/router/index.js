@@ -19,6 +19,10 @@ import UserPermissionsPage from "../pages/users/UserPermissionsPage.vue";
 import UserHistoryPage from "../pages/users/UserHistoryPage.vue";
 import WebmasterTasksPage from "../pages/webmaster/WebmasterTasksPage.vue";
 import WebmasterTaskDetailPage from "../pages/webmaster/WebmasterTaskDetailPage.vue";
+import ShopifyOrdersPage from "../pages/webmaster/ShopifyOrdersPage.vue";
+import ShopifyOrderDetailPage from "../pages/webmaster/ShopifyOrderDetailPage.vue";
+import ShopifyInventoryPage from "../pages/webmaster/ShopifyInventoryPage.vue";
+import ShopifyInventoryDetailPage from "../pages/webmaster/ShopifyInventoryDetailPage.vue";
 import SettingsPricingPage from "../pages/settings/SettingsPricingPage.vue";
 import SettingsTermsPage from "../pages/settings/SettingsTermsPage.vue";
 import SettingsEmailTemplatesPage from "../pages/settings/SettingsEmailTemplatesPage.vue";
@@ -89,6 +93,22 @@ const meta = {
   webmasterTask: {
     title: "Save Rack | Webmaster Task",
     description: "Webmaster Task Details.",
+  },
+  webmasterShopifyOrders: {
+    title: "Save Rack | Shopify Orders",
+    description: "Shopify orders from connected stores.",
+  },
+  webmasterShopifyOrderDetail: {
+    title: "Save Rack | Shopify Order",
+    description: "Shopify order detail.",
+  },
+  webmasterShopifyInventory: {
+    title: "Save Rack | Shopify Inventory",
+    description: "Shopify inventory from connected stores.",
+  },
+  webmasterShopifyInventoryDetail: {
+    title: "Save Rack | Shopify Variant",
+    description: "Edit Shopify variant.",
   },
   settingsPricing: {
     title: "Save Rack | Pricing",
@@ -936,6 +956,32 @@ const routes = [
     component: WebmasterTaskDetailPage,
     props: true,
     meta: meta.webmasterTask,
+  },
+  {
+    path: "/admin/webmaster/shopify/orders",
+    name: "webmaster-shopify-orders",
+    component: ShopifyOrdersPage,
+    meta: meta.webmasterShopifyOrders,
+  },
+  {
+    path: "/admin/webmaster/shopify/orders/:id",
+    name: "webmaster-shopify-order-detail",
+    component: ShopifyOrderDetailPage,
+    props: true,
+    meta: meta.webmasterShopifyOrderDetail,
+  },
+  {
+    path: "/admin/webmaster/shopify/inventory",
+    name: "webmaster-shopify-inventory",
+    component: ShopifyInventoryPage,
+    meta: meta.webmasterShopifyInventory,
+  },
+  {
+    path: "/admin/webmaster/shopify/inventory/:id",
+    name: "webmaster-shopify-inventory-detail",
+    component: ShopifyInventoryDetailPage,
+    props: true,
+    meta: meta.webmasterShopifyInventoryDetail,
   },
   {
     path: "/users/welcome",

@@ -230,6 +230,41 @@ php artisan orders:refresh-home-dashboard --from-index --sync
 
 Verify with `php artisan crm:diagnose-shiphero` — check **Order index health** for shipped-today label sum and awaiting totals.
 
+### Shopify integration (Phase 1)
+
+Per-client Shopify custom-app connection stores credentials on `client_account_shopify_connections` (encrypted Admin API token). Catalog/orders/inventory live in Shopify-only tables and do **not** write ShipHero warehouse stock.
+
+**Setup**
+
+1. Create a Shopify custom app on the test store with scopes at least:
+   - `read_products`, `write_products`
+   - `read_inventory`, `write_inventory` (inventory levels read; Phase 1 does not push qty)
+   - `read_orders`, `write_orders`
+   - `read_merchant_managed_fulfillment_orders`, `write_merchant_managed_fulfillment_orders`
+   - `read_locations`
+2. `.env`:
+   - `SHOPIFY_API_VERSION=2025-01`
+   - `SHOPIFY_WEBHOOK_URL=https://your-domain/api/shopify/webhook`
+   - `SHOPIFY_WEBHOOK_SECRET=` (custom app shared secret used for HMAC)
+3. `php artisan migrate --force`
+4. CRM Admin → Client Account → Settings → **Shopify** → **Connect And Import**
+5. Ensure queue workers drain default `database` jobs (`ProcessShopifyWebhookJob`)
+6. Optional: `php artisan shopify:register-webhooks --account=ID`
+
+**Nav:** Webmaster → Shopify Orders | Shopify Inventory (admin / CRM owner only)
+
+**Schedule:** `shopify:sync-recent` and `shopify:reprocess-pending-webhooks` every 5 minutes
+
+**Mark Shipped** uses GraphQL `fulfillmentCreate` against Fulfillment Order line items (partial then remaining). Phase 1 default tracking: UPS / `TEST123456789`.
+
+```bash
+php artisan shopify:import-connection {accountId}
+php artisan shopify:sync-recent
+php artisan shopify:register-webhooks
+```
+
+---
+
 **Verify deploy**
 
 ```bash

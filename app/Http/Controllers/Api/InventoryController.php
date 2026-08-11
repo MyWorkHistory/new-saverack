@@ -1437,6 +1437,7 @@ class InventoryController extends Controller
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
             'background' => ['nullable', 'boolean'],
             'restock_previous_status' => ['nullable', 'string', 'in:pending,transfer_cart,complete'],
+            'restock_next_status' => ['nullable', 'string', 'in:pending,transfer_cart,complete'],
         ]);
         $reason = $this->inventoryReasonWithActor(
             isset($validated['reason']) && is_string($validated['reason'])
@@ -1448,6 +1449,12 @@ class InventoryController extends Controller
             ? (int) $validated['client_account_id']
             : null;
         $background = (bool) ($validated['background'] ?? false);
+        $restockNextStatus = isset($validated['restock_next_status']) && is_string($validated['restock_next_status'])
+            ? trim($validated['restock_next_status'])
+            : '';
+        $restockPreviousStatus = isset($validated['restock_previous_status']) && is_string($validated['restock_previous_status'])
+            ? trim($validated['restock_previous_status'])
+            : '';
 
         try {
             // Prefer account ShipHero id, but fall back to SKU index like product detail does.
@@ -1495,7 +1502,8 @@ class InventoryController extends Controller
                         'reason' => $reason,
                         'shiphero_customer_id' => $shipheroCustomerId,
                         'client_account_id' => $clientAccountId,
-                        'restock_previous_status' => $validated['restock_previous_status'] ?? null,
+                        'restock_previous_status' => $restockPreviousStatus !== '' ? $restockPreviousStatus : null,
+                        'restock_next_status' => $restockNextStatus !== '' ? $restockNextStatus : null,
                     ]);
                 } catch (ValidationException $e) {
                     throw $e;
@@ -1564,6 +1572,17 @@ class InventoryController extends Controller
                     $validated['sku'],
                     $updated
                 );
+            }
+
+            if ($restockNextStatus !== '') {
+                try {
+                    app(InventoryRestockBetaService::class)->setSkuStatus(
+                        $validated['sku'],
+                        $restockNextStatus
+                    );
+                } catch (Throwable $e) {
+                    report($e);
+                }
             }
 
             return response()->json([

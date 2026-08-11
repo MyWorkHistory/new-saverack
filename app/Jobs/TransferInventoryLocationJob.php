@@ -59,6 +59,9 @@ class TransferInventoryLocationJob implements ShouldQueue
     /** @var string|null */
     public $restockPreviousStatus;
 
+    /** @var string|null */
+    public $restockNextStatus;
+
     /**
      * @param  array{
      *   sku: string,
@@ -71,7 +74,8 @@ class TransferInventoryLocationJob implements ShouldQueue
      *   reason: string,
      *   shiphero_customer_id?: string|null,
      *   client_account_id?: int|null,
-     *   restock_previous_status?: string|null
+     *   restock_previous_status?: string|null,
+     *   restock_next_status?: string|null
      * }  $payload
      */
     public function __construct(array $payload)
@@ -90,6 +94,8 @@ class TransferInventoryLocationJob implements ShouldQueue
         $this->clientAccountId = $accountId !== null && $accountId > 0 ? $accountId : null;
         $prev = isset($payload['restock_previous_status']) ? trim((string) $payload['restock_previous_status']) : '';
         $this->restockPreviousStatus = $prev !== '' ? $prev : null;
+        $next = isset($payload['restock_next_status']) ? trim((string) $payload['restock_next_status']) : '';
+        $this->restockNextStatus = $next !== '' ? $next : null;
     }
 
     public function handle(
@@ -153,6 +159,8 @@ class TransferInventoryLocationJob implements ShouldQueue
             );
             $detailCache->clearForSku($this->clientAccountId, $this->sku);
         }
+
+        $this->applyRestockNextStatusOnSuccess();
     }
 
     public function failed(Throwable $e): void
@@ -160,25 +168,45 @@ class TransferInventoryLocationJob implements ShouldQueue
         $this->revertRestockStatusOnFailure($e);
     }
 
+    private function applyRestockNextStatusOnSuccess(): void
+    {
+        if ($this->restockNextStatus === null || $this->sku === '') {
+            return;
+        }
+
+        try {
+            app(InventoryRestockBetaService::class)->setSkuStatus($this->sku, $this->restockNextStatus);
+        } catch (Throwable $e) {
+            Log::warning('inventory.transfer.restock_status_apply_failed', [
+                'sku' => $this->sku,
+                'next_status' => $this->restockNextStatus,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function revertRestockStatusOnFailure(Throwable $e): void
     {
-        if ($this->restockPreviousStatus === null || $this->sku === '') {
+        // Legacy path: status was written before transfer. New path uses restock_next_status instead.
+        if ($this->restockPreviousStatus !== null && $this->sku !== '') {
+            try {
+                app(InventoryRestockBetaService::class)->setSkuStatus($this->sku, $this->restockPreviousStatus);
+            } catch (Throwable $revertError) {
+                Log::warning('inventory.transfer.restock_status_revert_failed', [
+                    'sku' => $this->sku,
+                    'previous_status' => $this->restockPreviousStatus,
+                    'error' => $revertError->getMessage(),
+                ]);
+            }
+        }
+
+        if ($this->sku === '') {
             return;
         }
 
         $message = $e->getMessage() !== ''
             ? $e->getMessage()
             : 'Inventory transfer failed.';
-
-        try {
-            app(InventoryRestockBetaService::class)->setSkuStatus($this->sku, $this->restockPreviousStatus);
-        } catch (Throwable $revertError) {
-            Log::warning('inventory.transfer.restock_status_revert_failed', [
-                'sku' => $this->sku,
-                'previous_status' => $this->restockPreviousStatus,
-                'error' => $revertError->getMessage(),
-            ]);
-        }
 
         Cache::put(
             self::RESTOCK_ERROR_CACHE_PREFIX.mb_strtolower($this->sku),

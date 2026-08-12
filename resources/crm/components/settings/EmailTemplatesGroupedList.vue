@@ -86,12 +86,6 @@ function usageFor(row) {
   return props.usages?.[id] || props.usages?.[String(id)] || null;
 }
 
-function statusLabelFor(row) {
-  const usage = usageFor(row);
-  if (usage?.last_sent_at) return "Sent";
-  return row.status_label || "Ready";
-}
-
 function lastSentFor(row) {
   const usage = usageFor(row);
   if (usage?.last_sent_at) return formatDateTimeUs(usage.last_sent_at);
@@ -130,8 +124,6 @@ async function copyTemplateBody(row) {
         <thead class="table-light staff-table-head">
           <tr>
             <th class="staff-table-head__th" scope="col">Template Name</th>
-            <th class="staff-table-head__th" scope="col">Category</th>
-            <th class="staff-table-head__th" scope="col">Status</th>
             <th class="staff-table-head__th" scope="col">Last Sent</th>
             <th class="staff-table-head__th staff-actions-col text-center" scope="col">Actions</th>
           </tr>
@@ -145,7 +137,7 @@ async function copyTemplateBody(row) {
                   highlightCategory && highlightCategory === group.category,
               }"
             >
-              <td colspan="5" class="p-0">
+              <td colspan="3" class="p-0">
                 <button
                   type="button"
                   class="email-templates-list__group-btn w-100 text-start"
@@ -196,7 +188,7 @@ async function copyTemplateBody(row) {
             </tr>
             <template v-if="!isCollapsed(group.category)">
               <tr v-if="!(group.templates || []).length">
-                <td colspan="5" class="text-secondary small py-3 px-4">
+                <td colspan="3" class="text-secondary small py-3 px-4">
                   No templates in this category yet.
                 </td>
               </tr>
@@ -247,32 +239,6 @@ async function copyTemplateBody(row) {
                       </div>
                     </div>
                   </td>
-                  <td>
-                    <span
-                      class="email-templates-list__pill"
-                      :style="{
-                        background: emailTemplateCategoryMeta(row.category).softBg,
-                        color: emailTemplateCategoryMeta(row.category).softText,
-                      }"
-                    >
-                      {{ row.category_label || emailTemplateCategoryLabel(row.category) }}
-                    </span>
-                  </td>
-                  <td>
-                    <span
-                      class="email-templates-list__status"
-                      :class="{
-                        'email-templates-list__status--sent': !!usageFor(row)?.last_sent_at,
-                      }"
-                    >
-                      <span class="email-templates-list__status-dot" aria-hidden="true">
-                        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                        </svg>
-                      </span>
-                      {{ statusLabelFor(row) }}
-                    </span>
-                  </td>
                   <td class="text-secondary small">{{ lastSentFor(row) }}</td>
                   <td class="staff-actions-cell text-center" @click.stop>
                     <div
@@ -309,7 +275,7 @@ async function copyTemplateBody(row) {
                   </td>
                 </tr>
                 <tr v-if="expandable && isRowExpanded(row.id)">
-                  <td colspan="5" class="email-templates-list__body-cell">
+                  <td colspan="3" class="email-templates-list__body-cell">
                     <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
                       <span class="small text-secondary">Template body</span>
                       <button
@@ -416,44 +382,6 @@ async function copyTemplateBody(row) {
   border-radius: 0.5rem;
   background: #dbeafe;
   color: #2563eb;
-}
-
-.email-templates-list__pill {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 0.2rem 0.65rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.email-templates-list__status {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #166534;
-}
-
-.email-templates-list__status-dot {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.15rem;
-  height: 1.15rem;
-  border-radius: 999px;
-  background: #16a34a;
-  color: #fff;
-}
-
-.email-templates-list__status--sent {
-  color: #1d4ed8;
-}
-
-.email-templates-list__status--sent .email-templates-list__status-dot {
-  background: #2563eb;
 }
 
 .email-templates-list__row--clickable {

@@ -12,7 +12,7 @@ class ShopifyProductLockTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_locked_product_does_not_overwrite_title_on_update(): void
+    public function test_shopify_webhook_updates_title_unless_crm_locked(): void
     {
         $connection = ClientAccountShopifyConnection::query()->create([
             'client_account_id' => \App\Models\ClientAccount::query()->create([
@@ -45,7 +45,7 @@ class ShopifyProductLockTest extends TestCase
         $product = ShopifyProduct::query()->where('shopify_product_id', '10')->first();
         $this->assertNotNull($product);
         $this->assertSame('Original Title', $product->title);
-        $this->assertNotNull($product->crm_locked_at);
+        $this->assertNull($product->crm_locked_at);
 
         $service->upsertProductFromShopifyNode($connection, [
             'id' => 'gid://shopify/Product/10',
@@ -65,9 +65,35 @@ class ShopifyProductLockTest extends TestCase
         ], false);
 
         $product->refresh();
-        $this->assertSame('Original Title', $product->title);
-
+        $this->assertSame('Changed In Shopify', $product->title);
         $variant = $connection->variants()->where('shopify_variant_id', '20')->first();
-        $this->assertSame('SKU-1', $variant->sku);
+        $this->assertSame('SKU-CHANGED', $variant->sku);
+
+        $product->crm_locked_at = now();
+        $product->save();
+        $variant->crm_locked_at = now();
+        $variant->save();
+
+        $service->upsertProductFromShopifyNode($connection, [
+            'id' => 'gid://shopify/Product/10',
+            'title' => 'Should Not Apply',
+            'handle' => 'nope',
+            'status' => 'ACTIVE',
+            'variants' => [
+                'edges' => [[
+                    'node' => [
+                        'id' => 'gid://shopify/ProductVariant/20',
+                        'title' => 'Default',
+                        'sku' => 'SKU-LOCKED',
+                        'inventoryItem' => ['id' => 'gid://shopify/InventoryItem/30'],
+                    ],
+                ]],
+            ],
+        ], false);
+
+        $product->refresh();
+        $variant->refresh();
+        $this->assertSame('Changed In Shopify', $product->title);
+        $this->assertSame('SKU-CHANGED', $variant->sku);
     }
 }

@@ -261,6 +261,8 @@ Per-client Shopify custom-app connection stores credentials on `client_account_s
    - Renamed shops keep the old `*.myshopify.com` host; webhooks may send either. CRM stores `shop_domain_aliases` and matches both. Refresh with:
      `php artisan shopify:refresh-shop-domains --account=ID`
      or force an alias: `php artisan shopify:refresh-shop-domains --account=ID --add=old-name.myshopify.com`
+   - Product/title fields follow Shopify unless CRM has edited & pushed them (`crm_locked_at`). If titles are stuck after early imports:
+     `php artisan shopify:unlock-catalog --account=ID`
    - Or run a synchronous re-import via `php artisan shopify:import-connection {account}`
 
 **Nav:** Admin → Shopify → Orders | Inventory (below Webmaster; admin / CRM owner only)

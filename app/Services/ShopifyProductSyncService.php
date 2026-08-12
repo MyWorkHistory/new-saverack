@@ -132,9 +132,7 @@ GQL
         $product->status = $status !== '' ? $status : ($product->status ?? 'active');
         $product->shopify_updated_at = $this->parseTime($node['updatedAt'] ?? $node['updated_at'] ?? null);
         $product->raw_json = $node;
-        if ($isNew || $forceSnapshotFields || $product->crm_locked_at === null) {
-            $product->crm_locked_at = now();
-        }
+        // crm_locked_at is set only when CRM pushes edits (see pushVariantToShopify).
         $product->save();
 
         $variantNodes = $this->extractVariantNodes($node);
@@ -263,9 +261,7 @@ GQL
 
         $variant->shopify_updated_at = $this->parseTime($node['updatedAt'] ?? $node['updated_at'] ?? null);
         $variant->raw_json = $node;
-        if ($isNew || $forceSnapshotFields || $variant->crm_locked_at === null) {
-            $variant->crm_locked_at = now();
-        }
+        // crm_locked_at is set only when CRM pushes edits (see pushVariantToShopify).
         $variant->save();
 
         return true;
@@ -310,6 +306,7 @@ GQL
             );
             $this->assertNoUserErrors($data['productUpdate'] ?? null);
             $product->title = $title;
+            $product->crm_locked_at = now();
             $product->save();
         }
 
@@ -373,6 +370,7 @@ GQL
             if (isset($fields['weight_unit'])) {
                 $variant->weight_unit = (string) $fields['weight_unit'];
             }
+            $variant->crm_locked_at = now();
             $variant->save();
         }
 

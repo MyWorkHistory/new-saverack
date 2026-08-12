@@ -117,7 +117,27 @@ GQL
     /**
      * Fetch a single order by Shopify ID (numeric or GID) and upsert.
      */
-    public function refreshOrderByShopifyId(ClientAccountShopifyConnection $connection, string $shopifyOrderId): ?ShopifyOrder
+    public function refreshOrderByShopifyId(
+        ClientAccountShopifyConnection $connection,
+        string $shopifyOrderId,
+        int $attempts = 1
+    ): ?ShopifyOrder {
+        $attempts = max(1, min(5, $attempts));
+        $last = null;
+        for ($i = 0; $i < $attempts; $i++) {
+            if ($i > 0) {
+                sleep(min(2, $i));
+            }
+            $last = $this->refreshOrderByShopifyIdOnce($connection, $shopifyOrderId);
+            if ($last !== null) {
+                return $last;
+            }
+        }
+
+        return $last;
+    }
+
+    public function refreshOrderByShopifyIdOnce(ClientAccountShopifyConnection $connection, string $shopifyOrderId): ?ShopifyOrder
     {
         $api = $this->client->forConnection($connection);
         $gid = str_starts_with($shopifyOrderId, 'gid://')
@@ -208,25 +228,99 @@ GQL
     }
 
     /**
-     * REST webhook order payloads.
+     * REST / GraphQL webhook order payloads (create, update, edited, cancelled).
+     * Always refreshes via GraphQL — REST order.line_items ignore Admin order edits.
      *
      * @param  array<string, mixed>  $payload
      */
-    public function upsertOrderFromWebhookPayload(ClientAccountShopifyConnection $connection, array $payload): ?ShopifyOrder
-    {
-        $orderId = ShopifyGid::toId((string) ($payload['admin_graphql_api_id'] ?? $payload['id'] ?? ''));
+    public function upsertOrderFromWebhookPayload(
+        ClientAccountShopifyConnection $connection,
+        array $payload,
+        string $topic = ''
+    ): ?ShopifyOrder {
+        $orderId = $this->extractShopifyOrderId($payload);
         if ($orderId === '') {
+            throw new \RuntimeException(
+                'Shopify order webhook missing order id (topic='.($topic !== '' ? $topic : 'unknown').').'
+            );
+        }
+
+        if ($this->topicLooksLikeDelete($topic)) {
+            $this->deleteOrderByShopifyId($connection, $orderId);
+
             return null;
         }
 
-        // Prefer a GraphQL refresh so FOs stay accurate.
-        $fresh = $this->refreshOrderByShopifyId($connection, $orderId);
+        // Order edits are not reflected in REST line_items; retry GraphQL so Shopify has committed the edit.
+        $fresh = $this->refreshOrderByShopifyId($connection, $orderId, 3);
         if ($fresh !== null) {
             return $fresh;
         }
 
-        // Fallback: map REST fields when GraphQL refresh fails.
-        return $this->upsertOrderFromRestPayload($connection, $payload);
+        throw new \RuntimeException(
+            'Shopify GraphQL refresh failed for order '.$orderId.' (topic='.($topic !== '' ? $topic : 'unknown').').'
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    public function extractShopifyOrderId(array $payload): string
+    {
+        $edit = is_array($payload['order_edit'] ?? null) ? $payload['order_edit'] : null;
+        if (is_array($edit)) {
+            $fromEdit = ShopifyGid::toId((string) ($edit['order_id'] ?? ''));
+            if ($fromEdit !== '') {
+                return $fromEdit;
+            }
+        }
+
+        $nested = is_array($payload['order'] ?? null) ? $payload['order'] : null;
+        if (is_array($nested)) {
+            $fromNested = ShopifyGid::toId((string) ($nested['admin_graphql_api_id'] ?? $nested['id'] ?? ''));
+            if ($fromNested !== '') {
+                return $fromNested;
+            }
+        }
+
+        foreach (['admin_graphql_api_id', 'order_id', 'id'] as $key) {
+            if (! isset($payload[$key]) || is_array($payload[$key])) {
+                continue;
+            }
+            $id = ShopifyGid::toId((string) $payload[$key]);
+            if ($id !== '') {
+                return $id;
+            }
+        }
+
+        return '';
+    }
+
+    public function topicLooksLikeDelete(string $topic): bool
+    {
+        $topic = strtolower(str_replace('_', '/', trim($topic)));
+
+        return $topic === 'orders/delete';
+    }
+
+    public function deleteOrderByShopifyId(ClientAccountShopifyConnection $connection, string $shopifyOrderId): bool
+    {
+        $orderId = ShopifyGid::toId($shopifyOrderId);
+        if ($orderId === '') {
+            return false;
+        }
+
+        $order = ShopifyOrder::query()
+            ->where('connection_id', $connection->id)
+            ->where('shopify_order_id', $orderId)
+            ->first();
+        if ($order === null) {
+            return false;
+        }
+
+        $order->delete();
+
+        return true;
     }
 
     /**
@@ -267,15 +361,8 @@ GQL
                 ]
             );
 
-            $lineEdges = $node['lineItems']['edges'] ?? null;
-            $lineNodes = [];
-            if (is_array($lineEdges)) {
-                foreach ($lineEdges as $edge) {
-                    if (is_array($edge['node'] ?? null)) {
-                        $lineNodes[] = $edge['node'];
-                    }
-                }
-            }
+            $lineNodes = $this->extractLineItemNodes($node);
+            $hasLineSnapshot = array_key_exists('lineItems', $node) || array_key_exists('line_items', $node);
 
             $seenLineIds = [];
             foreach ($lineNodes as $lineNode) {
@@ -284,7 +371,11 @@ GQL
                     continue;
                 }
                 $seenLineIds[] = $lineId;
-                $qty = (int) ($lineNode['quantity'] ?? 0);
+                // Order edits leave original `quantity` unchanged; currentQuantity is the live qty.
+                $qty = (int) ($lineNode['currentQuantity']
+                    ?? $lineNode['current_quantity']
+                    ?? $lineNode['quantity']
+                    ?? 0);
                 $unfulfilled = (int) ($lineNode['unfulfilledQuantity'] ?? $lineNode['fulfillable_quantity'] ?? $qty);
                 $fulfilled = max(0, $qty - $unfulfilled);
                 ShopifyOrderLineItem::query()->updateOrCreate(
@@ -310,6 +401,16 @@ GQL
                 );
             }
 
+            if ($hasLineSnapshot) {
+                $prune = ShopifyOrderLineItem::query()
+                    ->where('connection_id', $connection->id)
+                    ->where('shopify_order_id', $order->id);
+                if ($seenLineIds !== []) {
+                    $prune->whereNotIn('shopify_line_item_id', $seenLineIds);
+                }
+                $prune->delete();
+            }
+
             $this->syncFulfillmentOrders($connection, $order, $node);
 
             return true;
@@ -317,69 +418,35 @@ GQL
     }
 
     /**
-     * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>  $node
+     * @return list<array<string, mixed>>
      */
-    private function upsertOrderFromRestPayload(ClientAccountShopifyConnection $connection, array $payload): ?ShopifyOrder
+    private function extractLineItemNodes(array $node): array
     {
-        $orderId = ShopifyGid::toId((string) ($payload['id'] ?? ''));
-        if ($orderId === '') {
-            return null;
+        $lineEdges = $node['lineItems']['edges'] ?? null;
+        if (is_array($lineEdges)) {
+            $out = [];
+            foreach ($lineEdges as $edge) {
+                if (is_array($edge['node'] ?? null)) {
+                    $out[] = $edge['node'];
+                }
+            }
+
+            return $out;
         }
 
-        $order = ShopifyOrder::query()->updateOrCreate(
-            [
-                'connection_id' => $connection->id,
-                'shopify_order_id' => $orderId,
-            ],
-            [
-                'name' => (string) ($payload['name'] ?? ''),
-                'email' => (string) ($payload['email'] ?? ''),
-                'financial_status' => strtolower((string) ($payload['financial_status'] ?? '')),
-                'fulfillment_status' => strtolower((string) ($payload['fulfillment_status'] ?? 'unfulfilled')),
-                'currency' => (string) ($payload['currency'] ?? ''),
-                'total_price' => isset($payload['total_price']) ? (float) $payload['total_price'] : null,
-                'shopify_created_at' => $this->parseTime($payload['created_at'] ?? null),
-                'shopify_updated_at' => $this->parseTime($payload['updated_at'] ?? null),
-                'cancelled_at' => $this->parseTime($payload['cancelled_at'] ?? null),
-                'customer_json' => is_array($payload['customer'] ?? null) ? $payload['customer'] : null,
-                'shipping_address_json' => is_array($payload['shipping_address'] ?? null) ? $payload['shipping_address'] : null,
-                'payload_hash' => hash('sha256', json_encode($payload)),
-                'raw_json' => $payload,
-            ]
-        );
+        if (isset($node['line_items']) && is_array($node['line_items'])) {
+            $out = [];
+            foreach ($node['line_items'] as $line) {
+                if (is_array($line)) {
+                    $out[] = $line;
+                }
+            }
 
-        foreach (($payload['line_items'] ?? []) as $line) {
-            if (! is_array($line)) {
-                continue;
-            }
-            $lineId = ShopifyGid::toId((string) ($line['id'] ?? ''));
-            if ($lineId === '') {
-                continue;
-            }
-            $qty = (int) ($line['quantity'] ?? 0);
-            $fulfillable = (int) ($line['fulfillable_quantity'] ?? $qty);
-            ShopifyOrderLineItem::query()->updateOrCreate(
-                [
-                    'connection_id' => $connection->id,
-                    'shopify_line_item_id' => $lineId,
-                ],
-                [
-                    'shopify_order_id' => $order->id,
-                    'shopify_variant_id' => isset($line['variant_id']) ? (string) $line['variant_id'] : null,
-                    'shopify_product_id' => isset($line['product_id']) ? (string) $line['product_id'] : null,
-                    'sku' => (string) ($line['sku'] ?? ''),
-                    'title' => (string) ($line['title'] ?? ''),
-                    'variant_title' => (string) ($line['variant_title'] ?? ''),
-                    'quantity' => $qty,
-                    'fulfillable_quantity' => $fulfillable,
-                    'fulfilled_quantity' => max(0, $qty - $fulfillable),
-                    'price' => isset($line['price']) ? (float) $line['price'] : null,
-                    'raw_json' => $line,
-                ]
-            );
+            return $out;
         }
 
-        return $order->fresh();
+        return [];
     }
 
     /**
@@ -395,6 +462,7 @@ GQL
             return;
         }
 
+        $seenFoIds = [];
         foreach ($foEdges as $edge) {
             $fo = is_array($edge['node'] ?? null) ? $edge['node'] : null;
             if ($fo === null) {
@@ -406,6 +474,7 @@ GQL
             }
             $locationId = ShopifyGid::toId((string) (($fo['assignedLocation']['location']['id'] ?? '') ?: ''));
 
+            $seenFoIds[] = $foId;
             $foRow = ShopifyFulfillmentOrder::query()->updateOrCreate(
                 [
                     'connection_id' => $connection->id,
@@ -420,6 +489,7 @@ GQL
                 ]
             );
 
+            $seenFoLineIds = [];
             foreach (($fo['lineItems']['edges'] ?? []) as $lineEdge) {
                 $line = is_array($lineEdge['node'] ?? null) ? $lineEdge['node'] : null;
                 if ($line === null) {
@@ -438,6 +508,7 @@ GQL
                         ->value('id');
                 }
 
+                $seenFoLineIds[] = $foLineId;
                 ShopifyFulfillmentOrderLineItem::query()->updateOrCreate(
                     [
                         'connection_id' => $connection->id,
@@ -453,7 +524,23 @@ GQL
                     ]
                 );
             }
+
+            $foLinePrune = ShopifyFulfillmentOrderLineItem::query()
+                ->where('connection_id', $connection->id)
+                ->where('shopify_fulfillment_order_id', $foRow->id);
+            if ($seenFoLineIds !== []) {
+                $foLinePrune->whereNotIn('shopify_fo_line_item_id', $seenFoLineIds);
+            }
+            $foLinePrune->delete();
         }
+
+        $foPrune = ShopifyFulfillmentOrder::query()
+            ->where('connection_id', $connection->id)
+            ->where('shopify_order_id', $order->id);
+        if ($seenFoIds !== []) {
+            $foPrune->whereNotIn('shopify_fulfillment_order_id', $seenFoIds);
+        }
+        $foPrune->delete();
     }
 
     /**

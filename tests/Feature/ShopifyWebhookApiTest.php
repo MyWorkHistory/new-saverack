@@ -76,6 +76,48 @@ class ShopifyWebhookApiTest extends TestCase
         ]);
     }
 
+    public function test_webhook_queues_orders_edited_and_delete_topics(): void
+    {
+        Bus::fake();
+        config(['services.shopify.webhook_secret' => 'secret']);
+
+        ClientAccountShopifyConnection::query()->create([
+            'client_account_id' => ClientAccount::query()->create([
+                'company_name' => 'SH Co',
+                'status' => ClientAccount::STATUS_ACTIVE,
+            ])->id,
+            'shop_domain' => 'test.myshopify.com',
+            'admin_api_access_token' => 'shpat_x',
+            'status' => ClientAccountShopifyConnection::STATUS_CONNECTED,
+        ]);
+
+        foreach ([
+            ['wh-edit', 'orders/edited', '{"order_edit":{"id":1,"order_id":55}}'],
+            ['wh-del', 'orders/delete', '{"id":55}'],
+        ] as $case) {
+            $hmac = base64_encode(hash_hmac('sha256', $case[2], 'secret', true));
+            $this->call(
+                'POST',
+                '/api/shopify/webhook',
+                [],
+                [],
+                [],
+                [
+                    'CONTENT_TYPE' => 'application/json',
+                    'HTTP_X_SHOPIFY_HMAC_SHA256' => $hmac,
+                    'HTTP_X_SHOPIFY_TOPIC' => $case[1],
+                    'HTTP_X_SHOPIFY_SHOP_DOMAIN' => 'test.myshopify.com',
+                    'HTTP_X_SHOPIFY_WEBHOOK_ID' => $case[0],
+                ],
+                $case[2]
+            )->assertOk()->assertJsonPath('ok', true);
+        }
+
+        Bus::assertDispatched(ProcessShopifyWebhookJob::class, 2);
+        $this->assertDatabaseHas('shopify_webhook_events', ['event_id' => 'wh-edit', 'topic' => 'orders/edited']);
+        $this->assertDatabaseHas('shopify_webhook_events', ['event_id' => 'wh-del', 'topic' => 'orders/delete']);
+    }
+
     public function test_shopify_orders_require_admin(): void
     {
         $user = User::factory()->create(['client_account_id' => null]);

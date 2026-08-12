@@ -243,7 +243,7 @@ Per-client Shopify custom-app connection stores credentials on `client_account_s
    - `read_merchant_managed_fulfillment_orders`, `write_merchant_managed_fulfillment_orders`
    - `read_locations`
    - Optional: `read_customers` (not required; order sync uses email + shipping address)
-   - Optional: `read_fulfillments` (only if you want fulfillments/* webhooks; orders/updated is enough for Phase 1)
+   - Optional: `read_fulfillments` (only if you want fulfillments/* webhooks; orders/updated + orders/edited cover Phase 1)
 2. `.env`:
    - `SHOPIFY_API_VERSION=2025-01`
    - `SHOPIFY_WEBHOOK_URL=https://your-domain/api/shopify/webhook`
@@ -252,12 +252,15 @@ Per-client Shopify custom-app connection stores credentials on `client_account_s
 4. CRM Admin → Client Account → Settings → **Shopify** → **Connect And Import**
    - Connect verifies the shop quickly, then queues `RunShopifyBootstrapImportJob` (status **Importing** until done).
 5. Ensure queue workers drain default `database` jobs (`ProcessShopifyWebhookJob`, `RunShopifyBootstrapImportJob`)
-6. Optional: `php artisan shopify:register-webhooks --account=ID`
+6. Register webhooks (required after deploy / scope changes):
+   - `php artisan shopify:register-webhooks --account=ID`
+   - Topics: orders create/update/**edited**/cancel/delete, products create/update/delete, inventory levels
+   - Editing line items in Shopify Admin fires `orders/edited` (not only `orders/updated`). CRM then GraphQL-refreshes the order (REST line items ignore edits).
    - Or run a synchronous re-import via `php artisan shopify:import-connection {account}`
 
 **Nav:** Admin → Shopify → Orders | Inventory (below Webmaster; admin / CRM owner only)
 
-**Schedule:** `shopify:sync-recent` and `shopify:reprocess-pending-webhooks` every 5 minutes
+**Schedule:** `shopify:sync-recent` and `shopify:reprocess-pending-webhooks` every 5 minutes (backup if a webhook is missed)
 
 **Mark Shipped** uses GraphQL `fulfillmentCreate` against Fulfillment Order line items (partial then remaining). Phase 1 default tracking: UPS / `TEST123456789`.
 

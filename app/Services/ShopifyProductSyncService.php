@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\ClientAccountShopifyConnection;
+use App\Models\ShopifyInventoryLevel;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
 use App\Support\ShopifyGid;
@@ -145,6 +146,59 @@ GQL
         }
 
         return ['product' => true, 'variants' => $variantCount];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    public function extractShopifyProductId(array $payload): string
+    {
+        foreach (['admin_graphql_api_id', 'id'] as $key) {
+            if (! isset($payload[$key]) || is_array($payload[$key])) {
+                continue;
+            }
+            $id = ShopifyGid::toId((string) $payload[$key]);
+            if ($id !== '') {
+                return $id;
+            }
+        }
+
+        return '';
+    }
+
+    public function deleteProductByShopifyId(ClientAccountShopifyConnection $connection, string $shopifyProductId): bool
+    {
+        $productId = ShopifyGid::toId($shopifyProductId);
+        if ($productId === '') {
+            return false;
+        }
+
+        $product = ShopifyProduct::query()
+            ->where('connection_id', $connection->id)
+            ->where('shopify_product_id', $productId)
+            ->first();
+        if ($product === null) {
+            return false;
+        }
+
+        $inventoryItemIds = $product->variants()
+            ->pluck('shopify_inventory_item_id')
+            ->filter(static function ($id) {
+                return $id !== null && $id !== '';
+            })
+            ->values()
+            ->all();
+        if ($inventoryItemIds !== []) {
+            ShopifyInventoryLevel::query()
+                ->where('connection_id', $connection->id)
+                ->whereIn('shopify_inventory_item_id', $inventoryItemIds)
+                ->delete();
+        }
+
+        $product->variants()->delete();
+        $product->delete();
+
+        return true;
     }
 
     /**

@@ -15,11 +15,14 @@ class ShopifyConnectionService
     public const WEBHOOK_TOPICS = [
         'ORDERS_CREATE',
         'ORDERS_UPDATED',
+        'ORDERS_EDITED',
         'ORDERS_CANCELLED',
+        'ORDERS_DELETE',
         'PRODUCTS_CREATE',
         'PRODUCTS_UPDATE',
+        'PRODUCTS_DELETE',
         'INVENTORY_LEVELS_UPDATE',
-        // Optional: requires read_fulfillments (orders/updated covers most CRM needs without it)
+        // Optional: requires read_fulfillments (orders/updated + orders/edited cover Phase 1)
         'FULFILLMENTS_CREATE',
         'FULFILLMENTS_UPDATE',
     ];
@@ -221,10 +224,10 @@ class ShopifyConnectionService
         foreach (self::WEBHOOK_TOPICS as $topic) {
             $data = $client->graphql(
                 <<<'GQL'
-mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $callbackUrl: URL!) {
+mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $uri: URL!) {
   webhookSubscriptionCreate(
     topic: $topic
-    webhookSubscription: { format: JSON, callbackUrl: $callbackUrl }
+    webhookSubscription: { format: JSON, uri: $uri }
   ) {
     userErrors { field message }
     webhookSubscription { id topic }
@@ -234,7 +237,7 @@ GQL
                 ,
                 [
                     'topic' => $topic,
-                    'callbackUrl' => $callback,
+                    'uri' => $callback,
                 ]
             );
 

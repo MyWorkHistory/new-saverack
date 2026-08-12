@@ -16,6 +16,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 use Throwable;
 
 class ProcessShopifyWebhookJob implements ShouldQueue
@@ -50,11 +51,7 @@ class ProcessShopifyWebhookJob implements ShouldQueue
             ? ClientAccountShopifyConnection::query()->find($event->connection_id)
             : null;
         if ($connection === null && $event->shop_domain) {
-            $domain = strtolower(trim((string) $event->shop_domain));
-            $connection = ClientAccountShopifyConnection::query()
-                ->where('shop_domain', $domain)
-                ->orWhere('shop_domain', 'https://'.$domain)
-                ->first();
+            $connection = ClientAccountShopifyConnection::findByShopDomain((string) $event->shop_domain);
             if ($connection !== null) {
                 $event->connection_id = $connection->id;
                 $event->save();
@@ -69,20 +66,47 @@ class ProcessShopifyWebhookJob implements ShouldQueue
 
         $payload = is_array($event->payload) ? $event->payload : [];
         $topic = strtolower(trim((string) $event->topic));
+        $kind = $this->topicKind($topic);
 
         try {
-            if (str_starts_with($topic, 'orders/') || in_array($topic, ['orders_create', 'orders_updated', 'orders_cancelled'], true)) {
-                $orders->upsertOrderFromWebhookPayload($connection, $payload);
-            } elseif (str_starts_with($topic, 'products/') || in_array($topic, ['products_create', 'products_update'], true)) {
+            if ($kind === 'orders_delete') {
+                $orderId = $orders->extractShopifyOrderId($payload);
+                if ($orderId === '') {
+                    throw new RuntimeException('orders/delete webhook missing order id.');
+                }
+                $orders->deleteOrderByShopifyId($connection, $orderId);
+            } elseif ($kind === 'orders') {
+                $orders->upsertOrderFromWebhookPayload($connection, $payload, $topic);
+            } elseif ($kind === 'products_delete') {
+                $productId = $products->extractShopifyProductId($payload);
+                if ($productId === '') {
+                    throw new RuntimeException('products/delete webhook missing product id.');
+                }
+                $products->deleteProductByShopifyId($connection, $productId);
+            } elseif ($kind === 'products') {
+                $productId = $products->extractShopifyProductId($payload);
+                if ($productId === '') {
+                    throw new RuntimeException('Product webhook missing product id.');
+                }
                 $force = str_contains($topic, 'create');
                 $products->upsertProductFromShopifyNode($connection, $payload, $force);
-            } elseif (str_contains($topic, 'inventory_levels') || str_contains($topic, 'inventory_levels_update')) {
+            } elseif ($kind === 'inventory') {
                 $this->applyInventoryLevel($connection, $payload, $bootstrap, $client);
-            } elseif (str_starts_with($topic, 'fulfillments/')) {
-                $orderId = ShopifyGid::toId((string) ($payload['order_id'] ?? ''));
-                if ($orderId !== '') {
-                    $orders->refreshOrderByShopifyId($connection, $orderId);
+            } elseif ($kind === 'fulfillments') {
+                $orderId = $orders->extractShopifyOrderId($payload);
+                if ($orderId === '') {
+                    $orderId = ShopifyGid::toId((string) ($payload['order_id'] ?? ''));
                 }
+                if ($orderId === '') {
+                    throw new RuntimeException('Fulfillment webhook missing order id.');
+                }
+                if ($orders->refreshOrderByShopifyId($connection, $orderId, 3) === null) {
+                    throw new RuntimeException('Fulfillment webhook GraphQL refresh failed for order '.$orderId);
+                }
+            } else {
+                $this->markProcessed($event, 'Unhandled Shopify topic: '.$topic);
+
+                return;
             }
 
             $event->processed_at = now();
@@ -93,6 +117,32 @@ class ProcessShopifyWebhookJob implements ShouldQueue
             $event->save();
             throw $e;
         }
+    }
+
+    private function topicKind(string $topic): string
+    {
+        $normalized = strtolower(str_replace('_', '/', trim($topic)));
+
+        if ($normalized === 'orders/delete' || $normalized === 'orders/deleted') {
+            return 'orders_delete';
+        }
+        if (str_starts_with($normalized, 'orders/')) {
+            return 'orders';
+        }
+        if ($normalized === 'products/delete' || $normalized === 'products/deleted') {
+            return 'products_delete';
+        }
+        if (str_starts_with($normalized, 'products/')) {
+            return 'products';
+        }
+        if (str_contains($normalized, 'inventory')) {
+            return 'inventory';
+        }
+        if (str_starts_with($normalized, 'fulfillments/')) {
+            return 'fulfillments';
+        }
+
+        return 'unknown';
     }
 
     /**
@@ -107,7 +157,7 @@ class ProcessShopifyWebhookJob implements ShouldQueue
         $inventoryItemId = ShopifyGid::toId((string) ($payload['inventory_item_id'] ?? ''));
         $locationId = ShopifyGid::toId((string) ($payload['location_id'] ?? ''));
         if ($inventoryItemId === '') {
-            return;
+            throw new RuntimeException('inventory_levels webhook missing inventory_item_id.');
         }
 
         if ($locationId !== '' && array_key_exists('available', $payload)) {

@@ -74,7 +74,12 @@ class ClientAccountShopifyConnection extends Model
 
     public function normalizedShopDomain(): string
     {
-        $domain = strtolower(trim((string) $this->shop_domain));
+        return self::normalizeShopDomain((string) $this->shop_domain);
+    }
+
+    public static function normalizeShopDomain(?string $domain): string
+    {
+        $domain = strtolower(trim((string) $domain));
         $domain = preg_replace('#^https?://#', '', $domain) ?? $domain;
         $domain = rtrim($domain, '/');
         if ($domain !== '' && ! str_contains($domain, '.')) {
@@ -82,6 +87,34 @@ class ClientAccountShopifyConnection extends Model
         }
 
         return $domain;
+    }
+
+    public static function findByShopDomain(?string $shopDomain): ?self
+    {
+        $normalized = self::normalizeShopDomain($shopDomain);
+        if ($normalized === '') {
+            return null;
+        }
+
+        $candidates = self::query()
+            ->where('shop_domain', $normalized)
+            ->orWhere('shop_domain', 'https://'.$normalized)
+            ->orWhere('shop_domain', 'http://'.$normalized)
+            ->get();
+
+        foreach ($candidates as $row) {
+            if ($row->normalizedShopDomain() === $normalized) {
+                return $row;
+            }
+        }
+
+        foreach (self::query()->cursor() as $row) {
+            if ($row->normalizedShopDomain() === $normalized) {
+                return $row;
+            }
+        }
+
+        return null;
     }
 
     public function hasCredentials(): bool

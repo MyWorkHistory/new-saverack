@@ -28,27 +28,34 @@ class ShopifyWebhookController extends Controller
         $topic = strtolower(trim((string) $request->header('X-Shopify-Topic', '')));
         $webhookId = trim((string) $request->header('X-Shopify-Webhook-Id', ''));
 
-        $connection = null;
-        if ($shopDomain !== '') {
-            $connection = ClientAccountShopifyConnection::query()
-                ->where('shop_domain', $shopDomain)
-                ->first();
-        }
+        $connection = $shopDomain !== ''
+            ? ClientAccountShopifyConnection::findByShopDomain($shopDomain)
+            : null;
 
-        $secret = '';
+        $secrets = [];
         if ($connection !== null && is_string($connection->webhook_secret) && trim($connection->webhook_secret) !== '') {
-            $secret = trim($connection->webhook_secret);
-        } else {
-            $secret = trim((string) config('services.shopify.webhook_secret', ''));
+            $secrets[] = trim($connection->webhook_secret);
+        }
+        $fallback = trim((string) config('services.shopify.webhook_secret', ''));
+        if ($fallback !== '' && ! in_array($fallback, $secrets, true)) {
+            $secrets[] = $fallback;
         }
 
-        if ($secret === '') {
-            Log::warning('shopify.webhook.missing_secret', ['shop' => $shopDomain]);
+        if ($secrets === []) {
+            Log::warning('shopify.webhook.missing_secret', ['shop' => $shopDomain, 'topic' => $topic]);
 
             return response()->json(['message' => 'Webhook secret is not configured.'], 500);
         }
 
-        if (! $verifier->verify($raw, $hmac, $secret)) {
+        $hmacOk = false;
+        foreach ($secrets as $secret) {
+            if ($verifier->verify($raw, $hmac, $secret)) {
+                $hmacOk = true;
+                break;
+            }
+        }
+
+        if (! $hmacOk) {
             Log::warning('shopify.webhook.invalid_hmac', ['shop' => $shopDomain, 'topic' => $topic]);
 
             return response()->json(['message' => 'Invalid HMAC.'], 401);
@@ -75,7 +82,15 @@ class ShopifyWebhookController extends Controller
             'payload' => $decoded,
         ]);
 
-        ProcessShopifyWebhookJob::dispatch((int) $event->id)->afterResponse();
+        Log::info('shopify.webhook.received', [
+            'event_id' => $event->event_id,
+            'topic' => $event->topic,
+            'shop' => $shopDomain,
+            'connection_id' => $event->connection_id,
+        ]);
+
+        // Queue immediately (do not rely on afterResponse — PHP-FPM can drop terminating callbacks).
+        ProcessShopifyWebhookJob::dispatch((int) $event->id);
 
         return response()->json(['ok' => true]);
     }

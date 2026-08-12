@@ -331,14 +331,32 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonPath('attachment.original_name', 'note.pdf');
     }
 
-    public function test_portal_user_cannot_access_wholesale_orders(): void
+    public function test_portal_user_can_list_and_edit_own_wholesale_orders(): void
     {
         $account = $this->account();
         $user = User::factory()->create(['client_account_id' => $account->id]);
-        $user->permissions()->attach($this->permission('orders.view', 'orders')->id);
         Sanctum::actingAs($user);
 
-        $this->getJson('/api/admin/wholesale-orders')->assertForbidden();
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'WO-PORTAL-1',
+            'order_type' => WholesaleOrder::TYPE_AMAZON,
+            'status' => WholesaleOrder::STATUS_DRAFT,
+            'items_count' => 0,
+        ]);
+
+        $this->getJson('/api/admin/wholesale-orders')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $order->id);
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$order->id, [
+            'instructions' => 'Portal packing note',
+            'shipping_labels_provider' => WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES,
+        ])
+            ->assertOk()
+            ->assertJsonPath('instructions', 'Portal packing note')
+            ->assertJsonPath('shipping_labels_provider', WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES)
+            ->assertJsonPath('is_editable', true);
     }
 
     public function test_wholesale_product_catalog_uses_orders_view_not_inventory_view(): void

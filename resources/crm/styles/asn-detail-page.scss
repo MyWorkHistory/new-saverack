@@ -28,6 +28,20 @@
   background: rgba(37, 99, 235, 0.1);
 }
 
+.asn-detail-page__hero-doc-icon--button {
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.asn-detail-page__hero-doc-icon--button:hover,
+.asn-detail-page__hero-doc-icon--button:focus-visible {
+  background: rgba(37, 99, 235, 0.18);
+  color: #1d4ed8;
+  outline: none;
+}
+
 .asn-detail-page__section-head {
   min-width: 0;
 }

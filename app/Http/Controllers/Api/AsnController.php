@@ -384,6 +384,40 @@ class AsnController extends Controller
         return response()->json($this->serializeAsn($asn->fresh(['lines', 'trackings', 'vendorLines'])));
     }
 
+    public function updateNumber(Request $request, ClientAccountAsn $asn): JsonResponse
+    {
+        $this->authorizeAsn($request, $asn);
+        Gate::forUser($request->user())->authorize('update', $asn);
+
+        $validated = $request->validate([
+            'asn_number' => ['required', 'string', 'max:64'],
+        ]);
+
+        $raw = trim((string) $validated['asn_number']);
+        $stripped = preg_replace('/^ASN[#\s-]*/i', '', $raw);
+        $number = trim((string) $stripped);
+        if ($number === '') {
+            throw ValidationException::withMessages([
+                'asn_number' => ['ASN number is required.'],
+            ]);
+        }
+
+        $taken = ClientAccountAsn::query()
+            ->where('asn_number', $number)
+            ->where('id', '!=', $asn->id)
+            ->exists();
+        if ($taken) {
+            throw ValidationException::withMessages([
+                'asn_number' => ['This ASN number is already in use.'],
+            ]);
+        }
+
+        $asn->asn_number = $number;
+        $asn->save();
+
+        return response()->json($this->serializeAsn($asn->fresh(['lines', 'trackings', 'vendorLines'])));
+    }
+
     public function updateWarehouseNotes(Request $request, ClientAccountAsn $asn): JsonResponse
     {
         $this->authorizeAsn($request, $asn);

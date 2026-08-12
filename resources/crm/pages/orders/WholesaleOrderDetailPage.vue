@@ -1053,7 +1053,7 @@ onUnmounted(() => {
           <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-1">
             <h3 class="h6 fw-semibold mb-0">Product &amp; Fulfillment Requirements</h3>
             <button
-              v-if="isEditable && !isPortal"
+              v-if="isEditable"
               type="button"
               class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1"
               @click="openRequirementsEdit"
@@ -1084,7 +1084,7 @@ onUnmounted(() => {
         <WholesaleShippingLabelsCard
           v-if="order"
           :order="order"
-          :editable="isEditable && !isPortal"
+          :editable="isEditable"
           :formatted-address="formattedShippingAddress"
           @saved="onShippingLabelsSaved"
         />
@@ -1190,7 +1190,8 @@ onUnmounted(() => {
       package-type="box"
       :packages="order.boxes || []"
       :saved-at="order.boxes_saved_at"
-      :read-only="isPortal"
+      :read-only="isPortal || !isEditable"
+      :hide-slack="isPortal"
       @saved="onPackageInfoSaved"
     />
 
@@ -1201,7 +1202,8 @@ onUnmounted(() => {
       package-type="pallet"
       :packages="order.pallets || []"
       :saved-at="order.pallets_saved_at"
-      :read-only="isPortal"
+      :read-only="isPortal || !isEditable"
+      :hide-slack="isPortal"
       @saved="onPackageInfoSaved"
     />
 
@@ -1223,7 +1225,7 @@ onUnmounted(() => {
         @click.stop
       >
         <button
-          v-if="!isPortal"
+          v-if="canEditLines"
           type="button"
           class="staff-row-menu__item"
           role="menuitem"

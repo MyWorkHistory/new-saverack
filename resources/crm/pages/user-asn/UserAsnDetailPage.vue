@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { Transition, computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -56,6 +56,10 @@ const addNewSkuQty = ref(1);
 
 const reopenEditOpen = ref(false);
 const reopenEditBusy = ref(false);
+
+const editAsnNumberOpen = ref(false);
+const editAsnNumberValue = ref("");
+const editAsnNumberBusy = ref(false);
 
 const shipmentBoxesDraft = ref(0);
 const shipmentPalletsDraft = ref(0);
@@ -235,6 +239,43 @@ async function loadAsn() {
     asn.value = null;
   } finally {
     loading.value = false;
+  }
+}
+
+function openEditAsnNumberModal() {
+  if (!asn.value) return;
+  editAsnNumberValue.value = formatAsnDisplay(asn.value.asn_number);
+  editAsnNumberOpen.value = true;
+}
+
+function closeEditAsnNumberModal(force = false) {
+  if (editAsnNumberBusy.value && !force) return;
+  editAsnNumberOpen.value = false;
+}
+
+async function confirmEditAsnNumber() {
+  if (!asn.value || editAsnNumberBusy.value) return;
+  const asnNumber = String(editAsnNumberValue.value || "").trim();
+  if (!asnNumber) {
+    toast.error("ASN number is required.");
+    return;
+  }
+  editAsnNumberBusy.value = true;
+  try {
+    const { data } = await api.patch(`/asns/${asnId.value}/number`, { asn_number: asnNumber });
+    normalizeAsnStatusPayload(data);
+    asn.value = data;
+    const heading = formatAsnHeading(data?.asn_number);
+    setCrmPageMeta({
+      title: heading ? `Save Rack | ${heading}` : "Save Rack | ASN",
+      description: "ASN detail.",
+    });
+    toast.success("ASN number updated.");
+    closeEditAsnNumberModal(true);
+  } catch (e) {
+    toast.errorFrom(e, "Could not update ASN number.");
+  } finally {
+    editAsnNumberBusy.value = false;
   }
 }
 
@@ -710,11 +751,17 @@ onUnmounted(() => {
     <header class="asn-detail-page__hero staff-table-card staff-datatable-card staff-datatable-card--white p-4">
       <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
         <div class="asn-detail-page__hero-title-row min-w-0">
-          <span class="asn-detail-page__hero-doc-icon" aria-hidden="true">
-            <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <button
+            type="button"
+            class="asn-detail-page__hero-doc-icon asn-detail-page__hero-doc-icon--button"
+            title="Edit ASN Number"
+            aria-label="Edit ASN Number"
+            @click="openEditAsnNumberModal"
+          >
+            <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-          </span>
+          </button>
           <div class="min-w-0">
             <div class="d-flex flex-wrap align-items-center gap-2">
               <h1 class="h4 mb-0 fw-bold text-body">{{ asnHeading || "—" }}</h1>
@@ -1326,6 +1373,55 @@ onUnmounted(() => {
       @close="deleteLineOpen = false"
       @confirm="confirmDeleteLine"
     />
+
+    <Teleport to="body">
+      <Transition name="crm-vx-confirm">
+        <div
+          v-if="editAsnNumberOpen"
+          class="crm-vx-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="user-asn-edit-number-title"
+          @click.self="closeEditAsnNumberModal"
+        >
+          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+            <header class="crm-vx-modal__head border-bottom">
+              <h2 id="user-asn-edit-number-title" class="crm-vx-modal__title mb-0">Edit ASN Number</h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <label class="form-label" for="user-asn-edit-number-input">ASN Number</label>
+              <input
+                id="user-asn-edit-number-input"
+                v-model="editAsnNumberValue"
+                type="text"
+                class="form-control"
+                maxlength="64"
+                :disabled="editAsnNumberBusy"
+                @keydown.enter.prevent="confirmEditAsnNumber"
+              />
+            </div>
+            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="editAsnNumberBusy"
+                @click="closeEditAsnNumberModal"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="editAsnNumberBusy"
+                @click="confirmEditAsnNumber"
+              >
+                {{ editAsnNumberBusy ? "Saving…" : "Save" }}
+              </button>
+            </footer>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 

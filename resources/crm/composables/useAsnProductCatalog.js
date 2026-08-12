@@ -47,8 +47,15 @@ function asnIdFromBrowserPath() {
 
 function wholesaleOrderIdFromBrowserPath() {
   const path = currentBrowserPath();
-  const m = path.match(/\/admin\/orders\/wholesale\/(\d+)/i);
-  return m ? Number(m[1]) : 0;
+  const patterns = [
+    /\/admin\/orders\/wholesale\/(\d+)/i,
+    /\/users\/orders\/wholesale\/(\d+)/i,
+  ];
+  for (const re of patterns) {
+    const m = path.match(re);
+    if (m) return Number(m[1]);
+  }
+  return 0;
 }
 
 /** Route names whose `:id` param is an ASN id (not return/order/etc.). */
@@ -107,7 +114,8 @@ export function useAsnProductCatalog(
   function resolvedWholesaleOrderId() {
     let id = Number(toValue(wholesaleOrderIdSource) || 0);
     if (id > 0) return id;
-    if (route.name === "wholesale-order-detail") {
+    const name = String(route.name || "");
+    if (name === "wholesale-order-detail" || name === "user-wholesale-order-detail") {
       id = Number(route.params?.id || 0);
       if (id > 0) return id;
     }

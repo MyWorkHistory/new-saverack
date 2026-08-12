@@ -458,4 +458,65 @@ class AsnApiTest extends TestCase
         $response->assertOk();
         $this->assertStringContainsString('application/pdf', (string) $response->headers->get('content-type'));
     }
+
+    public function test_portal_user_can_update_asn_number(): void
+    {
+        $account = $this->account();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0100',
+            'status' => ClientAccountAsn::STATUS_DRAFT,
+            'total_boxes' => 0,
+            'total_pallets' => 0,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $this->patchJson('/api/asns/'.$asn->id.'/number', [
+            'asn_number' => 'ASN# CUSTOM-42',
+        ])
+            ->assertOk()
+            ->assertJsonPath('asn_number', 'CUSTOM-42');
+
+        $this->assertSame('CUSTOM-42', $asn->fresh()->asn_number);
+    }
+
+    public function test_asn_number_update_rejects_duplicates(): void
+    {
+        $account = $this->account();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => 'TAKEN-1',
+            'status' => ClientAccountAsn::STATUS_DRAFT,
+            'total_boxes' => 0,
+            'total_pallets' => 0,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0101',
+            'status' => ClientAccountAsn::STATUS_DRAFT,
+            'total_boxes' => 0,
+            'total_pallets' => 0,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $this->patchJson('/api/asns/'.$asn->id.'/number', [
+            'asn_number' => 'TAKEN-1',
+        ])->assertStatus(422);
+    }
 }

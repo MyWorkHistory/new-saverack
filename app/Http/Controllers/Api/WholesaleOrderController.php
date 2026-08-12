@@ -785,41 +785,12 @@ class WholesaleOrderController extends Controller
         Gate::authorize('update', $wholesaleOrder);
 
         $user = $request->user();
-        if ($this->isPortalUser($user instanceof User ? $user : null)) {
-            $validated = $request->validate([
-                'instructions' => ['nullable', 'string', 'max:20000'],
-            ]);
-            if (! $wholesaleOrder->isEditable()) {
-                throw ValidationException::withMessages([
-                    'status' => ['This wholesale order cannot be edited.'],
-                ]);
-            }
-            if (array_key_exists('instructions', $validated)) {
-                $wholesaleOrder->instructions = $validated['instructions'] !== null
-                    ? trim((string) $validated['instructions'])
-                    : null;
-            }
-            $wholesaleOrder->save();
-
-            return response()->json($this->serializeDetail($wholesaleOrder->fresh([
-                'clientAccount',
-                'createdBy',
-                'lines',
-                'comments.user.profile',
-                'shippingLabels',
-                'packages',
-            ])));
+        $isPortal = $this->isPortalUser($user instanceof User ? $user : null);
+        if (! $isPortal) {
+            $this->assertStaff($request);
         }
 
-        $this->assertStaff($request);
-
-        $validated = $request->validate([
-            'order_number' => ['sometimes', 'string', 'max:128'],
-            'order_type' => ['sometimes', 'string', Rule::in(WholesaleOrder::ORDER_TYPES)],
-            'status' => ['sometimes', 'string', Rule::in([
-                WholesaleOrder::STATUS_PENDING,
-                WholesaleOrder::STATUS_COMPLETED,
-            ])],
+        $rules = [
             'instructions' => ['nullable', 'string', 'max:20000'],
             'shipping_address' => ['sometimes', 'nullable', 'array'],
             'shipping_address.first_name' => ['nullable', 'string', 'max:255'],
@@ -849,9 +820,20 @@ class WholesaleOrderController extends Controller
             'shipping_method_requirement_comment' => ['nullable', 'string', 'max:5000'],
             'master_cartons' => ['sometimes', 'nullable', 'string', Rule::in(array_keys(config('wholesale_orders.master_cartons', [])))],
             'master_cartons_comment' => ['nullable', 'string', 'max:5000'],
-        ]);
+        ];
+        if (! $isPortal) {
+            $rules['order_number'] = ['sometimes', 'string', 'max:128'];
+            $rules['order_type'] = ['sometimes', 'string', Rule::in(WholesaleOrder::ORDER_TYPES)];
+            $rules['status'] = ['sometimes', 'string', Rule::in([
+                WholesaleOrder::STATUS_PENDING,
+                WholesaleOrder::STATUS_COMPLETED,
+            ])];
+        }
 
-        $statusOnly = array_key_exists('status', $validated)
+        $validated = $request->validate($rules);
+
+        $statusOnly = ! $isPortal
+            && array_key_exists('status', $validated)
             && count($validated) === 1;
 
         if (! $statusOnly) {
@@ -943,7 +925,14 @@ class WholesaleOrderController extends Controller
         }
         $wholesaleOrder->save();
 
-        return response()->json($this->serializeDetail($wholesaleOrder->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user.profile'])));
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh([
+            'clientAccount',
+            'createdBy',
+            'lines',
+            'comments.user.profile',
+            'shippingLabels',
+            'packages',
+        ])));
     }
 
     public function storeLine(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
@@ -1033,7 +1022,6 @@ class WholesaleOrderController extends Controller
 
     public function uploadLineBarcode(Request $request, WholesaleOrder $wholesaleOrder, WholesaleOrderLine $line): JsonResponse
     {
-        $this->assertStaff($request);
         Gate::authorize('update', $wholesaleOrder);
         $this->assertLineEditable($wholesaleOrder);
         $this->assertLineBelongsToOrder($wholesaleOrder, $line);
@@ -1086,7 +1074,6 @@ class WholesaleOrderController extends Controller
 
     public function uploadShippingLabel(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
     {
-        $this->assertStaff($request);
         Gate::authorize('update', $wholesaleOrder);
         $this->assertLineEditable($wholesaleOrder);
 
@@ -1157,7 +1144,6 @@ class WholesaleOrderController extends Controller
         WholesaleOrder $wholesaleOrder,
         WholesaleOrderShippingLabel $shippingLabel
     ): JsonResponse {
-        $this->assertStaff($request);
         Gate::authorize('update', $wholesaleOrder);
         $this->assertLineEditable($wholesaleOrder);
 
@@ -1177,7 +1163,6 @@ class WholesaleOrderController extends Controller
 
     public function shippingLabelDownload(Request $request, WholesaleOrder $wholesaleOrder)
     {
-        $this->assertStaff($request);
         Gate::authorize('view', $wholesaleOrder);
 
         $labelId = (int) $request->query('label_id', 0);
@@ -1234,7 +1219,6 @@ class WholesaleOrderController extends Controller
 
     public function syncPackages(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
     {
-        $this->assertStaff($request);
         Gate::authorize('update', $wholesaleOrder);
 
         $validated = $request->validate([

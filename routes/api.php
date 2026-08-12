@@ -393,12 +393,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{wholesaleOrder}/lines', [WholesaleOrderController::class, 'storeLine'])->middleware('can:orders.create');
         Route::patch('/{wholesaleOrder}/lines/{line}', [WholesaleOrderController::class, 'updateLine'])->middleware('can:orders.update');
         Route::patch('/{wholesaleOrder}/lines/{line}/pick', [WholesaleOrderController::class, 'updateLinePick'])->middleware('can:orders.update');
-        Route::delete('/{wholesaleOrder}/lines/{line}', [WholesaleOrderController::class, 'destroyLine'])->middleware('can:orders.delete');
+        Route::delete('/{wholesaleOrder}/lines/{line}', [WholesaleOrderController::class, 'destroyLine'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/lines/{line}/barcode', [WholesaleOrderController::class, 'uploadLineBarcode'])->middleware('can:orders.update');
         Route::get('/{wholesaleOrder}/lines/{line}/barcode.pdf', [WholesaleOrderController::class, 'lineBarcodePdf'])->middleware('can:orders.view');
         Route::post('/{wholesaleOrder}/shipping-label', [WholesaleOrderController::class, 'uploadShippingLabel'])->middleware('can:orders.update');
         Route::get('/{wholesaleOrder}/shipping-label.pdf', [WholesaleOrderController::class, 'shippingLabelDownload'])->middleware('can:orders.view');
-        Route::delete('/{wholesaleOrder}/shipping-labels/{shippingLabel}', [WholesaleOrderController::class, 'destroyShippingLabel'])->middleware('can:orders.delete');
+        Route::delete('/{wholesaleOrder}/shipping-labels/{shippingLabel}', [WholesaleOrderController::class, 'destroyShippingLabel'])->middleware('can:orders.update');
         Route::put('/{wholesaleOrder}/packages', [WholesaleOrderController::class, 'syncPackages'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/packages/send-slack', [WholesaleOrderController::class, 'sendPackagesSlack'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/comments', [WholesaleOrderController::class, 'storeComment'])->middleware('can:orders.view');
@@ -483,6 +483,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{asn}/catalog-products', [AsnController::class, 'storeCatalogProduct'])->middleware('can:asns.update');
         Route::get('/{asn}', [AsnController::class, 'show'])->middleware('can:asns.view');
         Route::patch('/{asn}', [AsnController::class, 'update'])->middleware('can:asns.update');
+        Route::patch('/{asn}/number', [AsnController::class, 'updateNumber'])->middleware('can:asns.update');
         Route::post('/{asn}/mark-ready', [AsnController::class, 'markReady'])->middleware('can:asns.update');
         Route::post('/{asn}/reopen-for-edit', [AsnController::class, 'reopenForEdit'])->middleware('can:asns.update');
         Route::delete('/{asn}', [AsnController::class, 'destroy'])->middleware('can:asns.delete');

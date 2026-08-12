@@ -13,6 +13,8 @@ const props = defineProps({
   packages: { type: Array, default: () => [] },
   savedAt: { type: String, default: null },
   readOnly: { type: Boolean, default: false },
+  /** Staff-only Slack notify (portal users cannot call that endpoint). */
+  hideSlack: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["update:open", "saved"]);
@@ -212,6 +214,7 @@ async function sendToSlack() {
         <div class="d-flex flex-wrap justify-content-end gap-2">
           <template v-if="!readOnly">
             <button
+              v-if="!hideSlack"
               type="button"
               class="btn btn-outline-primary"
               :disabled="busy || slackBusy || !rows.length"

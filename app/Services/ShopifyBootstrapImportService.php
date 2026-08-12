@@ -123,6 +123,40 @@ GQL
         return $count;
     }
 
+    /**
+     * Incremental inventory reconcile for cron (capped).
+     */
+    public function syncInventoryForConnection(ClientAccountShopifyConnection $connection, int $limit = 40): int
+    {
+        $limit = max(1, min(200, $limit));
+        $api = $this->client->forConnection($connection);
+
+        $itemIds = $connection->variants()
+            ->whereNotNull('shopify_inventory_item_id')
+            ->where('shopify_inventory_item_id', '!=', '')
+            ->orderBy('updated_at')
+            ->limit($limit)
+            ->pluck('shopify_inventory_item_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        $count = 0;
+        foreach ($itemIds as $inventoryItemId) {
+            try {
+                $count += $this->syncInventoryItemLevels($connection, $api, (string) $inventoryItemId);
+            } catch (Throwable $e) {
+                Log::warning('shopify.import.inventory_item_failed', [
+                    'connection_id' => $connection->id,
+                    'inventory_item_id' => $inventoryItemId,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $count;
+    }
+
     private function importInventoryLevels(ClientAccountShopifyConnection $connection, ShopifyClient $api): int
     {
         $count = 0;

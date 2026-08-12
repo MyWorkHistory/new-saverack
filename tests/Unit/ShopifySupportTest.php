@@ -13,7 +13,30 @@ class ShopifySupportTest extends TestCase
     {
         $this->assertSame('123', ShopifyGid::toId('gid://shopify/Product/123'));
         $this->assertSame('123', ShopifyGid::toId('123'));
+        $this->assertSame('103507198114', ShopifyGid::toId(
+            'gid://shopify/InventoryLevel/103507198114?inventory_item_id=48365093355682'
+        ));
         $this->assertSame('gid://shopify/Order/99', ShopifyGid::of('Order', 99));
+    }
+
+    public function test_inventory_webhook_ids_prefer_gid_query_and_reject_float_precision_loss(): void
+    {
+        $this->assertSame('48365093355682', ShopifyGid::inventoryItemIdFromPayload([
+            'inventory_item_id' => 48365093355682.0, // corrupted float — ignore
+            'admin_graphql_api_id' => 'gid://shopify/InventoryLevel/103507198114?inventory_item_id=48365093355682',
+            'location_id' => '69128716450',
+            'available' => 32,
+        ]));
+
+        $this->assertSame('48365093355682', ShopifyGid::inventoryItemIdFromPayload([
+            'inventory_item_id' => '48365093355682',
+            'location_id' => 69128716450,
+        ]));
+
+        $this->assertSame('', ShopifyGid::numericIdString(4.8365093355682E+13));
+        $this->assertSame('69128716450', ShopifyGid::locationIdFromPayload([
+            'location_id' => '69128716450',
+        ]));
     }
 
     public function test_webhook_hmac_verify(): void

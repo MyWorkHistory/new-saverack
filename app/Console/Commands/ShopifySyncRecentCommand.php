@@ -47,7 +47,13 @@ class ShopifySyncRecentCommand extends Command
             try {
                 $orderCount = $orders->syncRecentlyUpdated($connection, $minutes);
                 $catalog = $products->importActiveProducts($connection);
-                $this->info('  Orders refreshed: '.$orderCount.'; products scanned: '.($catalog['products'] ?? 0));
+                $inventorySynced = app(\App\Services\ShopifyBootstrapImportService::class)
+                    ->syncInventoryForConnection($connection, 40);
+                $this->info(
+                    '  Orders refreshed: '.$orderCount
+                    .'; products scanned: '.($catalog['products'] ?? 0)
+                    .'; inventory items synced: '.$inventorySynced
+                );
                 $connection->last_sync_at = now();
                 $connection->last_product_sync_at = now();
                 if ($connection->status === ClientAccountShopifyConnection::STATUS_ERROR) {

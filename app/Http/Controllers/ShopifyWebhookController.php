@@ -61,7 +61,7 @@ class ShopifyWebhookController extends Controller
             return response()->json(['message' => 'Invalid HMAC.'], 401);
         }
 
-        $decoded = json_decode($raw, true);
+        $decoded = json_decode($raw, true, 512, JSON_BIGINT_AS_STRING);
         if (! is_array($decoded)) {
             return response()->json(['message' => 'Invalid JSON.'], 400);
         }

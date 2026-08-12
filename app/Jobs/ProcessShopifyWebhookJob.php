@@ -165,13 +165,19 @@ class ProcessShopifyWebhookJob implements ShouldQueue
         ShopifyBootstrapImportService $bootstrap,
         ShopifyClient $client
     ): void {
-        $inventoryItemId = ShopifyGid::toId((string) ($payload['inventory_item_id'] ?? ''));
-        $locationId = ShopifyGid::toId((string) ($payload['location_id'] ?? ''));
+        $inventoryItemId = ShopifyGid::inventoryItemIdFromPayload($payload);
+        $locationId = ShopifyGid::locationIdFromPayload($payload);
         if ($inventoryItemId === '') {
-            throw new RuntimeException('inventory_levels webhook missing inventory_item_id.');
+            throw new RuntimeException(
+                'inventory_levels webhook missing inventory_item_id (payload may have lost bigint precision).'
+            );
         }
 
-        if ($locationId !== '' && array_key_exists('available', $payload)) {
+        $availableRaw = $payload['available'] ?? null;
+        $hasTrustedAvailable = $availableRaw !== null && $availableRaw !== '' && ! is_array($availableRaw);
+
+        // Fast path when Shopify sends a complete level snapshot.
+        if ($locationId !== '' && $hasTrustedAvailable) {
             ShopifyInventoryLevel::query()->updateOrCreate(
                 [
                     'connection_id' => $connection->id,
@@ -179,19 +185,39 @@ class ProcessShopifyWebhookJob implements ShouldQueue
                     'shopify_location_id' => $locationId,
                 ],
                 [
-                    'available' => (int) $payload['available'],
+                    'available' => (int) $availableRaw,
                     'shopify_updated_at' => now(),
                 ]
             );
+            Log::info('shopify.webhook.inventory_applied', [
+                'connection_id' => $connection->id,
+                'inventory_item_id' => $inventoryItemId,
+                'location_id' => $locationId,
+                'available' => (int) $availableRaw,
+                'source' => 'payload',
+            ]);
 
             return;
         }
 
-        $bootstrap->syncInventoryItemLevels(
+        // Missing location / null available — treat webhook as a hint and GraphQL-refresh.
+        $count = $bootstrap->syncInventoryItemLevels(
             $connection,
             $client->forConnection($connection),
             $inventoryItemId
         );
+        Log::info('shopify.webhook.inventory_applied', [
+            'connection_id' => $connection->id,
+            'inventory_item_id' => $inventoryItemId,
+            'location_id' => $locationId !== '' ? $locationId : null,
+            'levels_synced' => $count,
+            'source' => 'graphql',
+        ]);
+        if ($count === 0) {
+            throw new RuntimeException(
+                'inventory_levels GraphQL refresh returned 0 levels for item '.$inventoryItemId
+            );
+        }
     }
 
     private function markProcessed(ShopifyWebhookEvent $event, string $message): void

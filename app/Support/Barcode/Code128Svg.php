@@ -59,7 +59,7 @@ final class Code128Svg
     }
 
     /**
-     * DomPDF-safe Code 128 markup (inline bar spans — no SVG/img remote fetch).
+     * DomPDF-safe Code 128 markup (table cells — DomPDF collapses inline-block bar spans).
      */
     public static function htmlBars(string $value): string
     {
@@ -90,25 +90,25 @@ final class Code128Svg
         $codes[] = 106;
 
         $module = 2;
-        $height = 70;
-        $html = '<div style="font-size:0;line-height:0;white-space:nowrap;text-align:center;">';
-        $html .= '<span style="display:inline-block;width:16px;height:'.$height.'px;"></span>';
+        $height = 56;
+        $cells = '<td style="width:10px;height:'.$height.'px;padding:0;margin:0;border:0;line-height:0;font-size:0;">&nbsp;</td>';
         foreach ($codes as $code) {
             $pattern = $patterns[$code] ?? $patterns[0];
             $bar = true;
             foreach (str_split($pattern) as $width) {
                 $w = ((int) $width) * $module;
                 if ($bar) {
-                    $html .= '<span style="display:inline-block;width:'.$w.'px;height:'.$height.'px;background:#000;"></span>';
+                    $cells .= '<td style="width:'.$w.'px;height:'.$height.'px;padding:0;margin:0;border:0;background-color:#000000;line-height:0;font-size:0;">&nbsp;</td>';
                 } else {
-                    $html .= '<span style="display:inline-block;width:'.$w.'px;height:'.$height.'px;"></span>';
+                    $cells .= '<td style="width:'.$w.'px;height:'.$height.'px;padding:0;margin:0;border:0;line-height:0;font-size:0;">&nbsp;</td>';
                 }
                 $bar = ! $bar;
             }
         }
-        $html .= '<span style="display:inline-block;width:16px;height:'.$height.'px;"></span>';
-        $html .= '</div>';
+        $cells .= '<td style="width:10px;height:'.$height.'px;padding:0;margin:0;border:0;line-height:0;font-size:0;">&nbsp;</td>';
 
-        return $html;
+        return '<table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;border-collapse:collapse;border-spacing:0;">'
+            .'<tr>'.$cells.'</tr>'
+            .'</table>';
     }
 }

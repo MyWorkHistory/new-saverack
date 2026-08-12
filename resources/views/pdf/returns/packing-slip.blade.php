@@ -6,11 +6,12 @@
         body { font-family: DejaVu Sans, sans-serif; color: #111; font-size: 12px; }
         .company-name { font-size: 30px; font-weight: 800; letter-spacing: 0.02em; }
         .rma-number { font-size: 20px; font-weight: 700; margin-top: 4px; }
-        .barcode { text-align: center; margin: 14px 0 18px; }
+        .barcode { text-align: center; margin: 14px 0 18px; line-height: 0; }
+        .barcode table { width: auto; margin: 0 auto; table-layout: auto; border-collapse: collapse; }
         .rule { border: 0; border-top: 1px solid #d0d0d0; margin: 22px 0; }
-        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        th, td { border-bottom: 1px solid #e1e1e1; padding: 7px 6px; vertical-align: top; }
-        th { text-align: left; font-size: 11px; text-transform: uppercase; color: #555; }
+        table.lines { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        table.lines th, table.lines td { border-bottom: 1px solid #e1e1e1; padding: 7px 6px; vertical-align: top; }
+        table.lines th { text-align: left; font-size: 11px; text-transform: uppercase; color: #555; }
         .item-col { width: 48%; }
         .sku-col { width: 38%; word-break: break-all; }
         .qty-col { width: 14%; text-align: right; }
@@ -23,7 +24,7 @@
     <div class="rma-number">{{ $rmaLabel }}</div>
     <div class="barcode">{!! $barcodeHtml !!}</div>
     <hr class="rule">
-    <table>
+    <table class="lines">
         <thead>
             <tr>
                 <th class="item-col">Item</th>

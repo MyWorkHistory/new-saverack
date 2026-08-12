@@ -9,7 +9,8 @@
         .account { font-size: 26px; font-weight: 800; line-height: 1.15; }
         .rma { font-size: 40px; font-weight: 800; line-height: 1.05; margin-top: 10px; letter-spacing: 0.04em; }
         .addr { font-size: 16px; line-height: 1.35; margin-top: 14px; }
-        .barcode { margin-top: 18px; }
+        .barcode { margin-top: 18px; line-height: 0; text-align: center; }
+        .barcode table { width: auto; margin: 0 auto; table-layout: auto; border-collapse: collapse; }
         .rma-value { font-size: 11px; margin-top: 6px; letter-spacing: 0.06em; }
     </style>
 </head>

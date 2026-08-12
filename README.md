@@ -256,6 +256,9 @@ Per-client Shopify custom-app connection stores credentials on `client_account_s
    - `php artisan shopify:register-webhooks --account=ID`
    - Topics: orders create/update/**edited**/cancel/delete, products create/update/delete, inventory levels
    - Editing line items in Shopify Admin fires `orders/edited` (not only `orders/updated`). CRM then GraphQL-refreshes the order (REST line items ignore edits).
+   - Renamed shops keep the old `*.myshopify.com` host; webhooks may send either. CRM stores `shop_domain_aliases` and matches both. Refresh with:
+     `php artisan shopify:refresh-shop-domains --account=ID`
+     or force an alias: `php artisan shopify:refresh-shop-domains --account=ID --add=old-name.myshopify.com`
    - Or run a synchronous re-import via `php artisan shopify:import-connection {account}`
 
 **Nav:** Admin → Shopify → Orders | Inventory (below Webmaster; admin / CRM owner only)

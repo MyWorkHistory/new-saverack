@@ -50,4 +50,20 @@ class ShopifySupportTest extends TestCase
         $this->assertFalse($service->topicLooksLikeDelete('orders/edited'));
         $this->assertFalse($service->topicLooksLikeDelete('orders/updated'));
     }
+
+    public function test_shop_domain_aliases_match_renamed_myshopify_host(): void
+    {
+        $connection = new \App\Models\ClientAccountShopifyConnection([
+            'shop_domain' => 'save-rack-2.myshopify.com',
+            'shop_domain_aliases' => ['1gwr02-06.myshopify.com'],
+        ]);
+
+        $this->assertTrue($connection->matchesShopDomain('1gwr02-06.myshopify.com'));
+        $this->assertTrue($connection->matchesShopDomain('save-rack-2.myshopify.com'));
+        $this->assertFalse($connection->matchesShopDomain('other.myshopify.com'));
+        $this->assertSame(
+            ['save-rack-2.myshopify.com', '1gwr02-06.myshopify.com'],
+            $connection->allShopDomains()
+        );
+    }
 }

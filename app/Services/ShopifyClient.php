@@ -90,12 +90,28 @@ class ShopifyClient
     }
 
     /**
-     * @return array{name:?string, myshopifyDomain:?string, email:?string}
+     * @return array{name:?string, myshopifyDomain:?string, email:?string, domains:list<string>}
      */
     public function shopInfo(): array
     {
-        $data = $this->graphql(<<<'GQL'
+        try {
+            $data = $this->graphql(<<<'GQL'
 query ShopInfo {
+  shop {
+    name
+    myshopifyDomain
+    email
+    primaryDomain { host }
+    domains(first: 25) {
+      edges { node { host } }
+    }
+  }
+}
+GQL);
+        } catch (RuntimeException $e) {
+            // Older API versions / restricted shops may lack domains; fall back.
+            $data = $this->graphql(<<<'GQL'
+query ShopInfoBasic {
   shop {
     name
     myshopifyDomain
@@ -103,13 +119,38 @@ query ShopInfo {
   }
 }
 GQL);
+        }
 
         $shop = is_array($data['shop'] ?? null) ? $data['shop'] : [];
+        $domains = [];
+        if (! empty($shop['myshopifyDomain'])) {
+            $domains[] = (string) $shop['myshopifyDomain'];
+        }
+        if (! empty($shop['primaryDomain']['host'])) {
+            $domains[] = (string) $shop['primaryDomain']['host'];
+        }
+        foreach (($shop['domains']['edges'] ?? []) as $edge) {
+            $host = $edge['node']['host'] ?? null;
+            if (is_string($host) && trim($host) !== '') {
+                $domains[] = trim($host);
+            }
+        }
+
+        $normalized = [];
+        foreach ($domains as $domain) {
+            $domain = strtolower(trim($domain));
+            $domain = preg_replace('#^https?://#', '', $domain) ?? $domain;
+            $domain = rtrim($domain, '/');
+            if ($domain !== '' && ! in_array($domain, $normalized, true)) {
+                $normalized[] = $domain;
+            }
+        }
 
         return [
             'name' => isset($shop['name']) ? (string) $shop['name'] : null,
             'myshopifyDomain' => isset($shop['myshopifyDomain']) ? (string) $shop['myshopifyDomain'] : null,
             'email' => isset($shop['email']) ? (string) $shop['email'] : null,
+            'domains' => $normalized,
         ];
     }
 

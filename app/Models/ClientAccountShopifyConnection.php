@@ -21,6 +21,7 @@ class ClientAccountShopifyConnection extends Model
     protected $fillable = [
         'client_account_id',
         'shop_domain',
+        'shop_domain_aliases',
         'admin_api_access_token',
         'api_version',
         'webhook_secret',
@@ -36,6 +37,7 @@ class ClientAccountShopifyConnection extends Model
     protected $casts = [
         'client_account_id' => 'integer',
         'admin_api_access_token' => 'encrypted',
+        'shop_domain_aliases' => 'array',
         'connected_at' => 'datetime',
         'last_sync_at' => 'datetime',
         'last_product_sync_at' => 'datetime',
@@ -89,6 +91,72 @@ class ClientAccountShopifyConnection extends Model
         return $domain;
     }
 
+    public function matchesShopDomain(?string $shopDomain): bool
+    {
+        $normalized = self::normalizeShopDomain($shopDomain);
+        if ($normalized === '') {
+            return false;
+        }
+
+        if ($this->normalizedShopDomain() === $normalized) {
+            return true;
+        }
+
+        foreach ($this->allShopDomains() as $domain) {
+            if ($domain === $normalized) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Canonical shop_domain plus any renamed / alternate .myshopify.com hosts.
+     *
+     * @return list<string>
+     */
+    public function allShopDomains(): array
+    {
+        $out = [];
+        $primary = $this->normalizedShopDomain();
+        if ($primary !== '') {
+            $out[] = $primary;
+        }
+
+        $aliases = is_array($this->shop_domain_aliases) ? $this->shop_domain_aliases : [];
+        foreach ($aliases as $alias) {
+            $normalized = self::normalizeShopDomain(is_string($alias) ? $alias : '');
+            if ($normalized !== '' && ! in_array($normalized, $out, true)) {
+                $out[] = $normalized;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  list<string>|string  $domains
+     */
+    public function mergeShopDomainAliases($domains): void
+    {
+        $incoming = is_array($domains) ? $domains : [$domains];
+        $merged = $this->allShopDomains();
+        foreach ($incoming as $domain) {
+            $normalized = self::normalizeShopDomain(is_string($domain) ? $domain : '');
+            if ($normalized !== '' && ! in_array($normalized, $merged, true)) {
+                $merged[] = $normalized;
+            }
+        }
+
+        $primary = $this->normalizedShopDomain();
+        $aliases = array_values(array_filter($merged, static function ($domain) use ($primary) {
+            return $domain !== $primary;
+        }));
+
+        $this->shop_domain_aliases = $aliases === [] ? null : $aliases;
+    }
+
     public static function findByShopDomain(?string $shopDomain): ?self
     {
         $normalized = self::normalizeShopDomain($shopDomain);
@@ -103,13 +171,14 @@ class ClientAccountShopifyConnection extends Model
             ->get();
 
         foreach ($candidates as $row) {
-            if ($row->normalizedShopDomain() === $normalized) {
+            if ($row->matchesShopDomain($normalized)) {
                 return $row;
             }
         }
 
+        // Renamed shops keep the old *.myshopify.com host; webhooks may use either.
         foreach (self::query()->cursor() as $row) {
-            if ($row->normalizedShopDomain() === $normalized) {
+            if ($row->matchesShopDomain($normalized)) {
                 return $row;
             }
         }

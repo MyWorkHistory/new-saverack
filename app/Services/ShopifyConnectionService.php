@@ -130,6 +130,15 @@ class ShopifyConnectionService
         try {
             $shop = $this->client->forConnection($connection)->shopInfo();
             $connection->shop_name = $shop['name'] ?? $connection->shop_name;
+            $canonical = $this->normalizeDomain((string) ($shop['myshopifyDomain'] ?? ''));
+            if ($canonical !== '') {
+                $connection->shop_domain = $canonical;
+            }
+            $aliasSeeds = array_merge(
+                [$domain],
+                is_array($shop['domains'] ?? null) ? $shop['domains'] : []
+            );
+            $connection->mergeShopDomainAliases($aliasSeeds);
             $connection->connected_at = $connection->connected_at ?? now();
             $connection->save();
         } catch (Throwable $e) {

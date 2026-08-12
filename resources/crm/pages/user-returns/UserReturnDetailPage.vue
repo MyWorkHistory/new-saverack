@@ -84,6 +84,14 @@ function openRmaBarcode() {
   openPdf(`/returns/${returnId.value}/rma-barcode.pdf`, "Could not open RMA barcode.");
 }
 
+function printLineBarcode(line) {
+  if (!ret.value?.id || !line?.id) return;
+  openPdf(
+    `/returns/${ret.value.id}/lines/${line.id}/barcode.pdf`,
+    "Could not print barcode.",
+  );
+}
+
 async function saveNote() {
   if (!ret.value?.id) return;
   noteBusy.value = true;
@@ -194,6 +202,13 @@ onMounted(() => {
                       <div class="min-w-0 order-detail-page__item-copy">
                         <div class="order-detail-page__item-name fw-semibold">{{ line.name }}</div>
                         <div class="order-detail-page__item-sku small text-secondary">{{ line.sku }}</div>
+                        <button
+                          type="button"
+                          class="btn btn-link btn-sm p-0 text-decoration-none mt-1"
+                          @click="printLineBarcode(line)"
+                        >
+                          Print Barcode
+                        </button>
                       </div>
                     </div>
                   </td>

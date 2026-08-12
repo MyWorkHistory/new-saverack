@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountReturnLine;
+use App\Models\ShipHeroInventoryProductIndex;
 use App\Models\User;
 use App\Services\ReturnFeeService;
 use App\Support\Barcode\Code128Svg;
@@ -651,5 +652,53 @@ class ReturnController extends Controller
         ])->setPaper([0, 0, 288, 108]);
 
         return $pdf->stream('return-'.$this->safePdfName($clientAccountReturn->rma_number).'-barcode.pdf');
+    }
+
+    public function lineBarcodePdf(
+        Request $request,
+        ClientAccountReturn $clientAccountReturn,
+        ClientAccountReturnLine $line
+    ) {
+        $this->authorizeReturn($request, $clientAccountReturn);
+
+        if ((int) $line->client_account_return_id !== (int) $clientAccountReturn->id) {
+            abort(404);
+        }
+
+        $sku = trim((string) $line->sku);
+        $barcode = '';
+        $accountId = (int) $clientAccountReturn->client_account_id;
+
+        if ($sku !== '' && $sku !== ClientAccountReturn::UNKNOWN_SKU && $accountId > 0) {
+            $indexed = ShipHeroInventoryProductIndex::query()
+                ->where('client_account_id', $accountId)
+                ->where(function ($q) use ($sku) {
+                    $q->where('sku', $sku)
+                        ->orWhere('sku_search', mb_strtolower($sku));
+                })
+                ->orderByDesc('synced_at')
+                ->first(['barcode']);
+            if ($indexed !== null) {
+                $barcode = trim((string) ($indexed->barcode ?? ''));
+            }
+        }
+
+        if ($barcode === '' && $sku !== '') {
+            $barcode = $sku;
+        }
+
+        if ($barcode === '') {
+            return response()->json(['message' => 'No barcode available for this line.'], 422);
+        }
+
+        $pdf = Pdf::loadView('pdf.asn.barcode', [
+            'line' => $line,
+            'barcode' => $barcode,
+            'barcodeHtml' => Code128Svg::htmlBars($barcode),
+        ])->setPaper([0, 0, 288, 144]);
+
+        return $pdf->stream(
+            'return-'.$this->safePdfName($clientAccountReturn->rma_number).'-'.$this->safePdfName($line->sku).'-barcode.pdf'
+        );
     }
 }

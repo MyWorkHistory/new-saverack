@@ -344,6 +344,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{clientAccountReturn}/packing-slip.pdf', [ReturnController::class, 'packingSlipPdf'])->middleware('can:returns.view');
         Route::get('/{clientAccountReturn}/shipping-label.pdf', [ReturnController::class, 'shippingLabelPdf'])->middleware('can:returns.view');
         Route::get('/{clientAccountReturn}/rma-barcode.pdf', [ReturnController::class, 'rmaBarcodePdf'])->middleware('can:returns.view');
+        Route::get('/{clientAccountReturn}/lines/{line}/barcode.pdf', [ReturnController::class, 'lineBarcodePdf'])->middleware('can:returns.view');
         Route::put('/{clientAccountReturn}/submit', [ReturnController::class, 'submit'])->middleware('can:returns.update');
         Route::patch('/{clientAccountReturn}/warehouse-note', [ReturnController::class, 'updateWarehouseNote'])->middleware('can:returns.update');
         Route::get('/{clientAccountReturn}', [ReturnController::class, 'show'])->middleware('can:returns.view');

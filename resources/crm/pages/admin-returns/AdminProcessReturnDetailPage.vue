@@ -239,7 +239,7 @@ function openRmaBarcode() {
 }
 
 const tableColspan = computed(() => {
-  let cols = isPending.value ? 7 : 6;
+  let cols = isPending.value ? 6 : 5;
   if (isStaffManagedPending.value) cols += 1;
   return cols;
 });
@@ -519,7 +519,6 @@ onMounted(load);
                   <th class="staff-table-head__th text-center" scope="col">Return Qty</th>
                   <th class="staff-table-head__th" scope="col">Reason</th>
                   <th class="staff-table-head__th text-center" scope="col">Restock</th>
-                  <th class="staff-table-head__th text-center" scope="col">Barcode</th>
                   <th v-if="isStaffManagedPending" class="staff-table-head__th text-center" scope="col">Actions</th>
                 </tr>
               </thead>
@@ -553,6 +552,13 @@ onMounted(load);
                           {{ line.name || "—" }}
                         </div>
                         <div class="order-detail-page__item-sku small text-secondary">{{ line.sku }}</div>
+                        <button
+                          type="button"
+                          class="btn btn-link btn-sm p-0 text-decoration-none mt-1"
+                          @click="printLineBarcode(line)"
+                        >
+                          Print Barcode
+                        </button>
                       </div>
                     </div>
                   </td>
@@ -593,15 +599,6 @@ onMounted(load);
                       <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
                     </svg>
                     <span v-else class="text-secondary">—</span>
-                  </td>
-                  <td class="text-center">
-                    <button
-                      type="button"
-                      class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn"
-                      @click="printLineBarcode(line)"
-                    >
-                      Print Barcode
-                    </button>
                   </td>
                   <td v-if="isStaffManagedPending" class="text-center">
                     <button

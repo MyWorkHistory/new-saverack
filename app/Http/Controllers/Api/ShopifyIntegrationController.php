@@ -8,6 +8,7 @@ use App\Models\ShopifyOrder;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyConnectionService;
 use App\Services\ShopifyFulfillmentService;
+use App\Services\ShopifyOrderSyncService;
 use App\Services\ShopifyProductSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -119,6 +120,78 @@ class ShopifyIntegrationController extends Controller
     public function syncConnection(Request $request, ClientAccount $clientAccount, ShopifyConnectionService $connections): JsonResponse
     {
         return $this->importConnection($request, $clientAccount, $connections);
+    }
+
+    public function syncOrders(
+        Request $request,
+        ClientAccount $clientAccount,
+        ShopifyConnectionService $connections,
+        ShopifyOrderSyncService $orderSync
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $this->authorize('update', $clientAccount);
+
+        $validated = $request->validate([
+            'mode' => ['required', 'string', 'in:unfulfilled,after_date,order_number'],
+            'after_date' => ['nullable', 'date'],
+            'order_number' => ['nullable', 'string', 'max:64'],
+        ]);
+
+        $connection = $connections->getForAccount((int) $clientAccount->id);
+        if ($connection === null || ! $connection->hasCredentials()) {
+            return response()->json(['message' => 'Connect Shopify credentials first.'], 422);
+        }
+
+        $mode = (string) $validated['mode'];
+
+        try {
+            if ($mode === 'order_number') {
+                $orderNumber = trim((string) ($validated['order_number'] ?? ''));
+                if ($orderNumber === '') {
+                    return response()->json(['message' => 'Order number is required.'], 422);
+                }
+                $result = $connections->syncOrderByNumber($connection, $orderNumber, $orderSync);
+
+                return response()->json([
+                    'message' => 'Synced order '.$result['order']->name.'.',
+                    'queued' => false,
+                    'synced' => 1,
+                    'mode' => $mode,
+                    'order' => [
+                        'id' => $result['order']->id,
+                        'name' => $result['order']->name,
+                        'shopify_order_id' => $result['order']->shopify_order_id,
+                    ],
+                    'connection' => $connections->toPublicArray($result['connection']),
+                ]);
+            }
+
+            if ($mode === 'after_date' && empty($validated['after_date'])) {
+                return response()->json(['message' => 'After date is required.'], 422);
+            }
+
+            $result = $connections->queueOrderResync($connection, [
+                'mode' => $mode,
+                'after_date' => $validated['after_date'] ?? null,
+            ]);
+
+            $msg = $mode === 'after_date'
+                ? 'Order re-sync queued for orders on/after '.$validated['after_date'].'.'
+                : 'Order re-sync queued for all unfulfilled orders.';
+
+            return response()->json([
+                'message' => $msg,
+                'queued' => true,
+                'mode' => $mode,
+                'connection' => $connections->toPublicArray($result['connection']),
+            ], 202);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
     }
 
     public function ordersIndex(Request $request): JsonResponse

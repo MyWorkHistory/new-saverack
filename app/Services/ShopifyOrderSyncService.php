@@ -115,6 +115,144 @@ GQL
     }
 
     /**
+     * Re-sync all unfulfilled / partially fulfilled orders (manual CRM action).
+     */
+    public function syncUnfulfilledOrders(ClientAccountShopifyConnection $connection, ?ShopifyClient $api = null): int
+    {
+        $count = $this->importOpenOrders($connection, $api);
+        $connection->last_order_sync_at = now();
+        $connection->save();
+
+        return $count;
+    }
+
+    /**
+     * Re-sync orders created on/after the given date (UTC day). Hard-capped for safety.
+     */
+    public function syncOrdersCreatedAfter(
+        ClientAccountShopifyConnection $connection,
+        Carbon $fromDate,
+        ?ShopifyClient $api = null,
+        int $maxOrders = 500
+    ): int {
+        $api = $api ?? $this->client->forConnection($connection);
+        $maxOrders = max(1, min(1000, $maxOrders));
+        $day = $fromDate->copy()->utc()->startOfDay()->toDateString();
+        $query = 'created_at:>='.$day;
+        $count = 0;
+        $cursor = null;
+
+        do {
+            $data = $api->graphql(
+                <<<'GQL'
+query OrdersAfterDate($q: String!, $cursor: String) {
+  orders(first: 25, after: $cursor, query: $q, sortKey: CREATED_AT, reverse: false) {
+    pageInfo { hasNextPage endCursor }
+    edges { node { id } }
+  }
+}
+GQL
+                ,
+                ['q' => $query, 'cursor' => $cursor]
+            );
+            $conn = is_array($data['orders'] ?? null) ? $data['orders'] : [];
+            foreach (($conn['edges'] ?? []) as $edge) {
+                if ($count >= $maxOrders) {
+                    break 2;
+                }
+                $id = ShopifyGid::toId((string) (($edge['node']['id'] ?? '') ?: ''));
+                if ($id === '') {
+                    continue;
+                }
+                if ($this->refreshOrderByShopifyId($connection, $id) !== null) {
+                    $count++;
+                }
+            }
+            $page = is_array($conn['pageInfo'] ?? null) ? $conn['pageInfo'] : [];
+            $hasNext = (bool) ($page['hasNextPage'] ?? false);
+            $cursor = $hasNext ? ($page['endCursor'] ?? null) : null;
+        } while ($cursor !== null && $count < $maxOrders);
+
+        $connection->last_order_sync_at = now();
+        $connection->save();
+
+        return $count;
+    }
+
+    /**
+     * Resolve a Shopify order by storefront name (#1234 / 1234) and refresh it.
+     *
+     * @throws \RuntimeException when the order cannot be found
+     */
+    public function syncOrderByName(
+        ClientAccountShopifyConnection $connection,
+        string $orderName,
+        ?ShopifyClient $api = null
+    ): ShopifyOrder {
+        $api = $api ?? $this->client->forConnection($connection);
+        $normalized = $this->normalizeOrderName($orderName);
+        if ($normalized === '') {
+            throw new \RuntimeException('Order number is required.');
+        }
+
+        $query = 'name:'.$normalized;
+        $data = $api->graphql(
+            <<<'GQL'
+query OrderByName($q: String!) {
+  orders(first: 5, query: $q, sortKey: CREATED_AT, reverse: true) {
+    edges { node { id name } }
+  }
+}
+GQL
+            ,
+            ['q' => $query]
+        );
+
+        $edges = is_array($data['orders']['edges'] ?? null) ? $data['orders']['edges'] : [];
+        $matchId = '';
+        foreach ($edges as $edge) {
+            $node = is_array($edge['node'] ?? null) ? $edge['node'] : [];
+            $name = trim((string) ($node['name'] ?? ''));
+            if ($this->normalizeOrderName($name) === $normalized) {
+                $matchId = ShopifyGid::toId((string) ($node['id'] ?? ''));
+                break;
+            }
+        }
+        if ($matchId === '' && $edges !== []) {
+            $first = is_array($edges[0]['node'] ?? null) ? $edges[0]['node'] : [];
+            $matchId = ShopifyGid::toId((string) ($first['id'] ?? ''));
+        }
+        if ($matchId === '') {
+            throw new \RuntimeException('No Shopify order found for '.$normalized.'.');
+        }
+
+        $order = $this->refreshOrderByShopifyId($connection, $matchId);
+        if ($order === null) {
+            throw new \RuntimeException('Could not refresh Shopify order '.$normalized.'.');
+        }
+
+        $connection->last_order_sync_at = now();
+        $connection->save();
+
+        return $order;
+    }
+
+    public function normalizeOrderName(string $raw): string
+    {
+        $s = trim($raw);
+        if ($s === '') {
+            return '';
+        }
+        $s = ltrim($s, '#');
+        $s = trim($s);
+        if ($s === '') {
+            return '';
+        }
+
+        return '#'.$s;
+    }
+
+    /**
      * Fetch a single order by Shopify ID (numeric or GID) and upsert.
      */
     public function refreshOrderByShopifyId(

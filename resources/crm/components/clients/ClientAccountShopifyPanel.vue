@@ -88,9 +88,18 @@
           type="button"
           class="btn btn-sm btn-outline-primary fw-semibold"
           :disabled="busy || isImporting || !canEdit || !connection?.has_token"
+          @click="openResyncModal"
+        >
+          Re-Sync Orders
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-secondary fw-semibold"
+          :disabled="busy || isImporting || !canEdit || !connection?.has_token"
+          title="Re-import catalog and open orders (full bootstrap)"
           @click="syncNow"
         >
-          Sync Now
+          Full Re-Import (Orders + Catalog)
         </button>
         <button
           type="button"
@@ -102,6 +111,160 @@
         </button>
       </div>
     </template>
+
+    <Teleport to="body">
+      <Transition name="modal-backdrop">
+        <div
+          v-if="resyncOpen"
+          class="crm-vx-modal-overlay"
+          aria-modal="true"
+          role="dialog"
+          aria-labelledby="shopify-resync-orders-title"
+        >
+          <div
+            class="crm-vx-modal-backdrop"
+            aria-hidden="true"
+            @click="closeResyncModal"
+          />
+          <Transition name="modal-panel" appear>
+            <div class="crm-vx-modal crm-vx-modal--sm">
+              <button
+                type="button"
+                class="crm-vx-modal__close"
+                aria-label="Close"
+                :disabled="resyncBusy"
+                @click="closeResyncModal"
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+
+              <header class="crm-vx-modal__head">
+                <h2 id="shopify-resync-orders-title" class="crm-vx-modal__title">
+                  Re-Sync Orders
+                </h2>
+                <p class="crm-vx-modal__subtitle">
+                  Pull orders from Shopify into CRM. Does not change ShipHero stock.
+                </p>
+              </header>
+
+              <div class="crm-vx-modal__body pt-0">
+                <form
+                  id="shopify-resync-orders-form"
+                  class="d-flex flex-column gap-3"
+                  @submit.prevent="submitResync"
+                >
+                  <div class="form-check">
+                    <input
+                      id="resync-unfulfilled"
+                      v-model="resync.mode"
+                      class="form-check-input"
+                      type="radio"
+                      value="unfulfilled"
+                      :disabled="resyncBusy"
+                    />
+                    <label class="form-check-label" for="resync-unfulfilled">
+                      Sync All Unfulfilled Orders
+                    </label>
+                  </div>
+                  <div class="form-check">
+                    <input
+                      id="resync-after-date"
+                      v-model="resync.mode"
+                      class="form-check-input"
+                      type="radio"
+                      value="after_date"
+                      :disabled="resyncBusy"
+                    />
+                    <label class="form-check-label" for="resync-after-date">
+                      Sync All After Date
+                    </label>
+                  </div>
+                  <div
+                    v-if="resync.mode === 'after_date'"
+                    class="ps-4"
+                  >
+                    <label class="form-label small mb-1 text-secondary" for="resync-date">
+                      Created On Or After
+                    </label>
+                    <input
+                      id="resync-date"
+                      v-model="resync.after_date"
+                      type="date"
+                      class="form-control form-control-sm"
+                      required
+                      :disabled="resyncBusy"
+                    />
+                  </div>
+                  <div class="form-check">
+                    <input
+                      id="resync-order-number"
+                      v-model="resync.mode"
+                      class="form-check-input"
+                      type="radio"
+                      value="order_number"
+                      :disabled="resyncBusy"
+                    />
+                    <label class="form-check-label" for="resync-order-number">
+                      Sync Specific Order #
+                    </label>
+                  </div>
+                  <div
+                    v-if="resync.mode === 'order_number'"
+                    class="ps-4"
+                  >
+                    <label class="form-label small mb-1 text-secondary" for="resync-order-num">
+                      Order Number
+                    </label>
+                    <input
+                      id="resync-order-num"
+                      v-model="resync.order_number"
+                      type="text"
+                      class="form-control form-control-sm"
+                      placeholder="#1234"
+                      required
+                      :disabled="resyncBusy"
+                    />
+                  </div>
+                </form>
+              </div>
+
+              <footer class="crm-vx-modal__footer">
+                <button
+                  type="button"
+                  class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                  :disabled="resyncBusy"
+                  @click="closeResyncModal"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  form="shopify-resync-orders-form"
+                  class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                  :disabled="resyncBusy || !canSubmitResync"
+                >
+                  {{ resyncBusy ? "Syncing…" : "Re-Sync Orders" }}
+                </button>
+              </footer>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -126,9 +289,23 @@ const form = reactive({
   webhook_secret: "",
 });
 
+const resyncOpen = ref(false);
+const resyncBusy = ref(false);
+const resync = reactive({
+  mode: "unfulfilled",
+  after_date: "",
+  order_number: "",
+});
+
 let pollTimer = null;
 
 const isImporting = computed(() => connection.value?.status === "importing");
+
+const canSubmitResync = computed(() => {
+  if (resync.mode === "after_date") return Boolean(resync.after_date);
+  if (resync.mode === "order_number") return Boolean(String(resync.order_number || "").trim());
+  return true;
+});
 
 const statusLabel = computed(() => {
   const s = connection.value?.status || "disconnected";
@@ -228,12 +405,55 @@ async function syncNow() {
   try {
     const { data } = await api.post(`/client-accounts/${props.accountId}/shopify-connection/sync`);
     connection.value = data?.connection || null;
-    toast.success(data?.message || "Shopify Import Queued.");
+    toast.success(data?.message || "Shopify Full Re-Import Queued.");
     startPollingIfNeeded();
   } catch (e) {
-    toast.errorFrom(e, "Could not sync Shopify.");
+    toast.errorFrom(e, "Could not start full re-import.");
   } finally {
     busy.value = false;
+  }
+}
+
+function openResyncModal() {
+  resync.mode = "unfulfilled";
+  resync.after_date = "";
+  resync.order_number = "";
+  resyncOpen.value = true;
+}
+
+function closeResyncModal() {
+  if (resyncBusy.value) return;
+  resyncOpen.value = false;
+}
+
+async function submitResync() {
+  if (!canSubmitResync.value) return;
+  resyncBusy.value = true;
+  try {
+    const body = { mode: resync.mode };
+    if (resync.mode === "after_date") {
+      body.after_date = resync.after_date;
+    }
+    if (resync.mode === "order_number") {
+      body.order_number = String(resync.order_number || "").trim();
+    }
+    const { data } = await api.post(
+      `/client-accounts/${props.accountId}/shopify-connection/sync-orders`,
+      body,
+    );
+    if (data?.connection) {
+      connection.value = data.connection;
+    }
+    if (data?.queued) {
+      toast.success(data?.message || "Order Re-Sync Queued.");
+    } else {
+      toast.success(data?.message || `Synced ${data?.synced ?? 1} Order.`);
+    }
+    resyncOpen.value = false;
+  } catch (e) {
+    toast.errorFrom(e, "Could not re-sync orders.");
+  } finally {
+    resyncBusy.value = false;
   }
 }
 
@@ -268,3 +488,34 @@ onUnmounted(() => {
   stopPolling();
 });
 </script>
+
+<style scoped>
+.modal-backdrop-enter-active,
+.modal-backdrop-leave-active {
+  transition: opacity 0.2s ease;
+}
+.modal-backdrop-enter-active .crm-vx-modal-backdrop,
+.modal-backdrop-leave-active .crm-vx-modal-backdrop {
+  transition: inherit;
+}
+.modal-backdrop-enter-from,
+.modal-backdrop-leave-to {
+  opacity: 0;
+}
+
+.modal-panel-enter-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+.modal-panel-leave-active {
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+.modal-panel-enter-from,
+.modal-panel-leave-to {
+  opacity: 0;
+  transform: scale(0.97) translateY(0.5rem);
+}
+</style>

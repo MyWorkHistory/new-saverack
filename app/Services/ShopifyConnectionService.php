@@ -3,8 +3,11 @@
 namespace App\Services;
 
 use App\Jobs\RunShopifyBootstrapImportJob;
+use App\Jobs\RunShopifyOrderResyncJob;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountShopifyConnection;
+use App\Models\ShopifyOrder;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
@@ -206,6 +209,75 @@ class ShopifyConnectionService
         $this->bootstrap->importAll($connection);
 
         return $connection->fresh();
+    }
+
+    /**
+     * Queue an orders-only re-sync (unfulfilled or after date). Does not flip full-import "importing" status.
+     *
+     * @param  array{mode:string, after_date?:string|null}  $input
+     * @return array{queued:true, mode:string, connection:ClientAccountShopifyConnection}
+     */
+    public function queueOrderResync(ClientAccountShopifyConnection $connection, array $input): array
+    {
+        if (! $connection->hasCredentials()) {
+            throw new RuntimeException('Shopify connection has no credentials.');
+        }
+
+        $mode = (string) ($input['mode'] ?? '');
+        if (! in_array($mode, [
+            RunShopifyOrderResyncJob::MODE_UNFULFILLED,
+            RunShopifyOrderResyncJob::MODE_AFTER_DATE,
+        ], true)) {
+            throw new RuntimeException('Invalid order re-sync mode.');
+        }
+
+        $afterDate = null;
+        if ($mode === RunShopifyOrderResyncJob::MODE_AFTER_DATE) {
+            $raw = trim((string) ($input['after_date'] ?? ''));
+            if ($raw === '') {
+                throw new RuntimeException('After date is required.');
+            }
+            try {
+                $afterDate = Carbon::parse($raw)->utc()->toDateString();
+            } catch (Throwable $e) {
+                throw new RuntimeException('Invalid after date.');
+            }
+        }
+
+        $connection->last_error = null;
+        $connection->save();
+
+        RunShopifyOrderResyncJob::dispatch((int) $connection->id, $mode, $afterDate);
+
+        return [
+            'queued' => true,
+            'mode' => $mode,
+            'connection' => $connection->fresh() ?? $connection,
+        ];
+    }
+
+    /**
+     * Inline sync of one Shopify order by name (#1234).
+     *
+     * @return array{queued:false, synced:1, order:ShopifyOrder, connection:ClientAccountShopifyConnection}
+     */
+    public function syncOrderByNumber(
+        ClientAccountShopifyConnection $connection,
+        string $orderNumber,
+        ShopifyOrderSyncService $orders
+    ): array {
+        if (! $connection->hasCredentials()) {
+            throw new RuntimeException('Shopify connection has no credentials.');
+        }
+
+        $order = $orders->syncOrderByName($connection, $orderNumber);
+
+        return [
+            'queued' => false,
+            'synced' => 1,
+            'order' => $order,
+            'connection' => $connection->fresh() ?? $connection,
+        ];
     }
 
     public function queueBootstrapImport(

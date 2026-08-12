@@ -803,6 +803,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('client-accounts/{client_account}/shopify-connection', [ShopifyIntegrationController::class, 'disconnect']);
     Route::post('client-accounts/{client_account}/shopify-connection/import', [ShopifyIntegrationController::class, 'importConnection']);
     Route::post('client-accounts/{client_account}/shopify-connection/sync', [ShopifyIntegrationController::class, 'syncConnection']);
+    Route::post('client-accounts/{client_account}/shopify-connection/sync-orders', [ShopifyIntegrationController::class, 'syncOrders']);
 
     Route::apiResource('client-accounts', ClientAccountController::class);
     Route::match(['put', 'patch'], 'users/{user}/permissions', [UserController::class, 'updatePermissions'])

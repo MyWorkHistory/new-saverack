@@ -16,6 +16,16 @@ class ShopifyOrderSyncServiceTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_normalize_order_name_adds_hash_prefix(): void
+    {
+        $service = app(ShopifyOrderSyncService::class);
+
+        $this->assertSame('#1234', $service->normalizeOrderName('1234'));
+        $this->assertSame('#1234', $service->normalizeOrderName('#1234'));
+        $this->assertSame('#1234', $service->normalizeOrderName('  #1234  '));
+        $this->assertSame('', $service->normalizeOrderName('   '));
+    }
+
     public function test_extracts_order_id_from_orders_edited_payload(): void
     {
         $service = app(ShopifyOrderSyncService::class);

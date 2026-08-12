@@ -89,6 +89,15 @@ class ShopifyWebhookController extends Controller
             'connection_id' => $event->connection_id,
         ]);
 
+        if ($connection === null) {
+            Log::warning('shopify.webhook.unknown_shop', [
+                'event_id' => $event->event_id,
+                'topic' => $event->topic,
+                'shop' => $shopDomain,
+                'message' => 'HMAC ok but no client_account_shopify_connections row for this shop; CRM will not update.',
+            ]);
+        }
+
         // Queue immediately (do not rely on afterResponse — PHP-FPM can drop terminating callbacks).
         ProcessShopifyWebhookJob::dispatch((int) $event->id);
 

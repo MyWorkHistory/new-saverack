@@ -341,8 +341,7 @@ class ShopifyIntegrationController extends Controller
 
     public function updateVariant(
         Request $request,
-        ShopifyProductVariant $shopifyVariant,
-        ShopifyProductSyncService $products
+        ShopifyProductVariant $shopifyVariant
     ): JsonResponse {
         $this->assertAdmin($request);
 
@@ -354,23 +353,57 @@ class ShopifyIntegrationController extends Controller
             'weight_unit' => ['nullable', 'string', 'max:16'],
         ]);
 
-        try {
-            $variant = $products->pushVariantToShopify($shopifyVariant, $validated);
-        } catch (Throwable $e) {
-            report($e);
+        // Persist CRM copy immediately so the request finishes under Cloudflare.
+        $shopifyVariant->loadMissing('product');
+        if (array_key_exists('sku', $validated) && $validated['sku'] !== null) {
+            $shopifyVariant->sku = trim((string) $validated['sku']);
+        }
+        if (array_key_exists('title', $validated) && $validated['title'] !== null) {
+            $shopifyVariant->title = trim((string) $validated['title']);
+        }
+        if (array_key_exists('weight', $validated) && $validated['weight'] !== null) {
+            $shopifyVariant->weight = (float) $validated['weight'];
+        }
+        if (array_key_exists('weight_unit', $validated) && $validated['weight_unit'] !== null) {
+            $shopifyVariant->weight_unit = (string) $validated['weight_unit'];
+        }
+        $shopifyVariant->save();
 
-            return response()->json(['message' => $e->getMessage()], 502);
+        if (
+            array_key_exists('product_title', $validated)
+            && $validated['product_title'] !== null
+            && $shopifyVariant->product
+        ) {
+            $shopifyVariant->product->title = trim((string) $validated['product_title']);
+            $shopifyVariant->product->save();
         }
 
+        \App\Jobs\PushShopifyVariantJob::dispatch((int) $shopifyVariant->id, $validated);
+
+        // Also try once after the response (helps when queue workers are down).
+        $variantId = (int) $shopifyVariant->id;
+        $fields = $validated;
+        app()->terminating(static function () use ($variantId, $fields) {
+            try {
+                (new \App\Jobs\PushShopifyVariantJob($variantId, $fields))
+                    ->handle(app(ShopifyProductSyncService::class));
+            } catch (Throwable $e) {
+                report($e);
+            }
+        });
+
+        $shopifyVariant->refresh()->load('product');
+
         return response()->json([
-            'message' => 'Saved To Shopify.',
+            'message' => 'Saved. Syncing To Shopify…',
+            'queued' => true,
             'variant' => [
-                'id' => $variant->id,
-                'sku' => $variant->sku,
-                'title' => $variant->title,
-                'product_title' => $variant->product->title ?? null,
-                'weight' => $variant->weight,
-                'weight_unit' => $variant->weight_unit,
+                'id' => $shopifyVariant->id,
+                'sku' => $shopifyVariant->sku,
+                'title' => $shopifyVariant->title,
+                'product_title' => $shopifyVariant->product->title ?? null,
+                'weight' => $shopifyVariant->weight,
+                'weight_unit' => $shopifyVariant->weight_unit,
             ],
         ]);
     }

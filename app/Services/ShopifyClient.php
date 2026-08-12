@@ -52,7 +52,7 @@ class ShopifyClient
                     'variables' => (object) $variables,
                 ],
                 'connect_timeout' => 5,
-                'timeout' => 60,
+                'timeout' => 25,
             ]);
         } catch (Throwable $e) {
             Log::warning('shopify.graphql.request_failed', [

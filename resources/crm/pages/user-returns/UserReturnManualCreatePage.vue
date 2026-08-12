@@ -94,6 +94,11 @@ function openPackingSlip() {
   openPdf(`/returns/${ret.value.id}/packing-slip.pdf`, "Could not open return packing slip.");
 }
 
+function openRmaBarcode() {
+  if (!ret.value?.id) return;
+  openPdf(`/returns/${ret.value.id}/rma-barcode.pdf`, "Could not open barcode.");
+}
+
 async function loadCatalogRows(reset) {
   if (!clientAccountId.value) return;
   if (reset) {
@@ -348,6 +353,14 @@ onMounted(() => {
               </button>
               <button
                 type="button"
+                class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn"
+                :disabled="!ret?.id"
+                @click="openRmaBarcode"
+              >
+                Print Barcode
+              </button>
+              <button
+                type="button"
                 class="btn btn-outline-secondary btn-sm fw-semibold"
                 @click="openShippingLabel"
               >
@@ -521,7 +534,16 @@ onMounted(() => {
           <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
               <h3 class="h6 fw-semibold mb-0">RMA #</h3>
-              <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold" @click="copyRma">Copy</button>
+              <div class="d-flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary fw-semibold orders-toolbar-outline-btn"
+                  @click="openRmaBarcode"
+                >
+                  Print Barcode
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold" @click="copyRma">Copy</button>
+              </div>
             </div>
             <div class="user-return-page__rma-display">{{ ret.rma_number }}</div>
             <p class="small text-secondary mb-0 mt-2">{{ formatRmaLabel(ret.rma_number) }}</p>

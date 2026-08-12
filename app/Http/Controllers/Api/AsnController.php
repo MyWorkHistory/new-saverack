@@ -598,7 +598,7 @@ class AsnController extends Controller
             'asn' => $asn,
             'line' => $line,
             'barcode' => $barcode,
-            'barcodeSvg' => Code128Svg::dataUri($barcode),
+            'barcodeHtml' => Code128Svg::htmlBars($barcode),
         ])->setPaper([0, 0, 288, 144]);
 
         return $pdf->stream('asn-'.$this->safePdfName($asn->asn_number).'-'.$this->safePdfName($line->sku).'-barcode.pdf');

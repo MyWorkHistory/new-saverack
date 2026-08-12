@@ -153,7 +153,7 @@ onMounted(() => {
               class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn"
               @click="openRmaBarcode"
             >
-              RMA Barcode
+              Print Barcode
             </button>
           </div>
         </div>

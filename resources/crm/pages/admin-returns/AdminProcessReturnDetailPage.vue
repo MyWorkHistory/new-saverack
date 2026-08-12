@@ -233,6 +233,11 @@ function printLineBarcode(line) {
   );
 }
 
+function openRmaBarcode() {
+  if (!ret.value?.id) return;
+  openPdf(`/returns/${ret.value.id}/rma-barcode.pdf`, {}, "Could not open barcode.");
+}
+
 const tableColspan = computed(() => {
   let cols = isPending.value ? 7 : 6;
   if (isStaffManagedPending.value) cols += 1;
@@ -430,8 +435,16 @@ onMounted(load);
               &lt; Process Returns
             </button>
           </div>
-          <div v-if="isPending" class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
+          <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
             <button
+              type="button"
+              class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn"
+              @click="openRmaBarcode"
+            >
+              Print Barcode
+            </button>
+            <button
+              v-if="isPending"
               type="button"
               class="btn btn-primary staff-page-primary btn-sm fw-semibold"
               :disabled="processing || !canProcess"
@@ -587,7 +600,7 @@ onMounted(load);
                       class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn"
                       @click="printLineBarcode(line)"
                     >
-                      Print
+                      Print Barcode
                     </button>
                   </td>
                   <td v-if="isStaffManagedPending" class="text-center">

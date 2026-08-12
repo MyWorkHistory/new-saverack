@@ -7,7 +7,6 @@
         .company-name { font-size: 30px; font-weight: 800; letter-spacing: 0.02em; }
         .rma-number { font-size: 20px; font-weight: 700; margin-top: 4px; }
         .barcode { text-align: center; margin: 14px 0 18px; }
-        .barcode img { max-width: 100%; height: 56px; }
         .rule { border: 0; border-top: 1px solid #d0d0d0; margin: 22px 0; }
         table { width: 100%; border-collapse: collapse; table-layout: fixed; }
         th, td { border-bottom: 1px solid #e1e1e1; padding: 7px 6px; vertical-align: top; }
@@ -22,7 +21,7 @@
 <body>
     <div class="company-name">{{ $accountName ?: 'Save Rack' }}</div>
     <div class="rma-number">{{ $rmaLabel }}</div>
-    <div class="barcode"><img src="{{ $barcodeSvg }}" alt="RMA barcode"></div>
+    <div class="barcode">{!! $barcodeHtml !!}</div>
     <hr class="rule">
     <table>
         <thead>

@@ -613,7 +613,7 @@ class ReturnController extends Controller
             'lines' => $lines,
             'accountName' => $accountName !== '' ? $accountName : 'Save Rack',
             'rmaLabel' => $this->formatRmaLabel($clientAccountReturn->rma_number),
-            'barcodeSvg' => Code128Svg::dataUri($clientAccountReturn->rma_number),
+            'barcodeHtml' => Code128Svg::htmlBars((string) $clientAccountReturn->rma_number),
         ])->setPaper('letter');
 
         return $pdf->stream('return-'.$this->safePdfName($clientAccountReturn->rma_number).'-packing-slip.pdf');
@@ -636,7 +636,7 @@ class ReturnController extends Controller
                 $addr['line1'] ?? null,
                 $addr['line2'] ?? null,
             ])),
-            'barcodeSvg' => Code128Svg::dataUri($clientAccountReturn->rma_number),
+            'barcodeHtml' => Code128Svg::htmlBars((string) $clientAccountReturn->rma_number),
         ])->setPaper([0, 0, 288, 432]);
 
         return $pdf->stream('return-'.$this->safePdfName($clientAccountReturn->rma_number).'-shipping-label.pdf');
@@ -647,7 +647,7 @@ class ReturnController extends Controller
         $this->authorizeReturn($request, $clientAccountReturn);
         $pdf = Pdf::loadView('pdf.returns.rma-barcode', [
             'rmaNumber' => $clientAccountReturn->rma_number,
-            'barcodeSvg' => Code128Svg::dataUri($clientAccountReturn->rma_number),
+            'barcodeHtml' => Code128Svg::htmlBars((string) $clientAccountReturn->rma_number),
         ])->setPaper([0, 0, 288, 108]);
 
         return $pdf->stream('return-'.$this->safePdfName($clientAccountReturn->rma_number).'-barcode.pdf');

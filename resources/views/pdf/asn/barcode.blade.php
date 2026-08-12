@@ -6,7 +6,7 @@
         @page { margin: 10px; }
         body { font-family: DejaVu Sans, sans-serif; color: #111; text-align: center; }
         .sku { font-size: 13px; font-weight: 700; margin-bottom: 8px; word-break: break-all; }
-        .barcode img { max-width: 100%; height: 70px; }
+        .barcode { margin: 0 auto; }
         .value { font-size: 11px; margin-top: 6px; letter-spacing: 0.04em; }
         .name {
             font-size: 11px;
@@ -25,9 +25,13 @@
         if (mb_strlen($productName) > 48) {
             $productName = rtrim(mb_substr($productName, 0, 47)).'…';
         }
+        $bars = $barcodeHtml ?? null;
+        if ($bars === null && ! empty($barcodeSvg)) {
+            $bars = '<img src="'.e($barcodeSvg).'" alt="Barcode" style="max-width:100%;height:70px;">';
+        }
     @endphp
     <div class="sku">{{ $line->sku }}</div>
-    <div class="barcode"><img src="{{ $barcodeSvg }}" alt="Barcode"></div>
+    <div class="barcode">{!! $bars !!}</div>
     <div class="value">{{ $barcode }}</div>
     @if ($productName !== '')
         <div class="name">{{ $productName }}</div>

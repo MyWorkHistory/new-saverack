@@ -7,6 +7,7 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountReturn;
 use App\Models\ClientAccountReturnLine;
 use App\Models\ReturnBin;
+use App\Models\ShipHeroInventoryProductIndex;
 use App\Models\ShipHeroOrderQueueIndex;
 use App\Models\User;
 use App\Services\ReturnBinService;
@@ -1058,18 +1059,23 @@ class AdminReturnController extends Controller
             abort(404);
         }
 
-        $clientAccountReturn->loadMissing('clientAccount');
-        $customerId = $clientAccountReturn->clientAccount !== null
-            ? trim((string) $clientAccountReturn->clientAccount->shiphero_customer_account_id)
-            : '';
         $sku = trim((string) $line->sku);
         $barcode = '';
+        $accountId = (int) $clientAccountReturn->client_account_id;
 
-        if ($sku !== '' && $sku !== ClientAccountReturn::UNKNOWN_SKU && $customerId !== '') {
-            $product = $this->inventory->getProductDetailBySku($sku, null, $customerId);
-            $barcode = is_array($product) && isset($product['barcode'])
-                ? trim((string) $product['barcode'])
-                : '';
+        // Prefer local catalog index — avoid ShipHero round-trip on every print.
+        if ($sku !== '' && $sku !== ClientAccountReturn::UNKNOWN_SKU && $accountId > 0) {
+            $indexed = ShipHeroInventoryProductIndex::query()
+                ->where('client_account_id', $accountId)
+                ->where(function ($q) use ($sku) {
+                    $q->where('sku', $sku)
+                        ->orWhere('sku_search', mb_strtolower($sku));
+                })
+                ->orderByDesc('synced_at')
+                ->first(['barcode']);
+            if ($indexed !== null) {
+                $barcode = trim((string) ($indexed->barcode ?? ''));
+            }
         }
 
         if ($barcode === '' && $sku !== '') {
@@ -1083,7 +1089,7 @@ class AdminReturnController extends Controller
         $pdf = Pdf::loadView('pdf.asn.barcode', [
             'line' => $line,
             'barcode' => $barcode,
-            'barcodeSvg' => Code128Svg::dataUri($barcode),
+            'barcodeHtml' => Code128Svg::htmlBars($barcode),
         ])->setPaper([0, 0, 288, 144]);
 
         return $pdf->stream(

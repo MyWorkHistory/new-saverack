@@ -824,7 +824,7 @@ class InventoryController extends Controller
             $pdf = Pdf::loadView('pdf.asn.barcode', [
                 'line' => $line,
                 'barcode' => $barcode,
-                'barcodeSvg' => Code128Svg::dataUri($barcode),
+                'barcodeHtml' => Code128Svg::htmlBars($barcode),
             ])->setPaper([0, 0, 288, 144]);
 
             $safeSku = preg_replace('/[^A-Za-z0-9_-]+/', '-', $skuLabel);

@@ -24,8 +24,11 @@ class ShopifySyncRecentCommand extends Command
     {
         $minutes = max(5, min(120, (int) $this->option('minutes')));
         $query = ClientAccountShopifyConnection::query()
-            ->where('status', ClientAccountShopifyConnection::STATUS_CONNECTED)
-            ->whereNotNull('admin_api_access_token');
+            ->whereNotNull('admin_api_access_token')
+            ->whereIn('status', [
+                ClientAccountShopifyConnection::STATUS_CONNECTED,
+                ClientAccountShopifyConnection::STATUS_ERROR,
+            ]);
 
         $connectionOpt = trim((string) $this->option('connection'));
         if ($connectionOpt !== '') {
@@ -34,7 +37,7 @@ class ShopifySyncRecentCommand extends Command
 
         $connections = $query->get();
         if ($connections->isEmpty()) {
-            $this->warn('No connected Shopify stores.');
+            $this->warn('No Shopify stores with credentials (status connected/error).');
 
             return self::SUCCESS;
         }
@@ -47,10 +50,15 @@ class ShopifySyncRecentCommand extends Command
                 $this->info('  Orders refreshed: '.$orderCount.'; products scanned: '.($catalog['products'] ?? 0));
                 $connection->last_sync_at = now();
                 $connection->last_product_sync_at = now();
+                if ($connection->status === ClientAccountShopifyConnection::STATUS_ERROR) {
+                    $connection->status = ClientAccountShopifyConnection::STATUS_CONNECTED;
+                }
+                $connection->last_error = null;
                 $connection->save();
             } catch (Throwable $e) {
                 $this->error('  '.$e->getMessage());
                 $connection->last_error = mb_substr($e->getMessage(), 0, 1000);
+                $connection->status = ClientAccountShopifyConnection::STATUS_ERROR;
                 $connection->save();
             }
         }

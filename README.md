@@ -252,6 +252,8 @@ Per-client Shopify custom-app connection stores credentials on `client_account_s
 4. CRM Admin → Client Account → Settings → **Shopify** → **Connect And Import**
    - Connect verifies the shop quickly, then queues `RunShopifyBootstrapImportJob` (status **Importing** until done).
 5. Ensure queue workers drain default `database` jobs (`ProcessShopifyWebhookJob`, `RunShopifyBootstrapImportJob`)
+   - Webhooks also attempt inline processing after the HTTP response; cron `shopify:reprocess-pending-webhooks` processes stuck events **inline** (no worker required).
+   - Diagnose: `php artisan shopify:diagnose --account=ID --process-pending=20`
 6. Register webhooks (required after deploy / scope changes):
    - `php artisan shopify:register-webhooks --account=ID`
    - Topics: orders create/update/**edited**/cancel/delete, products create/update/delete, inventory levels

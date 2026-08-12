@@ -112,9 +112,20 @@ class ProcessShopifyWebhookJob implements ShouldQueue
             $event->processed_at = now();
             $event->processing_error = null;
             $event->save();
+            Log::info('shopify.webhook.processed', [
+                'event_id' => $event->event_id,
+                'topic' => $event->topic,
+                'connection_id' => $connection->id,
+            ]);
         } catch (Throwable $e) {
             $event->processing_error = mb_substr($e->getMessage(), 0, 500);
             $event->save();
+            Log::warning('shopify.webhook.failed', [
+                'event_id' => $event->event_id,
+                'topic' => $event->topic,
+                'connection_id' => $connection->id ?? null,
+                'message' => $e->getMessage(),
+            ]);
             throw $e;
         }
     }

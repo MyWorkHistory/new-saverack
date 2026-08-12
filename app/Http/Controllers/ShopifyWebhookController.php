@@ -98,8 +98,29 @@ class ShopifyWebhookController extends Controller
             ]);
         }
 
-        // Queue immediately (do not rely on afterResponse — PHP-FPM can drop terminating callbacks).
+        // Queue for workers; also try once after the HTTP response so CRM updates
+        // even when queue workers are down (PHP-FPM terminating callback).
         ProcessShopifyWebhookJob::dispatch((int) $event->id);
+        $eventId = (int) $event->id;
+        app()->terminating(static function () use ($eventId) {
+            try {
+                $fresh = ShopifyWebhookEvent::query()->find($eventId);
+                if ($fresh === null || $fresh->processed_at !== null) {
+                    return;
+                }
+                (new ProcessShopifyWebhookJob($eventId))->handle(
+                    app(\App\Services\ShopifyProductSyncService::class),
+                    app(\App\Services\ShopifyOrderSyncService::class),
+                    app(\App\Services\ShopifyBootstrapImportService::class),
+                    app(\App\Services\ShopifyClient::class)
+                );
+            } catch (\Throwable $e) {
+                Log::warning('shopify.webhook.terminating_process_failed', [
+                    'event_id' => $eventId,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        });
 
         return response()->json(['ok' => true]);
     }

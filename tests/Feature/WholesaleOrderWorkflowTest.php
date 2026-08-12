@@ -357,6 +357,18 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonPath('instructions', 'Portal packing note')
             ->assertJsonPath('shipping_labels_provider', WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES)
             ->assertJsonPath('is_editable', true);
+
+        $this->deleteJson('/api/admin/wholesale-orders/'.$order->id)->assertOk();
+        $this->assertDatabaseMissing('wholesale_orders', ['id' => $order->id]);
+
+        $pending = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'WO-PORTAL-PENDING',
+            'order_type' => WholesaleOrder::TYPE_AMAZON,
+            'status' => WholesaleOrder::STATUS_PENDING,
+            'items_count' => 0,
+        ]);
+        $this->deleteJson('/api/admin/wholesale-orders/'.$pending->id)->assertForbidden();
     }
 
     public function test_wholesale_product_catalog_uses_orders_view_not_inventory_view(): void

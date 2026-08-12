@@ -674,7 +674,6 @@ class WholesaleOrderController extends Controller
 
     public function destroy(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
     {
-        $this->assertStaff($request);
         Gate::authorize('delete', $wholesaleOrder);
 
         $wholesaleOrder->loadMissing(['lines', 'comments', 'shippingLabels', 'packages']);

@@ -67,7 +67,11 @@ class WholesaleOrderPolicy
     public function delete(User $user, WholesaleOrder $order): bool
     {
         if ($this->isPortalUser($user)) {
-            return false;
+            if ($order->status !== WholesaleOrder::STATUS_DRAFT) {
+                return false;
+            }
+
+            return $this->update($user, $order);
         }
 
         return $this->update($user, $order);

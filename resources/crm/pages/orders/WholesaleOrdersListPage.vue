@@ -76,7 +76,10 @@ const manageMenuRow = computed(
 );
 
 function canDeleteRow(row) {
-  if (isPortal.value || !row?.id) return false;
+  if (!row?.id) return false;
+  if (isPortal.value) {
+    return String(row.status || "").toLowerCase() === "draft";
+  }
   return true;
 }
 

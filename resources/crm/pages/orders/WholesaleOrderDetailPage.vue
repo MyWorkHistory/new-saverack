@@ -128,9 +128,7 @@ function commentAuthor(comment) {
   return noteAuthorFromRecord(comment);
 }
 
-const canReadyToShip = computed(() => Boolean(order.value?.can_ready_to_ship));
 const showReadyToShipButton = computed(() => {
-  if (isPortal.value) return false;
   const s = String(order.value?.status || "").toLowerCase();
   return (s === "draft" || s === "pending") && !order.value?.shiphero_order_id;
 });
@@ -159,18 +157,40 @@ const listRouteName = computed(() =>
   isPortal.value ? "user-wholesale-orders" : "wholesale-orders",
 );
 
-const readyToShipDisabledReason = computed(() => {
+function collectSubmitOrderErrors() {
   const o = order.value;
-  if (!o) return "";
-  if (!showReadyToShipButton.value) return "";
-  if (canReadyToShip.value) return "";
-  const missing = [];
-  if (!lines.value.length) missing.push("add line items");
-  if (!o.has_requirements_filled) missing.push("complete requirements");
-  if (!o.has_all_lines_barcode_resolved) missing.push("resolve line barcodes (Ship As Is or upload)");
-  if (!o.has_shipping_labels_resolved) missing.push("select shipping labels provider");
-  return missing.length ? `Complete: ${missing.join(", ")}.` : "Not ready to ship.";
-});
+  if (!o) return ["Order not loaded."];
+  const errors = [];
+  if (!lines.value.length) {
+    errors.push("Please add items to this order");
+  }
+  if (!o.has_requirements_filled) {
+    errors.push("Please complete product & fulfillment requirements");
+  }
+  if (!String(o.shipping_labels_provider || "").trim()) {
+    errors.push("Please select how the shipping & handling will be processed");
+  }
+  return errors;
+}
+
+function requirementValueLabel(section) {
+  if (!order.value || !section) return null;
+  const label = wholesaleOptionLabel(section.options, order.value[section.valueKey]);
+  if (
+    section.valueKey === "shipping_method_requirement" &&
+    String(order.value.shipping_method_requirement || "") === "custom"
+  ) {
+    const qty = String(order.value.shipping_packaging_qty_per_box || "").trim();
+    const box = String(order.value.shipping_packaging_box_size || "").trim();
+    const extras = [];
+    if (qty) extras.push(`QTY Per Box: ${qty}`);
+    if (box) extras.push(`Box Size: ${box}`);
+    if (extras.length) {
+      return `${label || "Custom Shipping Packaging"} (${extras.join("; ")})`;
+    }
+  }
+  return label;
+}
 
 const formattedShippingAddress = computed(() => {
   const a = order.value?.shipping_address;
@@ -212,11 +232,6 @@ const lineMenuOpenLine = computed(() => {
   if (!id) return null;
   return lines.value.find((l) => l.id === id) ?? null;
 });
-
-function requirementValueLabel(section) {
-  if (!order.value || !section) return null;
-  return wholesaleOptionLabel(section.options, order.value[section.valueKey]);
-}
 
 function openRequirementsEdit() {
   if (!isEditable.value) return;
@@ -409,14 +424,19 @@ async function confirmEditOrderNumber() {
 }
 
 async function submitReadyToShip() {
-  if (!order.value?.id || !canReadyToShip.value || readyToShipBusy.value) return;
+  if (!order.value?.id || readyToShipBusy.value) return;
+  const errors = collectSubmitOrderErrors();
+  if (errors.length) {
+    toast.error(errors.join("\n"));
+    return;
+  }
   readyToShipBusy.value = true;
   try {
     const { data } = await api.post(`/admin/wholesale-orders/${order.value.id}/ready-to-ship`);
     applyOrderData(data);
     toast.success("Order sent to ShipHero.");
   } catch (e) {
-    toast.errorFrom(e, "Could not mark order ready to ship.");
+    toast.errorFrom(e, "Could not submit order.");
   } finally {
     readyToShipBusy.value = false;
   }
@@ -786,8 +806,7 @@ onUnmounted(() => {
               v-if="showReadyToShipButton"
               type="button"
               class="btn wholesale-ready-to-ship-btn"
-              :disabled="!canReadyToShip || readyToShipBusy"
-              :title="!canReadyToShip ? readyToShipDisabledReason : undefined"
+              :disabled="readyToShipBusy"
               @click="submitReadyToShip"
             >
               {{ readyToShipBusy ? "Sending…" : "Submit Order" }}
@@ -1006,7 +1025,10 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+        <div
+          v-if="!isPortal"
+          class="staff-table-card staff-datatable-card staff-datatable-card--white p-4"
+        >
           <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 order-detail-page__section-head">
             <div class="d-flex align-items-center gap-2 min-w-0">
               <span class="order-detail-page__section-icon order-detail-page__section-icon--note" aria-hidden="true">
@@ -1151,7 +1173,6 @@ onUnmounted(() => {
             :icon-style="section.iconStyle"
             :label="section.label"
             :value-label="requirementValueLabel(section)"
-            :comment="order[section.commentKey]"
             :editable="false"
             :show-edit="false"
           />

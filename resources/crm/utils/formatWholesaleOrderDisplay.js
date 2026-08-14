@@ -78,20 +78,21 @@ export const WHOLESALE_SKU_PACKAGING_OPTIONS = [
 ];
 
 export const WHOLESALE_BUNDLE_CONFIG_OPTIONS = [
-  { value: "not_bundled", label: "Not Bundled (Single SKU)" },
-  { value: "bundle_together", label: "Bundle Individual SKUs Together" },
-];
-
-export const WHOLESALE_SHIPPING_METHOD_REQUIREMENT_OPTIONS = [
-  { value: "boxes", label: "Ship all in boxes" },
-  { value: "pallet", label: "Ship all on pallet" },
-];
-
-export const WHOLESALE_MASTER_CARTON_OPTIONS = [
   { value: "yes", label: "Yes" },
   { value: "no", label: "No" },
-  { value: "other", label: "Other (specify in comments)" },
 ];
+
+export const WHOLESALE_SHIPPING_PACKAGING_OPTIONS = [
+  { value: "original_master_carton", label: "Ship in original master carton" },
+  {
+    value: "save_rack_determines",
+    label: "Save Rack determines best shipping boxes and sizes",
+  },
+  { value: "custom", label: "Custom Shipping Packaging" },
+];
+
+/** @deprecated use WHOLESALE_SHIPPING_PACKAGING_OPTIONS */
+export const WHOLESALE_SHIPPING_METHOD_REQUIREMENT_OPTIONS = WHOLESALE_SHIPPING_PACKAGING_OPTIONS;
 
 export const WHOLESALE_SHIPPING_LABELS_PROVIDER_OPTIONS = [
   { value: "client_provides", label: "Client Provides Shipping Labels" },
@@ -101,6 +102,10 @@ export const WHOLESALE_SHIPPING_LABELS_PROVIDER_OPTIONS = [
 export function wholesaleOptionLabel(options, value) {
   const raw = String(value || "").trim();
   if (!raw) return null;
+  if (raw === "not_bundled") return "No";
+  if (raw === "bundle_together") return "Yes";
+  if (raw === "boxes") return "Ship in original master carton";
+  if (raw === "pallet") return "Save Rack determines best shipping boxes and sizes";
   const match = options.find((opt) => opt.value === raw);
   return match?.label ?? raw;
 }
@@ -112,57 +117,49 @@ export function wholesaleShippingLabelsProviderLabel(provider) {
 export const WHOLESALE_REQUIREMENT_SECTIONS = [
   {
     id: "sku-labels",
-    label: "SKU Barcode Labels",
+    label: "Item Barcode Labels",
+    helper: "Does each product require a new barcode label?",
     icon: "barcode",
     iconStyle: { background: "#dbeafe", color: "#1e3a8a" },
     valueKey: "sku_barcode_labels",
-    commentKey: "sku_barcode_labels_comment",
     options: WHOLESALE_SKU_BARCODE_LABEL_OPTIONS,
   },
   {
     id: "cover-existing",
     label: "Cover Existing Barcodes",
+    helper: "Do existing barcodes need to be covered?",
     icon: "gppBad",
     iconStyle: { background: "#fee2e2", color: "#dc2626" },
     valueKey: "cover_existing_barcodes",
-    commentKey: "cover_existing_barcodes_comment",
     options: WHOLESALE_COVER_EXISTING_BARCODE_OPTIONS,
   },
   {
     id: "packaging",
-    label: "Individual SKU Packaging",
+    label: "Individual Item Packaging",
+    helper: "Does each individual item require packaging?",
     icon: "inventoryBox",
     iconStyle: { background: "#f3e8ff", color: "#7c3aed" },
     valueKey: "individual_sku_packaging",
-    commentKey: "individual_sku_packaging_comment",
     options: WHOLESALE_SKU_PACKAGING_OPTIONS,
   },
   {
     id: "bundle",
     label: "Bundle Configuration",
+    helper: "Do any products require bundling?",
     icon: "shelves",
     iconStyle: { background: "#e0e7ff", color: "#3730a3" },
     valueKey: "bundle_configuration",
-    commentKey: "bundle_configuration_comment",
     options: WHOLESALE_BUNDLE_CONFIG_OPTIONS,
   },
   {
-    id: "shipping-method",
-    label: "Shipping Method",
+    id: "shipping-packaging",
+    label: "Shipping Packaging",
+    helper: "Does each order require specific shipping packaging?",
     icon: "localShipping",
     iconStyle: { background: "#fef3c7", color: "#b45309" },
     valueKey: "shipping_method_requirement",
-    commentKey: "shipping_method_requirement_comment",
-    options: WHOLESALE_SHIPPING_METHOD_REQUIREMENT_OPTIONS,
-  },
-  {
-    id: "master-cartons",
-    label: "Master Cartons",
-    icon: "package",
-    iconStyle: { background: "#f1f5f9", color: "#64748b" },
-    valueKey: "master_cartons",
-    commentKey: "master_cartons_comment",
-    options: WHOLESALE_MASTER_CARTON_OPTIONS,
+    options: WHOLESALE_SHIPPING_PACKAGING_OPTIONS,
+    customFields: true,
   },
 ];
 

@@ -77,17 +77,10 @@ class WholesaleOrderWorkflowTest extends TestCase
     {
         return [
             'sku_barcode_labels' => 'apply_new',
-            'sku_barcode_labels_comment' => 'Use new labels',
             'cover_existing_barcodes' => 'yes',
-            'cover_existing_barcodes_comment' => 'Cover all',
             'individual_sku_packaging' => 'poly_bag',
-            'individual_sku_packaging_comment' => 'Seal bags',
-            'bundle_configuration' => 'not_bundled',
-            'bundle_configuration_comment' => '',
-            'shipping_method_requirement' => 'boxes',
-            'shipping_method_requirement_comment' => 'Standard boxes',
-            'master_cartons' => 'no',
-            'master_cartons_comment' => '',
+            'bundle_configuration' => 'no',
+            'shipping_method_requirement' => 'original_master_carton',
         ];
     }
 
@@ -428,21 +421,20 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonPath('sku_barcode_labels', 'apply_new')
             ->assertJsonPath('cover_existing_barcodes', 'yes')
             ->assertJsonPath('individual_sku_packaging', 'poly_bag')
-            ->assertJsonPath('bundle_configuration', 'not_bundled')
-            ->assertJsonPath('shipping_method_requirement', 'boxes')
-            ->assertJsonPath('master_cartons', 'no')
+            ->assertJsonPath('bundle_configuration', 'no')
+            ->assertJsonPath('shipping_method_requirement', 'original_master_carton')
             ->assertJsonPath('has_requirements_filled', true);
 
         $this->assertDatabaseHas('wholesale_orders', [
             'id' => $order->id,
             'sku_barcode_labels' => 'apply_new',
             'cover_existing_barcodes' => 'yes',
-            'master_cartons' => 'no',
-            'shipping_method_requirement' => 'boxes',
+            'bundle_configuration' => 'no',
+            'shipping_method_requirement' => 'original_master_carton',
         ]);
     }
 
-    public function test_requirements_not_filled_until_all_six_dropdowns_set(): void
+    public function test_requirements_not_filled_until_all_dropdowns_set(): void
     {
         $account = $this->account();
         Sanctum::actingAs($this->staffUser());
@@ -456,8 +448,7 @@ class WholesaleOrderWorkflowTest extends TestCase
             'sku_barcode_labels' => 'apply_new',
             'cover_existing_barcodes' => 'yes',
             'individual_sku_packaging' => 'poly_bag',
-            'bundle_configuration' => 'not_bundled',
-            'shipping_method_requirement' => 'boxes',
+            'bundle_configuration' => 'no',
         ]);
 
         $this->getJson('/api/admin/wholesale-orders/'.$order->id)
@@ -465,9 +456,42 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonPath('has_requirements_filled', false);
 
         $this->patchJson('/api/admin/wholesale-orders/'.$order->id, [
-            'master_cartons' => 'no',
+            'shipping_method_requirement' => 'save_rack_determines',
         ])
             ->assertOk()
+            ->assertJsonPath('has_requirements_filled', true);
+    }
+
+    public function test_custom_shipping_packaging_requires_qty_and_box_size(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'REQ-CUSTOM',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_DRAFT,
+            'items_count' => 0,
+        ]);
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$order->id, [
+            'sku_barcode_labels' => 'none',
+            'cover_existing_barcodes' => 'no',
+            'individual_sku_packaging' => 'none',
+            'bundle_configuration' => 'yes',
+            'shipping_method_requirement' => 'custom',
+        ])
+            ->assertOk()
+            ->assertJsonPath('has_requirements_filled', false);
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$order->id, [
+            'shipping_packaging_qty_per_box' => '12',
+            'shipping_packaging_box_size' => '18x12x10',
+        ])
+            ->assertOk()
+            ->assertJsonPath('shipping_packaging_qty_per_box', '12')
+            ->assertJsonPath('shipping_packaging_box_size', '18x12x10')
             ->assertJsonPath('has_requirements_filled', true);
     }
 
@@ -749,6 +773,29 @@ class WholesaleOrderWorkflowTest extends TestCase
             'status' => WholesaleOrder::STATUS_IN_PROGRESS,
             'shiphero_order_id' => '99001',
         ]);
+    }
+
+    public function test_portal_user_can_ready_to_ship_own_order(): void
+    {
+        $account = $this->account('portal-rts');
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        Sanctum::actingAs($user);
+        $order = $this->seedReadyOrder($account);
+
+        $mock = Mockery::mock(ShipHeroOrderService::class);
+        $mock->shouldReceive('createOrder')
+            ->once()
+            ->andReturn(['shiphero_order_id' => '99002', 'order_number' => 'READY-1']);
+        $mock->shouldReceive('updateOrderShippingLines')->once();
+        $mock->shouldReceive('updateOrderPackingNote')->once();
+        $mock->shouldReceive('updateOrderFulfillmentStatus')->once();
+        $mock->shouldReceive('addOrderHistoryEntry')->once();
+        $this->app->instance(ShipHeroOrderService::class, $mock);
+
+        $this->postJson('/api/admin/wholesale-orders/'.$order->id.'/ready-to-ship')
+            ->assertOk()
+            ->assertJsonPath('status', WholesaleOrder::STATUS_IN_PROGRESS)
+            ->assertJsonPath('shiphero_order_id', '99002');
     }
 
     public function test_line_ship_as_is_updates_status(): void

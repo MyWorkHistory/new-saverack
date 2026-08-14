@@ -18,6 +18,7 @@ use App\Services\ShipHeroInventoryService;
 use App\Services\ShipHeroOrderService;
 use App\Services\SlackDeliveryService;
 use App\Services\WholesaleOrderShipHeroService;
+use App\Support\CrmUrls;
 use App\Support\PutAwayRowBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -486,6 +487,8 @@ class WholesaleOrderController extends Controller
             'bundle_configuration_comment' => $order->bundle_configuration_comment,
             'shipping_method_requirement' => $order->shipping_method_requirement,
             'shipping_method_requirement_comment' => $order->shipping_method_requirement_comment,
+            'shipping_packaging_qty_per_box' => $order->shipping_packaging_qty_per_box,
+            'shipping_packaging_box_size' => $order->shipping_packaging_box_size,
             'master_cartons' => $order->master_cartons,
             'master_cartons_comment' => $order->master_cartons_comment,
             'is_editable' => $order->isEditable(),
@@ -521,9 +524,12 @@ class WholesaleOrderController extends Controller
                 'sku_barcode_labels' => config('wholesale_orders.sku_barcode_labels', []),
                 'cover_existing_barcodes' => config('wholesale_orders.cover_existing_barcodes', []),
                 'individual_sku_packaging' => config('wholesale_orders.individual_sku_packaging', []),
-                'bundle_configuration' => config('wholesale_orders.bundle_configuration', []),
+                'bundle_configuration' => array_filter(
+                    config('wholesale_orders.bundle_configuration', []),
+                    fn ($_, $key) => in_array($key, ['yes', 'no'], true),
+                    ARRAY_FILTER_USE_BOTH
+                ),
                 'shipping_method_requirement' => config('wholesale_orders.shipping_method_requirement', []),
-                'master_cartons' => config('wholesale_orders.master_cartons', []),
                 'shipping_labels_provider' => config('wholesale_orders.shipping_labels_provider', []),
             ],
         ]);
@@ -853,6 +859,8 @@ class WholesaleOrderController extends Controller
             'bundle_configuration_comment' => ['nullable', 'string', 'max:5000'],
             'shipping_method_requirement' => ['sometimes', 'nullable', 'string', Rule::in(array_keys(config('wholesale_orders.shipping_method_requirement', [])))],
             'shipping_method_requirement_comment' => ['nullable', 'string', 'max:5000'],
+            'shipping_packaging_qty_per_box' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'shipping_packaging_box_size' => ['sometimes', 'nullable', 'string', 'max:128'],
             'master_cartons' => ['sometimes', 'nullable', 'string', Rule::in(array_keys(config('wholesale_orders.master_cartons', [])))],
             'master_cartons_comment' => ['nullable', 'string', 'max:5000'],
         ];
@@ -955,6 +963,20 @@ class WholesaleOrderController extends Controller
             $wholesaleOrder->shipping_method_requirement_comment = $validated['shipping_method_requirement_comment'] !== null
                 ? trim((string) $validated['shipping_method_requirement_comment'])
                 : null;
+        }
+        if (array_key_exists('shipping_packaging_qty_per_box', $validated)) {
+            $wholesaleOrder->shipping_packaging_qty_per_box = $validated['shipping_packaging_qty_per_box'] !== null
+                ? trim((string) $validated['shipping_packaging_qty_per_box'])
+                : null;
+        }
+        if (array_key_exists('shipping_packaging_box_size', $validated)) {
+            $wholesaleOrder->shipping_packaging_box_size = $validated['shipping_packaging_box_size'] !== null
+                ? trim((string) $validated['shipping_packaging_box_size'])
+                : null;
+        }
+        if (trim((string) ($wholesaleOrder->shipping_method_requirement ?? '')) !== 'custom') {
+            $wholesaleOrder->shipping_packaging_qty_per_box = null;
+            $wholesaleOrder->shipping_packaging_box_size = null;
         }
         if (array_key_exists('master_cartons', $validated)) {
             $wholesaleOrder->master_cartons = $validated['master_cartons'];
@@ -1418,9 +1440,9 @@ class WholesaleOrderController extends Controller
     public function readyToShip(
         Request $request,
         WholesaleOrder $wholesaleOrder,
-        WholesaleOrderShipHeroService $shipHero
+        WholesaleOrderShipHeroService $shipHero,
+        SlackDeliveryService $slack
     ): JsonResponse {
-        $this->assertStaff($request);
         Gate::authorize('update', $wholesaleOrder);
 
         $user = $request->user();
@@ -1437,9 +1459,52 @@ class WholesaleOrderController extends Controller
             $user
         );
 
-        return response()->json($this->serializeDetail($wholesaleOrder->fresh([
+        $fresh = $wholesaleOrder->fresh([
             'clientAccount', 'createdBy', 'lines', 'comments.user.profile', 'shippingLabels', 'packages',
-        ])));
+        ]);
+
+        $this->notifyWholesaleOrderSubmittedSlack($fresh, $slack);
+
+        return response()->json($this->serializeDetail($fresh));
+    }
+
+    private function notifyWholesaleOrderSubmittedSlack(
+        ?WholesaleOrder $order,
+        SlackDeliveryService $slack
+    ): void {
+        if ($order === null) {
+            return;
+        }
+
+        try {
+            $order->loadMissing('clientAccount');
+            $channel = $slack->channelFromInHouseSlack(
+                $order->clientAccount ? $order->clientAccount->in_house_slack : null
+            );
+            if ($channel === null || $channel === '') {
+                return;
+            }
+
+            $accountName = $order->clientAccount
+                ? trim((string) ($order->clientAccount->company_name ?? ''))
+                : '';
+            if ($accountName === '') {
+                $accountName = '—';
+            }
+
+            $typeLabel = $this->typeLabel((string) $order->order_type);
+            $url = CrmUrls::wholesaleOrderStaffUrl((int) $order->id);
+            $text = implode("\n", [
+                '*Wholesale Order Submitted* — Order #'.$order->order_number,
+                'Account: '.$accountName,
+                'Type: '.$typeLabel,
+                '<'.$url.'|View Order>',
+            ]);
+
+            $slack->post($channel, $text, 'Wholesale Order');
+        } catch (Throwable $e) {
+            report($e);
+        }
     }
 
     public function storeComment(WholesaleOrderCommentStoreRequest $request, WholesaleOrder $wholesaleOrder): JsonResponse

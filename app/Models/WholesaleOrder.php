@@ -78,6 +78,8 @@ class WholesaleOrder extends Model
         'bundle_configuration_comment',
         'shipping_method_requirement',
         'shipping_method_requirement_comment',
+        'shipping_packaging_qty_per_box',
+        'shipping_packaging_box_size',
         'master_cartons',
         'master_cartons_comment',
         'items_count',
@@ -234,12 +236,20 @@ class WholesaleOrder extends Model
 
     public function hasRequirementsFilled(): bool
     {
-        return trim((string) ($this->sku_barcode_labels ?? '')) !== ''
-            && trim((string) ($this->cover_existing_barcodes ?? '')) !== ''
-            && trim((string) ($this->individual_sku_packaging ?? '')) !== ''
-            && trim((string) ($this->bundle_configuration ?? '')) !== ''
-            && trim((string) ($this->shipping_method_requirement ?? '')) !== ''
-            && trim((string) ($this->master_cartons ?? '')) !== '';
+        if (trim((string) ($this->sku_barcode_labels ?? '')) === ''
+            || trim((string) ($this->cover_existing_barcodes ?? '')) === ''
+            || trim((string) ($this->individual_sku_packaging ?? '')) === ''
+            || trim((string) ($this->bundle_configuration ?? '')) === ''
+            || trim((string) ($this->shipping_method_requirement ?? '')) === '') {
+            return false;
+        }
+
+        if (trim((string) ($this->shipping_method_requirement ?? '')) === 'custom') {
+            return trim((string) ($this->shipping_packaging_qty_per_box ?? '')) !== ''
+                && trim((string) ($this->shipping_packaging_box_size ?? '')) !== '';
+        }
+
+        return true;
     }
 
     public function hasAllLinesBarcodeResolved(): bool

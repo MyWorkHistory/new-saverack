@@ -66,6 +66,11 @@ class CrmUrls
         return self::frontendBase().'/admin/receiving/ltl/'.$ltlShipmentId;
     }
 
+    public static function wholesaleOrderStaffUrl(int $wholesaleOrderId): string
+    {
+        return self::frontendBase().'/admin/orders/wholesale/'.$wholesaleOrderId;
+    }
+
     public static function portalLoginUrl(): string
     {
         return self::frontendBase().'/login';

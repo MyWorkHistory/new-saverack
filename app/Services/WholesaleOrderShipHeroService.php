@@ -30,8 +30,26 @@ class WholesaleOrderShipHeroService
         }
 
         if (! $order->isReadyToShipEligible()) {
+            $messages = [];
+            $order->loadMissing('lines');
+            if ($order->lines->isEmpty()) {
+                $messages[] = 'Please add items to this order';
+            }
+            if (! $order->hasRequirementsFilled()) {
+                $messages[] = 'Please complete product & fulfillment requirements';
+            }
+            if (! $order->hasShippingLabelsResolved()) {
+                $messages[] = 'Please select how the shipping & handling will be processed';
+            }
+            if (! $order->lines->isEmpty() && ! $order->hasAllLinesBarcodeResolved()) {
+                $messages[] = 'Please resolve barcodes for all items (Ship As Is or upload).';
+            }
+            if ($messages === []) {
+                $messages[] = 'This wholesale order is not ready to submit.';
+            }
+
             throw ValidationException::withMessages([
-                'order' => ['Select shipping labels provider (and address if Save Rack provides), complete requirements and line barcodes, and add line items before ready to ship.'],
+                'order' => $messages,
             ]);
         }
 
@@ -68,7 +86,7 @@ class WholesaleOrderShipHeroService
         }
         if ($linePayload === []) {
             throw ValidationException::withMessages([
-                'lines' => ['Add at least one line item before marking ready to ship.'],
+                'lines' => ['Please add items to this order'],
             ]);
         }
 
@@ -160,64 +178,43 @@ class WholesaleOrderShipHeroService
         $packaging = config('wholesale_orders.individual_sku_packaging', []);
         /** @var array<string, string> $bundle */
         $bundle = config('wholesale_orders.bundle_configuration', []);
-        /** @var array<string, string> $shipMethod */
-        $shipMethod = config('wholesale_orders.shipping_method_requirement', []);
-        /** @var array<string, string> $masterCartons */
-        $masterCartons = config('wholesale_orders.master_cartons', []);
+        /** @var array<string, string> $shipPackaging */
+        $shipPackaging = config('wholesale_orders.shipping_method_requirement', []);
 
         $lines = ['--- Wholesale Requirements ---'];
 
         $skuLabels = (string) ($order->sku_barcode_labels ?? '');
         if ($skuLabels !== '') {
-            $lines[] = 'SKU Barcode Labels: '.($barcodeLabels[$skuLabels] ?? $skuLabels);
-            $comment = trim((string) ($order->sku_barcode_labels_comment ?? ''));
-            if ($comment !== '') {
-                $lines[] = '  Comments: '.$comment;
-            }
+            $lines[] = 'Item Barcode Labels: '.($barcodeLabels[$skuLabels] ?? $skuLabels);
         }
 
         $cover = (string) ($order->cover_existing_barcodes ?? '');
         if ($cover !== '') {
             $lines[] = 'Cover Existing Barcodes: '.($coverExisting[$cover] ?? $cover);
-            $comment = trim((string) ($order->cover_existing_barcodes_comment ?? ''));
-            if ($comment !== '') {
-                $lines[] = '  Comments: '.$comment;
-            }
         }
 
         $pack = (string) ($order->individual_sku_packaging ?? '');
         if ($pack !== '') {
-            $lines[] = 'Individual SKU Packaging: '.($packaging[$pack] ?? $pack);
-            $comment = trim((string) ($order->individual_sku_packaging_comment ?? ''));
-            if ($comment !== '') {
-                $lines[] = '  Comments: '.$comment;
-            }
+            $lines[] = 'Individual Item Packaging: '.($packaging[$pack] ?? $pack);
         }
 
         $bundleCfg = (string) ($order->bundle_configuration ?? '');
         if ($bundleCfg !== '') {
             $lines[] = 'Bundle Configuration: '.($bundle[$bundleCfg] ?? $bundleCfg);
-            $comment = trim((string) ($order->bundle_configuration_comment ?? ''));
-            if ($comment !== '') {
-                $lines[] = '  Comments: '.$comment;
-            }
         }
 
         $shipReq = (string) ($order->shipping_method_requirement ?? '');
         if ($shipReq !== '') {
-            $lines[] = 'Shipping Method: '.($shipMethod[$shipReq] ?? $shipReq);
-            $comment = trim((string) ($order->shipping_method_requirement_comment ?? ''));
-            if ($comment !== '') {
-                $lines[] = '  Comments: '.$comment;
-            }
-        }
-
-        $cartons = (string) ($order->master_cartons ?? '');
-        if ($cartons !== '') {
-            $lines[] = 'Master Cartons: '.($masterCartons[$cartons] ?? $cartons);
-            $comment = trim((string) ($order->master_cartons_comment ?? ''));
-            if ($comment !== '') {
-                $lines[] = '  Comments: '.$comment;
+            $lines[] = 'Shipping Packaging: '.($shipPackaging[$shipReq] ?? $shipReq);
+            if ($shipReq === 'custom') {
+                $qty = trim((string) ($order->shipping_packaging_qty_per_box ?? ''));
+                $boxSize = trim((string) ($order->shipping_packaging_box_size ?? ''));
+                if ($qty !== '') {
+                    $lines[] = '  QTY Per Box: '.$qty;
+                }
+                if ($boxSize !== '') {
+                    $lines[] = '  Box Size: '.$boxSize;
+                }
             }
         }
 

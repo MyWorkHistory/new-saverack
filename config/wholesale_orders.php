@@ -43,13 +43,17 @@ return [
     ],
 
     'bundle_configuration' => [
-        'not_bundled' => 'Not Bundled (Single SKU)',
-        'bundle_together' => 'Bundle Individual SKUs Together',
+        'yes' => 'Yes',
+        'no' => 'No',
+        // Legacy values still readable for older orders
+        'not_bundled' => 'No',
+        'bundle_together' => 'Yes',
     ],
 
     'shipping_method_requirement' => [
-        'boxes' => 'Ship all in boxes',
-        'pallet' => 'Ship all on pallet',
+        'original_master_carton' => 'Ship in original master carton',
+        'save_rack_determines' => 'Save Rack determines best shipping boxes and sizes',
+        'custom' => 'Custom Shipping Packaging',
     ],
 
     'master_cartons' => [

@@ -59,7 +59,7 @@ function close() {
           @update:model-value="emit('update:accountId', $event)"
         />
       </div>
-      <div class="col-md-6">
+      <div :class="portal ? 'col-12' : 'col-md-6'">
         <label class="form-label">Type</label>
         <select
           :value="orderType"
@@ -73,7 +73,7 @@ function close() {
           </option>
         </select>
       </div>
-      <div class="col-md-6">
+      <div :class="portal ? 'col-12' : 'col-md-6'">
         <label class="form-label">Order #</label>
         <input
           :value="orderNumber"
@@ -84,17 +84,13 @@ function close() {
           @input="emit('update:orderNumber', $event.target.value)"
         />
       </div>
-      <div class="col-12">
-        <label class="form-label">{{ portal ? "Note to Packer" : "Instructions" }}</label>
+      <div v-if="!portal" class="col-12">
+        <label class="form-label">Instructions</label>
         <textarea
           :value="instructions"
           class="form-control"
           rows="4"
-          :placeholder="
-            portal
-              ? 'Note for the warehouse packer…'
-              : 'Warehouse instructions for this order…'
-          "
+          placeholder="Warehouse instructions for this order…"
           :disabled="busy"
           @input="emit('update:instructions', $event.target.value)"
         />

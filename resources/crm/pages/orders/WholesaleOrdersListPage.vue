@@ -192,7 +192,7 @@ async function submitCreate() {
     return;
   }
   const num = createOrderNumber.value.trim();
-  if (!num) {
+  if (!isPortal.value && !num) {
     toast.error("Enter an order number.");
     return;
   }
@@ -200,7 +200,7 @@ async function submitCreate() {
   try {
     const body = {
       order_type: createOrderType.value,
-      order_number: num,
+      order_number: num || null,
       instructions: createInstructions.value.trim() || null,
     };
     if (!isPortal.value) {

@@ -259,6 +259,10 @@ class WholesaleOrder extends Model
             return false;
         }
 
+        if (trim((string) ($this->sku_barcode_labels ?? '')) === 'apply_new') {
+            return $this->lines->every(fn (WholesaleOrderLine $line) => $line->hasUploadedBarcode());
+        }
+
         return $this->lines->every(fn (WholesaleOrderLine $line) => $line->isBarcodeResolved());
     }
 

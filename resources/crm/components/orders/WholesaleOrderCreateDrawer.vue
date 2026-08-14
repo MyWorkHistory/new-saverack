@@ -79,10 +79,13 @@ function close() {
           :value="orderNumber"
           type="text"
           class="form-control"
-          placeholder="Order number"
+          :placeholder="portal ? 'Order number (optional)' : 'Order number'"
           :disabled="busy"
           @input="emit('update:orderNumber', $event.target.value)"
         />
+        <p v-if="portal" class="form-text mb-0">
+          if left blank a generic order # will be created
+        </p>
       </div>
       <div v-if="!portal" class="col-12">
         <label class="form-label">Instructions</label>

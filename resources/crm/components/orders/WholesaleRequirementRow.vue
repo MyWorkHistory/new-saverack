@@ -69,11 +69,17 @@ const emit = defineEmits(["edit"]);
   margin-right: 0.35rem;
 }
 
+.wholesale-req-row__value {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 .wholesale-req-row__comment {
   margin-top: 0.25rem;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--bs-secondary-color);
   line-height: 1.35;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 </style>

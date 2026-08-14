@@ -76,7 +76,7 @@ class WholesaleOrderWorkflowTest extends TestCase
     private function completeRequirementsPayload(): array
     {
         return [
-            'sku_barcode_labels' => 'apply_new',
+            'sku_barcode_labels' => 'none',
             'cover_existing_barcodes' => 'yes',
             'individual_sku_packaging' => 'poly_bag',
             'bundle_configuration' => 'no',
@@ -418,7 +418,7 @@ class WholesaleOrderWorkflowTest extends TestCase
 
         $this->patchJson('/api/admin/wholesale-orders/'.$order->id, $payload)
             ->assertOk()
-            ->assertJsonPath('sku_barcode_labels', 'apply_new')
+            ->assertJsonPath('sku_barcode_labels', 'none')
             ->assertJsonPath('cover_existing_barcodes', 'yes')
             ->assertJsonPath('individual_sku_packaging', 'poly_bag')
             ->assertJsonPath('bundle_configuration', 'no')
@@ -427,7 +427,7 @@ class WholesaleOrderWorkflowTest extends TestCase
 
         $this->assertDatabaseHas('wholesale_orders', [
             'id' => $order->id,
-            'sku_barcode_labels' => 'apply_new',
+            'sku_barcode_labels' => 'none',
             'cover_existing_barcodes' => 'yes',
             'bundle_configuration' => 'no',
             'shipping_method_requirement' => 'original_master_carton',
@@ -773,6 +773,61 @@ class WholesaleOrderWorkflowTest extends TestCase
             'status' => WholesaleOrder::STATUS_IN_PROGRESS,
             'shiphero_order_id' => '99001',
         ]);
+    }
+
+    public function test_apply_new_barcode_labels_requires_uploaded_files(): void
+    {
+        $account = $this->account('apply-new');
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'APPLY-NEW-1',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_PENDING,
+            'items_count' => 1,
+            'shipping_address' => $this->completeShippingAddress(),
+            'shipping_carrier' => 'ups',
+            'shipping_method' => 'Ground',
+            'shipping_labels_provider' => WholesaleOrder::SHIPPING_LABELS_SAVE_RACK_PROVIDES,
+            ...$this->completeRequirementsPayload(),
+            'sku_barcode_labels' => 'apply_new',
+        ]);
+
+        WholesaleOrderLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'sku' => 'SKU-APPLY',
+            'name' => 'Needs Label',
+            'quantity' => 1,
+            'status' => WholesaleOrderLine::STATUS_SHIP_AS_IS,
+            'barcode_mode' => WholesaleOrderLine::BARCODE_SHIP_AS_IS,
+            'sort_order' => 1,
+        ]);
+
+        $this->getJson('/api/admin/wholesale-orders/'.$order->id)
+            ->assertOk()
+            ->assertJsonPath('can_ready_to_ship', false)
+            ->assertJsonPath('has_all_lines_barcode_resolved', false);
+
+        $this->postJson('/api/admin/wholesale-orders/'.$order->id.'/ready-to-ship')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['order']);
+    }
+
+    public function test_portal_user_can_create_order_without_order_number(): void
+    {
+        $account = $this->account('portal-blank');
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson('/api/admin/wholesale-orders', [
+            'order_type' => WholesaleOrder::TYPE_AMAZON,
+            'order_number' => null,
+        ])->assertCreated();
+
+        $number = (string) $response->json('order_number');
+        $this->assertNotSame('', $number);
+        $this->assertStringStartsWith('WO-', $number);
     }
 
     public function test_portal_user_can_ready_to_ship_own_order(): void

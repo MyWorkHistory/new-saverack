@@ -675,7 +675,11 @@ class WholesaleOrderController extends Controller
         $validated = $request->validate([
             'client_account_id' => [$this->isPortalUser($user) ? 'nullable' : 'required', 'integer', 'exists:client_accounts,id'],
             'order_type' => ['required', 'string', Rule::in(WholesaleOrder::ORDER_TYPES)],
-            'order_number' => ['required', 'string', 'max:128'],
+            'order_number' => [
+                $this->isPortalUser($user) ? 'nullable' : 'required',
+                'string',
+                'max:128',
+            ],
             'instructions' => ['nullable', 'string', 'max:20000'],
         ]);
 
@@ -694,9 +698,14 @@ class WholesaleOrderController extends Controller
             Gate::authorize('view', $account);
         }
 
+        $orderNumber = $this->resolveWholesaleOrderNumber(
+            $account->id,
+            isset($validated['order_number']) ? (string) $validated['order_number'] : null
+        );
+
         $order = WholesaleOrder::query()->create([
             'client_account_id' => $account->id,
-            'order_number' => trim((string) $validated['order_number']),
+            'order_number' => $orderNumber,
             'order_type' => $validated['order_type'],
             'status' => WholesaleOrder::STATUS_DRAFT,
             'instructions' => isset($validated['instructions']) ? trim((string) $validated['instructions']) : null,
@@ -705,6 +714,25 @@ class WholesaleOrderController extends Controller
         ]);
 
         return response()->json($this->serializeDetail($order->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user.profile'])), 201);
+    }
+
+    private function resolveWholesaleOrderNumber(int $accountId, ?string $requested): string
+    {
+        $number = trim((string) $requested);
+        if ($number !== '') {
+            return $number;
+        }
+
+        do {
+            $number = 'WO-'.strtoupper(bin2hex(random_bytes(4)));
+        } while (
+            WholesaleOrder::query()
+                ->where('client_account_id', $accountId)
+                ->where('order_number', $number)
+                ->exists()
+        );
+
+        return $number;
     }
 
     public function show(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
@@ -1135,7 +1163,7 @@ class WholesaleOrderController extends Controller
                 'required',
                 'file',
                 'max:10240',
-                'mimetypes:application/pdf,image/jpeg,image/png,image/gif,image/webp',
+                'mimetypes:application/pdf',
             ],
         ]);
 
@@ -1485,23 +1513,19 @@ class WholesaleOrderController extends Controller
                 return;
             }
 
-            $accountName = $order->clientAccount
-                ? trim((string) ($order->clientAccount->company_name ?? ''))
-                : '';
-            if ($accountName === '') {
-                $accountName = '—';
-            }
-
-            $typeLabel = $this->typeLabel((string) $order->order_type);
             $url = CrmUrls::wholesaleOrderStaffUrl((int) $order->id);
             $text = implode("\n", [
-                '*Wholesale Order Submitted* — Order #'.$order->order_number,
-                'Account: '.$accountName,
-                'Type: '.$typeLabel,
+                'Order #'.$order->order_number.' is ready to ship',
                 '<'.$url.'|View Order>',
             ]);
 
-            $slack->post($channel, $text, 'Wholesale Order');
+            $options = [];
+            if ($slack->hasBotToken()) {
+                $options['customize_identity'] = true;
+                $options['prefer_bot'] = true;
+            }
+
+            $slack->post($channel, $text, 'Wholesale Order Created', $options);
         } catch (Throwable $e) {
             report($e);
         }

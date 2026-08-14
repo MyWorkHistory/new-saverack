@@ -170,12 +170,22 @@ function collectSubmitOrderErrors() {
   if (!String(o.shipping_labels_provider || "").trim()) {
     errors.push("Please select how the shipping & handling will be processed");
   }
+  if (String(o.sku_barcode_labels || "") === "apply_new") {
+    const missingUpload = lines.value.some((line) => !line.has_barcode);
+    if (lines.value.length && missingUpload) {
+      errors.push("Please upload barcode labels for each item.");
+    }
+  }
   return errors;
 }
 
 function requirementValueLabel(section) {
   if (!order.value || !section) return null;
-  const label = wholesaleOptionLabel(section.options, order.value[section.valueKey]);
+  return wholesaleOptionLabel(section.options, order.value[section.valueKey]);
+}
+
+function requirementDetailText(section) {
+  if (!order.value || !section) return "";
   if (
     section.valueKey === "shipping_method_requirement" &&
     String(order.value.shipping_method_requirement || "") === "custom"
@@ -185,11 +195,9 @@ function requirementValueLabel(section) {
     const extras = [];
     if (qty) extras.push(`QTY Per Box: ${qty}`);
     if (box) extras.push(`Box Size: ${box}`);
-    if (extras.length) {
-      return `${label || "Custom Shipping Packaging"} (${extras.join("; ")})`;
-    }
+    return extras.join("; ");
   }
-  return label;
+  return "";
 }
 
 const formattedShippingAddress = computed(() => {
@@ -272,6 +280,15 @@ function orderStatusLabel() {
 
 function lineStatusLabel(line) {
   return line?.status_label || wholesaleLineStatusLabel(line?.status);
+}
+
+function showLineStatusBadge(line) {
+  const status = String(line?.status || "").toLowerCase();
+  if (status === "barcode_ready") return true;
+  if (status === "ship_as_is") {
+    return String(order.value?.sku_barcode_labels || "") !== "apply_new";
+  }
+  return false;
 }
 
 function openStatusModal() {
@@ -898,6 +915,7 @@ onUnmounted(() => {
                           <div v-else class="asn-line-thumb asn-line-thumb--lg asn-line-thumb--empty" aria-hidden="true" />
                         </template>
                         <span
+                          v-if="showLineStatusBadge(line)"
                           class="badge rounded-pill fw-medium asn-line-status-badge"
                           :class="wholesaleLineStatusBadgeClass(line.status)"
                         >
@@ -927,27 +945,29 @@ onUnmounted(() => {
                     <span v-else>{{ line.quantity }}</span>
                   </td>
                   <td class="text-center">
-                    <button
-                      v-if="line.has_barcode"
-                      type="button"
-                      class="btn btn-link btn-sm p-0 text-decoration-none"
-                      @click="printBarcode(line)"
-                    >
-                      Print Barcode
-                    </button>
-                    <button
-                      v-else-if="canEditLines && String(line.status || '').toLowerCase() !== 'ship_as_is'"
-                      type="button"
-                      class="btn btn-link btn-sm p-0 text-decoration-none"
-                      :disabled="lineBusy"
-                      @click="markShipAsIs(line)"
-                    >
-                      Ship As Is
-                    </button>
-                    <span v-else-if="String(line.status || '').toLowerCase() === 'ship_as_is'" class="text-secondary small">
-                      Ship As Is
-                    </span>
-                    <span v-else class="text-secondary">—</span>
+                    <div class="d-flex flex-column align-items-center gap-1">
+                      <button
+                        v-if="line.has_barcode"
+                        type="button"
+                        class="btn btn-link btn-sm p-0 text-decoration-none"
+                        @click="printBarcode(line)"
+                      >
+                        Print Barcode
+                      </button>
+                      <button
+                        v-if="canEditLines"
+                        type="button"
+                        class="btn btn-link btn-sm p-0 text-decoration-none"
+                        :disabled="lineBusy"
+                        @click="openBarcodeModal(line)"
+                      >
+                        Upload Labels
+                      </button>
+                      <span
+                        v-else-if="!line.has_barcode"
+                        class="text-secondary"
+                      >—</span>
+                    </div>
                   </td>
                   <td v-if="canEditLines" class="text-center align-middle order-detail-page__items-actions-col">
                     <div
@@ -1173,6 +1193,7 @@ onUnmounted(() => {
             :icon-style="section.iconStyle"
             :label="section.label"
             :value-label="requirementValueLabel(section)"
+            :comment="requirementDetailText(section)"
             :editable="false"
             :show-edit="false"
           />
@@ -1379,7 +1400,7 @@ onUnmounted(() => {
           role="menuitem"
           @click="onLineMenuUpload"
         >
-          Upload Barcode
+          Upload Labels
         </button>
         <button type="button" class="staff-row-menu__item staff-row-menu__item--danger" role="menuitem" @click="onLineMenuRemove">
           Remove

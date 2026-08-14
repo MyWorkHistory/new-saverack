@@ -42,7 +42,11 @@ class WholesaleOrderShipHeroService
                 $messages[] = 'Please select how the shipping & handling will be processed';
             }
             if (! $order->lines->isEmpty() && ! $order->hasAllLinesBarcodeResolved()) {
-                $messages[] = 'Please resolve barcodes for all items (Ship As Is or upload).';
+                if (trim((string) ($order->sku_barcode_labels ?? '')) === 'apply_new') {
+                    $messages[] = 'Please upload barcode labels for each item.';
+                } else {
+                    $messages[] = 'Please resolve barcodes for all items (Ship As Is or upload).';
+                }
             }
             if ($messages === []) {
                 $messages[] = 'This wholesale order is not ready to submit.';

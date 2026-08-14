@@ -60,6 +60,10 @@ const requirementEditBusy = ref(false);
 const boxInfoOpen = ref(false);
 const palletInfoOpen = ref(false);
 
+const editOrderNumberOpen = ref(false);
+const editOrderNumberBusy = ref(false);
+const editOrderNumberValue = ref("");
+
 const manualStatusOptions = WHOLESALE_MANUAL_STATUS_OPTIONS;
 
 const barcodeModalOpen = ref(false);
@@ -80,6 +84,29 @@ const orderId = computed(() => String(route.params.id || ""));
 const clientAccountId = computed(() => Number(order.value?.client_account_id || 0));
 const isEditable = computed(() => Boolean(order.value?.is_editable));
 const canEditLines = computed(() => Boolean(order.value?.is_lines_editable));
+/** Box/pallet dims are staff warehouse work — not limited to draft/pending like client-facing edit. */
+const canEditPackages = computed(() => {
+  if (isPortal.value) return false;
+  if (order.value?.is_packages_editable != null) {
+    return Boolean(order.value.is_packages_editable);
+  }
+  const status = String(order.value?.status || "").toLowerCase();
+  return status !== "shipped";
+});
+/** Shipping labels: staff can manage until shipped; portal only while draft/pending. */
+const canEditShippingLabels = computed(() => {
+  if (isPortal.value) return isEditable.value;
+  if (order.value?.is_shipping_labels_editable != null) {
+    return Boolean(order.value.is_shipping_labels_editable);
+  }
+  const status = String(order.value?.status || "").toLowerCase();
+  return status !== "shipped";
+});
+const canEditOrderNumber = computed(() => {
+  if (isPortal.value) return isEditable.value;
+  const status = String(order.value?.status || "").toLowerCase();
+  return status !== "shipped";
+});
 const lines = computed(() => (Array.isArray(order.value?.lines) ? order.value.lines : []));
 const comments = computed(() => (Array.isArray(order.value?.comments) ? order.value.comments : []));
 const commentsExpanded = ref(false);
@@ -342,6 +369,43 @@ async function saveInstructions() {
 function onShippingLabelsSaved(data) {
   applyOrderData(data);
   toast.success("Shipping labels saved.");
+}
+
+function openEditOrderNumberModal() {
+  if (!order.value || !canEditOrderNumber.value) return;
+  editOrderNumberValue.value = String(order.value.order_number || "");
+  editOrderNumberOpen.value = true;
+}
+
+function closeEditOrderNumberModal(force = false) {
+  if (editOrderNumberBusy.value && !force) return;
+  editOrderNumberOpen.value = false;
+}
+
+async function confirmEditOrderNumber() {
+  if (!order.value?.id || editOrderNumberBusy.value) return;
+  const orderNumber = String(editOrderNumberValue.value || "").trim();
+  if (!orderNumber) {
+    toast.error("Order number is required.");
+    return;
+  }
+  editOrderNumberBusy.value = true;
+  try {
+    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}/number`, {
+      order_number: orderNumber,
+    });
+    applyOrderData(data);
+    setCrmPageMeta({
+      title: data?.order_number ? `Save Rack | Order #${data.order_number}` : "Save Rack | Wholesale Order",
+      description: "Wholesale order detail.",
+    });
+    toast.success("Order Number Updated.");
+    closeEditOrderNumberModal(true);
+  } catch (e) {
+    toast.errorFrom(e, "Could not update order number.");
+  } finally {
+    editOrderNumberBusy.value = false;
+  }
 }
 
 async function submitReadyToShip() {
@@ -639,6 +703,18 @@ onUnmounted(() => {
               &lt; Wholesale Orders
             </button>
             <div class="d-flex flex-wrap align-items-center gap-2 mb-1 wholesale-order-detail-page__title-row">
+              <button
+                v-if="canEditOrderNumber"
+                type="button"
+                class="wholesale-order-detail-page__order-num-btn"
+                title="Edit Order Number"
+                aria-label="Edit Order Number"
+                @click="openEditOrderNumberModal"
+              >
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </button>
               <h1 class="h4 mb-0 fw-semibold text-body">Order #{{ order.order_number }}</h1>
               <button
                 v-if="canClickStatusBadge"
@@ -714,7 +790,7 @@ onUnmounted(() => {
               :title="!canReadyToShip ? readyToShipDisabledReason : undefined"
               @click="submitReadyToShip"
             >
-              {{ readyToShipBusy ? "Sending…" : "Ready to Ship" }}
+              {{ readyToShipBusy ? "Sending…" : "Submit Order" }}
             </button>
           </div>
         </div>
@@ -1084,7 +1160,7 @@ onUnmounted(() => {
         <WholesaleShippingLabelsCard
           v-if="order"
           :order="order"
-          :editable="isEditable"
+          :editable="canEditShippingLabels"
           :formatted-address="formattedShippingAddress"
           @saved="onShippingLabelsSaved"
         />
@@ -1190,7 +1266,7 @@ onUnmounted(() => {
       package-type="box"
       :packages="order.boxes || []"
       :saved-at="order.boxes_saved_at"
-      :read-only="isPortal || !isEditable"
+      :read-only="!canEditPackages"
       :hide-slack="isPortal"
       @saved="onPackageInfoSaved"
     />
@@ -1202,7 +1278,7 @@ onUnmounted(() => {
       package-type="pallet"
       :packages="order.pallets || []"
       :saved-at="order.pallets_saved_at"
-      :read-only="isPortal || !isEditable"
+      :read-only="!canEditPackages"
       :hide-slack="isPortal"
       @saved="onPackageInfoSaved"
     />
@@ -1214,6 +1290,57 @@ onUnmounted(() => {
       @close="closeBarcodeModal"
       @upload="uploadBarcode"
     />
+
+    <Teleport to="body">
+      <Transition name="crm-vx-confirm">
+        <div
+          v-if="editOrderNumberOpen"
+          class="crm-vx-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="wholesale-edit-order-number-title"
+          @click.self="closeEditOrderNumberModal"
+        >
+          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+            <header class="crm-vx-modal__head border-bottom">
+              <h2 id="wholesale-edit-order-number-title" class="crm-vx-modal__title mb-0">
+                Edit Order Number
+              </h2>
+            </header>
+            <div class="crm-vx-modal__body">
+              <label class="form-label" for="wholesale-edit-order-number-input">Order Number</label>
+              <input
+                id="wholesale-edit-order-number-input"
+                v-model="editOrderNumberValue"
+                type="text"
+                class="form-control"
+                maxlength="128"
+                :disabled="editOrderNumberBusy"
+                @keydown.enter.prevent="confirmEditOrderNumber"
+              />
+            </div>
+            <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+                :disabled="editOrderNumberBusy"
+                @click="closeEditOrderNumberModal"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+                :disabled="editOrderNumberBusy"
+                @click="confirmEditOrderNumber"
+              >
+                {{ editOrderNumberBusy ? "Saving…" : "Save" }}
+              </button>
+            </footer>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <Teleport to="body">
       <div
@@ -1242,6 +1369,28 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.wholesale-order-detail-page__title-row {
+  gap: 0.5rem;
+}
+
+.wholesale-order-detail-page__order-num-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem;
+  border: 0;
+  background: transparent;
+  color: var(--bs-secondary-color, #6c757d);
+  border-radius: 0.35rem;
+  line-height: 1;
+}
+
+.wholesale-order-detail-page__order-num-btn:hover,
+.wholesale-order-detail-page__order-num-btn:focus-visible {
+  color: var(--bs-body-color, #212529);
+  background: rgba(0, 0, 0, 0.04);
+}
+
 .wholesale-line-qty-input {
   max-width: 5rem;
 }

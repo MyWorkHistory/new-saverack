@@ -161,6 +161,22 @@ class WholesaleOrder extends Model
         ], true);
     }
 
+    /**
+     * Shipping label provider / uploads / deletes — warehouse may adjust after Ready to Ship.
+     */
+    public function canEditShippingLabels(): bool
+    {
+        return $this->status !== self::STATUS_SHIPPED;
+    }
+
+    /**
+     * Box / pallet dimensions — staff warehouse packing step.
+     */
+    public function canEditPackages(): bool
+    {
+        return $this->status !== self::STATUS_SHIPPED;
+    }
+
     public function hasCompleteShippingAddress(): bool
     {
         $ship = is_array($this->shipping_address) ? $this->shipping_address : [];

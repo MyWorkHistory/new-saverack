@@ -55,7 +55,9 @@ watch(
           height: p.height != null ? String(p.height) : "",
           weight: p.weight != null ? String(p.weight) : "",
         }))
-      : [];
+      : props.readOnly
+        ? []
+        : [emptyRow()];
   },
 );
 

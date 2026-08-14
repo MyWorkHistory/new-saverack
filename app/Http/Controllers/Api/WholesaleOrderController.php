@@ -490,6 +490,8 @@ class WholesaleOrderController extends Controller
             'master_cartons_comment' => $order->master_cartons_comment,
             'is_editable' => $order->isEditable(),
             'is_lines_editable' => $order->canEditLines(),
+            'is_shipping_labels_editable' => $order->canEditShippingLabels(),
+            'is_packages_editable' => $order->canEditPackages(),
             'can_ready_to_ship' => $order->isReadyToShipEligible(),
             'has_complete_shipping_address' => $order->hasCompleteShippingAddress(),
             'has_shipping_labels_resolved' => $order->hasShippingLabelsResolved(),
@@ -543,6 +545,40 @@ class WholesaleOrderController extends Controller
                 'status' => ['This wholesale order cannot be edited.'],
             ]);
         }
+    }
+
+    private function assertShippingLabelsEditable(WholesaleOrder $order): void
+    {
+        if (! $order->canEditShippingLabels()) {
+            throw ValidationException::withMessages([
+                'status' => ['Shipping labels cannot be changed after the order is shipped.'],
+            ]);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function isShippingLabelsOnlyUpdate(array $validated): bool
+    {
+        $keys = array_keys($validated);
+        if ($keys === []) {
+            return false;
+        }
+        $allowed = [
+            'shipping_address',
+            'shipping_carrier',
+            'shipping_method',
+            'shipping_labels_provider',
+            'shipping_labels_comment',
+        ];
+        foreach ($keys as $key) {
+            if (! in_array($key, $allowed, true)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function assertLineBelongsToOrder(WholesaleOrder $order, WholesaleOrderLine $line): void
@@ -835,7 +871,13 @@ class WholesaleOrderController extends Controller
             && array_key_exists('status', $validated)
             && count($validated) === 1;
 
-        if (! $statusOnly) {
+        $shippingLabelsOnly = $this->isShippingLabelsOnlyUpdate($validated);
+
+        if ($statusOnly) {
+            // Staff status toggle (pending ↔ completed) — always allowed when authorized.
+        } elseif ($shippingLabelsOnly) {
+            $this->assertShippingLabelsEditable($wholesaleOrder);
+        } else {
             $this->assertLineEditable($wholesaleOrder);
         }
 
@@ -922,6 +964,47 @@ class WholesaleOrderController extends Controller
                 ? trim((string) $validated['master_cartons_comment'])
                 : null;
         }
+        $wholesaleOrder->save();
+
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh([
+            'clientAccount',
+            'createdBy',
+            'lines',
+            'comments.user.profile',
+            'shippingLabels',
+            'packages',
+        ])));
+    }
+
+    public function updateNumber(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
+    {
+        Gate::authorize('update', $wholesaleOrder);
+
+        $validated = $request->validate([
+            'order_number' => ['required', 'string', 'max:128'],
+        ]);
+
+        $raw = trim((string) $validated['order_number']);
+        $stripped = preg_replace('/^Order[#\s-]*/i', '', $raw);
+        $number = trim((string) $stripped);
+        if ($number === '') {
+            throw ValidationException::withMessages([
+                'order_number' => ['Order number is required.'],
+            ]);
+        }
+
+        $taken = WholesaleOrder::query()
+            ->where('client_account_id', (int) $wholesaleOrder->client_account_id)
+            ->where('order_number', $number)
+            ->where('id', '!=', $wholesaleOrder->id)
+            ->exists();
+        if ($taken) {
+            throw ValidationException::withMessages([
+                'order_number' => ['This order number is already in use for this account.'],
+            ]);
+        }
+
+        $wholesaleOrder->order_number = $number;
         $wholesaleOrder->save();
 
         return response()->json($this->serializeDetail($wholesaleOrder->fresh([
@@ -1074,7 +1157,7 @@ class WholesaleOrderController extends Controller
     public function uploadShippingLabel(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
     {
         Gate::authorize('update', $wholesaleOrder);
-        $this->assertLineEditable($wholesaleOrder);
+        $this->assertShippingLabelsEditable($wholesaleOrder);
 
         $validated = $request->validate([
             'shipping_label' => [
@@ -1144,7 +1227,7 @@ class WholesaleOrderController extends Controller
         WholesaleOrderShippingLabel $shippingLabel
     ): JsonResponse {
         Gate::authorize('update', $wholesaleOrder);
-        $this->assertLineEditable($wholesaleOrder);
+        $this->assertShippingLabelsEditable($wholesaleOrder);
 
         if ((int) $shippingLabel->wholesale_order_id !== (int) $wholesaleOrder->id) {
             abort(404);

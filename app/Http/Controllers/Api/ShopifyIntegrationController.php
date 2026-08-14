@@ -221,10 +221,11 @@ class ShopifyIntegrationController extends Controller
             return response()->json(['message' => 'Shop domain is required.'], 422);
         }
 
+        $user = $request->user();
         $state = $oauth->createState([
             'account_id' => (int) $clientAccount->id,
             'shop' => $shop,
-            'user_id' => $request->user()?->id,
+            'user_id' => $user !== null ? $user->id : null,
             'import' => ! array_key_exists('import', $validated) || (bool) $validated['import'],
         ]);
 

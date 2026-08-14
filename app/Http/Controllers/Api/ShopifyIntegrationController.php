@@ -8,9 +8,11 @@ use App\Models\ShopifyOrder;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyConnectionService;
 use App\Services\ShopifyFulfillmentService;
+use App\Services\ShopifyOAuthService;
 use App\Services\ShopifyOrderSyncService;
 use App\Services\ShopifyProductSyncService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
 use Throwable;
@@ -34,6 +36,7 @@ class ShopifyIntegrationController extends Controller
 
         return response()->json([
             'connection' => $connections->toPublicArray($connection),
+            'oauth_configured' => app(ShopifyOAuthService::class)->isConfigured(),
         ]);
     }
 
@@ -192,6 +195,126 @@ class ShopifyIntegrationController extends Controller
 
             return response()->json(['message' => $e->getMessage()], 422);
         }
+    }
+
+    public function oauthStart(
+        Request $request,
+        ClientAccount $clientAccount,
+        ShopifyOAuthService $oauth
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $this->authorize('update', $clientAccount);
+
+        if (! $oauth->isConfigured()) {
+            return response()->json([
+                'message' => 'Shopify OAuth is not configured on this server.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'shop_domain' => ['required', 'string', 'max:191'],
+            'import' => ['nullable', 'boolean'],
+        ]);
+
+        $shop = $oauth->normalizeShopDomain((string) $validated['shop_domain']);
+        if ($shop === '') {
+            return response()->json(['message' => 'Shop domain is required.'], 422);
+        }
+
+        $state = $oauth->createState([
+            'account_id' => (int) $clientAccount->id,
+            'shop' => $shop,
+            'user_id' => $request->user()?->id,
+            'import' => ! array_key_exists('import', $validated) || (bool) $validated['import'],
+        ]);
+
+        try {
+            $url = $oauth->authorizationUrl($shop, $state);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'authorization_url' => $url,
+            'shop_domain' => $shop,
+        ]);
+    }
+
+    public function oauthCallback(
+        Request $request,
+        ShopifyOAuthService $oauth,
+        ShopifyConnectionService $connections
+    ): RedirectResponse {
+        $failRedirect = function (string $message, ?int $accountId = null) {
+            $base = rtrim((string) config('app.url'), '/');
+            if ($accountId !== null && $accountId > 0) {
+                return redirect()->away(
+                    $base.'/admin/clients/accounts/'.$accountId
+                    .'?tab=settings&shopify_oauth=error&shopify_oauth_message='.rawurlencode($message)
+                );
+            }
+
+            return redirect()->away(
+                $base.'/admin/clients/accounts?shopify_oauth=error&shopify_oauth_message='.rawurlencode($message)
+            );
+        };
+
+        if (! $oauth->isConfigured()) {
+            return $failRedirect('Shopify OAuth is not configured.');
+        }
+
+        $query = $request->query();
+        if (! $oauth->verifyCallbackHmac(is_array($query) ? $query : [])) {
+            return $failRedirect('Invalid Shopify OAuth signature.');
+        }
+
+        $statePayload = $oauth->pullState((string) $request->query('state', ''));
+        if ($statePayload === null) {
+            return $failRedirect('OAuth session expired. Start Connect With Shopify again.');
+        }
+
+        $accountId = (int) $statePayload['account_id'];
+        $expectedShop = (string) $statePayload['shop'];
+        $callbackShop = $oauth->normalizeShopDomain((string) $request->query('shop', ''));
+        if ($callbackShop === '' || $callbackShop !== $expectedShop) {
+            return $failRedirect('Shop domain mismatch during OAuth.', $accountId);
+        }
+
+        $code = trim((string) $request->query('code', ''));
+        if ($code === '') {
+            return $failRedirect('Missing authorization code from Shopify.', $accountId);
+        }
+
+        $account = ClientAccount::query()->find($accountId);
+        if ($account === null) {
+            return $failRedirect('Client account not found.');
+        }
+
+        try {
+            $tokenPayload = $oauth->exchangeCode($callbackShop, $code);
+            $shouldImport = array_key_exists('import', $statePayload)
+                ? (bool) $statePayload['import']
+                : true;
+
+            $connections->connectAndImport($account, [
+                'shop_domain' => $callbackShop,
+                'admin_api_access_token' => $tokenPayload['access_token'],
+                'import' => $shouldImport,
+            ]);
+        } catch (Throwable $e) {
+            report($e);
+
+            return $failRedirect(
+                $e->getMessage() !== '' ? $e->getMessage() : 'Could not complete Shopify OAuth.',
+                $accountId
+            );
+        }
+
+        $base = rtrim((string) config('app.url'), '/');
+
+        return redirect()->away(
+            $base.'/admin/clients/accounts/'.$accountId.'?tab=settings&shopify_oauth=success'
+        );
     }
 
     public function ordersIndex(Request $request): JsonResponse

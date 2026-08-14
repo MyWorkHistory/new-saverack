@@ -67,6 +67,7 @@ Route::prefix('auth')->group(function () {
 Route::post('stripe/webhook', [StripeWebhookController::class, 'handle']);
 Route::match(['post', 'head'], 'shiphero/webhook', [ShipHeroWebhookController::class, 'handle']);
 Route::match(['post', 'head'], 'shopify/webhook', [ShopifyWebhookController::class, 'handle']);
+Route::get('shopify/oauth/callback', [ShopifyIntegrationController::class, 'oauthCallback']);
 
 Route::middleware('throttle:public-payment-method')->prefix('public/payment-method')->group(function () {
     Route::post('{token}/setup-intent', [PublicPaymentMethodController::class, 'setupIntent']);
@@ -805,6 +806,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('client-accounts/{client_account}/shopify-connection/import', [ShopifyIntegrationController::class, 'importConnection']);
     Route::post('client-accounts/{client_account}/shopify-connection/sync', [ShopifyIntegrationController::class, 'syncConnection']);
     Route::post('client-accounts/{client_account}/shopify-connection/sync-orders', [ShopifyIntegrationController::class, 'syncOrders']);
+    Route::post('client-accounts/{client_account}/shopify-connection/oauth/start', [ShopifyIntegrationController::class, 'oauthStart']);
 
     Route::apiResource('client-accounts', ClientAccountController::class);
     Route::match(['put', 'patch'], 'users/{user}/permissions', [UserController::class, 'updatePermissions'])

@@ -4,8 +4,8 @@
       <div>
         <h3 class="h6 mb-1">Shopify</h3>
         <p class="small text-secondary mb-0">
-          Connect this account’s Shopify custom app. Inventory quantities stay in Shopify tables only
-          (not ShipHero stock).
+          Connect Save Rack Fulfillment to this account’s Shopify store. Inventory quantities stay in
+          Shopify tables only (not ShipHero stock).
         </p>
       </div>
       <span
@@ -35,28 +35,6 @@
             :disabled="busy || isImporting || !canEdit"
           />
         </div>
-        <div class="col-md-6">
-          <label class="form-label small fw-semibold">Admin API Access Token</label>
-          <input
-            v-model="form.admin_api_access_token"
-            type="password"
-            class="form-control form-control-sm"
-            :placeholder="connection?.has_token ? '•••••••• (leave blank to keep)' : 'shpat_…'"
-            :disabled="busy || isImporting || !canEdit"
-            autocomplete="new-password"
-          />
-        </div>
-        <div class="col-md-6">
-          <label class="form-label small fw-semibold">Webhook Secret (Optional)</label>
-          <input
-            v-model="form.webhook_secret"
-            type="password"
-            class="form-control form-control-sm"
-            placeholder="Shared HMAC secret"
-            :disabled="busy || isImporting || !canEdit"
-            autocomplete="new-password"
-          />
-        </div>
         <div class="col-md-6 small text-secondary pt-md-4">
           <div v-if="connection?.shop_name">Shop: {{ connection.shop_name }}</div>
           <div v-if="connection?.last_sync_at">Last Sync: {{ connection.last_sync_at }}</div>
@@ -75,8 +53,18 @@
         </div>
       </div>
 
-      <div class="d-flex flex-wrap gap-2">
+      <div class="d-flex flex-wrap gap-2 mb-3">
         <button
+          v-if="oauthConfigured"
+          type="button"
+          class="btn btn-sm btn-primary staff-page-primary fw-semibold"
+          :disabled="busy || isImporting || !canEdit || !form.shop_domain"
+          @click="connectWithShopify"
+        >
+          {{ busy ? "Redirecting…" : "Connect With Shopify" }}
+        </button>
+        <button
+          v-else
           type="button"
           class="btn btn-sm btn-primary staff-page-primary fw-semibold"
           :disabled="busy || isImporting || !canEdit || !form.shop_domain"
@@ -110,6 +98,48 @@
           Disconnect
         </button>
       </div>
+
+      <details class="shopify-connection-advanced border rounded-3 p-3 bg-light">
+        <summary class="fw-semibold small user-select-none" style="cursor: pointer">
+          Advanced: Paste Admin API Token
+        </summary>
+        <p class="small text-secondary mt-2 mb-3">
+          Use only for custom apps or when OAuth is unavailable. Prefer Connect With Shopify for the
+          Save Rack Fulfillment public app.
+        </p>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Admin API Access Token</label>
+            <input
+              v-model="form.admin_api_access_token"
+              type="password"
+              class="form-control form-control-sm"
+              :placeholder="connection?.has_token ? '•••••••• (leave blank to keep)' : 'shpat_…'"
+              :disabled="busy || isImporting || !canEdit"
+              autocomplete="new-password"
+            />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Webhook Secret (Optional)</label>
+            <input
+              v-model="form.webhook_secret"
+              type="password"
+              class="form-control form-control-sm"
+              placeholder="Shared HMAC secret"
+              :disabled="busy || isImporting || !canEdit"
+              autocomplete="new-password"
+            />
+          </div>
+        </div>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-primary fw-semibold"
+          :disabled="busy || isImporting || !canEdit || !form.shop_domain"
+          @click="connectAndImport"
+        >
+          {{ busy ? "Connecting…" : "Connect And Import" }}
+        </button>
+      </details>
     </template>
 
     <Teleport to="body">
@@ -270,6 +300,7 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast";
@@ -279,10 +310,13 @@ const props = defineProps({
   canEdit: { type: Boolean, default: false },
 });
 
+const route = useRoute();
+const router = useRouter();
 const toast = useToast();
 const loading = ref(true);
 const busy = ref(false);
 const connection = ref(null);
+const oauthConfigured = ref(false);
 const form = reactive({
   shop_domain: "",
   admin_api_access_token: "",
@@ -362,6 +396,7 @@ async function load() {
   try {
     const { data } = await api.get(`/client-accounts/${props.accountId}/shopify-connection`);
     connection.value = data?.connection || null;
+    oauthConfigured.value = Boolean(data?.oauth_configured);
     form.shop_domain = connection.value?.shop_domain || "";
     form.admin_api_access_token = "";
     form.webhook_secret = "";
@@ -370,6 +405,48 @@ async function load() {
     toast.errorFrom(e, "Could not load Shopify connection.");
   } finally {
     loading.value = false;
+  }
+}
+
+function consumeOauthQueryToast() {
+  const status = String(route.query.shopify_oauth || "");
+  if (!status) return;
+  if (status === "success") {
+    toast.success("Shopify Connected.");
+    startPollingIfNeeded();
+  } else if (status === "error") {
+    const msg = String(route.query.shopify_oauth_message || "").trim();
+    toast.error(msg || "Shopify OAuth failed.");
+  }
+  const nextQuery = { ...route.query };
+  delete nextQuery.shopify_oauth;
+  delete nextQuery.shopify_oauth_message;
+  router.replace({ query: nextQuery });
+}
+
+async function connectWithShopify() {
+  if (!form.shop_domain.trim()) {
+    toast.error("Enter the shop domain first.");
+    return;
+  }
+  busy.value = true;
+  try {
+    const { data } = await api.post(
+      `/client-accounts/${props.accountId}/shopify-connection/oauth/start`,
+      {
+        shop_domain: form.shop_domain.trim(),
+        import: true,
+      },
+    );
+    const url = String(data?.authorization_url || "").trim();
+    if (!url) {
+      toast.error("Could not start Shopify OAuth.");
+      return;
+    }
+    window.location.assign(url);
+  } catch (e) {
+    toast.errorFrom(e, "Could not start Shopify OAuth.");
+    busy.value = false;
   }
 }
 
@@ -481,7 +558,9 @@ watch(
 );
 
 onMounted(() => {
-  void load();
+  void load().then(() => {
+    consumeOauthQueryToast();
+  });
 });
 
 onUnmounted(() => {

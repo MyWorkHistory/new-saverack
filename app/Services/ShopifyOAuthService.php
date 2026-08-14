@@ -46,6 +46,40 @@ class ShopifyOAuthService
         return rtrim((string) config('app.url'), '/').'/api/shopify/oauth/callback';
     }
 
+    public function installUri(): string
+    {
+        return rtrim((string) config('app.url'), '/').'/api/shopify/oauth/install';
+    }
+
+    public function defaultAccountId(): int
+    {
+        return (int) config('services.shopify.oauth_default_account_id', 0);
+    }
+
+    /**
+     * Resolve which CRM client account should own this shop install.
+     * Priority: explicit account_id → existing connection for shop → SHOPIFY_OAUTH_DEFAULT_ACCOUNT_ID.
+     */
+    public function resolveAccountIdForShop(string $shopDomain, ?int $explicitAccountId = null): int
+    {
+        if ($explicitAccountId !== null && $explicitAccountId > 0) {
+            return $explicitAccountId;
+        }
+
+        $shop = $this->normalizeShopDomain($shopDomain);
+        if ($shop !== '') {
+            $existing = ClientAccountShopifyConnection::query()
+                ->where('shop_domain', $shop)
+                ->orderByDesc('id')
+                ->first(['client_account_id']);
+            if ($existing !== null && (int) $existing->client_account_id > 0) {
+                return (int) $existing->client_account_id;
+            }
+        }
+
+        return $this->defaultAccountId();
+    }
+
     public function normalizeShopDomain(string $domain): string
     {
         return ClientAccountShopifyConnection::normalizeShopDomain($domain);

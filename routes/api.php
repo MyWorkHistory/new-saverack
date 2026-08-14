@@ -67,6 +67,7 @@ Route::prefix('auth')->group(function () {
 Route::post('stripe/webhook', [StripeWebhookController::class, 'handle']);
 Route::match(['post', 'head'], 'shiphero/webhook', [ShipHeroWebhookController::class, 'handle']);
 Route::match(['post', 'head'], 'shopify/webhook', [ShopifyWebhookController::class, 'handle']);
+Route::get('shopify/oauth/install', [ShopifyIntegrationController::class, 'oauthInstall']);
 Route::get('shopify/oauth/callback', [ShopifyIntegrationController::class, 'oauthCallback']);
 
 Route::middleware('throttle:public-payment-method')->prefix('public/payment-method')->group(function () {

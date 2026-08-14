@@ -207,7 +207,7 @@ class ShopifyIntegrationController extends Controller
 
         if (! $oauth->isConfigured()) {
             return response()->json([
-                'message' => 'Shopify OAuth is not configured on this server.',
+                'message' => 'Shopify OAuth is not configured on this server. Set SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET in .env.',
             ], 422);
         }
 
@@ -218,7 +218,7 @@ class ShopifyIntegrationController extends Controller
 
         $shop = $oauth->normalizeShopDomain((string) $validated['shop_domain']);
         if ($shop === '') {
-            return response()->json(['message' => 'Shop domain is required.'], 422);
+            return response()->json(['message' => 'Shop domain is required (e.g. test-store-wke6tzxl.myshopify.com).'], 422);
         }
 
         $user = $request->user();
@@ -241,54 +241,143 @@ class ShopifyIntegrationController extends Controller
         ]);
     }
 
+    /**
+     * Partners App URL entrypoint. Shopify opens this with ?shop=… when testing/installing.
+     * Do NOT use the oauth/callback URL as the App URL.
+     */
+    public function oauthInstall(Request $request, ShopifyOAuthService $oauth)
+    {
+        if (! $oauth->isConfigured()) {
+            return response(
+                'Shopify OAuth is not configured. Set SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET on the server.',
+                503,
+                ['Content-Type' => 'text/plain; charset=UTF-8']
+            );
+        }
+
+        $shop = $oauth->normalizeShopDomain((string) $request->query('shop', ''));
+        if ($shop === '') {
+            return response(
+                "Missing shop. Use CRM → Client Account → Settings → Shopify, enter the store domain "
+                ."(e.g. test-store-wke6tzxl.myshopify.com), then click Connect With Shopify.\n\n"
+                ."Partners App URL must be: ".$oauth->installUri()."\n"
+                ."Allowed redirection URL must be: ".$oauth->redirectUri(),
+                422,
+                ['Content-Type' => 'text/plain; charset=UTF-8']
+            );
+        }
+
+        $query = $request->query();
+        if (is_array($query) && isset($query['hmac']) && ! $oauth->verifyCallbackHmac($query)) {
+            return response('Invalid Shopify install signature.', 401, ['Content-Type' => 'text/plain; charset=UTF-8']);
+        }
+
+        $explicitAccountId = (int) $request->query('account_id', 0);
+        $accountId = $oauth->resolveAccountIdForShop(
+            $shop,
+            $explicitAccountId > 0 ? $explicitAccountId : null
+        );
+        if ($accountId < 1) {
+            return response(
+                "No CRM client account mapped for shop {$shop}.\n"
+                ."Either open Connect With Shopify from that account's Settings tab,\n"
+                ."or set SHOPIFY_OAUTH_DEFAULT_ACCOUNT_ID in production .env to the CRM account id,\n"
+                ."or call this URL with &account_id=YOUR_CRM_ACCOUNT_ID.",
+                422,
+                ['Content-Type' => 'text/plain; charset=UTF-8']
+            );
+        }
+
+        $account = ClientAccount::query()->find($accountId);
+        if ($account === null) {
+            return response(
+                "CRM client account {$accountId} was not found. Check SHOPIFY_OAUTH_DEFAULT_ACCOUNT_ID.",
+                404,
+                ['Content-Type' => 'text/plain; charset=UTF-8']
+            );
+        }
+
+        $state = $oauth->createState([
+            'account_id' => (int) $account->id,
+            'shop' => $shop,
+            'user_id' => null,
+            'import' => true,
+        ]);
+
+        try {
+            return redirect()->away($oauth->authorizationUrl($shop, $state));
+        } catch (RuntimeException $e) {
+            return response($e->getMessage(), 422, ['Content-Type' => 'text/plain; charset=UTF-8']);
+        }
+    }
+
     public function oauthCallback(
         Request $request,
         ShopifyOAuthService $oauth,
         ShopifyConnectionService $connections
     ): RedirectResponse {
-        $failRedirect = function (string $message, ?int $accountId = null) {
+        $failRedirect = function ($message, $accountId = null) {
             $base = rtrim((string) config('app.url'), '/');
-            if ($accountId !== null && $accountId > 0) {
+            $accountId = $accountId !== null ? (int) $accountId : 0;
+            if ($accountId > 0) {
                 return redirect()->away(
                     $base.'/admin/clients/accounts/'.$accountId
-                    .'?tab=settings&shopify_oauth=error&shopify_oauth_message='.rawurlencode($message)
+                    .'?tab=settings&shopify_oauth=error&shopify_oauth_message='.rawurlencode((string) $message)
                 );
             }
 
             return redirect()->away(
-                $base.'/admin/clients/accounts?shopify_oauth=error&shopify_oauth_message='.rawurlencode($message)
+                $base.'/admin/clients/accounts?shopify_oauth=error&shopify_oauth_message='.rawurlencode((string) $message)
             );
         };
 
+        // Hitting /callback directly (or using it as Partners App URL) has no code/state.
+        $code = trim((string) $request->query('code', ''));
+        $shopQ = trim((string) $request->query('shop', ''));
+        $stateQ = trim((string) $request->query('state', ''));
+        if ($code === '' && $stateQ === '') {
+            // If Shopify sent us here as App URL with only shop=, bounce to install.
+            if ($shopQ !== '') {
+                return redirect()->away(
+                    rtrim((string) config('app.url'), '/').'/api/shopify/oauth/install?'.http_build_query($request->query())
+                );
+            }
+
+            return $failRedirect(
+                'This is the OAuth callback URL, not the store. In CRM Settings → Shopify enter '
+                .'test-store-wke6tzxl.myshopify.com and click Connect With Shopify. '
+                .'Partners App URL must be /api/shopify/oauth/install (not /callback).'
+            );
+        }
+
         if (! $oauth->isConfigured()) {
-            return $failRedirect('Shopify OAuth is not configured.');
+            return $failRedirect('Shopify OAuth is not configured. Set SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET.');
         }
 
         $query = $request->query();
         if (! $oauth->verifyCallbackHmac(is_array($query) ? $query : [])) {
-            return $failRedirect('Invalid Shopify OAuth signature.');
+            return $failRedirect('Invalid Shopify OAuth signature. Check SHOPIFY_CLIENT_SECRET matches the Partners app.');
         }
 
-        $statePayload = $oauth->pullState((string) $request->query('state', ''));
+        $statePayload = $oauth->pullState($stateQ);
         if ($statePayload === null) {
-            return $failRedirect('OAuth session expired. Start Connect With Shopify again.');
+            return $failRedirect('OAuth session expired or cache cleared. Start Connect With Shopify again from CRM Settings.');
         }
 
         $accountId = (int) $statePayload['account_id'];
         $expectedShop = (string) $statePayload['shop'];
-        $callbackShop = $oauth->normalizeShopDomain((string) $request->query('shop', ''));
+        $callbackShop = $oauth->normalizeShopDomain($shopQ);
         if ($callbackShop === '' || $callbackShop !== $expectedShop) {
-            return $failRedirect('Shop domain mismatch during OAuth.', $accountId);
+            return $failRedirect('Shop domain mismatch during OAuth (expected '.$expectedShop.').', $accountId);
         }
 
-        $code = trim((string) $request->query('code', ''));
         if ($code === '') {
             return $failRedirect('Missing authorization code from Shopify.', $accountId);
         }
 
         $account = ClientAccount::query()->find($accountId);
         if ($account === null) {
-            return $failRedirect('Client account not found.');
+            return $failRedirect('CRM client account '.$accountId.' was not found.', $accountId);
         }
 
         try {

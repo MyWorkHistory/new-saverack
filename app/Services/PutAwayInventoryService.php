@@ -1454,6 +1454,7 @@ class PutAwayInventoryService
 
     /**
      * Local-only account/name lookup (no ShipHero) for bulk Receiving sync.
+     * When the same SKU exists on multiple CRM accounts, do not guess — return unresolved.
      *
      * @return array{client_account_id:?int, name:?string, barcode:?string, image_url:?string}
      */
@@ -1470,24 +1471,44 @@ class PutAwayInventoryService
             return $empty;
         }
 
-        $indexRow = ShipHeroInventoryProductIndex::query()
+        $rows = ShipHeroInventoryProductIndex::query()
             ->where('sku_search', $skuSearch)
             ->orderByDesc('synced_at')
-            ->first(['client_account_id', 'name', 'barcode', 'image_url']);
+            ->get(['client_account_id', 'name', 'barcode', 'image_url']);
 
-        if ($indexRow === null) {
-            $indexRow = ShipHeroInventoryProductIndex::query()
+        if ($rows->isEmpty()) {
+            $rows = ShipHeroInventoryProductIndex::query()
                 ->whereRaw('LOWER(sku) = ?', [$skuSearch])
                 ->orderByDesc('synced_at')
-                ->first(['client_account_id', 'name', 'barcode', 'image_url']);
+                ->get(['client_account_id', 'name', 'barcode', 'image_url']);
         }
 
-        if ($indexRow === null) {
+        if ($rows->isEmpty()) {
             return $empty;
         }
 
+        $accountIds = $rows
+            ->pluck('client_account_id')
+            ->filter(function ($id) {
+                return $id !== null && (int) $id > 0;
+            })
+            ->map(function ($id) {
+                return (int) $id;
+            })
+            ->unique()
+            ->values();
+
+        // Duplicate SKU across accounts — never pick "newest" (wrong ASN qty ownership).
+        if ($accountIds->count() !== 1) {
+            return $empty;
+        }
+
+        $indexRow = $rows->first(function ($row) use ($accountIds) {
+            return (int) $row->client_account_id === (int) $accountIds->first();
+        }) ?: $rows->first();
+
         return [
-            'client_account_id' => $indexRow->client_account_id !== null ? (int) $indexRow->client_account_id : null,
+            'client_account_id' => (int) $accountIds->first(),
             'name' => $indexRow->name !== null && trim((string) $indexRow->name) !== ''
                 ? trim((string) $indexRow->name)
                 : null,
@@ -1686,42 +1707,41 @@ class PutAwayInventoryService
             return null;
         }
 
-        $indexRow = ShipHeroInventoryProductIndex::query()
+        $accountIds = ShipHeroInventoryProductIndex::query()
             ->where('sku_search', $skuSearch)
-            ->orderByDesc('synced_at')
-            ->first();
+            ->whereNotNull('client_account_id')
+            ->distinct()
+            ->pluck('client_account_id')
+            ->map(function ($id) {
+                return (int) $id;
+            })
+            ->filter(function ($id) {
+                return $id > 0;
+            })
+            ->unique()
+            ->values();
 
-        if ($indexRow === null) {
-            $indexRow = ShipHeroInventoryProductIndex::query()
+        if ($accountIds->isEmpty()) {
+            $accountIds = ShipHeroInventoryProductIndex::query()
                 ->whereRaw('LOWER(sku) = ?', [$skuSearch])
-                ->orderByDesc('synced_at')
-                ->first();
+                ->whereNotNull('client_account_id')
+                ->distinct()
+                ->pluck('client_account_id')
+                ->map(function ($id) {
+                    return (int) $id;
+                })
+                ->filter(function ($id) {
+                    return $id > 0;
+                })
+                ->unique()
+                ->values();
         }
 
-        if ($indexRow !== null) {
-            return (int) $indexRow->client_account_id;
+        if ($accountIds->count() === 1) {
+            return (int) $accountIds->first();
         }
 
-        $customerId = $this->inventory->lookupShipHeroCustomerAccountIdForSku($sku);
-        if ($customerId !== null) {
-            $accountId = ClientAccount::query()
-                ->where('shiphero_customer_account_id', $customerId)
-                ->value('id');
-            if ($accountId !== null) {
-                return (int) $accountId;
-            }
-        }
-
-        $customerId = $this->inventory->fetchProductAccountIdBySku($sku);
-        if ($customerId !== null) {
-            $accountId = ClientAccount::query()
-                ->where('shiphero_customer_account_id', $customerId)
-                ->value('id');
-            if ($accountId !== null) {
-                return (int) $accountId;
-            }
-        }
-
+        // Ambiguous or missing — do not fall back to unscoped ShipHero product(sku:).
         return null;
     }
 

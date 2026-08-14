@@ -118,6 +118,11 @@ return [
             'read_products,write_products,read_inventory,write_inventory,read_orders,write_orders,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_locations'
         ),
         'oauth_redirect_uri' => env('SHOPIFY_OAUTH_REDIRECT_URI'),
+        /**
+         * CRM client_account id used when Shopify opens the App URL
+         * (Partners → Test on development store) without a CRM session.
+         */
+        'oauth_default_account_id' => env('SHOPIFY_OAUTH_DEFAULT_ACCOUNT_ID'),
     ],
 
     'whatsapp' => [

@@ -181,6 +181,34 @@ class ShopifyOAuthApiTest extends TestCase
         $this->assertStringContainsString('Invalid%20Shopify%20OAuth%20signature', $location);
     }
 
+    public function test_oauth_install_redirects_to_authorize_with_default_account(): void
+    {
+        $this->configureOAuth();
+        $account = ClientAccount::query()->create([
+            'company_name' => 'OAuth Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+        ]);
+        config(['services.shopify.oauth_default_account_id' => (string) $account->id]);
+
+        $response = $this->get('/api/shopify/oauth/install?shop=test-store-wke6tzxl.myshopify.com');
+        $location = (string) $response->headers->get('Location');
+        $this->assertStringContainsString(
+            'https://test-store-wke6tzxl.myshopify.com/admin/oauth/authorize?',
+            $location
+        );
+        $this->assertStringContainsString('client_id=test-client-id', $location);
+    }
+
+    public function test_oauth_callback_without_code_explains_usage(): void
+    {
+        $this->configureOAuth();
+
+        $response = $this->get('/api/shopify/oauth/callback');
+        $location = (string) $response->headers->get('Location');
+        $this->assertStringContainsString('shopify_oauth=error', $location);
+        $this->assertStringContainsString('Connect%20With%20Shopify', $location);
+    }
+
     public function test_show_connection_includes_oauth_configured_flag(): void
     {
         $this->configureOAuth();

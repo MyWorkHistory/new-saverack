@@ -186,8 +186,9 @@ class AsnReceivingService
      */
     public function receivingOnHandForSku(ClientAccount $account, string $sku): int
     {
-        $customerId = trim((string) $account->shiphero_customer_account_id);
-        if ($customerId === '') {
+        try {
+            $customerId = $this->mutationCustomerForAccountSku($account, $sku);
+        } catch (ValidationException $e) {
             return 0;
         }
         $product = $this->inventory->getProductDetailBySku($sku, null, $customerId);
@@ -376,14 +377,31 @@ class AsnReceivingService
         );
     }
 
-    private function mutationCustomerForAccountSku(ClientAccount $account, string $sku): ?string
+    /**
+     * Resolve ShipHero customer_account_id for mutations on this CRM account's SKU.
+     * Never falls back to a global SKU lookup (duplicate SKUs across accounts).
+     */
+    private function mutationCustomerForAccountSku(ClientAccount $account, string $sku): string
     {
         $preferred = trim((string) $account->shiphero_customer_account_id);
+        if ($preferred !== '') {
+            return $preferred;
+        }
 
-        return $this->inventory->resolveCustomerAccountIdForSkuMutation(
+        $fromIndex = $this->inventory->lookupShipHeroCustomerAccountIdForSkuOnAccount(
             $sku,
-            $preferred !== '' ? $preferred : null
+            (int) $account->id
         );
+        if (is_string($fromIndex) && trim($fromIndex) !== '') {
+            return trim($fromIndex);
+        }
+
+        throw ValidationException::withMessages([
+            'sku' => [
+                'Cannot resolve ShipHero customer for this account and SKU ('.$sku.'). '
+                .'Link the account ShipHero customer id or sync catalog for this account first.',
+            ],
+        ]);
     }
 
     /**
@@ -630,16 +648,20 @@ class AsnReceivingService
                 'client_account_id' => ['Client account not found.'],
             ]);
         }
-        $customerId = trim((string) $account->shiphero_customer_account_id);
         $enriched = 0;
         foreach ($asn->lines as $line) {
             if (! $force && $line->specs_cached_at !== null) {
                 continue;
             }
+            try {
+                $customerId = $this->mutationCustomerForAccountSku($account, (string) $line->sku);
+            } catch (ValidationException $e) {
+                continue;
+            }
             $product = $this->inventory->getProductDetailBySku(
                 (string) $line->sku,
                 null,
-                $customerId !== '' ? $customerId : null
+                $customerId
             );
             if (! is_array($product)) {
                 continue;
@@ -697,8 +719,8 @@ class AsnReceivingService
     {
         $sku = trim((string) $line->sku);
         if ($sku !== '') {
-            $customer = $this->mutationCustomerForAccountSku($account, $sku);
-            if ($customer !== null && $customer !== '') {
+            try {
+                $customer = $this->mutationCustomerForAccountSku($account, $sku);
                 $shipheroSpecs = [];
                 if (array_key_exists('barcode', $specs)) {
                     $shipheroSpecs['barcode'] = $specs['barcode'];
@@ -711,6 +733,8 @@ class AsnReceivingService
                 if ($shipheroSpecs !== []) {
                     $this->inventory->updateProductSpecs($customer, $sku, $shipheroSpecs);
                 }
+            } catch (ValidationException $e) {
+                // Keep local CRM specs even when ShipHero customer cannot be resolved safely.
             }
         }
 

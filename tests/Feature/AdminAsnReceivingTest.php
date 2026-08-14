@@ -76,6 +76,8 @@ class AdminAsnReceivingTest extends TestCase
         $mock = Mockery::mock(ShipHeroInventoryService::class);
         $mock->shouldReceive('resolveCustomerAccountIdForSkuMutation')
             ->andReturn($customerId);
+        $mock->shouldReceive('lookupShipHeroCustomerAccountIdForSkuOnAccount')
+            ->andReturn($customerId);
         $mock->shouldReceive('getProductDetailBySku')->andReturn($productDetail);
 
         return $mock;

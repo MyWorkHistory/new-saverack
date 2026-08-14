@@ -4024,19 +4024,27 @@ GQL,
 
     /**
      * Resolve ShipHero customer_account_id for a SKU (3PL) from the local inventory index.
+     *
+     * @param  int|null  $clientAccountId  When set, only consider index/cache rows for this CRM account.
      */
-    public function lookupShipHeroCustomerAccountIdForSku(string $sku): ?string
+    public function lookupShipHeroCustomerAccountIdForSku(string $sku, ?int $clientAccountId = null): ?string
     {
         $sku = trim($sku);
         if ($sku === '') {
             return null;
         }
+        $clientAccountId = $clientAccountId !== null && $clientAccountId > 0 ? $clientAccountId : null;
+        $skuSearch = $this->normalizeInventoryIndexSearchValue($sku);
 
         try {
-            $customerId = ShipHeroInventoryProductIndex::query()
-                ->where('sku_search', $this->normalizeInventoryIndexSearchValue($sku))
+            $query = ShipHeroInventoryProductIndex::query()
+                ->where('sku_search', $skuSearch)
                 ->whereNotNull('shiphero_customer_account_id')
-                ->where('shiphero_customer_account_id', '!=', '')
+                ->where('shiphero_customer_account_id', '!=', '');
+            if ($clientAccountId !== null) {
+                $query->where('client_account_id', $clientAccountId);
+            }
+            $customerId = $query
                 ->orderByDesc('synced_at')
                 ->value('shiphero_customer_account_id');
 
@@ -4046,13 +4054,18 @@ GQL,
         } catch (\Throwable $e) {
             Log::warning('shiphero.inventory.customer_lookup.index_failed', [
                 'sku' => $sku,
+                'client_account_id' => $clientAccountId,
                 'message' => $e->getMessage(),
             ]);
         }
 
         try {
-            $cacheRow = ShipHeroInventoryProductDetailCache::query()
-                ->where('sku_search', $this->normalizeInventoryIndexSearchValue($sku))
+            $cacheQuery = ShipHeroInventoryProductDetailCache::query()
+                ->where('sku_search', $skuSearch);
+            if ($clientAccountId !== null) {
+                $cacheQuery->where('client_account_id', $clientAccountId);
+            }
+            $cacheRow = $cacheQuery
                 ->orderByDesc('synced_at')
                 ->first();
             if ($cacheRow !== null && (int) $cacheRow->client_account_id > 0) {
@@ -4066,14 +4079,18 @@ GQL,
         } catch (\Throwable $e) {
             Log::warning('shiphero.inventory.customer_lookup.cache_failed', [
                 'sku' => $sku,
+                'client_account_id' => $clientAccountId,
                 'message' => $e->getMessage(),
             ]);
         }
 
         try {
-            $onDemandAccountId = ClientAccountOnDemandProduct::query()
-                ->where('sku', ClientAccountOnDemandProduct::normalizeSku($sku))
-                ->value('client_account_id');
+            $onDemandQuery = ClientAccountOnDemandProduct::query()
+                ->where('sku', ClientAccountOnDemandProduct::normalizeSku($sku));
+            if ($clientAccountId !== null) {
+                $onDemandQuery->where('client_account_id', $clientAccountId);
+            }
+            $onDemandAccountId = $onDemandQuery->value('client_account_id');
             if (is_int($onDemandAccountId) && $onDemandAccountId > 0) {
                 $account = ClientAccount::query()
                     ->whereKey($onDemandAccountId)
@@ -4085,15 +4102,37 @@ GQL,
         } catch (\Throwable $e) {
             Log::warning('shiphero.inventory.customer_lookup.on_demand_failed', [
                 'sku' => $sku,
+                'client_account_id' => $clientAccountId,
                 'message' => $e->getMessage(),
             ]);
         }
 
-        return null;
+        // Unscoped ShipHero product(sku:) is unsafe when the same SKU exists on multiple accounts.
+        if ($clientAccountId !== null) {
+            return null;
+        }
+
+        return $this->fetchProductAccountIdBySku($sku);
+    }
+
+    /**
+     * Account-safe customer id lookup for ASN / inventory mutations tied to a CRM client account.
+     */
+    public function lookupShipHeroCustomerAccountIdForSkuOnAccount(string $sku, int $clientAccountId): ?string
+    {
+        if ($clientAccountId < 1) {
+            return null;
+        }
+
+        return $this->lookupShipHeroCustomerAccountIdForSku($sku, $clientAccountId);
     }
 
     /**
      * ShipHero customer_account_id for inventory mutations on admin/global SKU views.
+     *
+     * Prefer an explicit customer id. Without it, SKU-only fallback can pick the wrong
+     * account when the same SKU exists twice — callers with a CRM account should use
+     * lookupShipHeroCustomerAccountIdForSkuOnAccount instead.
      */
     public function resolveCustomerAccountIdForSkuMutation(string $sku, ?string $preferredCustomerId = null): ?string
     {

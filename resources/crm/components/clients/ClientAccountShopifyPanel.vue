@@ -24,18 +24,35 @@
     </div>
 
     <template v-else>
+      <div
+        v-if="!oauthConfigured"
+        class="alert alert-warning py-2 px-3 small mb-3"
+        role="status"
+      >
+        Shopify OAuth is not configured on this server (missing
+        <code>SHOPIFY_CLIENT_ID</code> / <code>SHOPIFY_CLIENT_SECRET</code>).
+        You can still paste a custom-app Admin API token under Advanced.
+      </div>
+
       <div class="row g-3 mb-3">
-        <div class="col-md-6">
-          <label class="form-label small fw-semibold">Shop Domain</label>
+        <div class="col-md-8">
+          <label class="form-label small fw-semibold" for="shopify-shop-domain">
+            Shopify Store Domain
+          </label>
           <input
+            id="shopify-shop-domain"
             v-model="form.shop_domain"
             type="text"
             class="form-control form-control-sm"
-            placeholder="your-store.myshopify.com"
+            placeholder="test-store-wke6tzxl.myshopify.com"
             :disabled="busy || isImporting || !canEdit"
           />
+          <p class="small text-secondary mb-0 mt-1">
+            Enter the store’s <code>*.myshopify.com</code> host (not the App Client ID).
+            Example: <code>test-store-wke6tzxl.myshopify.com</code>
+          </p>
         </div>
-        <div class="col-md-6 small text-secondary pt-md-4">
+        <div class="col-md-4 small text-secondary pt-md-4">
           <div v-if="connection?.shop_name">Shop: {{ connection.shop_name }}</div>
           <div v-if="connection?.last_sync_at">Last Sync: {{ connection.last_sync_at }}</div>
           <div
@@ -425,8 +442,9 @@ function consumeOauthQueryToast() {
 }
 
 async function connectWithShopify() {
-  if (!form.shop_domain.trim()) {
-    toast.error("Enter the shop domain first.");
+  const shop = String(form.shop_domain || "").trim();
+  if (!shop) {
+    toast.error("Enter the Shopify store domain (e.g. test-store-wke6tzxl.myshopify.com).");
     return;
   }
   busy.value = true;
@@ -434,7 +452,7 @@ async function connectWithShopify() {
     const { data } = await api.post(
       `/client-accounts/${props.accountId}/shopify-connection/oauth/start`,
       {
-        shop_domain: form.shop_domain.trim(),
+        shop_domain: shop,
         import: true,
       },
     );

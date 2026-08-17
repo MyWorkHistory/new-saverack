@@ -9,7 +9,9 @@ use App\Models\ShipHeroInventoryProductIndex;
 use App\Models\User;
 use App\Models\WholesaleOrder;
 use App\Models\WholesaleOrderComment;
+use App\Models\WholesaleOrderFeeLine;
 use App\Models\WholesaleOrderLine;
+use App\Support\Billing\WholesaleOrderFeeChargeCatalog;
 use App\Support\CrmCommentUserSerializer;
 use App\Models\WholesaleOrderPackage;
 use App\Models\WholesaleOrderShippingLabel;
@@ -193,6 +195,24 @@ class WholesaleOrderController extends Controller
             'barcode_original_name' => $line->barcode_original_name,
             'barcode_mime' => $line->barcode_mime,
             'sort_order' => $line->sort_order,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeFeeLine(WholesaleOrderFeeLine $line): array
+    {
+        $qty = (float) $line->quantity;
+        $unit = (int) $line->unit_price_cents;
+
+        return [
+            'id' => $line->id,
+            'line_type' => $line->line_type,
+            'name' => $line->name,
+            'quantity' => $qty,
+            'unit_price_cents' => $unit,
+            'line_total_cents' => $line->lineTotalCents(),
         ];
     }
 
@@ -408,12 +428,13 @@ class WholesaleOrderController extends Controller
     private function serializeDetail(WholesaleOrder $order): array
     {
         $order->loadMissing([
-            'clientAccount',
+            'clientAccount.feeItems.pricingTemplate',
             'createdBy',
             'lines',
             'comments.user.profile',
             'shippingLabels',
             'packages',
+            'feeLines',
         ]);
         $imageBySku = $this->resolveLineImageUrls($order);
         $this->hydrateMissingLineWeights($order);
@@ -514,6 +535,10 @@ class WholesaleOrderController extends Controller
                 return $this->serializeLine($line, $resolved);
             })->values()->all(),
             'comments' => $order->comments->map(fn (WholesaleOrderComment $c) => $this->serializeComment($c))->values()->all(),
+            'fee_lines' => $order->feeLines->map(fn (WholesaleOrderFeeLine $line) => $this->serializeFeeLine($line))->values()->all(),
+            'fee_charge_options' => $order->clientAccount
+                ? WholesaleOrderFeeChargeCatalog::optionsForAccount($order->clientAccount)
+                : [],
             'statuses' => $this->statusLabels(),
             'manual_statuses' => [
                 WholesaleOrder::STATUS_PENDING => $this->statusLabel(WholesaleOrder::STATUS_PENDING),
@@ -770,6 +795,7 @@ class WholesaleOrderController extends Controller
             Storage::disk('local')->delete($wholesaleOrder->shipping_label_path);
         }
         $wholesaleOrder->packages()->delete();
+        $wholesaleOrder->feeLines()->delete();
         $wholesaleOrder->delete();
 
         return response()->json(['message' => 'Wholesale order deleted.']);
@@ -1829,5 +1855,104 @@ class WholesaleOrderController extends Controller
         }
 
         return $product;
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function unitPriceCentsFromValidated(array $validated): int
+    {
+        if (array_key_exists('unit_price_cents', $validated) && $validated['unit_price_cents'] !== null) {
+            return max(0, (int) $validated['unit_price_cents']);
+        }
+        if (array_key_exists('unit_price', $validated) && $validated['unit_price'] !== null) {
+            return max(0, (int) round(((float) $validated['unit_price']) * 100));
+        }
+
+        return 0;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function feeLineValidationRules(): array
+    {
+        return [
+            'line_type' => ['required', 'string', Rule::in(WholesaleOrderFeeLine::TYPES)],
+            'name' => ['nullable', 'string', 'max:255'],
+            'quantity' => ['required', 'numeric', 'min:0.0001'],
+            'unit_price_cents' => ['nullable', 'integer', 'min:0'],
+            'unit_price' => ['nullable', 'numeric', 'min:0'],
+        ];
+    }
+
+    private function assertFeeLineBelongs(WholesaleOrder $order, WholesaleOrderFeeLine $feeLine): void
+    {
+        if ((int) $feeLine->wholesale_order_id !== (int) $order->id) {
+            abort(404);
+        }
+    }
+
+    public function storeFeeLine(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('update', $wholesaleOrder);
+
+        $validated = $request->validate($this->feeLineValidationRules());
+        $lineType = (string) $validated['line_type'];
+        $name = trim((string) ($validated['name'] ?? ''));
+        if ($name === '') {
+            $name = WholesaleOrderFeeChargeCatalog::displayName($lineType);
+        }
+
+        $line = WholesaleOrderFeeLine::query()->firstOrNew([
+            'wholesale_order_id' => $wholesaleOrder->id,
+            'line_type' => $lineType,
+        ]);
+        $line->name = $name;
+        $line->quantity = (float) $validated['quantity'];
+        $line->unit_price_cents = $this->unitPriceCentsFromValidated($validated);
+        $line->save();
+
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh()));
+    }
+
+    public function updateFeeLine(
+        Request $request,
+        WholesaleOrder $wholesaleOrder,
+        WholesaleOrderFeeLine $feeLine
+    ): JsonResponse {
+        $this->assertStaff($request);
+        Gate::authorize('update', $wholesaleOrder);
+        $this->assertFeeLineBelongs($wholesaleOrder, $feeLine);
+
+        $validated = $request->validate($this->feeLineValidationRules());
+        $lineType = (string) $validated['line_type'];
+        $name = trim((string) ($validated['name'] ?? ''));
+        if ($name === '') {
+            $name = WholesaleOrderFeeChargeCatalog::displayName($lineType);
+        }
+
+        $feeLine->line_type = $lineType;
+        $feeLine->name = $name;
+        $feeLine->quantity = (float) $validated['quantity'];
+        $feeLine->unit_price_cents = $this->unitPriceCentsFromValidated($validated);
+        $feeLine->save();
+
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh()));
+    }
+
+    public function destroyFeeLine(
+        Request $request,
+        WholesaleOrder $wholesaleOrder,
+        WholesaleOrderFeeLine $feeLine
+    ): JsonResponse {
+        $this->assertStaff($request);
+        Gate::authorize('update', $wholesaleOrder);
+        $this->assertFeeLineBelongs($wholesaleOrder, $feeLine);
+
+        $feeLine->delete();
+
+        return response()->json($this->serializeDetail($wholesaleOrder->fresh()));
     }
 }

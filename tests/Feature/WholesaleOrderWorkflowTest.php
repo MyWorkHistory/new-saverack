@@ -7,6 +7,7 @@ use App\Models\Permission;
 use App\Models\ShipHeroInventoryProductDetailCache;
 use App\Models\User;
 use App\Models\WholesaleOrder;
+use App\Models\WholesaleOrderFeeLine;
 use App\Models\WholesaleOrderLine;
 use App\Services\ShipHeroInventoryService;
 use App\Services\ShipHeroOrderService;
@@ -1104,6 +1105,92 @@ class WholesaleOrderWorkflowTest extends TestCase
         $this->assertDatabaseHas('wholesale_orders', [
             'id' => $order->id,
             'status' => WholesaleOrder::STATUS_COMPLETED,
+        ]);
+    }
+
+    public function test_staff_can_add_update_and_delete_wholesale_fee_lines(): void
+    {
+        $account = $this->account('fees');
+        Sanctum::actingAs($this->staffUser());
+        $order = $this->seedReadyOrder($account);
+
+        $created = $this->postJson('/api/admin/wholesale-orders/'.$order->id.'/fee-lines', [
+            'line_type' => WholesaleOrderFeeLine::TYPE_BARCODE_LABELING,
+            'quantity' => 2,
+            'unit_price' => 0.55,
+        ])
+            ->assertOk()
+            ->assertJsonPath('fee_lines.0.line_type', WholesaleOrderFeeLine::TYPE_BARCODE_LABELING)
+            ->assertJsonPath('fee_lines.0.quantity', 2)
+            ->assertJsonPath('fee_lines.0.unit_price_cents', 55)
+            ->assertJsonPath('fee_lines.0.line_total_cents', 110)
+            ->assertJsonPath('fee_charge_options.0.line_type', WholesaleOrderFeeLine::TYPE_WHOLESALE_FULFILLMENT);
+
+        $this->assertNotEmpty($created->json('fee_charge_options'));
+        $optionTypes = array_column($created->json('fee_charge_options'), 'line_type');
+        $this->assertContains(WholesaleOrderFeeLine::TYPE_BOX, $optionTypes);
+
+        $lineId = (int) $created->json('fee_lines.0.id');
+        $this->assertGreaterThan(0, $lineId);
+
+        $this->putJson('/api/admin/wholesale-orders/'.$order->id.'/fee-lines/'.$lineId, [
+            'line_type' => WholesaleOrderFeeLine::TYPE_BARCODE_LABELING,
+            'name' => 'Barcode Labeling',
+            'quantity' => 5,
+            'unit_price' => 0.55,
+        ])
+            ->assertOk()
+            ->assertJsonPath('fee_lines.0.quantity', 5)
+            ->assertJsonPath('fee_lines.0.line_total_cents', 275);
+
+        $this->deleteJson('/api/admin/wholesale-orders/'.$order->id.'/fee-lines/'.$lineId)
+            ->assertOk()
+            ->assertJsonPath('fee_lines', []);
+
+        $this->assertDatabaseMissing('wholesale_order_fee_lines', ['id' => $lineId]);
+    }
+
+    public function test_portal_user_cannot_manage_wholesale_fee_lines(): void
+    {
+        $account = $this->account('portal-fees');
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        Sanctum::actingAs($user);
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'WO-PORTAL-FEES',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_PENDING,
+            'items_count' => 1,
+        ]);
+
+        $line = WholesaleOrderFeeLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'line_type' => WholesaleOrderFeeLine::TYPE_BOX,
+            'name' => 'Box',
+            'quantity' => 1,
+            'unit_price_cents' => 100,
+        ]);
+
+        $this->postJson('/api/admin/wholesale-orders/'.$order->id.'/fee-lines', [
+            'line_type' => WholesaleOrderFeeLine::TYPE_BARCODE_LABELING,
+            'quantity' => 2,
+            'unit_price' => 0.55,
+        ])->assertForbidden();
+
+        $this->putJson('/api/admin/wholesale-orders/'.$order->id.'/fee-lines/'.$line->id, [
+            'line_type' => WholesaleOrderFeeLine::TYPE_BOX,
+            'quantity' => 3,
+            'unit_price' => 1.00,
+        ])->assertForbidden();
+
+        $this->deleteJson('/api/admin/wholesale-orders/'.$order->id.'/fee-lines/'.$line->id)
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('wholesale_order_fee_lines', [
+            'id' => $line->id,
+            'quantity' => 1,
+            'unit_price_cents' => 100,
         ]);
     }
 }

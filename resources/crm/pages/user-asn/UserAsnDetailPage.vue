@@ -344,8 +344,9 @@ async function confirmReopenForEdit() {
   }
 }
 
-function openAddNewSkuModal() {
-  addNewSkuName.value = catalogSearchCommitted.value || "";
+function openAddNewSkuModal(payload) {
+  const fromCatalog = String(payload?.search || "").trim();
+  addNewSkuName.value = fromCatalog;
   addNewSkuSku.value = "";
   addNewSkuQty.value = 1;
   addNewSkuOpen.value = true;
@@ -409,7 +410,6 @@ async function submitAddNewSku() {
     toast.success("SKU added.");
     addNewSkuOpen.value = false;
     await loadAsn();
-    resetCatalogSearchState();
     addPanelOpen.value = false;
   } catch (e) {
     toast.errorFrom(e, "Could not add SKU.");
@@ -1287,11 +1287,11 @@ onUnmounted(() => {
               </svg>
             </button>
             <header class="crm-vx-modal__head">
-              <h2 id="asn-add-new-sku-title" class="crm-vx-modal__title">Add New SKU</h2>
+              <h2 id="asn-add-new-sku-title" class="crm-vx-modal__title">Create New Product</h2>
             </header>
             <div class="crm-vx-modal__body">
               <p class="small text-secondary mb-3">
-                Creates the SKU in ShipHero and adds it to this ASN.
+                Creates the product in ShipHero and adds it to this ASN.
               </p>
               <label class="form-label small mb-1" for="asn-new-sku-name">Product Name</label>
               <input
@@ -1334,7 +1334,7 @@ onUnmounted(() => {
                 :disabled="addNewSkuBusy"
                 @click="submitAddNewSku"
               >
-                {{ addNewSkuBusy ? "Adding…" : "Add SKU" }}
+                {{ addNewSkuBusy ? "Creating…" : "Create Product" }}
               </button>
             </footer>
           </div>

@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\ShipHeroWebhookEvent;
+use App\Models\WholesaleOrder;
 use App\Services\OrderDashboardSnapshotService;
 use App\Services\PortalQueueCountsService;
 use App\Services\ShipHeroOrderDetailCacheService;
@@ -79,6 +80,10 @@ class ProcessShipHeroOrderWebhookJob implements ShouldQueue
                 $queueCounts->refreshQueueCacheFromIndex($clientAccountId, $affectedTabs);
                 $queueCounts->bumpCountsRevision($clientAccountId);
                 $snapshots->bumpDashboardRevision();
+            }
+
+            if (trim((string) $event->event_type) === 'Shipment Update') {
+                WholesaleOrder::markShippedForShipHeroOrder($clientAccountId, $orderId);
             }
 
             $event->processed_at = now();

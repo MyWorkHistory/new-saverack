@@ -305,6 +305,48 @@ class AsnApiTest extends TestCase
         $this->assertSame('https://cdn.example/p.jpg', $line->image_url);
     }
 
+    public function test_portal_user_can_create_catalog_product_for_own_asn(): void
+    {
+        $account = $this->account();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0012',
+            'status' => ClientAccountAsn::STATUS_DRAFT,
+            'total_boxes' => 0,
+            'total_pallets' => 0,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('createProduct')
+            ->once()
+            ->with('sh-asn-test-1', 'PORTAL-NEW-1', 'Portal New Product')
+            ->andReturn([
+                'id' => 'prod-portal-1',
+                'sku' => 'PORTAL-NEW-1',
+                'name' => 'Portal New Product',
+                'image_url' => null,
+            ]);
+        $mock->shouldReceive('upsertCreatedProductIndex')
+            ->once()
+            ->with($account->id, 'sh-asn-test-1', Mockery::type('array'));
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $this->postJson('/api/asns/'.$asn->id.'/catalog-products', [
+            'sku' => 'PORTAL-NEW-1',
+            'name' => 'Portal New Product',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('sku', 'PORTAL-NEW-1')
+            ->assertJsonPath('id', 'prod-portal-1');
+    }
+
     public function test_store_line_without_shiphero_id_requires_linked_shiphero_customer_account(): void
     {
         $account = ClientAccount::create([

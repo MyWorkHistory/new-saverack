@@ -11,6 +11,7 @@ import WholesaleBarcodeUploadModal from "../../components/orders/WholesaleBarcod
 import WholesalePackageInfoModal from "../../components/orders/WholesalePackageInfoModal.vue";
 import WholesaleRequirementRow from "../../components/orders/WholesaleRequirementRow.vue";
 import WholesaleRequirementsEditDrawer from "../../components/orders/WholesaleRequirementsEditDrawer.vue";
+import WholesaleOrderFeesModal from "../../components/orders/WholesaleOrderFeesModal.vue";
 import WholesaleShippingLabelsCard from "../../components/orders/WholesaleShippingLabelsCard.vue";
 import CrmMaterialIcon from "../../components/common/CrmMaterialIcon.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -18,6 +19,7 @@ import { useToast } from "../../composables/useToast.js";
 import { formatDateUs, formatDateTimeUs } from "../../utils/formatUserDates.js";
 import { noteAuthorFromRecord } from "../../utils/noteAuthor.js";
 import { crmIsPortalUser } from "../../utils/crmUser.js";
+import { errorMessage } from "../../utils/apiError.js";
 import {
   wholesaleLineStatusBadgeClass,
   wholesaleLineStatusLabel,
@@ -56,6 +58,11 @@ const readyToShipBusy = ref(false);
 
 const requirementEditOpen = ref(false);
 const requirementEditBusy = ref(false);
+
+const feesModalOpen = ref(false);
+const feesModalBusy = ref(false);
+const feesModalError = ref("");
+const feesEditLine = ref(null);
 
 const boxInfoOpen = ref(false);
 const palletInfoOpen = ref(false);
@@ -153,6 +160,105 @@ const canClickStatusBadge = computed(() => {
   return s === "pending" || s === "completed";
 });
 
+const canManageFees = computed(() => !isPortal.value);
+
+const feeLines = computed(() =>
+  Array.isArray(order.value?.fee_lines) ? order.value.fee_lines : [],
+);
+
+const feeChargeOptions = computed(() =>
+  Array.isArray(order.value?.fee_charge_options) ? order.value.fee_charge_options : [],
+);
+
+const feeDefaultQuantities = computed(() => ({
+  wholesale_fulfillment: itemsSummary.value.totalQuantity,
+  barcode_labeling: itemsSummary.value.totalQuantity,
+}));
+
+function formatFeeCents(cents) {
+  const n = Number(cents) || 0;
+  return `$${(n / 100).toFixed(2)}`;
+}
+
+function openAddFeesModal() {
+  if (!canManageFees.value) return;
+  feesEditLine.value = null;
+  feesModalError.value = "";
+  feesModalOpen.value = true;
+}
+
+function openFeeEdit(line) {
+  if (!canManageFees.value) return;
+  feesEditLine.value = line;
+  feesModalError.value = "";
+  feesModalOpen.value = true;
+}
+
+async function submitFeesModal(payloads) {
+  if (!order.value?.id || !Array.isArray(payloads) || !payloads.length) {
+    feesModalError.value = "Enter a quantity for at least one fee.";
+    return;
+  }
+  feesModalError.value = "";
+  feesModalBusy.value = true;
+  try {
+    let latest = order.value;
+    for (const item of payloads) {
+      if (item.action === "delete" && item.item_id) {
+        const { data } = await api.delete(
+          `/admin/wholesale-orders/${order.value.id}/fee-lines/${item.item_id}`,
+        );
+        latest = data;
+        continue;
+      }
+      const body = {
+        line_type: item.line_type,
+        name: item.name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+      };
+      if (item.action === "update" && item.item_id) {
+        const { data } = await api.put(
+          `/admin/wholesale-orders/${order.value.id}/fee-lines/${item.item_id}`,
+          body,
+        );
+        latest = data;
+      } else if (item.action === "create") {
+        const { data } = await api.post(`/admin/wholesale-orders/${order.value.id}/fee-lines`, body);
+        latest = data;
+      }
+    }
+    applyOrderData(latest);
+    feesModalOpen.value = false;
+    feesEditLine.value = null;
+    toast.success("Wholesale fees saved.");
+  } catch (e) {
+    feesModalError.value = errorMessage(e);
+    toast.error(feesModalError.value || "Could not save wholesale fees.");
+  } finally {
+    feesModalBusy.value = false;
+  }
+}
+
+async function deleteFeeFromModal(line) {
+  if (!order.value?.id || !line?.id) return;
+  feesModalBusy.value = true;
+  try {
+    const { data } = await api.delete(
+      `/admin/wholesale-orders/${order.value.id}/fee-lines/${line.id}`,
+    );
+    applyOrderData(data);
+    feesModalOpen.value = false;
+    feesEditLine.value = null;
+    toast.success("Fee removed.");
+  } catch (e) {
+    feesModalError.value = errorMessage(e);
+    toast.error(feesModalError.value || "Could not remove fee.");
+  } finally {
+    feesModalBusy.value = false;
+  }
+}
+
 const listRouteName = computed(() =>
   isPortal.value ? "user-wholesale-orders" : "wholesale-orders",
 );
@@ -225,15 +331,40 @@ const itemsSummary = computed(() => {
   };
 });
 
-const shipheroAdminUrl = computed(() => {
-  const id = String(order.value?.shiphero_order_id || "").trim();
+function shipHeroDashboardOrderId(raw) {
+  const id = String(raw || "").trim();
   if (!id) return null;
-  const n = Number(id);
-  if (Number.isFinite(n) && n > 0) {
-    return `https://app.shiphero.com/dashboard/orders/details/${n}`;
+  if (/^\d+$/.test(id)) return id;
+  try {
+    const decoded = atob(id);
+    const match = decoded.match(/^Order:(\d+)$/i);
+    if (match?.[1]) return match[1];
+  } catch {
+    /* not base64 GraphQL */
   }
   return null;
+}
+
+const shipheroAdminUrl = computed(() => {
+  const legacyId = shipHeroDashboardOrderId(order.value?.shiphero_order_id);
+  if (!legacyId) return null;
+  return `https://app.shiphero.com/dashboard/orders/details/${legacyId}`;
 });
+
+const showMarkAsShippedButton = computed(() => {
+  if (isPortal.value) return false;
+  if (!shipheroAdminUrl.value) return false;
+  return String(order.value?.status || "").toLowerCase() !== "shipped";
+});
+
+function openMarkAsShipped() {
+  const url = shipheroAdminUrl.value;
+  if (!url) {
+    toast.error("This order has no ShipHero link yet.");
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
 
 const lineMenuOpenLine = computed(() => {
   const id = lineMenuOpenId.value;
@@ -820,6 +951,14 @@ onUnmounted(() => {
               <span class="staff-detail-tab-btn__label">Pick List</span>
             </RouterLink>
             <button
+              v-if="showMarkAsShippedButton"
+              type="button"
+              class="btn wholesale-ready-to-ship-btn"
+              @click="openMarkAsShipped"
+            >
+              Mark as Shipped
+            </button>
+            <button
               v-if="showReadyToShipButton"
               type="button"
               class="btn wholesale-ready-to-ship-btn"
@@ -868,14 +1007,14 @@ onUnmounted(() => {
             />
           </div>
 
-          <div class="table-responsive staff-table-wrap">
-            <table class="table table-hover align-middle mb-0 staff-data-table">
+          <div class="staff-table-wrap wholesale-items-table-wrap">
+            <table class="table table-hover align-middle mb-0 staff-data-table wholesale-items-table">
               <thead class="table-light staff-table-head">
                 <tr>
                   <th class="staff-table-head__th order-detail-page__items-col" scope="col">Item</th>
                   <th class="staff-table-head__th" scope="col">SKU</th>
                   <th class="staff-table-head__th text-center" scope="col">Qty</th>
-                  <th class="staff-table-head__th text-center" scope="col">Barcodes</th>
+                  <th class="staff-table-head__th text-center wholesale-line-barcodes-col" scope="col">Barcodes</th>
                   <th v-if="canEditLines" class="staff-table-head__th text-center order-detail-page__items-actions-col" scope="col">
                     Actions
                   </th>
@@ -944,30 +1083,25 @@ onUnmounted(() => {
                     />
                     <span v-else>{{ line.quantity }}</span>
                   </td>
-                  <td class="text-center">
-                    <div class="d-flex flex-column align-items-center gap-1">
-                      <button
-                        v-if="line.has_barcode"
-                        type="button"
-                        class="btn btn-link btn-sm p-0 text-decoration-none"
-                        @click="printBarcode(line)"
-                      >
-                        Print Barcode
-                      </button>
-                      <button
-                        v-if="canEditLines"
-                        type="button"
-                        class="btn btn-link btn-sm p-0 text-decoration-none"
-                        :disabled="lineBusy"
-                        @click="openBarcodeModal(line)"
-                      >
-                        Upload Labels
-                      </button>
-                      <span
-                        v-else-if="!line.has_barcode"
-                        class="text-secondary"
-                      >—</span>
-                    </div>
+                  <td class="text-center wholesale-line-barcodes-col">
+                    <button
+                      v-if="line.has_barcode"
+                      type="button"
+                      class="btn btn-link btn-sm p-0 text-decoration-none"
+                      @click="printBarcode(line)"
+                    >
+                      Print Labels
+                    </button>
+                    <button
+                      v-else-if="canEditLines"
+                      type="button"
+                      class="btn btn-link btn-sm p-0 text-decoration-none"
+                      :disabled="lineBusy"
+                      @click="openBarcodeModal(line)"
+                    >
+                      Upload Labels
+                    </button>
+                    <span v-else class="text-secondary">—</span>
                   </td>
                   <td v-if="canEditLines" class="text-center align-middle order-detail-page__items-actions-col">
                     <div
@@ -1207,6 +1341,64 @@ onUnmounted(() => {
           @saved="onShippingLabelsSaved"
         />
 
+        <div
+          v-if="canManageFees"
+          class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel"
+        >
+          <div class="d-flex align-items-center gap-2 mb-3 order-detail-page__section-head">
+            <span class="order-detail-page__section-icon order-detail-page__section-icon--fees" aria-hidden="true">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </span>
+            <h3 class="h6 fw-semibold mb-0">Pricing</h3>
+          </div>
+          <div v-if="feeLines.length" class="table-responsive mb-3">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Service</th>
+                  <th class="text-end">QTY</th>
+                  <th class="text-end">Price</th>
+                  <th class="text-end">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="fee in feeLines"
+                  :key="fee.id"
+                  class="wholesale-fee-row--editable"
+                  @click="openFeeEdit(fee)"
+                >
+                  <td>{{ fee.name }}</td>
+                  <td class="text-end">{{ fee.quantity }}</td>
+                  <td class="text-end">{{ formatFeeCents(fee.unit_price_cents) }}</td>
+                  <td class="text-end fw-semibold">{{ formatFeeCents(fee.line_total_cents) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <template v-else>
+            <p class="mb-3 small text-secondary">No fees have been added for this order.</p>
+            <button
+              type="button"
+              class="btn btn-sm btn-primary staff-page-primary"
+              @click="openAddFeesModal"
+            >
+              Add Fees
+            </button>
+          </template>
+          <div v-if="feeLines.length" class="mt-2">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              @click="openAddFeesModal"
+            >
+              Add Fees
+            </button>
+          </div>
+        </div>
+
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4 order-detail-page__side-panel">
           <div class="d-flex align-items-center gap-2 mb-3 order-detail-page__section-head">
             <span class="order-detail-page__section-icon order-detail-page__section-icon--details" aria-hidden="true">
@@ -1293,6 +1485,18 @@ onUnmounted(() => {
         </button>
       </div>
     </Modal>
+
+    <WholesaleOrderFeesModal
+      v-model:open="feesModalOpen"
+      :busy="feesModalBusy"
+      :error-msg="feesModalError"
+      :charge-options="feeChargeOptions"
+      :existing-lines="feeLines"
+      :edit-line="feesEditLine"
+      :default-quantities="feeDefaultQuantities"
+      @submit="submitFeesModal"
+      @delete="deleteFeeFromModal"
+    />
 
     <WholesaleRequirementsEditDrawer
       v-model:open="requirementEditOpen"
@@ -1435,6 +1639,35 @@ onUnmounted(() => {
 
 .wholesale-line-qty-input {
   max-width: 5rem;
+  width: 100%;
+}
+
+.wholesale-items-table-wrap {
+  overflow-x: hidden;
+}
+
+.wholesale-items-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.wholesale-line-barcodes-col {
+  width: 7.5rem;
+  white-space: nowrap;
+}
+
+td.wholesale-line-barcodes-col .btn {
+  display: block;
+}
+
+@media (max-width: 575.98px) {
+  .wholesale-items-table-wrap {
+    overflow-x: auto;
+  }
+}
+
+.wholesale-order-detail-page .order-detail-page__items-actions-col {
+  width: 3.25rem;
 }
 
 .wholesale-order-detail-page .asn-line-thumb {
@@ -1465,8 +1698,8 @@ onUnmounted(() => {
 }
 
 .wholesale-order-detail-page .order-detail-page__items-col {
-  width: 40%;
-  min-width: 14rem;
+  width: 42%;
+  min-width: 0;
   vertical-align: middle;
 }
 
@@ -1536,6 +1769,19 @@ onUnmounted(() => {
 .wholesale-order-detail-page .order-detail-page__section-icon--details {
   background: rgba(var(--bs-secondary-rgb), 0.12);
   color: var(--bs-secondary);
+}
+
+.wholesale-order-detail-page .order-detail-page__section-icon--fees {
+  background: rgba(var(--bs-success-rgb), 0.12);
+  color: var(--bs-success);
+}
+
+.wholesale-order-detail-page .wholesale-fee-row--editable {
+  cursor: pointer;
+}
+
+.wholesale-order-detail-page .wholesale-fee-row--editable:hover td {
+  background-color: rgba(0, 0, 0, 0.03);
 }
 
 .wholesale-order-detail-page .order-detail-page__detail-label {

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\ShipHeroOrderId;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -147,6 +148,35 @@ class WholesaleOrder extends Model
             ->where('package_type', WholesaleOrderPackage::TYPE_PALLET)
             ->orderBy('sort_order')
             ->orderBy('id');
+    }
+
+    public function feeLines(): HasMany
+    {
+        return $this->hasMany(WholesaleOrderFeeLine::class, 'wholesale_order_id')
+            ->orderBy('id');
+    }
+
+    public static function markShippedForShipHeroOrder(int $clientAccountId, string $shipheroOrderId): void
+    {
+        $incoming = trim($shipheroOrderId);
+        if ($clientAccountId <= 0 || $incoming === '') {
+            return;
+        }
+
+        $orders = static::query()
+            ->where('client_account_id', $clientAccountId)
+            ->whereNotNull('shiphero_order_id')
+            ->where('shiphero_order_id', '!=', '')
+            ->where('status', '!=', self::STATUS_SHIPPED)
+            ->get();
+
+        foreach ($orders as $order) {
+            if (! ShipHeroOrderId::matches((string) $order->shiphero_order_id, $incoming)) {
+                continue;
+            }
+            $order->status = self::STATUS_SHIPPED;
+            $order->save();
+        }
     }
 
     public function isEditable(): bool

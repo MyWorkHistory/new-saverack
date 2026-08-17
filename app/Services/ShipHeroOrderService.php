@@ -4914,10 +4914,9 @@ GQL;
             throw new RuntimeException('ShipHero did not return the created order.');
         }
 
-        $orderId = trim((string) ($orderNode['id'] ?? ''));
-        if ($orderId === '' && isset($orderNode['legacy_id'])) {
-            $orderId = trim((string) $orderNode['legacy_id']);
-        }
+        $graphqlId = trim((string) ($orderNode['id'] ?? ''));
+        $legacyId = trim((string) ($orderNode['legacy_id'] ?? ''));
+        $orderId = $legacyId !== '' ? $legacyId : $graphqlId;
         if ($orderId === '') {
             throw new RuntimeException('ShipHero did not return an order ID.');
         }

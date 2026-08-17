@@ -13,7 +13,7 @@ const props = defineProps({
   qtyLabel: { type: String, default: "Quantity" },
   searchInputId: { type: String, default: "asn-catalog-search" },
   permissionDeniedMessage: { type: String, default: "" },
-  /** Optional route for “Create SKU” when the catalog is empty (e.g. On-Demand admin page). */
+  /** Optional route for “Create New Product” when the catalog is empty (e.g. On-Demand admin page). */
   createSkuRoute: { type: Object, default: null },
   /** Portal: omit client_account_id on API; server uses the signed-in account. */
   useSessionClientAccount: { type: Boolean, default: false },
@@ -81,6 +81,11 @@ watch(
   },
   { immediate: true },
 );
+
+function emitAddNewSku() {
+  const search = String(catalogSearchCommitted.value || catalogSearchDraft.value || "").trim();
+  emit("add-new-sku", { search });
+}
 </script>
 
 <template>
@@ -135,9 +140,9 @@ watch(
             v-if="showAddNewSku"
             type="button"
             class="btn btn-sm btn-outline-secondary fw-semibold staff-page-secondary"
-            @click="emit('add-new-sku')"
+            @click="emitAddNewSku"
           >
-            Create SKU
+            Create New Product
           </button>
         </div>
       </div>
@@ -199,9 +204,9 @@ watch(
                   v-if="showAddNewSku"
                   type="button"
                   class="btn btn-link btn-sm p-0 align-baseline"
-                  @click="emit('add-new-sku')"
+                  @click="emitAddNewSku"
                 >
-                  Create SKU
+                  Create New Product
                 </button>
               </template>
               <template v-else>
@@ -210,16 +215,16 @@ watch(
                   v-if="showAddNewSku"
                   type="button"
                   class="btn btn-link btn-sm p-0 align-baseline"
-                  @click="emit('add-new-sku')"
+                  @click="emitAddNewSku"
                 >
-                  Create SKU
+                  Create New Product
                 </button>
                 <RouterLink
                   v-else-if="createSkuRoute"
                   :to="createSkuRoute"
                   class="btn btn-link btn-sm p-0 align-baseline"
                 >
-                  Create SKU
+                  Create New Product
                 </RouterLink>
               </template>
             </div>

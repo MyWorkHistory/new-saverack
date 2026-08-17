@@ -1423,8 +1423,9 @@ async function saveLineExpectedQty(line, rawQty) {
   }
 }
 
-function openAddNewSkuModal() {
-  addNewSkuName.value = productSearch.value.trim();
+function openAddNewSkuModal(payload) {
+  const fromCatalog = String(payload?.search || "").trim();
+  addNewSkuName.value = fromCatalog || productSearch.value.trim();
   addNewSkuSku.value = "";
   addNewSkuQty.value = 1;
   addNewSkuOpen.value = true;
@@ -2930,13 +2931,13 @@ onUnmounted(() => {
 
     <ConfirmModal
       :open="addNewSkuOpen"
-      title="Add New SKU"
-      confirm-label="Add SKU"
+      title="Create New Product"
+      confirm-label="Create Product"
       :busy="addNewSkuBusy"
       @close="addNewSkuOpen = false"
       @confirm="submitAddNewSku"
     >
-      <p class="small text-secondary mb-3">Creates the SKU in ShipHero and adds it to this ASN.</p>
+      <p class="small text-secondary mb-3">Creates the product in ShipHero and adds it to this ASN.</p>
       <label class="form-label small mb-1" for="admin-asn-new-sku-name">Product Name</label>
       <input id="admin-asn-new-sku-name" v-model="addNewSkuName" type="text" class="form-control form-control-sm mb-3" />
       <label class="form-label small mb-1" for="admin-asn-new-sku-code">SKU</label>

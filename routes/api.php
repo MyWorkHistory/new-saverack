@@ -405,6 +405,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{wholesaleOrder}/shipping-labels/{shippingLabel}', [WholesaleOrderController::class, 'destroyShippingLabel'])->middleware('can:orders.update');
         Route::put('/{wholesaleOrder}/packages', [WholesaleOrderController::class, 'syncPackages'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/packages/send-slack', [WholesaleOrderController::class, 'sendPackagesSlack'])->middleware('can:orders.update');
+        Route::post('/{wholesaleOrder}/fee-lines', [WholesaleOrderController::class, 'storeFeeLine'])->middleware('can:orders.update');
+        Route::put('/{wholesaleOrder}/fee-lines/{feeLine}', [WholesaleOrderController::class, 'updateFeeLine'])->middleware('can:orders.update');
+        Route::delete('/{wholesaleOrder}/fee-lines/{feeLine}', [WholesaleOrderController::class, 'destroyFeeLine'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/comments', [WholesaleOrderController::class, 'storeComment'])->middleware('can:orders.view');
         Route::get('/{wholesaleOrder}/comments/{comment}/attachment', [WholesaleOrderController::class, 'downloadCommentAttachment'])->middleware('can:orders.view');
     });

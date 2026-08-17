@@ -9,6 +9,7 @@ use App\Models\Permission;
 use App\Models\ShipHeroOrderQueueIndex;
 use App\Models\ShipHeroWebhookEvent;
 use App\Models\User;
+use App\Models\WholesaleOrder;
 use App\Services\OrderDashboardSnapshotService;
 use App\Services\PortalQueueCountsService;
 use App\Services\ShipHeroOrderDetailCacheService;
@@ -242,5 +243,78 @@ class ShipHeroWebhookApiTest extends TestCase
 
         $revision = Cache::get('orders:queue_counts:revision:'.$account->id);
         $this->assertGreaterThan(0, (int) $revision);
+    }
+
+    public function test_shipment_update_marks_wholesale_order_shipped_for_numeric_id(): void
+    {
+        $account = $this->accountForWholesaleWebhook('wh-ship-1');
+        $order = $this->wholesaleOrderForWebhook($account, '100', WholesaleOrder::STATUS_IN_PROGRESS);
+
+        $this->runShipmentUpdateWebhookJob($account, 'T3JkZXI6MTAw');
+
+        $this->assertDatabaseHas('wholesale_orders', [
+            'id' => $order->id,
+            'status' => WholesaleOrder::STATUS_SHIPPED,
+        ]);
+    }
+
+    public function test_shipment_update_matches_graphql_order_id_to_numeric_shiphero_order_id(): void
+    {
+        $account = $this->accountForWholesaleWebhook('wh-ship-2');
+        $storedGraphql = 'T3JkZXI6ODc0NTE4MjUz';
+        $order = $this->wholesaleOrderForWebhook($account, $storedGraphql, WholesaleOrder::STATUS_COMPLETED);
+
+        $this->runShipmentUpdateWebhookJob($account, '874518253');
+
+        $this->assertDatabaseHas('wholesale_orders', [
+            'id' => $order->id,
+            'shiphero_order_id' => $storedGraphql,
+            'status' => WholesaleOrder::STATUS_SHIPPED,
+        ]);
+    }
+
+    private function accountForWholesaleWebhook(string $suffix): ClientAccount
+    {
+        return ClientAccount::create([
+            'company_name' => 'Wholesale Webhook '.$suffix,
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'shiphero_customer_account_id' => 'sh-'.$suffix,
+        ]);
+    }
+
+    private function wholesaleOrderForWebhook(ClientAccount $account, string $shipheroOrderId, string $status): WholesaleOrder
+    {
+        return WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'WO-'.$shipheroOrderId,
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => $status,
+            'items_count' => 1,
+            'shiphero_order_id' => $shipheroOrderId,
+        ]);
+    }
+
+    private function runShipmentUpdateWebhookJob(ClientAccount $account, string $webhookOrderId): void
+    {
+        $orders = Mockery::mock(ShipHeroOrderService::class);
+        $orders->shouldReceive('fetchOrderListRowForIndex')->andReturn(null);
+        $this->app->instance(ShipHeroOrderService::class, $orders);
+
+        $event = ShipHeroWebhookEvent::create([
+            'event_id' => 'msg-wholesale-'.$webhookOrderId,
+            'event_type' => 'Shipment Update',
+            'client_account_id' => $account->id,
+            'shiphero_order_id' => $webhookOrderId,
+            'payload' => ['order_uuid' => $webhookOrderId],
+        ]);
+
+        $job = new ProcessShipHeroOrderWebhookJob((int) $event->id);
+        $job->handle(
+            app(\App\Services\ShipHeroWebhookPayloadResolver::class),
+            app(ShipHeroOrderQueueIndexService::class),
+            app(OrderDashboardSnapshotService::class),
+            app(PortalQueueCountsService::class),
+            app(ShipHeroOrderDetailCacheService::class)
+        );
     }
 }

@@ -222,15 +222,17 @@ class ShopifyIntegrationController extends Controller
         }
 
         $user = $request->user();
-        $state = $oauth->createState([
+        $payload = [
             'account_id' => (int) $clientAccount->id,
             'shop' => $shop,
             'user_id' => $user !== null ? $user->id : null,
             'import' => ! array_key_exists('import', $validated) || (bool) $validated['import'],
-        ]);
+        ];
+        $oauth->rememberPendingInstall($payload);
+        $state = $oauth->createState($payload);
 
         try {
-            $url = $oauth->authorizationUrl($shop, $state);
+            $url = $oauth->connectUrl($shop, $state);
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -245,7 +247,7 @@ class ShopifyIntegrationController extends Controller
      * Partners App URL entrypoint. Shopify opens this with ?shop=… when testing/installing.
      * Do NOT use the oauth/callback URL as the App URL.
      */
-    public function oauthInstall(Request $request, ShopifyOAuthService $oauth)
+    public function oauthInstall(Request $request, ShopifyOAuthService $oauth, ShopifyConnectionService $connections)
     {
         if (! $oauth->isConfigured()) {
             return response(
@@ -260,7 +262,7 @@ class ShopifyIntegrationController extends Controller
             return response(
                 "Missing shop. Use CRM → Client Account → Settings → Shopify, enter the store domain "
                 ."(e.g. test-store-wke6tzxl.myshopify.com), then click Connect With Shopify.\n\n"
-                ."Partners App URL must be: ".$oauth->installUri()."\n"
+                ."App URL must be: ".$oauth->installUri()."\n"
                 ."Allowed redirection URL must be: ".$oauth->redirectUri(),
                 422,
                 ['Content-Type' => 'text/plain; charset=UTF-8']
@@ -272,6 +274,7 @@ class ShopifyIntegrationController extends Controller
             return response('Invalid Shopify install signature.', 401, ['Content-Type' => 'text/plain; charset=UTF-8']);
         }
 
+        $pending = $oauth->peekPendingInstall($shop);
         $explicitAccountId = (int) $request->query('account_id', 0);
         $accountId = $oauth->resolveAccountIdForShop(
             $shop,
@@ -280,9 +283,8 @@ class ShopifyIntegrationController extends Controller
         if ($accountId < 1) {
             return response(
                 "No CRM client account mapped for shop {$shop}.\n"
-                ."Either open Connect With Shopify from that account's Settings tab,\n"
-                ."or set SHOPIFY_OAUTH_DEFAULT_ACCOUNT_ID in production .env to the CRM account id,\n"
-                ."or call this URL with &account_id=YOUR_CRM_ACCOUNT_ID.",
+                ."Open Connect With Shopify from that account's Settings tab first,\n"
+                ."or set SHOPIFY_OAUTH_DEFAULT_ACCOUNT_ID in production .env.",
                 422,
                 ['Content-Type' => 'text/plain; charset=UTF-8']
             );
@@ -297,11 +299,43 @@ class ShopifyIntegrationController extends Controller
             );
         }
 
+        $shouldImport = $pending !== null
+            ? (bool) $pending['import']
+            : true;
+
+        $idToken = trim((string) $request->query('id_token', ''));
+        if ($idToken !== '') {
+            try {
+                $tokenPayload = $oauth->exchangeSessionToken($shop, $idToken);
+                $oauth->pullPendingInstall($shop);
+                $connections->connectAndImport($account, [
+                    'shop_domain' => $shop,
+                    'admin_api_access_token' => $tokenPayload['access_token'],
+                    'import' => $shouldImport,
+                ]);
+            } catch (Throwable $e) {
+                report($e);
+                $base = rtrim((string) config('app.url'), '/');
+
+                return redirect()->away(
+                    $base.'/admin/clients/accounts/'.$accountId
+                    .'?tab=settings&shopify_oauth=error&shopify_oauth_message='
+                    .rawurlencode($e->getMessage() !== '' ? $e->getMessage() : 'Shopify token exchange failed.')
+                );
+            }
+
+            $base = rtrim((string) config('app.url'), '/');
+
+            return redirect()->away(
+                $base.'/admin/clients/accounts/'.$accountId.'?tab=settings&shopify_oauth=success'
+            );
+        }
+
         $state = $oauth->createState([
             'account_id' => (int) $account->id,
             'shop' => $shop,
-            'user_id' => null,
-            'import' => true,
+            'user_id' => $pending['user_id'] ?? null,
+            'import' => $shouldImport,
         ]);
 
         try {

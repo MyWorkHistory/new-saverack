@@ -77,12 +77,110 @@ class ShopifyOAuthService
             }
         }
 
+        $pending = $this->peekPendingInstall($shop);
+        if ($pending !== null && (int) ($pending['account_id'] ?? 0) > 0) {
+            return (int) $pending['account_id'];
+        }
+
         return $this->defaultAccountId();
     }
 
     public function normalizeShopDomain(string $domain): string
     {
         return ClientAccountShopifyConnection::normalizeShopDomain($domain);
+    }
+
+    public function shopHandle(string $shopDomain): string
+    {
+        $shop = $this->normalizeShopDomain($shopDomain);
+        if ($shop === '') {
+            return '';
+        }
+        if (substr($shop, -14) === '.myshopify.com') {
+            return substr($shop, 0, -14);
+        }
+
+        return $shop;
+    }
+
+    /**
+     * @param  array{account_id:int, shop:string, user_id?:int|null, import?:bool}  $payload
+     */
+    public function rememberPendingInstall(array $payload): void
+    {
+        $shop = $this->normalizeShopDomain((string) ($payload['shop'] ?? ''));
+        if ($shop === '') {
+            return;
+        }
+        Cache::put($this->pendingInstallCacheKey($shop), [
+            'account_id' => (int) ($payload['account_id'] ?? 0),
+            'shop' => $shop,
+            'user_id' => isset($payload['user_id']) ? (int) $payload['user_id'] : null,
+            'import' => array_key_exists('import', $payload) ? (bool) $payload['import'] : true,
+        ], self::STATE_TTL_SECONDS);
+    }
+
+    /**
+     * @return array{account_id:int, shop:string, user_id:int|null, import:bool}|null
+     */
+    public function peekPendingInstall(string $shopDomain): ?array
+    {
+        $shop = $this->normalizeShopDomain($shopDomain);
+        if ($shop === '') {
+            return null;
+        }
+        $payload = Cache::get($this->pendingInstallCacheKey($shop));
+
+        return $this->normalizePendingPayload($payload, $shop);
+    }
+
+    /**
+     * @return array{account_id:int, shop:string, user_id:int|null, import:bool}|null
+     */
+    public function pullPendingInstall(string $shopDomain): ?array
+    {
+        $shop = $this->normalizeShopDomain($shopDomain);
+        if ($shop === '') {
+            return null;
+        }
+        $payload = Cache::pull($this->pendingInstallCacheKey($shop));
+
+        return $this->normalizePendingPayload($payload, $shop);
+    }
+
+    public function usesManagedInstall(): bool
+    {
+        return (bool) config('services.shopify.oauth_managed_install', true);
+    }
+
+    /**
+     * First hop from CRM Connect. New Shopify apps block /oauth/authorize until the
+     * app is installed via managed install.
+     */
+    public function connectUrl(string $shopDomain, string $state): string
+    {
+        if ($this->usesManagedInstall()) {
+            return $this->managedInstallUrl($shopDomain);
+        }
+
+        return $this->authorizationUrl($shopDomain, $state);
+    }
+
+    public function managedInstallUrl(string $shopDomain): string
+    {
+        if (! $this->isConfigured()) {
+            throw new RuntimeException('Shopify OAuth is not configured (missing client id/secret).');
+        }
+        $handle = $this->shopHandle($shopDomain);
+        if ($handle === '') {
+            throw new RuntimeException('Shop domain is required.');
+        }
+
+        $query = http_build_query([
+            'client_id' => $this->clientId(),
+        ], '', '&', PHP_QUERY_RFC3986);
+
+        return 'https://admin.shopify.com/store/'.$handle.'/oauth/install?'.$query;
     }
 
     /**
@@ -143,12 +241,18 @@ class ShopifyOAuthService
             throw new RuntimeException('Shop domain is required.');
         }
 
-        $query = http_build_query([
+        $params = [
             'client_id' => $this->clientId(),
-            'scope' => $this->scopes(),
             'redirect_uri' => $this->redirectUri(),
             'state' => $state,
-        ], '', '&', PHP_QUERY_RFC3986);
+        ];
+        // Dev Dashboard apps declare scopes on the app. Sending scope= here returns
+        // Shopify's "Unauthorized Access" page.
+        if ((bool) config('services.shopify.oauth_send_scopes', false)) {
+            $params['scope'] = $this->scopes();
+        }
+
+        $query = http_build_query($params, '', '&', PHP_QUERY_RFC3986);
 
         return 'https://'.$shop.'/admin/oauth/authorize?'.$query;
     }
@@ -230,8 +334,86 @@ class ShopifyOAuthService
         ];
     }
 
+    /**
+     * Offline token from a session / id_token (managed install + token exchange).
+     *
+     * @return array{access_token:string, scope?:string}
+     */
+    public function exchangeSessionToken(string $shopDomain, string $idToken): array
+    {
+        if (! $this->isConfigured()) {
+            throw new RuntimeException('Shopify OAuth is not configured (missing client id/secret).');
+        }
+
+        $shop = $this->normalizeShopDomain($shopDomain);
+        $idToken = trim($idToken);
+        if ($shop === '' || $idToken === '') {
+            throw new RuntimeException('Shop and session token are required.');
+        }
+
+        $response = Http::asJson()
+            ->acceptJson()
+            ->timeout(30)
+            ->post('https://'.$shop.'/admin/oauth/access_token', [
+                'client_id' => $this->clientId(),
+                'client_secret' => $this->clientSecret(),
+                'grant_type' => 'urn:ietf:params:oauth:grant-type:token-exchange',
+                'subject_token' => $idToken,
+                'subject_token_type' => 'urn:ietf:params:oauth:token-type:id_token',
+                'requested_token_type' => 'urn:shopify:params:oauth:token-type:offline-access-token',
+            ]);
+
+        if (! $response->successful()) {
+            throw new RuntimeException(
+                'Shopify session token exchange failed (HTTP '.$response->status().').'
+            );
+        }
+
+        $data = $response->json();
+        if (! is_array($data)) {
+            throw new RuntimeException('Shopify session token exchange returned invalid JSON.');
+        }
+
+        $token = trim((string) ($data['access_token'] ?? ''));
+        if ($token === '') {
+            throw new RuntimeException('Shopify session token exchange did not return an access token.');
+        }
+
+        return [
+            'access_token' => $token,
+            'scope' => isset($data['scope']) ? (string) $data['scope'] : null,
+        ];
+    }
+
     private function stateCacheKey(string $state): string
     {
         return 'shopify_oauth_state:'.$state;
+    }
+
+    private function pendingInstallCacheKey(string $shop): string
+    {
+        return 'shopify_oauth_pending_shop:'.$shop;
+    }
+
+    /**
+     * @param  mixed  $payload
+     * @return array{account_id:int, shop:string, user_id:int|null, import:bool}|null
+     */
+    private function normalizePendingPayload($payload, string $shop): ?array
+    {
+        if (! is_array($payload)) {
+            return null;
+        }
+        $accountId = (int) ($payload['account_id'] ?? 0);
+        if ($accountId < 1) {
+            return null;
+        }
+
+        return [
+            'account_id' => $accountId,
+            'shop' => $shop,
+            'user_id' => isset($payload['user_id']) ? (int) $payload['user_id'] : null,
+            'import' => array_key_exists('import', $payload) ? (bool) $payload['import'] : true,
+        ];
     }
 }

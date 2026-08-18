@@ -72,9 +72,12 @@ class ShopifyOAuthApiTest extends TestCase
         ])->assertOk();
 
         $url = (string) $response->json('authorization_url');
-        $this->assertStringContainsString('https://test-store-wke6tzxl.myshopify.com/admin/oauth/authorize?', $url);
+        $this->assertStringContainsString(
+            'https://admin.shopify.com/store/test-store-wke6tzxl/oauth/install?',
+            $url
+        );
         $this->assertStringContainsString('client_id=test-client-id', $url);
-        $this->assertStringContainsString('state=', $url);
+        $this->assertStringNotContainsString('/oauth/authorize?', $url);
         $this->assertSame('test-store-wke6tzxl.myshopify.com', $response->json('shop_domain'));
     }
 
@@ -197,6 +200,7 @@ class ShopifyOAuthApiTest extends TestCase
             $location
         );
         $this->assertStringContainsString('client_id=test-client-id', $location);
+        $this->assertStringNotContainsString('scope=', $location);
     }
 
     public function test_oauth_callback_without_code_explains_usage(): void

@@ -67,5 +67,9 @@ class ShopifyOAuthServiceTest extends TestCase
         $this->assertStringStartsWith('https://foo.myshopify.com/admin/oauth/authorize?', $url);
         $this->assertStringContainsString('client_id=cid', $url);
         $this->assertStringContainsString('state=state-1', $url);
+        $this->assertStringNotContainsString('scope=', $url);
+
+        $install = $service->managedInstallUrl('foo.myshopify.com');
+        $this->assertSame('https://admin.shopify.com/store/foo/oauth/install?client_id=cid', $install);
     }
 }

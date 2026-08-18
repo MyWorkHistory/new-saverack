@@ -123,6 +123,16 @@ return [
          * (Partners → Test on development store) without a CRM session.
          */
         'oauth_default_account_id' => env('SHOPIFY_OAUTH_DEFAULT_ACCOUNT_ID'),
+        /**
+         * New Dev Dashboard apps use managed install (legacy install flow = false).
+         * Connect then opens /oauth/install instead of /oauth/authorize.
+         */
+        'oauth_managed_install' => filter_var(env('SHOPIFY_OAUTH_MANAGED_INSTALL', true), FILTER_VALIDATE_BOOLEAN),
+        /**
+         * Send scope= on the authorize URL. New apps declare scopes in the Dev Dashboard;
+         * sending scope there causes Shopify "Unauthorized Access".
+         */
+        'oauth_send_scopes' => filter_var(env('SHOPIFY_OAUTH_SEND_SCOPES', false), FILTER_VALIDATE_BOOLEAN),
     ],
 
     'whatsapp' => [

@@ -31,7 +31,11 @@ class RunShopifyBootstrapImportJob implements ShouldQueue
     {
         $this->connectionId = $connectionId;
         $this->registerWebhooks = $registerWebhooks;
-        $this->onConnection((string) config('queue.default', 'database'));
+        $queue = (string) config('queue.default', 'database');
+        if ($queue === 'sync' || $queue === '') {
+            $queue = 'database';
+        }
+        $this->onConnection($queue);
     }
 
     public function handle(

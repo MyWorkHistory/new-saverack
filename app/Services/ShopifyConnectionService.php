@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\RunShopifyBootstrapImportJob;
 use App\Jobs\RunShopifyOrderResyncJob;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountShopifyConnection;
@@ -103,7 +104,7 @@ class ShopifyConnectionService
     }
 
     /**
-     * Verify credentials, then optionally import catalog + open orders in this request.
+     * Verify credentials, then queue catalog + order import (HTTP-safe).
      *
      * @param  array{shop_domain:string, admin_api_access_token?:string|null, refresh_token?:string|null, expires_in?:int|null, refresh_token_expires_in?:int|null, webhook_secret?:string|null, api_version?:string|null, import?:bool}  $input
      */
@@ -173,7 +174,7 @@ class ShopifyConnectionService
 
         $shouldImport = ! array_key_exists('import', $input) || (bool) $input['import'];
         if ($shouldImport) {
-            $this->runBootstrapNow($connection, true);
+            $this->queueBootstrapImport($connection, true);
 
             return $connection->fresh();
         }
@@ -207,8 +208,8 @@ class ShopifyConnectionService
     }
 
     /**
-     * Run catalog + order import in this request. Small shops finish in seconds;
-     * queuing left CRM stuck on Importing when no worker was draining jobs.
+     * Queue a full re-import. Do not run Shopify GraphQL inside a web request —
+     * that pinned PHP workers and took the site down.
      */
     public function syncNow(ClientAccountShopifyConnection $connection): ClientAccountShopifyConnection
     {
@@ -216,7 +217,9 @@ class ShopifyConnectionService
             throw new RuntimeException('Shopify connection has no credentials.');
         }
 
-        return $this->runBootstrapNow($connection, false);
+        $this->queueBootstrapImport($connection, false);
+
+        return $connection->fresh() ?? $connection;
     }
 
     /**
@@ -306,20 +309,29 @@ class ShopifyConnectionService
         ClientAccountShopifyConnection $connection,
         bool $registerWebhooks = true
     ): void {
-        $this->runBootstrapNow($connection, $registerWebhooks);
+        $connection->status = ClientAccountShopifyConnection::STATUS_IMPORTING;
+        $connection->last_error = null;
+        $connection->save();
+
+        RunShopifyBootstrapImportJob::dispatch((int) $connection->id, $registerWebhooks);
     }
 
+    /**
+     * Artisan / tests only. Never call from a web controller.
+     */
     public function runBootstrapNow(ClientAccountShopifyConnection $connection, bool $registerWebhooks = true): ClientAccountShopifyConnection
     {
-        $lock = Cache::lock('shopify-bootstrap:'.$connection->id, 180);
-        if (! $lock->get()) {
-            return $connection->fresh() ?? $connection;
+        $lock = null;
+        try {
+            $lock = Cache::lock('shopify-bootstrap:'.$connection->id, 900);
+            if (! $lock->get()) {
+                return $connection->fresh() ?? $connection;
+            }
+        } catch (Throwable $e) {
+            $lock = null;
         }
 
         try {
-            if (function_exists('set_time_limit')) {
-                @set_time_limit(180);
-            }
             $this->bootstrap->importAll($connection);
             if ($registerWebhooks) {
                 try {
@@ -345,15 +357,16 @@ class ShopifyConnectionService
             $connection->save();
             throw $e;
         } finally {
-            optional($lock)->release();
+            if ($lock !== null) {
+                optional($lock)->release();
+            }
         }
 
         return $connection->fresh() ?? $connection;
     }
 
     /**
-     * Settings GET used to re-run the full Shopify import, which hung the panel forever
-     * when a queued job never ran (or GraphQL stalled). Unstick the badge only.
+     * If a queued import never ran, unstick Settings. Do not call Shopify from GET.
      */
     public function recoverStuckImport(ClientAccountShopifyConnection $connection): void
     {
@@ -361,7 +374,7 @@ class ShopifyConnectionService
             return;
         }
         $updated = $connection->updated_at;
-        if ($updated !== null && $updated->gt(now()->subSeconds(20))) {
+        if ($updated !== null && $updated->gt(now()->subMinutes(3))) {
             return;
         }
 

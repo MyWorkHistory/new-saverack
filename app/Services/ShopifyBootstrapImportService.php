@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ClientAccountShopifyConnection;
 use App\Models\ShopifyInventoryLevel;
 use App\Models\ShopifyLocation;
+use App\Support\ShopifyError;
 use App\Support\ShopifyGid;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -53,10 +54,12 @@ class ShopifyBootstrapImportService
 
         $connection->last_sync_at = now();
         $connection->last_product_sync_at = now();
-        $connection->last_order_sync_at = now();
-        $connection->last_error = $orderError !== null
-            ? mb_substr('Catalog synced. Orders failed: '.$orderError, 0, 1000)
-            : null;
+        if ($orderError === null) {
+            $connection->last_order_sync_at = now();
+            $connection->last_error = null;
+        } else {
+            $connection->last_error = mb_substr(ShopifyError::staffMessage($orderError), 0, 1000);
+        }
         $connection->status = ClientAccountShopifyConnection::STATUS_CONNECTED;
         $connection->save();
 

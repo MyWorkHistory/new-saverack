@@ -114,10 +114,10 @@ class ShopifyIntegrationController extends Controller
         }
 
         return response()->json([
-            'message' => 'Shopify import completed.',
+            'message' => 'Shopify catalog and order import is running in the background.',
             'connection' => $connections->toPublicArray($connection),
-            'import_queued' => false,
-        ]);
+            'import_queued' => true,
+        ], 202);
     }
 
     public function syncConnection(Request $request, ClientAccount $clientAccount, ShopifyConnectionService $connections): JsonResponse
@@ -314,7 +314,7 @@ class ShopifyIntegrationController extends Controller
                     'refresh_token' => $tokenPayload['refresh_token'] ?? null,
                     'expires_in' => $tokenPayload['expires_in'] ?? null,
                     'refresh_token_expires_in' => $tokenPayload['refresh_token_expires_in'] ?? null,
-                    'import' => false,
+                    'import' => $shouldImport,
                 ]);
             } catch (Throwable $e) {
                 report($e);
@@ -419,14 +419,17 @@ class ShopifyIntegrationController extends Controller
 
         try {
             $tokenPayload = $oauth->exchangeCode($callbackShop, $code);
-            // Import after redirect on the Settings page so Shopify's callback is not held open.
+            $shouldImport = array_key_exists('import', $statePayload)
+                ? (bool) $statePayload['import']
+                : true;
+
             $connections->connectAndImport($account, [
                 'shop_domain' => $callbackShop,
                 'admin_api_access_token' => $tokenPayload['access_token'],
                 'refresh_token' => $tokenPayload['refresh_token'] ?? null,
                 'expires_in' => $tokenPayload['expires_in'] ?? null,
                 'refresh_token_expires_in' => $tokenPayload['refresh_token_expires_in'] ?? null,
-                'import' => false,
+                'import' => $shouldImport,
             ]);
         } catch (Throwable $e) {
             report($e);

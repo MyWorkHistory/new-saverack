@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Services\ShopifyClient;
 use App\Services\ShopifyOrderSyncService;
 use App\Services\ShopifyWebhookVerifier;
+use App\Support\ShopifyError;
 use App\Support\ShopifyGid;
 use Tests\TestCase;
 
@@ -129,6 +130,17 @@ class ShopifySupportTest extends TestCase
         $this->assertTrue($service->topicLooksLikeDelete('orders_delete'));
         $this->assertFalse($service->topicLooksLikeDelete('orders/edited'));
         $this->assertFalse($service->topicLooksLikeDelete('orders/updated'));
+    }
+
+    public function test_staff_message_explains_protected_order_access(): void
+    {
+        $raw = 'Shopify GraphQL error: This app is not approved to access the Order object. See https://shopify.dev/docs/apps/launch/protected-customer-data for more details.';
+        $message = ShopifyError::staffMessage($raw);
+
+        $this->assertTrue(ShopifyError::isProtectedOrderAccess($raw));
+        $this->assertStringContainsString('Protected customer data', $message);
+        $this->assertStringContainsString('API access requests', $message);
+        $this->assertSame('plain error', ShopifyError::staffMessage('plain error'));
     }
 
     public function test_shop_domain_aliases_match_renamed_myshopify_host(): void

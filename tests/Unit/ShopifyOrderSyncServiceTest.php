@@ -44,6 +44,47 @@ class ShopifyOrderSyncServiceTest extends TestCase
         ]));
     }
 
+    public function test_upserts_rest_order_payload(): void
+    {
+        $connection = $this->connection();
+        $service = app(ShopifyOrderSyncService::class);
+
+        $ok = $service->upsertOrderFromShopifyNode($connection, [
+            'id' => 1001,
+            'admin_graphql_api_id' => 'gid://shopify/Order/1001',
+            'name' => '#1001',
+            'email' => 'buyer@example.com',
+            'financial_status' => 'paid',
+            'fulfillment_status' => 'unfulfilled',
+            'currency' => 'USD',
+            'total_price' => '25.00',
+            'line_items' => [
+                [
+                    'id' => 11,
+                    'admin_graphql_api_id' => 'gid://shopify/LineItem/11',
+                    'sku' => 'SKU-1',
+                    'title' => 'Tee',
+                    'variant_title' => 'M',
+                    'quantity' => 2,
+                    'fulfillable_quantity' => 2,
+                    'price' => '12.50',
+                    'variant_id' => 99,
+                    'product_id' => 88,
+                ],
+            ],
+        ]);
+
+        $this->assertTrue($ok);
+        $order = ShopifyOrder::query()->where('shopify_order_id', '1001')->first();
+        $this->assertNotNull($order);
+        $this->assertSame('#1001', $order->name);
+        $line = ShopifyOrderLineItem::query()->where('shopify_order_id', $order->id)->first();
+        $this->assertNotNull($line);
+        $this->assertSame('SKU-1', $line->sku);
+        $this->assertSame(2, (int) $line->quantity);
+        $this->assertSame('99', (string) $line->shopify_variant_id);
+    }
+
     public function test_uses_current_quantity_and_prunes_removed_line_items(): void
     {
         $connection = $this->connection();

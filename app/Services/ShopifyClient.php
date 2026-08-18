@@ -168,6 +168,82 @@ class ShopifyClient
     }
 
     /**
+     * Parse Shopify REST Link header for page_info of rel="next".
+     */
+    public static function nextRestPageInfo(?string $linkHeader): ?string
+    {
+        if (! is_string($linkHeader) || trim($linkHeader) === '') {
+            return null;
+        }
+        if (! preg_match('/<[^>]*[?&]page_info=([^&>]+)[^>]*>;\s*rel="next"/i', $linkHeader, $m)) {
+            return null;
+        }
+        $info = urldecode($m[1]);
+
+        return $info !== '' ? $info : null;
+    }
+
+    /**
+     * REST Admin GET. Used when GraphQL denies the Order object (protected customer data).
+     *
+     * @param  array<string, mixed>  $query
+     * @return array{status:int, json:array<string, mixed>, link:?string}
+     */
+    public function restGet(string $path, array $query = []): array
+    {
+        $connection = $this->requireConnection();
+        $this->oauth->ensureFreshAccessToken($connection);
+        $domain = $connection->normalizedShopDomain();
+        $token = trim((string) $connection->admin_api_access_token);
+        if ($domain === '' || $token === '') {
+            throw new RuntimeException('Shopify connection credentials are incomplete.');
+        }
+
+        $version = trim((string) ($connection->api_version ?: config('services.shopify.api_version', '2025-01')));
+        $url = 'https://'.$domain.'/admin/api/'.$version.'/'.ltrim($path, '/');
+
+        try {
+            $response = $this->http()->get($url, [
+                'headers' => [
+                    'X-Shopify-Access-Token' => $token,
+                    'Accept' => 'application/json',
+                ],
+                'query' => $query,
+                'connect_timeout' => 5,
+                'timeout' => 25,
+            ]);
+        } catch (Throwable $e) {
+            Log::warning('shopify.rest.request_failed', [
+                'shop' => $domain,
+                'path' => $path,
+                'message' => $e->getMessage(),
+            ]);
+            throw new RuntimeException('Shopify REST request failed: '.$e->getMessage(), 0, $e);
+        }
+
+        $status = $response->getStatusCode();
+        $raw = (string) $response->getBody();
+        $body = json_decode($raw, true);
+        if (! is_array($body)) {
+            $body = [];
+        }
+
+        if ($status < 200 || $status >= 300) {
+            throw new RuntimeException(
+                'Shopify REST HTTP error: '.$this->graphqlHttpErrorMessage($status, $body)
+            );
+        }
+
+        $link = $response->getHeaderLine('Link');
+
+        return [
+            'status' => $status,
+            'json' => $body,
+            'link' => $link !== '' ? $link : null,
+        ];
+    }
+
+    /**
      * @param  list<mixed>  $errors
      */
     private function firstGraphqlErrorMessage(array $errors): string

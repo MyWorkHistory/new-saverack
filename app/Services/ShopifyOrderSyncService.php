@@ -7,6 +7,7 @@ use App\Models\ShopifyFulfillmentOrder;
 use App\Models\ShopifyFulfillmentOrderLineItem;
 use App\Models\ShopifyOrder;
 use App\Models\ShopifyOrderLineItem;
+use App\Support\ShopifyError;
 use App\Support\ShopifyGid;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,23 @@ class ShopifyOrderSyncService
     public function importOpenOrders(ClientAccountShopifyConnection $connection, ?ShopifyClient $api = null): int
     {
         $api = $api ?? $this->client->forConnection($connection);
+        try {
+            return $this->importOpenOrdersGraphql($connection, $api);
+        } catch (Throwable $e) {
+            if (! ShopifyError::isProtectedOrderAccess($e->getMessage())) {
+                throw $e;
+            }
+            Log::warning('shopify.import.orders_graphql_denied_rest_fallback', [
+                'connection_id' => $connection->id,
+                'message' => $e->getMessage(),
+            ]);
+
+            return $this->importOpenOrdersRest($connection, $api);
+        }
+    }
+
+    private function importOpenOrdersGraphql(ClientAccountShopifyConnection $connection, ShopifyClient $api): int
+    {
         $count = 0;
         $cursor = null;
         $page = 0;
@@ -115,6 +133,40 @@ GQL
         return $count;
     }
 
+    private function importOpenOrdersRest(ClientAccountShopifyConnection $connection, ShopifyClient $api): int
+    {
+        $count = 0;
+        $pageInfo = null;
+        for ($page = 1; $page <= 8; $page++) {
+            $query = [
+                'status' => 'open',
+                'limit' => 50,
+            ];
+            if (is_string($pageInfo) && $pageInfo !== '') {
+                $query = [
+                    'limit' => 50,
+                    'page_info' => $pageInfo,
+                ];
+            }
+            $response = $api->restGet('orders.json', $query);
+            $orders = is_array($response['json']['orders'] ?? null) ? $response['json']['orders'] : [];
+            foreach ($orders as $order) {
+                if (! is_array($order)) {
+                    continue;
+                }
+                if ($this->upsertOrderFromShopifyNode($connection, $order)) {
+                    $count++;
+                }
+            }
+            $pageInfo = ShopifyClient::nextRestPageInfo($response['link'] ?? null);
+            if ($pageInfo === null) {
+                break;
+            }
+        }
+
+        return $count;
+    }
+
     /**
      * Re-sync all unfulfilled / partially fulfilled orders (manual CRM action).
      */
@@ -198,17 +250,54 @@ GQL
         }
 
         $query = 'name:'.$normalized;
-        $data = $api->graphql(
-            <<<'GQL'
+        try {
+            $data = $api->graphql(
+                <<<'GQL'
 query OrderByName($q: String!) {
   orders(first: 5, query: $q, sortKey: CREATED_AT, reverse: true) {
     edges { node { id name } }
   }
 }
 GQL
-            ,
-            ['q' => $query]
-        );
+                ,
+                ['q' => $query]
+            );
+        } catch (Throwable $e) {
+            if (! ShopifyError::isProtectedOrderAccess($e->getMessage())) {
+                throw $e;
+            }
+            $rest = $api->restGet('orders.json', [
+                'name' => $normalized,
+                'status' => 'any',
+                'limit' => 5,
+            ]);
+            $orders = is_array($rest['json']['orders'] ?? null) ? $rest['json']['orders'] : [];
+            $matchId = '';
+            foreach ($orders as $order) {
+                if (! is_array($order)) {
+                    continue;
+                }
+                $name = $this->normalizeOrderName((string) ($order['name'] ?? ''));
+                if ($name === $normalized) {
+                    $matchId = $this->extractShopifyOrderId($order);
+                    break;
+                }
+            }
+            if ($matchId === '' && $orders !== [] && is_array($orders[0])) {
+                $matchId = $this->extractShopifyOrderId($orders[0]);
+            }
+            if ($matchId === '') {
+                throw new \RuntimeException('No Shopify order found for '.$normalized.'.');
+            }
+            $order = $this->refreshOrderByShopifyId($connection, $matchId);
+            if ($order === null) {
+                throw new \RuntimeException('Could not load Shopify order '.$normalized.'.');
+            }
+            $connection->last_order_sync_at = now();
+            $connection->save();
+
+            return $order;
+        }
 
         $edges = is_array($data['orders']['edges'] ?? null) ? $data['orders']['edges'] : [];
         $matchId = '';
@@ -284,6 +373,9 @@ GQL
             ? $shopifyOrderId
             : ShopifyGid::of('Order', $shopifyOrderId);
 
+        $node = null;
+        $data = [];
+
         try {
             $data = $api->graphql(
                 <<<'GQL'
@@ -350,21 +442,53 @@ GQL
                 'order_id' => $shopifyOrderId,
                 'message' => $e->getMessage(),
             ]);
-
-            return null;
+            $node = $this->fetchOrderRestById($api, $shopifyOrderId);
+            if ($node === null) {
+                return null;
+            }
         }
 
-        $node = is_array($data['order'] ?? null) ? $data['order'] : null;
+        if (! isset($node) || ! is_array($node)) {
+            $node = is_array($data['order'] ?? null) ? $data['order'] : null;
+        }
+        if ($node === null) {
+            $node = $this->fetchOrderRestById($api, $shopifyOrderId);
+        }
         if ($node === null) {
             return null;
         }
 
         $this->upsertOrderFromShopifyNode($connection, $node);
+        $savedId = $this->extractShopifyOrderId($node);
 
         return ShopifyOrder::query()
             ->where('connection_id', $connection->id)
-            ->where('shopify_order_id', ShopifyGid::toId((string) ($node['id'] ?? '')))
+            ->where('shopify_order_id', $savedId)
             ->first();
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchOrderRestById(ShopifyClient $api, string $shopifyOrderId): ?array
+    {
+        $id = ShopifyGid::toId($shopifyOrderId);
+        if ($id === '') {
+            return null;
+        }
+        try {
+            $response = $api->restGet('orders/'.$id.'.json');
+        } catch (Throwable $e) {
+            Log::warning('shopify.order.rest_refresh_failed', [
+                'order_id' => $id,
+                'message' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+        $order = $response['json']['order'] ?? null;
+
+        return is_array($order) ? $order : null;
     }
 
     /**
@@ -483,7 +607,7 @@ GQL
      */
     public function upsertOrderFromShopifyNode(ClientAccountShopifyConnection $connection, array $node): bool
     {
-        $orderId = ShopifyGid::toId((string) ($node['id'] ?? ''));
+        $orderId = $this->extractShopifyOrderId($node);
         if ($orderId === '') {
             return false;
         }
@@ -521,7 +645,10 @@ GQL
 
             $seenLineIds = [];
             foreach ($lineNodes as $lineNode) {
-                $lineId = ShopifyGid::toId((string) ($lineNode['id'] ?? ''));
+                $lineId = ShopifyGid::toId((string) ($lineNode['admin_graphql_api_id'] ?? $lineNode['id'] ?? ''));
+                if ($lineId === '') {
+                    $lineId = ShopifyGid::numericIdString($lineNode['id'] ?? null);
+                }
                 if ($lineId === '') {
                     continue;
                 }
@@ -540,8 +667,8 @@ GQL
                     ],
                     [
                         'shopify_order_id' => $order->id,
-                        'shopify_variant_id' => ShopifyGid::toId((string) (($lineNode['variant']['id'] ?? '') ?: '')),
-                        'shopify_product_id' => ShopifyGid::toId((string) (($lineNode['product']['id'] ?? '') ?: '')),
+                        'shopify_variant_id' => ShopifyGid::toId((string) (($lineNode['variant']['id'] ?? $lineNode['variant_id'] ?? '') ?: '')),
+                        'shopify_product_id' => ShopifyGid::toId((string) (($lineNode['product']['id'] ?? $lineNode['product_id'] ?? '') ?: '')),
                         'sku' => (string) ($lineNode['sku'] ?? ''),
                         'title' => (string) ($lineNode['title'] ?? ''),
                         'variant_title' => (string) ($lineNode['variantTitle'] ?? $lineNode['variant_title'] ?? ''),
@@ -550,7 +677,7 @@ GQL
                         'fulfilled_quantity' => $fulfilled,
                         'price' => isset($lineNode['originalUnitPriceSet']['shopMoney']['amount'])
                             ? (float) $lineNode['originalUnitPriceSet']['shopMoney']['amount']
-                            : null,
+                            : (isset($lineNode['price']) ? (float) $lineNode['price'] : null),
                         'raw_json' => $lineNode,
                     ]
                 );
@@ -705,6 +832,26 @@ GQL
     {
         $api = $this->client->forConnection($connection);
         $minutes = max(5, min(120, $minutes));
+        try {
+            $count = $this->syncRecentlyUpdatedGraphql($connection, $api, $minutes);
+        } catch (Throwable $e) {
+            if (! ShopifyError::isProtectedOrderAccess($e->getMessage())) {
+                throw $e;
+            }
+            $count = $this->syncRecentlyUpdatedRest($connection, $api, $minutes);
+        }
+
+        $connection->last_order_sync_at = now();
+        $connection->save();
+
+        return $count;
+    }
+
+    private function syncRecentlyUpdatedGraphql(
+        ClientAccountShopifyConnection $connection,
+        ShopifyClient $api,
+        int $minutes
+    ): int {
         $from = now('UTC')->subMinutes($minutes)->toIso8601String();
         $query = 'updated_at:>='.$from;
         $count = 0;
@@ -739,8 +886,47 @@ GQL
             $cursor = ShopifyClient::nextPageCursor($cursor, $pageInfo, $page, 20);
         } while ($cursor !== null && $count < 200);
 
-        $connection->last_order_sync_at = now();
-        $connection->save();
+        return $count;
+    }
+
+    private function syncRecentlyUpdatedRest(
+        ClientAccountShopifyConnection $connection,
+        ShopifyClient $api,
+        int $minutes
+    ): int {
+        $from = now('UTC')->subMinutes($minutes)->toIso8601String();
+        $count = 0;
+        $pageInfo = null;
+        for ($page = 1; $page <= 8; $page++) {
+            $query = [
+                'status' => 'any',
+                'limit' => 50,
+                'updated_at_min' => $from,
+            ];
+            if (is_string($pageInfo) && $pageInfo !== '') {
+                $query = [
+                    'limit' => 50,
+                    'page_info' => $pageInfo,
+                ];
+            }
+            $response = $api->restGet('orders.json', $query);
+            $orders = is_array($response['json']['orders'] ?? null) ? $response['json']['orders'] : [];
+            foreach ($orders as $order) {
+                if (! is_array($order)) {
+                    continue;
+                }
+                if ($this->upsertOrderFromShopifyNode($connection, $order)) {
+                    $count++;
+                }
+                if ($count >= 200) {
+                    return $count;
+                }
+            }
+            $pageInfo = ShopifyClient::nextRestPageInfo($response['link'] ?? null);
+            if ($pageInfo === null) {
+                break;
+            }
+        }
 
         return $count;
     }

@@ -27,6 +27,7 @@ class ShopifyError
         $lower = strtolower($raw);
 
         return str_contains($lower, 'not approved to access the order object')
+            || str_contains($lower, 'access denied for orders')
             || str_contains($lower, 'protected-customer-data')
             || str_contains($lower, 'protected customer data');
     }

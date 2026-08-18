@@ -208,8 +208,8 @@ class ShopifyConnectionService
     }
 
     /**
-     * Queue a full re-import. Do not run Shopify GraphQL inside a web request —
-     * that pinned PHP workers and took the site down.
+     * Import catalog + open orders in this request (no queue). Open orders use REST
+     * when GraphQL denies the Order object so a missing worker cannot stall orders.
      */
     public function syncNow(ClientAccountShopifyConnection $connection): ClientAccountShopifyConnection
     {
@@ -217,7 +217,7 @@ class ShopifyConnectionService
             throw new RuntimeException('Shopify connection has no credentials.');
         }
 
-        $this->queueBootstrapImport($connection, false);
+        $this->bootstrap->importAll($connection);
 
         return $connection->fresh() ?? $connection;
     }
@@ -240,7 +240,7 @@ class ShopifyConnectionService
      * Queue an orders-only re-sync (unfulfilled or after date). Does not flip full-import "importing" status.
      *
      * @param  array{mode:string, after_date?:string|null}  $input
-     * @return array{queued:true, mode:string, connection:ClientAccountShopifyConnection}
+     * @return array{queued:bool, synced?:int, mode:string, connection:ClientAccountShopifyConnection}
      */
     public function queueOrderResync(ClientAccountShopifyConnection $connection, array $input): array
     {
@@ -254,6 +254,17 @@ class ShopifyConnectionService
             RunShopifyOrderResyncJob::MODE_AFTER_DATE,
         ], true)) {
             throw new RuntimeException('Invalid order re-sync mode.');
+        }
+
+        if ($mode === RunShopifyOrderResyncJob::MODE_UNFULFILLED) {
+            $count = app(ShopifyOrderSyncService::class)->syncUnfulfilledOrders($connection);
+
+            return [
+                'queued' => false,
+                'synced' => $count,
+                'mode' => $mode,
+                'connection' => $connection->fresh() ?? $connection,
+            ];
         }
 
         $afterDate = null;
@@ -375,6 +386,14 @@ class ShopifyConnectionService
         }
         $updated = $connection->updated_at;
         if ($updated !== null && $updated->gt(now()->subMinutes(3))) {
+            return;
+        }
+
+        if ($connection->last_sync_at !== null && $connection->hasCredentials()) {
+            $connection->status = ClientAccountShopifyConnection::STATUS_CONNECTED;
+            $connection->last_error = 'Order import did not finish. Click Full Re-Import or Re-Sync Orders.';
+            $connection->save();
+
             return;
         }
 

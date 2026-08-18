@@ -94,6 +94,12 @@ class ShopifySupportTest extends TestCase
             'hasNextPage' => false,
             'endCursor' => 'c2',
         ], 1, 40));
+        $this->assertSame('eyJ', ShopifyClient::nextRestPageInfo(
+            '<https://shop.myshopify.com/admin/api/2025-01/orders.json?page_info=eyJ&limit=50>; rel="next"'
+        ));
+        $this->assertNull(ShopifyClient::nextRestPageInfo(
+            '<https://shop.myshopify.com/admin/api/2025-01/orders.json?page_info=abc>; rel="previous"'
+        ));
     }
 
     public function test_graphql_throws_when_orders_root_is_denied(): void

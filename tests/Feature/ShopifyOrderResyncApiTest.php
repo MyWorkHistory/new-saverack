@@ -51,23 +51,27 @@ class ShopifyOrderResyncApiTest extends TestCase
         return [$account, $connection];
     }
 
-    public function test_queues_unfulfilled_order_resync(): void
+    public function test_syncs_unfulfilled_orders_inline(): void
     {
-        Bus::fake();
         $this->actingAsAdmin();
-        [$account] = $this->connectedAccount();
+        [$account, $connection] = $this->connectedAccount();
+
+        $mock = Mockery::mock(ShopifyOrderSyncService::class);
+        $mock->shouldReceive('syncUnfulfilledOrders')
+            ->once()
+            ->withArgs(function ($conn) use ($connection) {
+                return (int) $conn->id === (int) $connection->id;
+            })
+            ->andReturn(3);
+        $this->app->instance(ShopifyOrderSyncService::class, $mock);
 
         $this->postJson("/api/client-accounts/{$account->id}/shopify-connection/sync-orders", [
             'mode' => 'unfulfilled',
         ])
-            ->assertStatus(202)
-            ->assertJsonPath('queued', true)
+            ->assertOk()
+            ->assertJsonPath('queued', false)
+            ->assertJsonPath('synced', 3)
             ->assertJsonPath('mode', 'unfulfilled');
-
-        Bus::assertDispatched(RunShopifyOrderResyncJob::class, function (RunShopifyOrderResyncJob $job) {
-            return $job->mode === RunShopifyOrderResyncJob::MODE_UNFULFILLED
-                && $job->afterDate === null;
-        });
     }
 
     public function test_queues_after_date_order_resync(): void

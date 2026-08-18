@@ -114,10 +114,10 @@ class ShopifyIntegrationController extends Controller
         }
 
         return response()->json([
-            'message' => 'Shopify catalog and order import is running in the background.',
+            'message' => 'Shopify import completed.',
             'connection' => $connections->toPublicArray($connection),
-            'import_queued' => true,
-        ], 202);
+            'import_queued' => false,
+        ]);
     }
 
     public function syncConnection(Request $request, ClientAccount $clientAccount, ShopifyConnectionService $connections): JsonResponse
@@ -177,6 +177,18 @@ class ShopifyIntegrationController extends Controller
                 'mode' => $mode,
                 'after_date' => $validated['after_date'] ?? null,
             ]);
+
+            if (empty($result['queued'])) {
+                $synced = (int) ($result['synced'] ?? 0);
+
+                return response()->json([
+                    'message' => 'Synced '.$synced.' open order'.($synced === 1 ? '' : 's').'.',
+                    'queued' => false,
+                    'synced' => $synced,
+                    'mode' => $mode,
+                    'connection' => $connections->toPublicArray($result['connection']),
+                ]);
+            }
 
             $msg = $mode === 'after_date'
                 ? 'Order re-sync queued for orders on/after '.$validated['after_date'].'.'

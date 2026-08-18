@@ -44,6 +44,11 @@ class RunShopifyBootstrapImportJob implements ShouldQueue
                 'connection_id' => $this->connectionId,
                 'reason' => 'missing_connection_or_credentials',
             ]);
+            if ($connection !== null && $connection->status === ClientAccountShopifyConnection::STATUS_IMPORTING) {
+                $connection->status = ClientAccountShopifyConnection::STATUS_ERROR;
+                $connection->last_error = 'Shopify import stalled (missing credentials).';
+                $connection->save();
+            }
 
             return;
         }
@@ -83,6 +88,11 @@ class RunShopifyBootstrapImportJob implements ShouldQueue
             $this->markFailed($e->getMessage());
 
             throw $e;
+        }
+
+        $fresh = ClientAccountShopifyConnection::query()->find($this->connectionId);
+        if ($fresh !== null && $fresh->status === ClientAccountShopifyConnection::STATUS_IMPORTING) {
+            $this->markFailed('Shopify import stalled. Click Full Re-Import.');
         }
     }
 

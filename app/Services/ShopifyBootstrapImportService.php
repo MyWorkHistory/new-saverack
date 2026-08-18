@@ -73,7 +73,9 @@ class ShopifyBootstrapImportService
     {
         $count = 0;
         $cursor = null;
+        $page = 0;
         do {
+            $page++;
             $data = $api->graphql(
                 <<<'GQL'
 query Locations($cursor: String) {
@@ -126,9 +128,8 @@ GQL
                 $count++;
             }
 
-            $page = is_array($conn['pageInfo'] ?? null) ? $conn['pageInfo'] : [];
-            $hasNext = (bool) ($page['hasNextPage'] ?? false);
-            $cursor = $hasNext ? ($page['endCursor'] ?? null) : null;
+            $pageInfo = is_array($conn['pageInfo'] ?? null) ? $conn['pageInfo'] : [];
+            $cursor = ShopifyClient::nextPageCursor($cursor, $pageInfo, $page, 10);
         } while ($cursor !== null);
 
         return $count;
@@ -177,6 +178,7 @@ GQL
             ->pluck('shopify_inventory_item_id')
             ->unique()
             ->values()
+            ->take(200)
             ->all();
 
         foreach (array_chunk($itemIds, 25) as $chunk) {
@@ -207,8 +209,10 @@ GQL
         $numericItemId = ShopifyGid::toId($inventoryItemId);
         $count = 0;
         $cursor = null;
+        $page = 0;
 
         do {
+            $page++;
             $data = $api->graphql(
                 <<<'GQL'
 query InventoryItemLevels($id: ID!, $cursor: String) {
@@ -271,9 +275,8 @@ GQL
                 $count++;
             }
 
-            $page = is_array($levels['pageInfo'] ?? null) ? $levels['pageInfo'] : [];
-            $hasNext = (bool) ($page['hasNextPage'] ?? false);
-            $cursor = $hasNext ? ($page['endCursor'] ?? null) : null;
+            $pageInfo = is_array($levels['pageInfo'] ?? null) ? $levels['pageInfo'] : [];
+            $cursor = ShopifyClient::nextPageCursor($cursor, $pageInfo, $page, 5);
         } while ($cursor !== null);
 
         return $count;

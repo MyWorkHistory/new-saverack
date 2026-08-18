@@ -59,7 +59,7 @@
             v-if="isImporting"
             class="text-primary"
           >
-            Import running in the background… this page will update when it finishes.
+            Import did not finish. Click Full Re-Import if this is still showing.
           </div>
           <div
             v-if="connection?.last_error"
@@ -430,7 +430,7 @@ function consumeOauthQueryToast() {
   if (!status) return;
   if (status === "success") {
     toast.success("Shopify Connected.");
-    startPollingIfNeeded();
+    void syncNow();
   } else if (status === "error") {
     const msg = String(route.query.shopify_oauth_message || "").trim();
     toast.error(msg || "Shopify OAuth failed.");
@@ -500,7 +500,7 @@ async function syncNow() {
   try {
     const { data } = await api.post(`/client-accounts/${props.accountId}/shopify-connection/sync`);
     connection.value = data?.connection || null;
-    toast.success(data?.message || "Shopify Full Re-Import Queued.");
+    toast.success(data?.message || "Shopify Import Completed.");
     startPollingIfNeeded();
   } catch (e) {
     toast.errorFrom(e, "Could not start full re-import.");

@@ -137,7 +137,7 @@ class ShopifyOAuthApiTest extends TestCase
                 return (int) $acc->id === (int) $account->id
                     && $input['shop_domain'] === 'test-store-wke6tzxl.myshopify.com'
                     && $input['admin_api_access_token'] === 'shpat_oauth_test_token'
-                    && $input['import'] === true;
+                    && $input['import'] === false;
             })
             ->andReturn($connection);
         $this->app->instance(ShopifyConnectionService::class, $mock);

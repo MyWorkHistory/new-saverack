@@ -2,12 +2,12 @@
 
 namespace App\Services;
 
-use App\Jobs\RunShopifyBootstrapImportJob;
 use App\Jobs\RunShopifyOrderResyncJob;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountShopifyConnection;
 use App\Models\ShopifyOrder;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
@@ -50,9 +50,15 @@ class ShopifyConnectionService
 
     public function getForAccount(int $clientAccountId): ?ClientAccountShopifyConnection
     {
-        return ClientAccountShopifyConnection::query()
+        $connection = ClientAccountShopifyConnection::query()
             ->where('client_account_id', $clientAccountId)
             ->first();
+        if ($connection !== null) {
+            $this->recoverStuckImport($connection);
+            $connection->refresh();
+        }
+
+        return $connection;
     }
 
     /**
@@ -97,7 +103,7 @@ class ShopifyConnectionService
     }
 
     /**
-     * Verify credentials quickly, then queue bootstrap import (avoids Cloudflare/PHP request timeouts).
+     * Verify credentials, then optionally import catalog + open orders in this request.
      *
      * @param  array{shop_domain:string, admin_api_access_token?:string|null, refresh_token?:string|null, expires_in?:int|null, refresh_token_expires_in?:int|null, webhook_secret?:string|null, api_version?:string|null, import?:bool}  $input
      */
@@ -167,7 +173,7 @@ class ShopifyConnectionService
 
         $shouldImport = ! array_key_exists('import', $input) || (bool) $input['import'];
         if ($shouldImport) {
-            $this->queueBootstrapImport($connection, true);
+            $this->runBootstrapNow($connection, true);
 
             return $connection->fresh();
         }
@@ -201,7 +207,8 @@ class ShopifyConnectionService
     }
 
     /**
-     * Queue a full re-import (HTTP-safe). Prefer this over running importAll in a web request.
+     * Run catalog + order import in this request. Small shops finish in seconds;
+     * queuing left CRM stuck on Importing when no worker was draining jobs.
      */
     public function syncNow(ClientAccountShopifyConnection $connection): ClientAccountShopifyConnection
     {
@@ -209,9 +216,7 @@ class ShopifyConnectionService
             throw new RuntimeException('Shopify connection has no credentials.');
         }
 
-        $this->queueBootstrapImport($connection, false);
-
-        return $connection->fresh();
+        return $this->runBootstrapNow($connection, false);
     }
 
     /**
@@ -301,11 +306,70 @@ class ShopifyConnectionService
         ClientAccountShopifyConnection $connection,
         bool $registerWebhooks = true
     ): void {
-        $connection->status = ClientAccountShopifyConnection::STATUS_IMPORTING;
-        $connection->last_error = null;
-        $connection->save();
+        $this->runBootstrapNow($connection, $registerWebhooks);
+    }
 
-        RunShopifyBootstrapImportJob::dispatch((int) $connection->id, $registerWebhooks);
+    public function runBootstrapNow(ClientAccountShopifyConnection $connection, bool $registerWebhooks = true): ClientAccountShopifyConnection
+    {
+        $lock = Cache::lock('shopify-bootstrap:'.$connection->id, 180);
+        if (! $lock->get()) {
+            return $connection->fresh() ?? $connection;
+        }
+
+        try {
+            if (function_exists('set_time_limit')) {
+                @set_time_limit(180);
+            }
+            $this->bootstrap->importAll($connection);
+            if ($registerWebhooks) {
+                try {
+                    $this->registerWebhooks($connection->fresh() ?? $connection);
+                } catch (Throwable $e) {
+                    Log::warning('shopify.webhooks.register_failed', [
+                        'connection_id' => $connection->id,
+                        'message' => $e->getMessage(),
+                    ]);
+                    $connection->refresh();
+                    $connection->last_error = mb_substr(
+                        'Import completed but webhook registration failed: '.$e->getMessage(),
+                        0,
+                        1000
+                    );
+                    $connection->save();
+                }
+            }
+        } catch (Throwable $e) {
+            $connection->refresh();
+            $connection->status = ClientAccountShopifyConnection::STATUS_ERROR;
+            $connection->last_error = mb_substr($e->getMessage(), 0, 1000);
+            $connection->save();
+            throw $e;
+        } finally {
+            optional($lock)->release();
+        }
+
+        return $connection->fresh() ?? $connection;
+    }
+
+    /**
+     * Settings GET used to re-run the full Shopify import, which hung the panel forever
+     * when a queued job never ran (or GraphQL stalled). Unstick the badge only.
+     */
+    public function recoverStuckImport(ClientAccountShopifyConnection $connection): void
+    {
+        if ((string) $connection->status !== ClientAccountShopifyConnection::STATUS_IMPORTING) {
+            return;
+        }
+        $updated = $connection->updated_at;
+        if ($updated !== null && $updated->gt(now()->subSeconds(20))) {
+            return;
+        }
+
+        $connection->status = ClientAccountShopifyConnection::STATUS_ERROR;
+        $connection->last_error = $connection->hasCredentials()
+            ? 'Shopify import stalled. Click Full Re-Import (Orders + Catalog).'
+            : 'Shopify import stalled (missing credentials).';
+        $connection->save();
     }
 
     /**

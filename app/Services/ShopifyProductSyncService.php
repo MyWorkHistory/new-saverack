@@ -29,8 +29,10 @@ class ShopifyProductSyncService
         $products = 0;
         $variants = 0;
         $cursor = null;
+        $page = 0;
 
         do {
+            $page++;
             $data = $api->graphql(
                 <<<'GQL'
 query ActiveProducts($cursor: String) {
@@ -82,9 +84,8 @@ GQL
                 $variants += $result['variants'];
             }
 
-            $page = is_array($conn['pageInfo'] ?? null) ? $conn['pageInfo'] : [];
-            $hasNext = (bool) ($page['hasNextPage'] ?? false);
-            $cursor = $hasNext ? ($page['endCursor'] ?? null) : null;
+            $pageInfo = is_array($conn['pageInfo'] ?? null) ? $conn['pageInfo'] : [];
+            $cursor = ShopifyClient::nextPageCursor($cursor, $pageInfo, $page, 40);
         } while ($cursor !== null);
 
         return compact('products', 'variants');

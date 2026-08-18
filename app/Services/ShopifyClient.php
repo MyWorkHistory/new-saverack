@@ -144,6 +144,30 @@ class ShopifyClient
     }
 
     /**
+     * Stop GraphQL pagination when Shopify repeats a cursor or claims another page with no cursor.
+     *
+     * @param  array<string, mixed>  $pageInfo
+     */
+    public static function nextPageCursor($currentCursor, array $pageInfo, int $pageNumber, int $maxPages = 40): ?string
+    {
+        if ($pageNumber >= $maxPages) {
+            return null;
+        }
+        if (empty($pageInfo['hasNextPage'])) {
+            return null;
+        }
+        $next = $pageInfo['endCursor'] ?? null;
+        if (! is_string($next) || $next === '') {
+            return null;
+        }
+        if (is_string($currentCursor) && $currentCursor !== '' && $next === $currentCursor) {
+            return null;
+        }
+
+        return $next;
+    }
+
+    /**
      * @param  list<mixed>  $errors
      */
     private function firstGraphqlErrorMessage(array $errors): string

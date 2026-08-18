@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Services\ShopifyClient;
 use App\Services\ShopifyOrderSyncService;
 use App\Services\ShopifyWebhookVerifier;
 use App\Support\ShopifyGid;
@@ -72,6 +73,26 @@ class ShopifySupportTest extends TestCase
         ]);
 
         $this->assertSame('#1001', $data['orders']['edges'][0]['node']['name']);
+    }
+
+    public function test_next_page_cursor_stops_on_repeat_or_max_pages(): void
+    {
+        $this->assertSame('c2', ShopifyClient::nextPageCursor('c1', [
+            'hasNextPage' => true,
+            'endCursor' => 'c2',
+        ], 1, 40));
+        $this->assertNull(ShopifyClient::nextPageCursor('c1', [
+            'hasNextPage' => true,
+            'endCursor' => 'c1',
+        ], 1, 40));
+        $this->assertNull(ShopifyClient::nextPageCursor('c1', [
+            'hasNextPage' => true,
+            'endCursor' => 'c2',
+        ], 40, 40));
+        $this->assertNull(ShopifyClient::nextPageCursor(null, [
+            'hasNextPage' => false,
+            'endCursor' => 'c2',
+        ], 1, 40));
     }
 
     public function test_graphql_throws_when_orders_root_is_denied(): void

@@ -28,8 +28,10 @@ class ShopifyOrderSyncService
         $api = $api ?? $this->client->forConnection($connection);
         $count = 0;
         $cursor = null;
+        $page = 0;
 
         do {
+            $page++;
             $data = $api->graphql(
                 <<<'GQL'
 query OpenOrders($cursor: String) {
@@ -106,9 +108,8 @@ GQL
                 }
             }
 
-            $page = is_array($conn['pageInfo'] ?? null) ? $conn['pageInfo'] : [];
-            $hasNext = (bool) ($page['hasNextPage'] ?? false);
-            $cursor = $hasNext ? ($page['endCursor'] ?? null) : null;
+            $pageInfo = is_array($conn['pageInfo'] ?? null) ? $conn['pageInfo'] : [];
+            $cursor = ShopifyClient::nextPageCursor($cursor, $pageInfo, $page, 20);
         } while ($cursor !== null);
 
         return $count;
@@ -141,8 +142,10 @@ GQL
         $query = 'created_at:>='.$day;
         $count = 0;
         $cursor = null;
+        $page = 0;
 
         do {
+            $page++;
             $data = $api->graphql(
                 <<<'GQL'
 query OrdersAfterDate($q: String!, $cursor: String) {
@@ -168,9 +171,8 @@ GQL
                     $count++;
                 }
             }
-            $page = is_array($conn['pageInfo'] ?? null) ? $conn['pageInfo'] : [];
-            $hasNext = (bool) ($page['hasNextPage'] ?? false);
-            $cursor = $hasNext ? ($page['endCursor'] ?? null) : null;
+            $pageInfo = is_array($conn['pageInfo'] ?? null) ? $conn['pageInfo'] : [];
+            $cursor = ShopifyClient::nextPageCursor($cursor, $pageInfo, $page, 40);
         } while ($cursor !== null && $count < $maxOrders);
 
         $connection->last_order_sync_at = now();
@@ -707,8 +709,10 @@ GQL
         $query = 'updated_at:>='.$from;
         $count = 0;
         $cursor = null;
+        $page = 0;
 
         do {
+            $page++;
             $data = $api->graphql(
                 <<<'GQL'
 query RecentOrders($q: String!, $cursor: String) {
@@ -731,9 +735,8 @@ GQL
                     $count++;
                 }
             }
-            $page = is_array($conn['pageInfo'] ?? null) ? $conn['pageInfo'] : [];
-            $hasNext = (bool) ($page['hasNextPage'] ?? false);
-            $cursor = $hasNext ? ($page['endCursor'] ?? null) : null;
+            $pageInfo = is_array($conn['pageInfo'] ?? null) ? $conn['pageInfo'] : [];
+            $cursor = ShopifyClient::nextPageCursor($cursor, $pageInfo, $page, 20);
         } while ($cursor !== null && $count < 200);
 
         $connection->last_order_sync_at = now();

@@ -54,6 +54,7 @@ use App\Http\Controllers\ShipHeroWebhookController;
 use App\Http\Controllers\ShopifyWebhookController;
 use App\Http\Controllers\StripeWebhookController;
 use App\Http\Controllers\PublicPaymentMethodController;
+use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -66,7 +67,8 @@ Route::prefix('auth')->group(function () {
 
 Route::post('stripe/webhook', [StripeWebhookController::class, 'handle']);
 Route::match(['post', 'head'], 'shiphero/webhook', [ShipHeroWebhookController::class, 'handle']);
-Route::match(['post', 'head'], 'shopify/webhook', [ShopifyWebhookController::class, 'handle']);
+Route::match(['post', 'head'], 'shopify/webhook', [ShopifyWebhookController::class, 'handle'])
+    ->withoutMiddleware([ThrottleRequests::class]);
 Route::get('shopify/oauth/install', [ShopifyIntegrationController::class, 'oauthInstall']);
 Route::get('shopify/oauth/callback', [ShopifyIntegrationController::class, 'oauthCallback']);
 

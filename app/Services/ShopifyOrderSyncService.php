@@ -467,6 +467,24 @@ GQL
             ->first();
     }
 
+    public function upsertOrderFromRestId(ClientAccountShopifyConnection $connection, string $shopifyOrderId): ?ShopifyOrder
+    {
+        $api = $this->client->forConnection($connection);
+        $node = $this->fetchOrderRestById($api, $shopifyOrderId);
+        if ($node === null) {
+            return null;
+        }
+        if (! $this->upsertOrderFromShopifyNode($connection, $node)) {
+            return null;
+        }
+        $savedId = $this->extractShopifyOrderId($node);
+
+        return ShopifyOrder::query()
+            ->where('connection_id', $connection->id)
+            ->where('shopify_order_id', $savedId)
+            ->first();
+    }
+
     /**
      * @return array<string, mixed>|null
      */
@@ -492,8 +510,7 @@ GQL
     }
 
     /**
-     * REST / GraphQL webhook order payloads (create, update, edited, cancelled).
-     * Prefers a GraphQL refresh; falls back to the REST body if GraphQL is denied.
+     * REST webhook bodies (create/update) apply immediately. Thin topics (edited) fetch REST by id.
      *
      * @param  array<string, mixed>  $payload
      */
@@ -515,29 +532,32 @@ GQL
             return null;
         }
 
-        // Order edits are not reflected in REST line_items; prefer GraphQL when it works.
-        $fresh = $this->refreshOrderByShopifyId($connection, $orderId, 3);
-        if ($fresh !== null) {
-            return $fresh;
-        }
-
-        // GraphQL may fail (protected customer data / token). REST webhook payload is still usable.
+        // Order edits are a thin payload; fetch the live REST order. Otherwise apply the webhook body now
+        // so CRM updates without waiting on GraphQL (Order object is often ACCESS_DENIED).
         $restNode = is_array($payload['order'] ?? null) ? $payload['order'] : $payload;
-        if ($this->upsertOrderFromShopifyNode($connection, $restNode)) {
-            Log::warning('shopify.order.webhook_rest_fallback', [
-                'connection_id' => $connection->id,
-                'order_id' => $orderId,
-                'topic' => $topic,
-            ]);
+        $hasOrderBody = isset($restNode['line_items'])
+            || isset($restNode['lineItems'])
+            || (isset($restNode['name']) && ! isset($payload['order_edit']));
 
+        if ($hasOrderBody && $this->upsertOrderFromShopifyNode($connection, $restNode)) {
             return ShopifyOrder::query()
                 ->where('connection_id', $connection->id)
                 ->where('shopify_order_id', $orderId)
                 ->first();
         }
 
+        $fromRest = $this->upsertOrderFromRestId($connection, $orderId);
+        if ($fromRest !== null) {
+            return $fromRest;
+        }
+
+        $fresh = $this->refreshOrderByShopifyId($connection, $orderId, 1);
+        if ($fresh !== null) {
+            return $fresh;
+        }
+
         throw new \RuntimeException(
-            'Shopify GraphQL refresh failed for order '.$orderId.' (topic='.($topic !== '' ? $topic : 'unknown').').'
+            'Shopify order webhook could not load order '.$orderId.' (topic='.($topic !== '' ? $topic : 'unknown').').'
         );
     }
 

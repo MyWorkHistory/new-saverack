@@ -103,29 +103,20 @@ class ShopifyWebhookController extends Controller
             ]);
         }
 
-        // Queue for workers; also try once after the HTTP response so CRM updates
-        // even when queue workers are down (PHP-FPM terminating callback).
-        ProcessShopifyWebhookJob::dispatch((int) $event->id);
-        $eventId = (int) $event->id;
-        app()->terminating(static function () use ($eventId) {
-            try {
-                $fresh = ShopifyWebhookEvent::query()->find($eventId);
-                if ($fresh === null || $fresh->processed_at !== null) {
-                    return;
-                }
-                (new ProcessShopifyWebhookJob($eventId))->handle(
-                    app(\App\Services\ShopifyProductSyncService::class),
-                    app(\App\Services\ShopifyOrderSyncService::class),
-                    app(\App\Services\ShopifyBootstrapImportService::class),
-                    app(\App\Services\ShopifyClient::class)
-                );
-            } catch (\Throwable $e) {
-                Log::warning('shopify.webhook.terminating_process_failed', [
-                    'event_id' => $eventId,
-                    'message' => $e->getMessage(),
-                ]);
-            }
-        });
+        try {
+            (new ProcessShopifyWebhookJob((int) $event->id))->handle(
+                app(\App\Services\ShopifyProductSyncService::class),
+                app(\App\Services\ShopifyOrderSyncService::class),
+                app(\App\Services\ShopifyBootstrapImportService::class),
+                app(\App\Services\ShopifyClient::class)
+            );
+        } catch (\Throwable $e) {
+            Log::warning('shopify.webhook.inline_process_failed', [
+                'event_id' => $event->id,
+                'message' => $e->getMessage(),
+            ]);
+            ProcessShopifyWebhookJob::dispatch((int) $event->id);
+        }
 
         return response()->json(['ok' => true]);
     }

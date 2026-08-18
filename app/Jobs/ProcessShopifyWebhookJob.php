@@ -100,8 +100,9 @@ class ProcessShopifyWebhookJob implements ShouldQueue
                 if ($orderId === '') {
                     throw new RuntimeException('Fulfillment webhook missing order id.');
                 }
-                if ($orders->refreshOrderByShopifyId($connection, $orderId, 3) === null) {
-                    throw new RuntimeException('Fulfillment webhook GraphQL refresh failed for order '.$orderId);
+                if ($orders->upsertOrderFromRestId($connection, $orderId) === null
+                    && $orders->refreshOrderByShopifyId($connection, $orderId, 1) === null) {
+                    throw new RuntimeException('Fulfillment webhook could not refresh order '.$orderId);
                 }
             } else {
                 $this->markProcessed($event, 'Unhandled Shopify topic: '.$topic);

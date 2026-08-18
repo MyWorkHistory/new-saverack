@@ -174,24 +174,13 @@ class ShopifyConnectionService
 
         $shouldImport = ! array_key_exists('import', $input) || (bool) $input['import'];
         if ($shouldImport) {
-            $this->queueBootstrapImport($connection, true);
-
-            return $connection->fresh();
-        }
-
-        $connection->status = ClientAccountShopifyConnection::STATUS_CONNECTED;
-        $connection->save();
-
-        try {
-            $this->registerWebhooks($connection);
-        } catch (Throwable $e) {
-            Log::warning('shopify.webhooks.register_failed', [
-                'connection_id' => $connection->id,
-                'message' => $e->getMessage(),
-            ]);
-            $connection->last_error = mb_substr('Connected but webhook registration failed: '.$e->getMessage(), 0, 1000);
+            $this->queueBootstrapImport($connection, false);
+        } else {
+            $connection->status = ClientAccountShopifyConnection::STATUS_CONNECTED;
             $connection->save();
         }
+
+        $this->registerWebhooksQuietly($connection);
 
         return $connection->fresh();
     }
@@ -218,6 +207,7 @@ class ShopifyConnectionService
         }
 
         $this->bootstrap->importAll($connection);
+        $this->registerWebhooksQuietly($connection);
 
         return $connection->fresh() ?? $connection;
     }
@@ -376,9 +366,27 @@ class ShopifyConnectionService
         return $connection->fresh() ?? $connection;
     }
 
-    /**
-     * If a queued import never ran, unstick Settings. Do not call Shopify from GET.
-     */
+    public function registerWebhooksQuietly(ClientAccountShopifyConnection $connection): void
+    {
+        try {
+            $this->registerWebhooks($connection);
+        } catch (Throwable $e) {
+            Log::warning('shopify.webhooks.register_failed', [
+                'connection_id' => $connection->id,
+                'message' => $e->getMessage(),
+            ]);
+            $connection->refresh();
+            $prefix = trim((string) $connection->last_error);
+            $note = 'Webhook registration failed: '.$e->getMessage();
+            $connection->last_error = mb_substr(
+                $prefix !== '' ? $prefix.' '.$note : 'Connected but '.$note,
+                0,
+                1000
+            );
+            $connection->save();
+        }
+    }
+
     public function recoverStuckImport(ClientAccountShopifyConnection $connection): void
     {
         if ((string) $connection->status !== ClientAccountShopifyConnection::STATUS_IMPORTING) {

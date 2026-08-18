@@ -69,10 +69,13 @@ class ShopifyWebhookApiTest extends TestCase
             $body
         )->assertOk()->assertJsonPath('ok', true);
 
-        Bus::assertDispatched(ProcessShopifyWebhookJob::class);
         $this->assertDatabaseHas('shopify_webhook_events', [
             'event_id' => 'wh-1',
             'topic' => 'orders/create',
+        ]);
+        $this->assertDatabaseHas('shopify_orders', [
+            'shopify_order_id' => '55',
+            'name' => '#1001',
         ]);
     }
 
@@ -120,7 +123,7 @@ class ShopifyWebhookApiTest extends TestCase
         ]);
     }
 
-    public function test_webhook_queues_orders_edited_and_delete_topics(): void
+    public function test_webhook_accepts_orders_edited_and_delete_topics(): void
     {
         Bus::fake();
         config(['services.shopify.webhook_secret' => 'secret']);
@@ -157,7 +160,6 @@ class ShopifyWebhookApiTest extends TestCase
             )->assertOk()->assertJsonPath('ok', true);
         }
 
-        Bus::assertDispatched(ProcessShopifyWebhookJob::class, 2);
         $this->assertDatabaseHas('shopify_webhook_events', ['event_id' => 'wh-edit', 'topic' => 'orders/edited']);
         $this->assertDatabaseHas('shopify_webhook_events', ['event_id' => 'wh-del', 'topic' => 'orders/delete']);
     }

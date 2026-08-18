@@ -33,7 +33,7 @@ class ShopifyOrderSyncService
             $data = $api->graphql(
                 <<<'GQL'
 query OpenOrders($cursor: String) {
-  orders(first: 25, after: $cursor, query: "fulfillment_status:unfulfilled OR fulfillment_status:partial") {
+  orders(first: 25, after: $cursor, query: "status:open", sortKey: CREATED_AT, reverse: true) {
     pageInfo { hasNextPage endCursor }
     edges {
       node {
@@ -367,7 +367,7 @@ GQL
 
     /**
      * REST / GraphQL webhook order payloads (create, update, edited, cancelled).
-     * Always refreshes via GraphQL — REST order.line_items ignore Admin order edits.
+     * Prefers a GraphQL refresh; falls back to the REST body if GraphQL is denied.
      *
      * @param  array<string, mixed>  $payload
      */
@@ -389,10 +389,25 @@ GQL
             return null;
         }
 
-        // Order edits are not reflected in REST line_items; retry GraphQL so Shopify has committed the edit.
+        // Order edits are not reflected in REST line_items; prefer GraphQL when it works.
         $fresh = $this->refreshOrderByShopifyId($connection, $orderId, 3);
         if ($fresh !== null) {
             return $fresh;
+        }
+
+        // GraphQL may fail (protected customer data / token). REST webhook payload is still usable.
+        $restNode = is_array($payload['order'] ?? null) ? $payload['order'] : $payload;
+        if ($this->upsertOrderFromShopifyNode($connection, $restNode)) {
+            Log::warning('shopify.order.webhook_rest_fallback', [
+                'connection_id' => $connection->id,
+                'order_id' => $orderId,
+                'topic' => $topic,
+            ]);
+
+            return ShopifyOrder::query()
+                ->where('connection_id', $connection->id)
+                ->where('shopify_order_id', $orderId)
+                ->first();
         }
 
         throw new \RuntimeException(

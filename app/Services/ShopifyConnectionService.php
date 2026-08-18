@@ -318,11 +318,13 @@ class ShopifyConnectionService
         $client = $this->client->forConnection($connection);
         $created = 0;
         $skipped = [];
+        $hardFailures = [];
 
         foreach (self::WEBHOOK_TOPICS as $topic) {
-            $data = $client->graphql(
-                <<<'GQL'
-mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $uri: URL!) {
+            try {
+                $data = $client->graphql(
+                    <<<'GQL'
+mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $uri: String!) {
   webhookSubscriptionCreate(
     topic: $topic
     webhookSubscription: { format: JSON, uri: $uri }
@@ -332,12 +334,21 @@ mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $uri: URL!
   }
 }
 GQL
-                ,
-                [
+                    ,
+                    [
+                        'topic' => $topic,
+                        'uri' => $callback,
+                    ]
+                );
+            } catch (Throwable $e) {
+                $hardFailures[] = $topic.': '.$e->getMessage();
+                Log::warning('shopify.webhooks.topic_failed', [
+                    'connection_id' => $connection->id,
                     'topic' => $topic,
-                    'uri' => $callback,
-                ]
-            );
+                    'message' => $e->getMessage(),
+                ]);
+                continue;
+            }
 
             $payload = is_array($data['webhookSubscriptionCreate'] ?? null)
                 ? $data['webhookSubscriptionCreate']
@@ -354,7 +365,8 @@ GQL
                 // Missing scope / topic not allowed for this app — skip optional topics.
                 $denied = str_contains($lower, 'cannot create')
                     || str_contains($lower, 'access')
-                    || str_contains($lower, 'scope');
+                    || str_contains($lower, 'scope')
+                    || str_contains($lower, 'protected');
                 if ($denied && in_array($topic, self::OPTIONAL_WEBHOOK_TOPICS, true)) {
                     $skipped[] = $topic.': '.$msg;
                     Log::warning('shopify.webhooks.topic_skipped', [
@@ -364,17 +376,28 @@ GQL
                     ]);
                     continue;
                 }
-                throw new RuntimeException($topic.': '.$msg);
+                $hardFailures[] = $topic.': '.$msg;
+                continue;
             }
 
             $created++;
         }
 
         if ($created === 0) {
-            throw new RuntimeException('No Shopify webhook topics could be registered.');
+            throw new RuntimeException(
+                'No Shopify webhook topics could be registered. '.implode(' ', $hardFailures)
+            );
         }
 
-        return ['created' => $created, 'skipped' => $skipped];
+        if ($hardFailures !== []) {
+            Log::warning('shopify.webhooks.partial_register', [
+                'connection_id' => $connection->id,
+                'created' => $created,
+                'failures' => $hardFailures,
+            ]);
+        }
+
+        return ['created' => $created, 'skipped' => array_merge($skipped, $hardFailures)];
     }
 
     /**

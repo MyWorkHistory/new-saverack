@@ -36,16 +36,27 @@ class ShopifyBootstrapImportService
     public function importAll(ClientAccountShopifyConnection $connection): array
     {
         $api = $this->client->forConnection($connection);
-        // Orders first so CRM lists are usable even if catalog sync is slow/large.
         $locations = $this->importLocations($connection, $api);
-        $orderCount = $this->orders->importOpenOrders($connection, $api);
+        $orderCount = 0;
+        $orderError = null;
+        try {
+            $orderCount = $this->orders->importOpenOrders($connection, $api);
+        } catch (Throwable $e) {
+            $orderError = $e->getMessage();
+            Log::warning('shopify.import.orders_failed', [
+                'connection_id' => $connection->id,
+                'message' => $orderError,
+            ]);
+        }
         $catalog = $this->products->importActiveProducts($connection, $api);
         $levels = $this->importInventoryLevels($connection, $api);
 
         $connection->last_sync_at = now();
         $connection->last_product_sync_at = now();
         $connection->last_order_sync_at = now();
-        $connection->last_error = null;
+        $connection->last_error = $orderError !== null
+            ? mb_substr('Catalog synced. Orders failed: '.$orderError, 0, 1000)
+            : null;
         $connection->status = ClientAccountShopifyConnection::STATUS_CONNECTED;
         $connection->save();
 

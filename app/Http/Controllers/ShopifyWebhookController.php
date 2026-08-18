@@ -40,6 +40,11 @@ class ShopifyWebhookController extends Controller
         if ($fallback !== '' && ! in_array($fallback, $secrets, true)) {
             $secrets[] = $fallback;
         }
+        // Public / Dev Dashboard apps sign webhooks with the app client secret.
+        $clientSecret = trim((string) config('services.shopify.client_secret', ''));
+        if ($clientSecret !== '' && ! in_array($clientSecret, $secrets, true)) {
+            $secrets[] = $clientSecret;
+        }
 
         if ($secrets === []) {
             Log::warning('shopify.webhook.missing_secret', ['shop' => $shopDomain, 'topic' => $topic]);

@@ -109,18 +109,68 @@ class ShopifyClient
             throw new RuntimeException('Shopify GraphQL HTTP error: '.$this->graphqlHttpErrorMessage($status, $body));
         }
 
-        if (! empty($body['errors']) && is_array($body['errors'])) {
-            $first = $body['errors'][0] ?? null;
-            $message = is_array($first) ? (string) ($first['message'] ?? 'GraphQL error') : 'GraphQL error';
-            throw new RuntimeException('Shopify GraphQL error: '.$message);
-        }
+        return $this->interpretGraphqlBody($body, $domain);
+    }
 
+    /**
+     * Shopify often returns HTTP 200 with both data and field-level ACCESS_DENIED errors
+     * (email / shippingAddress). Throwing here aborted order import while products still worked.
+     *
+     * @param  array<string, mixed>  $body
+     * @return array<string, mixed>
+     */
+    public function interpretGraphqlBody(array $body, string $shop = ''): array
+    {
+        $errors = is_array($body['errors'] ?? null) ? $body['errors'] : [];
         $data = $body['data'] ?? null;
-        if (! is_array($data)) {
-            throw new RuntimeException('Shopify GraphQL response missing data.');
+        $hasUsableData = is_array($data) && $this->graphqlDataHasValue($data);
+
+        if ($errors !== [] && $hasUsableData) {
+            Log::warning('shopify.graphql.partial_errors', [
+                'shop' => $shop,
+                'message' => $this->firstGraphqlErrorMessage($errors),
+            ]);
         }
 
-        return $data;
+        if ($hasUsableData) {
+            return $data;
+        }
+
+        if ($errors !== []) {
+            throw new RuntimeException('Shopify GraphQL error: '.$this->firstGraphqlErrorMessage($errors));
+        }
+
+        throw new RuntimeException('Shopify GraphQL response missing data.');
+    }
+
+    /**
+     * @param  list<mixed>  $errors
+     */
+    private function firstGraphqlErrorMessage(array $errors): string
+    {
+        $first = $errors[0] ?? null;
+        if (is_string($first) && trim($first) !== '') {
+            return trim($first);
+        }
+        if (is_array($first)) {
+            return (string) ($first['message'] ?? 'GraphQL error');
+        }
+
+        return 'GraphQL error';
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function graphqlDataHasValue(array $data): bool
+    {
+        foreach ($data as $value) {
+            if ($value !== null) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

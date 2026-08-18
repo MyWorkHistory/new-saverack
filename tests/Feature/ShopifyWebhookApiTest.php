@@ -76,6 +76,50 @@ class ShopifyWebhookApiTest extends TestCase
         ]);
     }
 
+    public function test_webhook_accepts_hmac_signed_with_oauth_client_secret(): void
+    {
+        Bus::fake();
+        config([
+            'services.shopify.webhook_secret' => '',
+            'services.shopify.client_secret' => 'oauth-client-secret',
+        ]);
+
+        ClientAccountShopifyConnection::query()->create([
+            'client_account_id' => ClientAccount::query()->create([
+                'company_name' => 'SH Co',
+                'status' => ClientAccount::STATUS_ACTIVE,
+            ])->id,
+            'shop_domain' => 'test.myshopify.com',
+            'admin_api_access_token' => 'shpat_x',
+            'status' => ClientAccountShopifyConnection::STATUS_CONNECTED,
+        ]);
+
+        $body = '{"id":88,"name":"#1002"}';
+        $hmac = base64_encode(hash_hmac('sha256', $body, 'oauth-client-secret', true));
+
+        $this->call(
+            'POST',
+            '/api/shopify/webhook',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_SHOPIFY_HMAC_SHA256' => $hmac,
+                'HTTP_X_SHOPIFY_TOPIC' => 'inventory_levels/update',
+                'HTTP_X_SHOPIFY_SHOP_DOMAIN' => 'test.myshopify.com',
+                'HTTP_X_SHOPIFY_WEBHOOK_ID' => 'wh-inv-1',
+            ],
+            $body
+        )->assertOk()->assertJsonPath('ok', true);
+
+        Bus::assertDispatched(ProcessShopifyWebhookJob::class);
+        $this->assertDatabaseHas('shopify_webhook_events', [
+            'event_id' => 'wh-inv-1',
+            'topic' => 'inventory_levels/update',
+        ]);
+    }
+
     public function test_webhook_queues_orders_edited_and_delete_topics(): void
     {
         Bus::fake();

@@ -51,6 +51,42 @@ class ShopifySupportTest extends TestCase
         $this->assertFalse($verifier->verify($body, $hmac, ''));
     }
 
+    public function test_graphql_keeps_order_data_when_protected_fields_are_denied(): void
+    {
+        $client = app(\App\Services\ShopifyClient::class);
+        $data = $client->interpretGraphqlBody([
+            'data' => [
+                'orders' => [
+                    'edges' => [
+                        ['node' => ['id' => 'gid://shopify/Order/1', 'name' => '#1001', 'email' => null]],
+                    ],
+                ],
+            ],
+            'errors' => [
+                [
+                    'message' => 'This app is not approved to access the email field.',
+                    'path' => ['orders', 'edges', 0, 'node', 'email'],
+                    'extensions' => ['code' => 'ACCESS_DENIED'],
+                ],
+            ],
+        ]);
+
+        $this->assertSame('#1001', $data['orders']['edges'][0]['node']['name']);
+    }
+
+    public function test_graphql_throws_when_orders_root_is_denied(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Access denied for orders field');
+
+        app(\App\Services\ShopifyClient::class)->interpretGraphqlBody([
+            'data' => ['orders' => null],
+            'errors' => [
+                ['message' => 'Access denied for orders field.'],
+            ],
+        ]);
+    }
+
     public function test_extracts_order_id_from_orders_edited_payload(): void
     {
         $service = app(ShopifyOrderSyncService::class);

@@ -13,10 +13,22 @@ class ShopifyClient
     /** @var Client|null */
     private $http;
 
+    /** @var ShopifyOAuthService */
+    private $oauth;
+
+    /** @var bool */
+    private $triedExpiringMigration = false;
+
+    public function __construct(ShopifyOAuthService $oauth)
+    {
+        $this->oauth = $oauth;
+    }
+
     public function forConnection(ClientAccountShopifyConnection $connection): self
     {
         $clone = clone $this;
         $clone->connection = $connection;
+        $clone->triedExpiringMigration = false;
 
         return $clone;
     }
@@ -29,6 +41,27 @@ class ShopifyClient
      * @return array<string, mixed>
      */
     public function graphql(string $query, array $variables = []): array
+    {
+        $connection = $this->requireConnection();
+        $this->oauth->ensureFreshAccessToken($connection);
+
+        try {
+            return $this->postGraphql($query, $variables);
+        } catch (RuntimeException $e) {
+            if (! $this->triedExpiringMigration && $this->oauth->tryMigrateNonExpiringToken($connection, $e)) {
+                $this->triedExpiringMigration = true;
+
+                return $this->postGraphql($query, $variables);
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $variables
+     * @return array<string, mixed>
+     */
+    private function postGraphql(string $query, array $variables = []): array
     {
         $connection = $this->requireConnection();
         $domain = $connection->normalizedShopDomain();
@@ -63,16 +96,17 @@ class ShopifyClient
         }
 
         $status = $response->getStatusCode();
-        $body = json_decode((string) $response->getBody(), true);
+        $raw = (string) $response->getBody();
+        $body = json_decode($raw, true);
         if (! is_array($body)) {
-            throw new RuntimeException('Shopify GraphQL returned invalid JSON (HTTP '.$status.').');
+            $snippet = mb_substr(trim($raw), 0, 240);
+            throw new RuntimeException(
+                'Shopify GraphQL returned invalid JSON (HTTP '.$status.($snippet !== '' ? ': '.$snippet : '').').'
+            );
         }
 
         if ($status < 200 || $status >= 300) {
-            $message = is_array($body['errors'] ?? null)
-                ? json_encode($body['errors'])
-                : 'HTTP '.$status;
-            throw new RuntimeException('Shopify GraphQL HTTP error: '.$message);
+            throw new RuntimeException('Shopify GraphQL HTTP error: '.$this->graphqlHttpErrorMessage($status, $body));
         }
 
         if (! empty($body['errors']) && is_array($body['errors'])) {
@@ -87,6 +121,32 @@ class ShopifyClient
         }
 
         return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $body
+     */
+    private function graphqlHttpErrorMessage(int $status, array $body): string
+    {
+        $errors = $body['errors'] ?? null;
+        if (is_string($errors) && trim($errors) !== '') {
+            return trim($errors);
+        }
+        if (is_array($errors) && $errors !== []) {
+            $first = $errors[0] ?? null;
+            if (is_string($first) && trim($first) !== '') {
+                return trim($first);
+            }
+            if (is_array($first) && isset($first['message']) && is_string($first['message'])) {
+                return $first['message'];
+            }
+            $encoded = json_encode($errors);
+            if (is_string($encoded) && $encoded !== '' && $encoded !== '[]') {
+                return $encoded;
+            }
+        }
+
+        return 'HTTP '.$status;
     }
 
     /**

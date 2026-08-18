@@ -23,6 +23,9 @@ class ClientAccountShopifyConnection extends Model
         'shop_domain',
         'shop_domain_aliases',
         'admin_api_access_token',
+        'refresh_token',
+        'access_token_expires_at',
+        'refresh_token_expires_at',
         'api_version',
         'webhook_secret',
         'status',
@@ -37,7 +40,10 @@ class ClientAccountShopifyConnection extends Model
     protected $casts = [
         'client_account_id' => 'integer',
         'admin_api_access_token' => 'encrypted',
+        'refresh_token' => 'encrypted',
         'shop_domain_aliases' => 'array',
+        'access_token_expires_at' => 'datetime',
+        'refresh_token_expires_at' => 'datetime',
         'connected_at' => 'datetime',
         'last_sync_at' => 'datetime',
         'last_product_sync_at' => 'datetime',
@@ -46,6 +52,7 @@ class ClientAccountShopifyConnection extends Model
 
     protected $hidden = [
         'admin_api_access_token',
+        'refresh_token',
         'webhook_secret',
     ];
 

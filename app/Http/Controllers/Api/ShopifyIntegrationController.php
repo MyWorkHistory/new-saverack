@@ -311,6 +311,9 @@ class ShopifyIntegrationController extends Controller
                 $connections->connectAndImport($account, [
                     'shop_domain' => $shop,
                     'admin_api_access_token' => $tokenPayload['access_token'],
+                    'refresh_token' => $tokenPayload['refresh_token'] ?? null,
+                    'expires_in' => $tokenPayload['expires_in'] ?? null,
+                    'refresh_token_expires_in' => $tokenPayload['refresh_token_expires_in'] ?? null,
                     'import' => $shouldImport,
                 ]);
             } catch (Throwable $e) {
@@ -423,6 +426,9 @@ class ShopifyIntegrationController extends Controller
             $connections->connectAndImport($account, [
                 'shop_domain' => $callbackShop,
                 'admin_api_access_token' => $tokenPayload['access_token'],
+                'refresh_token' => $tokenPayload['refresh_token'] ?? null,
+                'expires_in' => $tokenPayload['expires_in'] ?? null,
+                'refresh_token_expires_in' => $tokenPayload['refresh_token_expires_in'] ?? null,
                 'import' => $shouldImport,
             ]);
         } catch (Throwable $e) {

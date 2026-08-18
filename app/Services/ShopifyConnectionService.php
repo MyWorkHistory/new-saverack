@@ -99,7 +99,7 @@ class ShopifyConnectionService
     /**
      * Verify credentials quickly, then queue bootstrap import (avoids Cloudflare/PHP request timeouts).
      *
-     * @param  array{shop_domain:string, admin_api_access_token?:string|null, webhook_secret?:string|null, api_version?:string|null, import?:bool}  $input
+     * @param  array{shop_domain:string, admin_api_access_token?:string|null, refresh_token?:string|null, expires_in?:int|null, refresh_token_expires_in?:int|null, webhook_secret?:string|null, api_version?:string|null, import?:bool}  $input
      */
     public function connectAndImport(ClientAccount $account, array $input): ClientAccountShopifyConnection
     {
@@ -118,8 +118,22 @@ class ShopifyConnectionService
         $token = isset($input['admin_api_access_token']) ? trim((string) $input['admin_api_access_token']) : '';
         if ($token !== '') {
             $connection->admin_api_access_token = $token;
+            if (! array_key_exists('refresh_token', $input)) {
+                $connection->refresh_token = null;
+                $connection->access_token_expires_at = null;
+                $connection->refresh_token_expires_at = null;
+            }
         } elseif (! $connection->exists || ! $connection->hasCredentials()) {
             throw new RuntimeException('Admin API access token is required.');
+        }
+
+        if (array_key_exists('refresh_token', $input) || array_key_exists('expires_in', $input)) {
+            app(ShopifyOAuthService::class)->persistTokenPayload($connection, [
+                'access_token' => $token !== '' ? $token : (string) $connection->admin_api_access_token,
+                'refresh_token' => $input['refresh_token'] ?? null,
+                'expires_in' => $input['expires_in'] ?? null,
+                'refresh_token_expires_in' => $input['refresh_token_expires_in'] ?? null,
+            ]);
         }
 
         if (array_key_exists('webhook_secret', $input)) {
@@ -178,6 +192,9 @@ class ShopifyConnectionService
     public function disconnect(ClientAccountShopifyConnection $connection): void
     {
         $connection->admin_api_access_token = null;
+        $connection->refresh_token = null;
+        $connection->access_token_expires_at = null;
+        $connection->refresh_token_expires_at = null;
         $connection->status = ClientAccountShopifyConnection::STATUS_DISCONNECTED;
         $connection->last_error = null;
         $connection->save();

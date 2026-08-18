@@ -5,7 +5,7 @@ import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmNoteAuthorAvatar from "../../components/common/CrmNoteAuthorAvatar.vue";
-import Modal from "../../components/Modal.vue";
+import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
 import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
 import WholesaleBarcodeUploadModal from "../../components/orders/WholesaleBarcodeUploadModal.vue";
 import WholesalePackageInfoModal from "../../components/orders/WholesalePackageInfoModal.vue";
@@ -154,11 +154,7 @@ const pickListRoute = computed(() => {
   return { name: "wholesale-pick-list", query };
 });
 
-const canClickStatusBadge = computed(() => {
-  if (isPortal.value) return false;
-  const s = String(order.value?.status || "").toLowerCase();
-  return s === "pending" || s === "completed";
-});
+const canClickStatusBadge = computed(() => !isPortal.value);
 
 const canManageFees = computed(() => !isPortal.value);
 
@@ -425,13 +421,9 @@ function showLineStatusBadge(line) {
 function openStatusModal() {
   if (!canClickStatusBadge.value) return;
   const status = String(order.value?.status || "").toLowerCase();
-  statusDraft.value = status === "completed" || status === "pending" ? status : "pending";
+  const allowed = WHOLESALE_MANUAL_STATUS_OPTIONS.map((opt) => opt.value);
+  statusDraft.value = allowed.includes(status) ? status : "pending";
   statusModalOpen.value = true;
-}
-
-function closeStatusModal() {
-  if (statusSaving.value) return;
-  statusModalOpen.value = false;
 }
 
 async function saveStatusFromModal() {
@@ -887,8 +879,10 @@ onUnmounted(() => {
               <button
                 v-if="canClickStatusBadge"
                 type="button"
-                class="badge rounded-pill fw-medium border-0 asn-line-status-badge"
+                class="badge rounded-pill fw-medium border-0 asn-line-status-badge wholesale-order-detail-page__status-btn"
                 :class="wholesaleStatusBadgeClass(order.status)"
+                title="Update Status"
+                aria-label="Update Status"
                 @click="openStatusModal"
               >
                 {{ orderStatusLabel() }}
@@ -1464,27 +1458,16 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <Modal :open="statusModalOpen" title="Update Status" @close="closeStatusModal">
-      <label class="form-label" for="wholesale-order-status-modal">Status</label>
-      <select
-        id="wholesale-order-status-modal"
-        v-model="statusDraft"
-        class="form-select mb-4"
-        :disabled="statusSaving"
-      >
-        <option v-for="opt in manualStatusOptions" :key="opt.value" :value="opt.value">
-          {{ opt.label }}
-        </option>
-      </select>
-      <div class="d-flex justify-content-end gap-2">
-        <button type="button" class="btn btn-outline-secondary" :disabled="statusSaving" @click="closeStatusModal">
-          Cancel
-        </button>
-        <button type="button" class="btn btn-primary staff-page-primary" :disabled="statusSaving" @click="saveStatusFromModal">
-          {{ statusSaving ? "Saving…" : "Save" }}
-        </button>
-      </div>
-    </Modal>
+    <CrmStatusUpdateModal
+      v-if="canClickStatusBadge"
+      v-model:open="statusModalOpen"
+      v-model:status="statusDraft"
+      title="Update Status"
+      subtitle="Choose a status for this wholesale order."
+      :statuses="manualStatusOptions"
+      :busy="statusSaving"
+      @save="saveStatusFromModal"
+    />
 
     <WholesaleOrderFeesModal
       v-model:open="feesModalOpen"
@@ -1730,6 +1713,14 @@ td.wholesale-line-barcodes-col .btn {
 .wholesale-order-detail-page .asn-line-status-badge {
   font-size: 0.6875rem;
   white-space: nowrap;
+}
+
+.wholesale-order-detail-page__status-btn {
+  cursor: pointer;
+}
+
+.wholesale-order-detail-page__status-btn:hover {
+  filter: brightness(0.96);
 }
 
 .wholesale-order-detail-page .asn-line-thumb-link {

@@ -540,10 +540,7 @@ class WholesaleOrderController extends Controller
                 ? WholesaleOrderFeeChargeCatalog::optionsForAccount($order->clientAccount)
                 : [],
             'statuses' => $this->statusLabels(),
-            'manual_statuses' => [
-                WholesaleOrder::STATUS_PENDING => $this->statusLabel(WholesaleOrder::STATUS_PENDING),
-                WholesaleOrder::STATUS_COMPLETED => $this->statusLabel(WholesaleOrder::STATUS_COMPLETED),
-            ],
+            'manual_statuses' => $this->statusLabels(),
             'order_types' => $this->typeLabels(),
             'requirement_options' => [
                 'sku_barcode_labels' => config('wholesale_orders.sku_barcode_labels', []),
@@ -921,10 +918,7 @@ class WholesaleOrderController extends Controller
         if (! $isPortal) {
             $rules['order_number'] = ['sometimes', 'string', 'max:128'];
             $rules['order_type'] = ['sometimes', 'string', Rule::in(WholesaleOrder::ORDER_TYPES)];
-            $rules['status'] = ['sometimes', 'string', Rule::in([
-                WholesaleOrder::STATUS_PENDING,
-                WholesaleOrder::STATUS_COMPLETED,
-            ])];
+            $rules['status'] = ['sometimes', 'string', Rule::in(WholesaleOrder::STATUSES)];
         }
 
         $validated = $request->validate($rules);
@@ -936,7 +930,7 @@ class WholesaleOrderController extends Controller
         $shippingLabelsOnly = $this->isShippingLabelsOnlyUpdate($validated);
 
         if ($statusOnly) {
-            // Staff status toggle (pending ↔ completed) — always allowed when authorized.
+            // Staff can set any wholesale status from the order-detail lightbox.
         } elseif ($shippingLabelsOnly) {
             $this->assertShippingLabelsEditable($wholesaleOrder);
         } else {

@@ -70,6 +70,6 @@ class ShopifyOAuthServiceTest extends TestCase
         $this->assertStringNotContainsString('scope=', $url);
 
         $install = $service->managedInstallUrl('foo.myshopify.com');
-        $this->assertSame('https://admin.shopify.com/store/foo/oauth/install?client_id=cid', $install);
+        $this->assertSame('https://admin.shopify.com/oauth/install?client_id=cid', $install);
     }
 }

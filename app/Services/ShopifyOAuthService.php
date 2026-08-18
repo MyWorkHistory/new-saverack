@@ -171,8 +171,8 @@ class ShopifyOAuthService
         if (! $this->isConfigured()) {
             throw new RuntimeException('Shopify OAuth is not configured (missing client id/secret).');
         }
-        $handle = $this->shopHandle($shopDomain);
-        if ($handle === '') {
+        $shop = $this->normalizeShopDomain($shopDomain);
+        if ($shop === '') {
             throw new RuntimeException('Shop domain is required.');
         }
 
@@ -180,7 +180,9 @@ class ShopifyOAuthService
             'client_id' => $this->clientId(),
         ], '', '&', PHP_QUERY_RFC3986);
 
-        return 'https://admin.shopify.com/store/'.$handle.'/oauth/install?'.$query;
+        // Do not put /store/{handle}/ in this path. If the current Shopify session
+        // cannot access that store, admin.shopify.com shows "Unauthorized Access".
+        return 'https://admin.shopify.com/oauth/install?'.$query;
     }
 
     /**

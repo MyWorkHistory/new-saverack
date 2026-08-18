@@ -60,8 +60,18 @@ watch(status, () => {
   }
 });
 
-function displayStatus(value) {
-  return String(value || "")
+function statusValue(st) {
+  if (st && typeof st === "object") {
+    return String(st.value ?? "");
+  }
+  return String(st ?? "");
+}
+
+function displayStatus(st) {
+  if (st && typeof st === "object" && st.label) {
+    return String(st.label);
+  }
+  return String(st || "")
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -149,11 +159,11 @@ onUnmounted(() => {
                   <select
                     id="crm-status-update-value"
                     v-model="status"
-                    class="form-select text-capitalize"
+                    class="form-select"
                     :disabled="busy"
                     required
                   >
-                    <option v-for="st in statuses" :key="st" :value="st">
+                    <option v-for="st in statuses" :key="statusValue(st)" :value="statusValue(st)">
                       {{ displayStatus(st) }}
                     </option>
                   </select>

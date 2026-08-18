@@ -45,8 +45,11 @@ export function wholesaleTypeLabel(type) {
 }
 
 export const WHOLESALE_MANUAL_STATUS_OPTIONS = [
+  { value: "draft", label: "Draft" },
   { value: "pending", label: "Pending" },
+  { value: "in_progress", label: "Ready to Ship" },
   { value: "completed", label: "Completed" },
+  { value: "shipped", label: "Shipped" },
 ];
 
 export const WHOLESALE_STATUS_OPTIONS = [

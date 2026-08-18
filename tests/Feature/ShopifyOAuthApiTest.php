@@ -73,11 +73,12 @@ class ShopifyOAuthApiTest extends TestCase
 
         $url = (string) $response->json('authorization_url');
         $this->assertStringContainsString(
-            'https://admin.shopify.com/store/test-store-wke6tzxl/oauth/install?',
+            'https://admin.shopify.com/oauth/install?',
             $url
         );
         $this->assertStringContainsString('client_id=test-client-id', $url);
         $this->assertStringNotContainsString('/oauth/authorize?', $url);
+        $this->assertStringNotContainsString('/store/', $url);
         $this->assertSame('test-store-wke6tzxl.myshopify.com', $response->json('shop_domain'));
     }
 

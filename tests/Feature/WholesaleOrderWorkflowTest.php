@@ -232,7 +232,7 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonCount(0, 'lines');
     }
 
-    public function test_manual_status_update_pending_and_completed(): void
+    public function test_staff_can_manually_update_wholesale_status(): void
     {
         $account = $this->account();
         Sanctum::actingAs($this->staffUser());
@@ -259,7 +259,15 @@ class WholesaleOrderWorkflowTest extends TestCase
 
         $this->patchJson('/api/admin/wholesale-orders/'.$order->id, [
             'status' => WholesaleOrder::STATUS_SHIPPED,
-        ])->assertUnprocessable();
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', WholesaleOrder::STATUS_SHIPPED);
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$order->id, [
+            'status' => WholesaleOrder::STATUS_IN_PROGRESS,
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', WholesaleOrder::STATUS_IN_PROGRESS);
     }
 
     public function test_show_enriches_missing_line_image_from_inventory_index(): void
@@ -351,6 +359,12 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonPath('instructions', 'Portal packing note')
             ->assertJsonPath('shipping_labels_provider', WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES)
             ->assertJsonPath('is_editable', true);
+
+        $this->patchJson('/api/admin/wholesale-orders/'.$order->id, [
+            'status' => WholesaleOrder::STATUS_COMPLETED,
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', WholesaleOrder::STATUS_DRAFT);
 
         $this->deleteJson('/api/admin/wholesale-orders/'.$order->id)->assertOk();
         $this->assertDatabaseMissing('wholesale_orders', ['id' => $order->id]);

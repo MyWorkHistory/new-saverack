@@ -466,18 +466,21 @@ class ShopifyWarehouseLocationController extends Controller
     private function serializeItem(ShopifyWarehouseLocationItem $item): array
     {
         $variant = $item->variant;
-        $product = $variant?->product;
-        $raw = is_array($product?->raw_json) ? $product->raw_json : null;
+        $product = $variant ? $variant->product : null;
+        $rawJson = $product ? $product->raw_json : null;
+        $raw = is_array($rawJson) ? $rawJson : null;
+        $connection = $variant ? $variant->connection : null;
+        $account = $connection ? $connection->clientAccount : null;
 
         return [
             'id' => $item->id,
             'available' => (int) $item->available,
             'variant_id' => $item->shopify_variant_id,
-            'sku' => $variant->sku ?? null,
-            'product_title' => $product->title ?? ($variant->title ?? null),
-            'variant_title' => $variant->title ?? null,
+            'sku' => $variant ? $variant->sku : null,
+            'product_title' => $product ? $product->title : ($variant ? $variant->title : null),
+            'variant_title' => $variant ? $variant->title : null,
             'image_url' => ShopifyProductImage::url($raw),
-            'account_name' => $variant->connection->clientAccount->company_name ?? null,
+            'account_name' => $account ? $account->company_name : null,
         ];
     }
 

@@ -74,6 +74,7 @@ class ShopifyIntegrationController extends Controller
                 'id' => $loc->id,
                 'shopify_location_id' => $loc->shopify_location_id,
                 'name' => $loc->name,
+                'address_line' => $this->locationAddressLine($loc),
                 'active' => (bool) $loc->active,
                 'import_orders' => (bool) $loc->import_orders,
                 'sync_inventory' => (bool) $loc->sync_inventory,
@@ -154,7 +155,30 @@ class ShopifyIntegrationController extends Controller
             return response()->json(['message' => 'Connect Shopify credentials first.'], 422);
         }
 
+        $validated = $request->validate([
+            'order_number' => ['nullable', 'string', 'max:64'],
+        ]);
+        $orderNumber = trim((string) ($validated['order_number'] ?? ''));
+
         try {
+            if ($orderNumber !== '') {
+                $result = app(ShopifyConnectionService::class)->syncOrderByNumber(
+                    $shopifyConnection,
+                    $orderNumber,
+                    $orderSync
+                );
+
+                return response()->json([
+                    'message' => 'Imported order '.$result['order']->name.'.',
+                    'synced' => 1,
+                    'order' => [
+                        'id' => $result['order']->id,
+                        'name' => $result['order']->name,
+                    ],
+                    'connection' => app(ShopifyConnectionService::class)->toPublicArray($result['connection']),
+                ]);
+            }
+
             $synced = $orderSync->importOpenOrders($shopifyConnection);
             $shopifyConnection->last_order_sync_at = now();
             $shopifyConnection->save();
@@ -242,6 +266,22 @@ class ShopifyIntegrationController extends Controller
         if ((int) $connection->client_account_id !== (int) $clientAccount->id) {
             abort(404);
         }
+    }
+
+    private function locationAddressLine(ShopifyLocation $location): string
+    {
+        $addr = is_array($location->address_json) ? $location->address_json : [];
+        $parts = array_filter([
+            trim((string) ($addr['address1'] ?? '')),
+            trim((string) ($addr['address2'] ?? '')),
+            trim((string) ($addr['city'] ?? '')),
+            trim((string) ($addr['province'] ?? $addr['provinceCode'] ?? '')),
+            trim((string) ($addr['zip'] ?? '')),
+        ], static function ($part) {
+            return $part !== '';
+        });
+
+        return implode(', ', $parts);
     }
 
     public function upsertConnection(Request $request, ClientAccount $clientAccount, ShopifyConnectionService $connections): JsonResponse

@@ -14,6 +14,7 @@ import ClientAccountOrdersPanel from "../../components/clients/ClientAccountOrde
 import ClientAccountInventoryPanel from "../../components/clients/ClientAccountInventoryPanel.vue";
 import ClientAccountAsnPanel from "../../components/clients/ClientAccountAsnPanel.vue";
 import AccountDetailSectionHead from "../../components/clients/AccountDetailSectionHead.vue";
+import ClientAccountShopifyStoreSettings from "../../components/clients/ClientAccountShopifyStoreSettings.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmNoteAuthorAvatar from "../../components/common/CrmNoteAuthorAvatar.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
@@ -35,6 +36,7 @@ import { CLIENT_ACCOUNT_INACTIVE_REASONS } from "../../constants/clientAccountIn
 
 const props = defineProps({
   id: { type: String, required: true },
+  storeConnectionId: { type: [String, Number], default: null },
 });
 
 const router = useRouter();
@@ -159,6 +161,10 @@ function tabFromRouteQuery(tab) {
 }
 
 function syncTabFromRoute() {
+  if (props.storeConnectionId) {
+    activeTab.value = TAB_STORES;
+    return;
+  }
   let next = tabFromRouteQuery(route.query.tab);
   if (next === TAB_STORES && !canViewStores.value) {
     next = TAB_ACCOUNT_INFO;
@@ -169,6 +175,14 @@ function syncTabFromRoute() {
 }
 
 function setActiveTab(tabId) {
+  if (props.storeConnectionId) {
+    router.push({
+      name: "client-account-detail",
+      params: { id: String(props.id) },
+      query: { tab: tabId },
+    });
+    return;
+  }
   activeTab.value = tabId;
   const q = String(route.query.tab || "");
   if (q !== tabId) {
@@ -1747,7 +1761,16 @@ onUnmounted(() => {
           </template>
 
           <template v-else-if="activeTab === TAB_STORES && canViewStores">
-              <div class="staff-table-card staff-datatable-card">
+              <ClientAccountShopifyStoreSettings
+                v-if="storeConnectionId"
+                :account-id="id"
+                :connection-id="storeConnectionId"
+                :can-edit="canUpdateStores && (crmIsAdmin(crmUser) || !!crmUser?.is_crm_owner)"
+              />
+              <div
+                v-else
+                class="staff-table-card staff-datatable-card"
+              >
                 <div class="staff-table-toolbar">
                   <div class="staff-table-toolbar--row">
                     <div

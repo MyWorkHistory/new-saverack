@@ -9,8 +9,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('client_account_shopify_connections', function (Blueprint $table) {
+            // MySQL uses the unique index as the FK index; drop the FK first.
+            $table->dropForeign('shopify_conn_account_fk');
             $table->dropUnique(['client_account_id']);
             $table->index('client_account_id', 'shopify_conn_account_idx');
+            $table->foreign('client_account_id', 'shopify_conn_account_fk')
+                ->references('id')->on('client_accounts')->cascadeOnDelete();
             $table->unique('shop_domain', 'shopify_conn_shop_domain_unique');
         });
 
@@ -47,8 +51,11 @@ return new class extends Migration
 
         Schema::table('client_account_shopify_connections', function (Blueprint $table) {
             $table->dropUnique('shopify_conn_shop_domain_unique');
+            $table->dropForeign('shopify_conn_account_fk');
             $table->dropIndex('shopify_conn_account_idx');
             $table->unique('client_account_id');
+            $table->foreign('client_account_id', 'shopify_conn_account_fk')
+                ->references('id')->on('client_accounts')->cascadeOnDelete();
         });
     }
 };

@@ -300,29 +300,6 @@ onMounted(() => {
                     :key="loc.location_id"
                     class="align-middle"
                   >
-            <div
-              v-else
-              class="table-responsive staff-table-wrap"
-            >
-              <table class="table table-hover align-middle mb-0 staff-data-table">
-                <thead class="table-light staff-table-head">
-                  <tr>
-                    <th
-                      class="staff-table-head__th"
-                      scope="col"
-                    >Location</th>
-                    <th
-                      class="staff-table-head__th text-end"
-                      scope="col"
-                    >Available</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="loc in variant.inventory"
-                    :key="loc.location_id"
-                    class="align-middle"
-                  >
                     <td>{{ loc.location_name || "—" }}</td>
                     <td class="text-end fw-semibold">
                       <input

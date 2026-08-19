@@ -119,6 +119,7 @@ class ShopifyOAuthService
             'shop' => $shop,
             'user_id' => isset($payload['user_id']) ? (int) $payload['user_id'] : null,
             'import' => array_key_exists('import', $payload) ? (bool) $payload['import'] : true,
+            'connection_id' => isset($payload['connection_id']) ? (int) $payload['connection_id'] : null,
         ], self::STATE_TTL_SECONDS);
     }
 
@@ -198,6 +199,7 @@ class ShopifyOAuthService
             'shop' => (string) ($payload['shop'] ?? ''),
             'user_id' => isset($payload['user_id']) ? (int) $payload['user_id'] : null,
             'import' => array_key_exists('import', $payload) ? (bool) $payload['import'] : true,
+            'connection_id' => isset($payload['connection_id']) ? (int) $payload['connection_id'] : null,
             'created_at' => now()->toIso8601String(),
         ], self::STATE_TTL_SECONDS);
 
@@ -231,6 +233,7 @@ class ShopifyOAuthService
             'shop' => $shop,
             'user_id' => isset($payload['user_id']) ? (int) $payload['user_id'] : null,
             'import' => array_key_exists('import', $payload) ? (bool) $payload['import'] : true,
+            'connection_id' => isset($payload['connection_id']) ? (int) $payload['connection_id'] : null,
         ];
     }
 
@@ -587,6 +590,7 @@ class ShopifyOAuthService
             'shop' => $shop,
             'user_id' => isset($payload['user_id']) ? (int) $payload['user_id'] : null,
             'import' => array_key_exists('import', $payload) ? (bool) $payload['import'] : true,
+            'connection_id' => isset($payload['connection_id']) ? (int) $payload['connection_id'] : null,
         ];
     }
 }

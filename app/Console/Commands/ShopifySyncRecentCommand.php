@@ -47,8 +47,7 @@ class ShopifySyncRecentCommand extends Command
             try {
                 $orderCount = $orders->syncRecentlyUpdated($connection, $minutes);
                 $catalog = $products->importActiveProducts($connection);
-                $inventorySynced = app(\App\Services\ShopifyBootstrapImportService::class)
-                    ->syncInventoryForConnection($connection, 40);
+                $inventorySynced = 0;
                 $this->info(
                     '  Orders refreshed: '.$orderCount
                     .'; products scanned: '.($catalog['products'] ?? 0)

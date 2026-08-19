@@ -14,12 +14,14 @@ class ShopifyInventoryLevel extends Model
         'shopify_inventory_item_id',
         'shopify_location_id',
         'available',
+        'crm_set_at',
         'shopify_updated_at',
     ];
 
     protected $casts = [
         'connection_id' => 'integer',
         'available' => 'integer',
+        'crm_set_at' => 'datetime',
         'shopify_updated_at' => 'datetime',
     ];
 

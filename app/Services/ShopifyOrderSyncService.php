@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ClientAccountShopifyConnection;
 use App\Models\ShopifyFulfillmentOrder;
 use App\Models\ShopifyFulfillmentOrderLineItem;
+use App\Models\ShopifyLocation;
 use App\Models\ShopifyOrder;
 use App\Models\ShopifyOrderLineItem;
 use App\Support\ShopifyError;
@@ -539,11 +540,17 @@ GQL
             || isset($restNode['lineItems'])
             || (isset($restNode['name']) && ! isset($payload['order_edit']));
 
-        if ($hasOrderBody && $this->upsertOrderFromShopifyNode($connection, $restNode)) {
-            return ShopifyOrder::query()
-                ->where('connection_id', $connection->id)
-                ->where('shopify_order_id', $orderId)
-                ->first();
+        if ($hasOrderBody) {
+            $assigned = $this->assignedShopifyLocationIds($restNode);
+            if ($assigned !== [] && ! $this->shouldImportOrder($connection, $restNode)) {
+                return null;
+            }
+            if ($this->upsertOrderFromShopifyNode($connection, $restNode)) {
+                return ShopifyOrder::query()
+                    ->where('connection_id', $connection->id)
+                    ->where('shopify_order_id', $orderId)
+                    ->first();
+            }
         }
 
         $fromRest = $this->upsertOrderFromRestId($connection, $orderId);
@@ -629,6 +636,15 @@ GQL
     {
         $orderId = $this->extractShopifyOrderId($node);
         if ($orderId === '') {
+            return false;
+        }
+
+        if (! $this->shouldImportOrder($connection, $node)) {
+            Log::info('shopify.order.skipped_location', [
+                'connection_id' => $connection->id,
+                'shopify_order_id' => $orderId,
+            ]);
+
             return false;
         }
 
@@ -990,6 +1006,75 @@ GQL
         });
 
         return $out === [] ? null : $out;
+    }
+
+    public function shouldImportOrder(ClientAccountShopifyConnection $connection, array $node): bool
+    {
+        $enabled = ShopifyLocation::query()
+            ->where('connection_id', $connection->id)
+            ->where('import_orders', true)
+            ->pluck('shopify_location_id')
+            ->map(static function ($id) {
+                return (string) $id;
+            })
+            ->all();
+        if ($enabled === []) {
+            return false;
+        }
+
+        $assigned = $this->assignedShopifyLocationIds($node);
+        if ($assigned === []) {
+            return false;
+        }
+
+        foreach ($assigned as $id) {
+            if (in_array((string) $id, $enabled, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     * @return list<string>
+     */
+    public function assignedShopifyLocationIds(array $node): array
+    {
+        $ids = [];
+        foreach (($node['fulfillmentOrders']['edges'] ?? []) as $edge) {
+            if (! is_array($edge)) {
+                continue;
+            }
+            $gid = $edge['node']['assignedLocation']['location']['id'] ?? '';
+            $id = ShopifyGid::toId((string) $gid);
+            if ($id !== '') {
+                $ids[] = $id;
+            }
+        }
+        foreach (($node['fulfillment_orders'] ?? []) as $fo) {
+            if (! is_array($fo)) {
+                continue;
+            }
+            $id = ShopifyGid::toId((string) ($fo['assigned_location_id'] ?? $fo['location_id'] ?? ''));
+            if ($id === '' && is_array($fo['assigned_location'] ?? null)) {
+                $id = ShopifyGid::toId((string) (
+                    $fo['assigned_location']['location_id']
+                    ?? $fo['assigned_location']['id']
+                    ?? ''
+                ));
+            }
+            if ($id !== '') {
+                $ids[] = $id;
+            }
+        }
+        $direct = ShopifyGid::toId((string) ($node['location_id'] ?? ''));
+        if ($direct !== '') {
+            $ids[] = $direct;
+        }
+
+        return array_values(array_unique($ids));
     }
 
     private function parseTime($value): ?Carbon

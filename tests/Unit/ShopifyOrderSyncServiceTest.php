@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Jobs\ProcessShopifyWebhookJob;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountShopifyConnection;
+use App\Models\ShopifyLocation;
 use App\Models\ShopifyOrder;
 use App\Models\ShopifyOrderLineItem;
 use App\Models\ShopifyWebhookEvent;
@@ -58,6 +59,7 @@ class ShopifyOrderSyncServiceTest extends TestCase
             'fulfillment_status' => 'unfulfilled',
             'currency' => 'USD',
             'total_price' => '25.00',
+            'location_id' => 10,
             'line_items' => [
                 [
                     'id' => 11,
@@ -146,7 +148,7 @@ class ShopifyOrderSyncServiceTest extends TestCase
 
     private function connection(): ClientAccountShopifyConnection
     {
-        return ClientAccountShopifyConnection::query()->create([
+        $connection = ClientAccountShopifyConnection::query()->create([
             'client_account_id' => ClientAccount::query()->create([
                 'company_name' => 'Shopify Order Co',
                 'status' => ClientAccount::STATUS_ACTIVE,
@@ -155,6 +157,15 @@ class ShopifyOrderSyncServiceTest extends TestCase
             'admin_api_access_token' => 'shpat_test',
             'status' => ClientAccountShopifyConnection::STATUS_CONNECTED,
         ]);
+        ShopifyLocation::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_location_id' => '10',
+            'name' => 'Warehouse',
+            'import_orders' => true,
+            'sync_inventory' => true,
+        ]);
+
+        return $connection;
     }
 
     /**
@@ -184,7 +195,15 @@ class ShopifyOrderSyncServiceTest extends TestCase
             'currencyCode' => 'USD',
             'totalPriceSet' => ['shopMoney' => ['amount' => '10.00']],
             'lineItems' => ['edges' => $edges],
-            'fulfillmentOrders' => ['edges' => []],
+            'fulfillmentOrders' => ['edges' => [[
+                'node' => [
+                    'id' => 'gid://shopify/FulfillmentOrder/1',
+                    'assignedLocation' => [
+                        'location' => ['id' => 'gid://shopify/Location/10'],
+                    ],
+                    'lineItems' => ['edges' => []],
+                ],
+            ]]],
         ];
     }
 }

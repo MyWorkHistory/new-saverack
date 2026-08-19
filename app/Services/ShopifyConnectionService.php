@@ -53,11 +53,74 @@ class ShopifyConnectionService
     {
         $connection = ClientAccountShopifyConnection::query()
             ->where('client_account_id', $clientAccountId)
+            ->orderByDesc('id')
             ->first();
         if ($connection !== null) {
             $this->recoverStuckImport($connection);
             $connection->refresh();
         }
+
+        return $connection;
+    }
+
+    /**
+     * @return list<ClientAccountShopifyConnection>
+     */
+    public function listForAccount(int $clientAccountId): array
+    {
+        $rows = ClientAccountShopifyConnection::query()
+            ->where('client_account_id', $clientAccountId)
+            ->orderByDesc('id')
+            ->get();
+
+        foreach ($rows as $connection) {
+            $this->recoverStuckImport($connection);
+            $connection->refresh();
+        }
+
+        return $rows->all();
+    }
+
+    public function getForAccountConnection(int $clientAccountId, int $connectionId): ?ClientAccountShopifyConnection
+    {
+        $connection = ClientAccountShopifyConnection::query()
+            ->where('client_account_id', $clientAccountId)
+            ->where('id', $connectionId)
+            ->first();
+        if ($connection !== null) {
+            $this->recoverStuckImport($connection);
+            $connection->refresh();
+        }
+
+        return $connection;
+    }
+
+    /**
+     * Create or reuse a connection row before OAuth (status Importing until locations finish).
+     */
+    public function preparePendingConnection(ClientAccount $account, string $shopDomain): ClientAccountShopifyConnection
+    {
+        $domain = $this->normalizeDomain($shopDomain);
+        if ($domain === '') {
+            throw new RuntimeException('Shop domain is required.');
+        }
+
+        $existing = ClientAccountShopifyConnection::findByShopDomain($domain);
+        if ($existing !== null && (int) $existing->client_account_id !== (int) $account->id) {
+            throw new RuntimeException('This Shopify store is already connected to another client account.');
+        }
+
+        $connection = $existing ?? ClientAccountShopifyConnection::query()->firstOrNew([
+            'client_account_id' => (int) $account->id,
+            'shop_domain' => $domain,
+        ]);
+        $connection->client_account_id = (int) $account->id;
+        $connection->shop_domain = $domain;
+        if (! $connection->exists || ! $connection->hasCredentials()) {
+            $connection->status = ClientAccountShopifyConnection::STATUS_IMPORTING;
+            $connection->last_error = null;
+        }
+        $connection->save();
 
         return $connection;
     }
@@ -69,8 +132,10 @@ class ShopifyConnectionService
     {
         if ($connection === null) {
             return [
+                'id' => null,
                 'connected' => false,
                 'status' => ClientAccountShopifyConnection::STATUS_DISCONNECTED,
+                'status_label' => 'Disconnected',
                 'shop_domain' => null,
                 'shop_name' => null,
                 'api_version' => (string) config('services.shopify.api_version', '2025-01'),
@@ -86,11 +151,13 @@ class ShopifyConnectionService
         $status = (string) $connection->status;
 
         return [
+            'id' => $connection->id,
             'connected' => in_array($status, [
                 ClientAccountShopifyConnection::STATUS_CONNECTED,
                 ClientAccountShopifyConnection::STATUS_IMPORTING,
             ], true),
             'status' => $status,
+            'status_label' => $this->statusLabel($status),
             'shop_domain' => $connection->normalizedShopDomain(),
             'shop_name' => $connection->shop_name,
             'api_version' => $connection->api_version,
@@ -103,10 +170,22 @@ class ShopifyConnectionService
         ];
     }
 
+    public function statusLabel(string $status): string
+    {
+        if ($status === ClientAccountShopifyConnection::STATUS_IMPORTING) {
+            return 'Importing';
+        }
+        if ($status === ClientAccountShopifyConnection::STATUS_CONNECTED) {
+            return 'Connected';
+        }
+
+        return 'Disconnected';
+    }
+
     /**
      * Verify credentials, then queue catalog + order import (HTTP-safe).
      *
-     * @param  array{shop_domain:string, admin_api_access_token?:string|null, refresh_token?:string|null, expires_in?:int|null, refresh_token_expires_in?:int|null, webhook_secret?:string|null, api_version?:string|null, import?:bool}  $input
+     * @param  array{shop_domain:string, connection_id?:int|null, admin_api_access_token?:string|null, refresh_token?:string|null, expires_in?:int|null, refresh_token_expires_in?:int|null, webhook_secret?:string|null, api_version?:string|null, import?:bool}  $input
      */
     public function connectAndImport(ClientAccount $account, array $input): ClientAccountShopifyConnection
     {
@@ -115,9 +194,25 @@ class ShopifyConnectionService
             throw new RuntimeException('Shop domain is required.');
         }
 
-        $connection = ClientAccountShopifyConnection::query()->firstOrNew([
-            'client_account_id' => (int) $account->id,
-        ]);
+        $connection = null;
+        $connectionId = isset($input['connection_id']) ? (int) $input['connection_id'] : 0;
+        if ($connectionId > 0) {
+            $connection = ClientAccountShopifyConnection::query()
+                ->where('client_account_id', (int) $account->id)
+                ->where('id', $connectionId)
+                ->first();
+        }
+        if ($connection === null) {
+            $byShop = ClientAccountShopifyConnection::findByShopDomain($domain);
+            if ($byShop !== null && (int) $byShop->client_account_id !== (int) $account->id) {
+                throw new RuntimeException('This Shopify store is already connected to another client account.');
+            }
+            $connection = $byShop ?? ClientAccountShopifyConnection::query()->firstOrNew([
+                'client_account_id' => (int) $account->id,
+                'shop_domain' => $domain,
+            ]);
+        }
+        $connection->client_account_id = (int) $account->id;
         $connection->shop_domain = $domain;
         $connection->api_version = trim((string) ($input['api_version'] ?? config('services.shopify.api_version', '2025-01')))
             ?: '2025-01';
@@ -174,7 +269,7 @@ class ShopifyConnectionService
 
         $shouldImport = ! array_key_exists('import', $input) || (bool) $input['import'];
         if ($shouldImport) {
-            $this->queueBootstrapImport($connection, false);
+            $this->queueLocationImport($connection, false);
         } else {
             $connection->status = ClientAccountShopifyConnection::STATUS_CONNECTED;
             $connection->save();
@@ -306,6 +401,17 @@ class ShopifyConnectionService
         ];
     }
 
+    public function queueLocationImport(
+        ClientAccountShopifyConnection $connection,
+        bool $registerWebhooks = true
+    ): void {
+        $connection->status = ClientAccountShopifyConnection::STATUS_IMPORTING;
+        $connection->last_error = null;
+        $connection->save();
+
+        RunShopifyBootstrapImportJob::dispatch((int) $connection->id, $registerWebhooks, true);
+    }
+
     public function queueBootstrapImport(
         ClientAccountShopifyConnection $connection,
         bool $registerWebhooks = true
@@ -314,7 +420,7 @@ class ShopifyConnectionService
         $connection->last_error = null;
         $connection->save();
 
-        RunShopifyBootstrapImportJob::dispatch((int) $connection->id, $registerWebhooks);
+        RunShopifyBootstrapImportJob::dispatch((int) $connection->id, $registerWebhooks, false);
     }
 
     /**

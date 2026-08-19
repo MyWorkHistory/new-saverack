@@ -29,6 +29,7 @@ import SettingsEmailTemplatesPage from "../pages/settings/SettingsEmailTemplates
 import ClientAccountTermsPage from "../pages/clients/ClientAccountTermsPage.vue";
 import ClientAccountsListPage from "../pages/clients/ClientAccountsListPage.vue";
 import ClientAccountDetailPage from "../pages/clients/ClientAccountDetailPage.vue";
+import ClientAccountShopifyStorePage from "../pages/clients/ClientAccountShopifyStorePage.vue";
 import ClientAccountHistoryPage from "../pages/clients/ClientAccountHistoryPage.vue";
 import ClientAccountUsersListPage from "../pages/clients/ClientAccountUsersListPage.vue";
 import ProjectsListPage from "../pages/projects/ProjectsListPage.vue";
@@ -496,6 +497,13 @@ const routes = [
     path: "/admin/clients/accounts/:id",
     name: "client-account-detail",
     component: ClientAccountDetailPage,
+    props: true,
+    meta: meta.clientAccountDetail,
+  },
+  {
+    path: "/admin/clients/accounts/:accountId/stores/:connectionId",
+    name: "client-account-shopify-store",
+    component: ClientAccountShopifyStorePage,
     props: true,
     meta: meta.clientAccountDetail,
   },

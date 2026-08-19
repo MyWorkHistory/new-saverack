@@ -80,6 +80,12 @@ class ShopifyOAuthApiTest extends TestCase
         $this->assertStringNotContainsString('/oauth/authorize?', $url);
         $this->assertStringNotContainsString('/store/', $url);
         $this->assertSame('test-store-wke6tzxl.myshopify.com', $response->json('shop_domain'));
+        $this->assertNotEmpty($response->json('connection_id'));
+        $this->assertDatabaseHas('client_account_shopify_connections', [
+            'client_account_id' => $account->id,
+            'shop_domain' => 'test-store-wke6tzxl.myshopify.com',
+            'status' => ClientAccountShopifyConnection::STATUS_IMPORTING,
+        ]);
     }
 
     public function test_oauth_start_requires_configuration(): void
@@ -151,7 +157,7 @@ class ShopifyOAuthApiTest extends TestCase
 
         $this->get('/api/shopify/oauth/callback?'.http_build_query($query))
             ->assertRedirect(
-                'https://app.saverack.com/admin/clients/accounts/'.$account->id.'?tab=settings&shopify_oauth=success'
+                'https://app.saverack.com/admin/clients/accounts/'.$account->id.'/stores/99?shopify_oauth=success'
             );
     }
 
@@ -226,5 +232,27 @@ class ShopifyOAuthApiTest extends TestCase
         $this->getJson("/api/client-accounts/{$account->id}/shopify-connection")
             ->assertOk()
             ->assertJsonPath('oauth_configured', true);
+    }
+
+    public function test_lists_shopify_connections_for_stores_tab(): void
+    {
+        $this->actingAsAdmin();
+        $account = ClientAccount::query()->create([
+            'company_name' => 'OAuth Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+        ]);
+        $connection = ClientAccountShopifyConnection::query()->create([
+            'client_account_id' => $account->id,
+            'shop_domain' => 'list-store.myshopify.com',
+            'shop_name' => 'List Store',
+            'admin_api_access_token' => 'shpat_test',
+            'status' => ClientAccountShopifyConnection::STATUS_CONNECTED,
+        ]);
+
+        $this->getJson("/api/client-accounts/{$account->id}/shopify-connections")
+            ->assertOk()
+            ->assertJsonPath('connections.0.id', $connection->id)
+            ->assertJsonPath('connections.0.status_label', 'Connected')
+            ->assertJsonPath('connections.0.shop_domain', 'list-store.myshopify.com');
     }
 }

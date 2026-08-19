@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\ClientAccountShopifyConnection;
-use App\Models\ShopifyInventoryLevel;
 use App\Models\ShopifyLocation;
 use App\Support\ShopifyError;
 use App\Support\ShopifyGid;
@@ -50,7 +49,6 @@ class ShopifyBootstrapImportService
             ]);
         }
         $catalog = $this->products->importActiveProducts($connection, $api);
-        $levels = $this->importInventoryLevels($connection, $api);
 
         $connection->last_sync_at = now();
         $connection->last_product_sync_at = now();
@@ -67,9 +65,21 @@ class ShopifyBootstrapImportService
             'locations' => $locations,
             'products' => (int) ($catalog['products'] ?? 0),
             'variants' => (int) ($catalog['variants'] ?? 0),
-            'inventory_levels' => $levels,
+            'inventory_levels' => 0,
             'orders' => $orderCount,
         ];
+    }
+
+    public function importLocationsOnly(ClientAccountShopifyConnection $connection): int
+    {
+        $api = $this->client->forConnection($connection);
+        $count = $this->importLocations($connection, $api);
+        $connection->status = ClientAccountShopifyConnection::STATUS_CONNECTED;
+        $connection->last_sync_at = now();
+        $connection->last_error = null;
+        $connection->save();
+
+        return $count;
     }
 
     private function importLocations(ClientAccountShopifyConnection $connection, ShopifyClient $api): int
@@ -116,18 +126,20 @@ GQL
                 if ($id === '') {
                     continue;
                 }
-                ShopifyLocation::query()->updateOrCreate(
-                    [
-                        'connection_id' => $connection->id,
-                        'shopify_location_id' => $id,
-                    ],
-                    [
-                        'name' => (string) ($node['name'] ?? ''),
-                        'active' => (bool) ($node['isActive'] ?? true),
-                        'legacy' => false,
-                        'address_json' => is_array($node['address'] ?? null) ? $node['address'] : null,
-                    ]
-                );
+                $location = ShopifyLocation::query()->firstOrNew([
+                    'connection_id' => $connection->id,
+                    'shopify_location_id' => $id,
+                ]);
+                $isNew = ! $location->exists;
+                $location->name = (string) ($node['name'] ?? '');
+                $location->active = (bool) ($node['isActive'] ?? true);
+                $location->legacy = false;
+                $location->address_json = is_array($node['address'] ?? null) ? $node['address'] : null;
+                if ($isNew) {
+                    $location->import_orders = true;
+                    $location->sync_inventory = true;
+                }
+                $location->save();
                 $count++;
             }
 
@@ -139,149 +151,21 @@ GQL
     }
 
     /**
-     * Incremental inventory reconcile for cron (capped).
+     * Shopify → CRM inventory pull is disabled. Qty is CRM-owned.
      */
     public function syncInventoryForConnection(ClientAccountShopifyConnection $connection, int $limit = 40): int
     {
-        $limit = max(1, min(200, $limit));
-        $api = $this->client->forConnection($connection);
-
-        $itemIds = $connection->variants()
-            ->whereNotNull('shopify_inventory_item_id')
-            ->where('shopify_inventory_item_id', '!=', '')
-            ->orderBy('updated_at')
-            ->limit($limit)
-            ->pluck('shopify_inventory_item_id')
-            ->unique()
-            ->values()
-            ->all();
-
-        $count = 0;
-        foreach ($itemIds as $inventoryItemId) {
-            try {
-                $count += $this->syncInventoryItemLevels($connection, $api, (string) $inventoryItemId);
-            } catch (Throwable $e) {
-                Log::warning('shopify.import.inventory_item_failed', [
-                    'connection_id' => $connection->id,
-                    'inventory_item_id' => $inventoryItemId,
-                    'message' => $e->getMessage(),
-                ]);
-            }
-        }
-
-        return $count;
+        return 0;
     }
 
-    private function importInventoryLevels(ClientAccountShopifyConnection $connection, ShopifyClient $api): int
-    {
-        $count = 0;
-        $itemIds = $connection->variants()
-            ->whereNotNull('shopify_inventory_item_id')
-            ->where('shopify_inventory_item_id', '!=', '')
-            ->pluck('shopify_inventory_item_id')
-            ->unique()
-            ->values()
-            ->take(200)
-            ->all();
-
-        foreach (array_chunk($itemIds, 25) as $chunk) {
-            foreach ($chunk as $inventoryItemId) {
-                try {
-                    $count += $this->syncInventoryItemLevels($connection, $api, (string) $inventoryItemId);
-                } catch (Throwable $e) {
-                    Log::warning('shopify.import.inventory_item_failed', [
-                        'connection_id' => $connection->id,
-                        'inventory_item_id' => $inventoryItemId,
-                        'message' => $e->getMessage(),
-                    ]);
-                }
-            }
-        }
-
-        return $count;
-    }
-
+    /**
+     * Shopify → CRM inventory pull is disabled. Qty is CRM-owned.
+     */
     public function syncInventoryItemLevels(
         ClientAccountShopifyConnection $connection,
         ShopifyClient $api,
         string $inventoryItemId
     ): int {
-        $gid = str_starts_with($inventoryItemId, 'gid://')
-            ? $inventoryItemId
-            : ShopifyGid::of('InventoryItem', $inventoryItemId);
-        $numericItemId = ShopifyGid::toId($inventoryItemId);
-        $count = 0;
-        $cursor = null;
-        $page = 0;
-
-        do {
-            $page++;
-            $data = $api->graphql(
-                <<<'GQL'
-query InventoryItemLevels($id: ID!, $cursor: String) {
-  inventoryItem(id: $id) {
-    id
-    inventoryLevels(first: 50, after: $cursor) {
-      pageInfo { hasNextPage endCursor }
-      edges {
-        node {
-          id
-          location { id }
-          quantities(names: ["available"]) {
-            name
-            quantity
-          }
-        }
-      }
-    }
-  }
-}
-GQL
-                ,
-                ['id' => $gid, 'cursor' => $cursor]
-            );
-
-            $item = is_array($data['inventoryItem'] ?? null) ? $data['inventoryItem'] : null;
-            if ($item === null) {
-                break;
-            }
-            $levels = is_array($item['inventoryLevels'] ?? null) ? $item['inventoryLevels'] : [];
-            foreach (($levels['edges'] ?? []) as $edge) {
-                $node = is_array($edge['node'] ?? null) ? $edge['node'] : null;
-                if ($node === null) {
-                    continue;
-                }
-                $locationId = ShopifyGid::toId((string) (($node['location']['id'] ?? '') ?: ''));
-                $available = 0;
-                foreach (($node['quantities'] ?? []) as $qtyRow) {
-                    if (! is_array($qtyRow)) {
-                        continue;
-                    }
-                    if (($qtyRow['name'] ?? '') === 'available') {
-                        $available = (int) ($qtyRow['quantity'] ?? 0);
-                    }
-                }
-                if ($locationId === '') {
-                    continue;
-                }
-                ShopifyInventoryLevel::query()->updateOrCreate(
-                    [
-                        'connection_id' => $connection->id,
-                        'shopify_inventory_item_id' => $numericItemId,
-                        'shopify_location_id' => $locationId,
-                    ],
-                    [
-                        'available' => $available,
-                        'shopify_updated_at' => now(),
-                    ]
-                );
-                $count++;
-            }
-
-            $pageInfo = is_array($levels['pageInfo'] ?? null) ? $levels['pageInfo'] : [];
-            $cursor = ShopifyClient::nextPageCursor($cursor, $pageInfo, $page, 5);
-        } while ($cursor !== null);
-
-        return $count;
+        return 0;
     }
 }

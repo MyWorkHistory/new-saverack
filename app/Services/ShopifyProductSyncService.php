@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ClientAccountShopifyConnection;
 use App\Models\ShopifyInventoryLevel;
+use App\Models\ShopifyLocation;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
 use App\Support\ShopifyGid;
@@ -240,8 +241,11 @@ GQL
         if ($isNew || ! $locked) {
             $variant->title = (string) ($node['title'] ?? $variant->title);
             $variant->sku = (string) ($node['sku'] ?? $variant->sku);
-            $variant->barcode = (string) ($node['barcode'] ?? $variant->barcode);
             $variant->price = isset($node['price']) ? (float) $node['price'] : $variant->price;
+        }
+
+        if ($isNew) {
+            $variant->barcode = (string) ($node['barcode'] ?? $variant->barcode);
 
             $weight = null;
             $weightUnit = null;
@@ -271,7 +275,7 @@ GQL
     /**
      * Push CRM-edited fields to Shopify.
      *
-     * @param  array{title?:string|null, sku?:string|null, weight?:float|null, weight_unit?:string|null, product_title?:string|null}  $fields
+     * @param  array{title?:string|null, sku?:string|null, barcode?:string|null, weight?:float|null, weight_unit?:string|null, length?:float|null, width?:float|null, height?:float|null, dimension_unit?:string|null, product_title?:string|null}  $fields
      */
     public function pushVariantToShopify(ShopifyProductVariant $variant, array $fields): ShopifyProductVariant
     {
@@ -323,8 +327,14 @@ GQL
                 ['sku' => trim((string) $fields['sku'])]
             );
         }
-        if (array_key_exists('weight', $fields) && $fields['weight'] !== null) {
-            $unit = strtoupper((string) ($fields['weight_unit'] ?? $variant->weight_unit ?? 'POUNDS'));
+        $barcode = array_key_exists('barcode', $fields) ? $fields['barcode'] : $variant->barcode;
+        if ($barcode !== null && trim((string) $barcode) !== '') {
+            $variantInput['barcode'] = trim((string) $barcode);
+        }
+        $weightValue = array_key_exists('weight', $fields) ? $fields['weight'] : $variant->weight;
+        $weightUnitField = array_key_exists('weight_unit', $fields) ? $fields['weight_unit'] : $variant->weight_unit;
+        if ($weightValue !== null && $weightValue !== '') {
+            $unit = strtoupper((string) ($weightUnitField ?? 'POUNDS'));
             if (! in_array($unit, ['GRAMS', 'KILOGRAMS', 'OUNCES', 'POUNDS'], true)) {
                 $unit = 'POUNDS';
             }
@@ -333,7 +343,7 @@ GQL
                 [
                     'measurement' => [
                         'weight' => [
-                            'value' => (float) $fields['weight'],
+                            'value' => (float) $weightValue,
                             'unit' => $unit,
                         ],
                     ],
@@ -365,17 +375,124 @@ GQL
             if (isset($fields['sku'])) {
                 $variant->sku = trim((string) $fields['sku']);
             }
+            if (array_key_exists('barcode', $fields) && $fields['barcode'] !== null) {
+                $variant->barcode = trim((string) $fields['barcode']);
+            }
             if (isset($fields['weight'])) {
                 $variant->weight = (float) $fields['weight'];
             }
             if (isset($fields['weight_unit'])) {
                 $variant->weight_unit = (string) $fields['weight_unit'];
             }
+            foreach (['length', 'width', 'height'] as $dimKey) {
+                if (array_key_exists($dimKey, $fields) && $fields[$dimKey] !== null && $fields[$dimKey] !== '') {
+                    $variant->{$dimKey} = (float) $fields[$dimKey];
+                }
+            }
+            if (array_key_exists('dimension_unit', $fields) && $fields['dimension_unit'] !== null) {
+                $variant->dimension_unit = (string) $fields['dimension_unit'];
+            }
             $variant->crm_locked_at = now();
+            $variant->save();
+        } else {
+            foreach (['length', 'width', 'height'] as $dimKey) {
+                if (array_key_exists($dimKey, $fields) && $fields[$dimKey] !== null && $fields[$dimKey] !== '') {
+                    $variant->{$dimKey} = (float) $fields[$dimKey];
+                }
+            }
+            if (array_key_exists('dimension_unit', $fields) && $fields['dimension_unit'] !== null) {
+                $variant->dimension_unit = (string) $fields['dimension_unit'];
+            }
             $variant->save();
         }
 
         return $variant->fresh(['product']);
+    }
+
+    /**
+     * Push CRM-owned quantities to Shopify for locations with sync_inventory=true.
+     *
+     * @param  list<array{location_id:string, available:int}>|null  $levels
+     */
+    public function pushInventoryToShopify(ShopifyProductVariant $variant, ?array $levels = null): int
+    {
+        $connection = $variant->connection;
+        if ($connection === null || ! $connection->hasCredentials()) {
+            throw new RuntimeException('Shopify connection credentials missing.');
+        }
+        $itemId = trim((string) $variant->shopify_inventory_item_id);
+        if ($itemId === '') {
+            return 0;
+        }
+
+        $enabled = ShopifyLocation::query()
+            ->where('connection_id', $connection->id)
+            ->where('sync_inventory', true)
+            ->pluck('shopify_location_id')
+            ->map(static function ($id) {
+                return (string) $id;
+            })
+            ->all();
+        if ($enabled === []) {
+            return 0;
+        }
+
+        if ($levels === null) {
+            $rows = ShopifyInventoryLevel::query()
+                ->where('connection_id', $connection->id)
+                ->where('shopify_inventory_item_id', $itemId)
+                ->whereNotNull('crm_set_at')
+                ->get();
+            $levels = [];
+            foreach ($rows as $row) {
+                $levels[] = [
+                    'location_id' => (string) $row->shopify_location_id,
+                    'available' => (int) $row->available,
+                ];
+            }
+        }
+
+        $quantities = [];
+        foreach ($levels as $level) {
+            $locationId = ShopifyGid::toId((string) ($level['location_id'] ?? ''));
+            if ($locationId === '' || ! in_array($locationId, $enabled, true)) {
+                continue;
+            }
+            if (! array_key_exists('available', $level) || $level['available'] === null) {
+                continue;
+            }
+            $quantities[] = [
+                'inventoryItemId' => ShopifyGid::of('InventoryItem', $itemId),
+                'locationId' => ShopifyGid::of('Location', $locationId),
+                'quantity' => (int) $level['available'],
+            ];
+        }
+        if ($quantities === []) {
+            return 0;
+        }
+
+        $api = $this->client->forConnection($connection);
+        $data = $api->graphql(
+            <<<'GQL'
+mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
+  inventorySetQuantities(input: $input) {
+    userErrors { field message }
+  }
+}
+GQL
+            ,
+            [
+                'input' => [
+                    'name' => 'available',
+                    'reason' => 'correction',
+                    'ignoreCompareQuantity' => true,
+                    'quantities' => $quantities,
+                ],
+            ]
+        );
+        $this->assertNoUserErrors($data['inventorySetQuantities'] ?? null);
+
+        return count($quantities);
     }
 
     /**

@@ -814,6 +814,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('client-accounts/{client_account}/shopify-connection/sync', [ShopifyIntegrationController::class, 'syncConnection']);
     Route::post('client-accounts/{client_account}/shopify-connection/sync-orders', [ShopifyIntegrationController::class, 'syncOrders']);
     Route::post('client-accounts/{client_account}/shopify-connection/oauth/start', [ShopifyIntegrationController::class, 'oauthStart']);
+    Route::get('client-accounts/{client_account}/shopify-connections', [ShopifyIntegrationController::class, 'listConnections']);
+    Route::get('client-accounts/{client_account}/shopify-connections/{shopify_connection}', [ShopifyIntegrationController::class, 'showStoreConnection']);
+    Route::delete('client-accounts/{client_account}/shopify-connections/{shopify_connection}', [ShopifyIntegrationController::class, 'disconnectConnection']);
+    Route::patch('client-accounts/{client_account}/shopify-connections/{shopify_connection}/locations/{shopify_location}', [ShopifyIntegrationController::class, 'updateLocation']);
+    Route::post('client-accounts/{client_account}/shopify-connections/{shopify_connection}/sync-orders', [ShopifyIntegrationController::class, 'syncStoreOrders']);
+    Route::post('client-accounts/{client_account}/shopify-connections/{shopify_connection}/sync-products', [ShopifyIntegrationController::class, 'syncStoreProducts']);
+    Route::post('client-accounts/{client_account}/shopify-connections/{shopify_connection}/push-inventory', [ShopifyIntegrationController::class, 'pushStoreInventory']);
 
     Route::apiResource('client-accounts', ClientAccountController::class);
     Route::match(['put', 'patch'], 'users/{user}/permissions', [UserController::class, 'updatePermissions'])

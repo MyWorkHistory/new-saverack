@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
+use App\Models\ClientAccountShopifyConnection;
+use App\Models\ShopifyLocation;
 use App\Models\ShopifyOrder;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyConnectionService;
@@ -38,6 +40,208 @@ class ShopifyIntegrationController extends Controller
             'connection' => $connections->toPublicArray($connection),
             'oauth_configured' => app(ShopifyOAuthService::class)->isConfigured(),
         ]);
+    }
+
+    public function listConnections(Request $request, ClientAccount $clientAccount, ShopifyConnectionService $connections): JsonResponse
+    {
+        $this->assertAdmin($request);
+        $this->authorize('view', $clientAccount);
+
+        $rows = $connections->listForAccount((int) $clientAccount->id);
+
+        return response()->json([
+            'connections' => array_map(static function ($row) use ($connections) {
+                return $connections->toPublicArray($row);
+            }, $rows),
+            'oauth_configured' => app(ShopifyOAuthService::class)->isConfigured(),
+        ]);
+    }
+
+    public function showStoreConnection(
+        Request $request,
+        ClientAccount $clientAccount,
+        ClientAccountShopifyConnection $shopifyConnection,
+        ShopifyConnectionService $connections
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $this->authorize('view', $clientAccount);
+        $this->assertConnectionAccount($clientAccount, $shopifyConnection);
+        $connections->getForAccountConnection((int) $clientAccount->id, (int) $shopifyConnection->id);
+        $shopifyConnection->refresh();
+
+        $locations = $shopifyConnection->locations()->orderBy('name')->orderBy('id')->get()->map(function ($loc) {
+            return [
+                'id' => $loc->id,
+                'shopify_location_id' => $loc->shopify_location_id,
+                'name' => $loc->name,
+                'active' => (bool) $loc->active,
+                'import_orders' => (bool) $loc->import_orders,
+                'sync_inventory' => (bool) $loc->sync_inventory,
+            ];
+        })->values();
+
+        return response()->json([
+            'connection' => $connections->toPublicArray($shopifyConnection),
+            'locations' => $locations,
+            'oauth_configured' => app(ShopifyOAuthService::class)->isConfigured(),
+        ]);
+    }
+
+    public function updateLocation(
+        Request $request,
+        ClientAccount $clientAccount,
+        ClientAccountShopifyConnection $shopifyConnection,
+        ShopifyLocation $shopifyLocation
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $this->authorize('update', $clientAccount);
+        $this->assertConnectionAccount($clientAccount, $shopifyConnection);
+        if ((int) $shopifyLocation->connection_id !== (int) $shopifyConnection->id) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
+            'import_orders' => ['sometimes', 'boolean'],
+            'sync_inventory' => ['sometimes', 'boolean'],
+        ]);
+        if (array_key_exists('import_orders', $validated)) {
+            $shopifyLocation->import_orders = (bool) $validated['import_orders'];
+        }
+        if (array_key_exists('sync_inventory', $validated)) {
+            $shopifyLocation->sync_inventory = (bool) $validated['sync_inventory'];
+        }
+        $shopifyLocation->save();
+
+        return response()->json([
+            'location' => [
+                'id' => $shopifyLocation->id,
+                'shopify_location_id' => $shopifyLocation->shopify_location_id,
+                'name' => $shopifyLocation->name,
+                'active' => (bool) $shopifyLocation->active,
+                'import_orders' => (bool) $shopifyLocation->import_orders,
+                'sync_inventory' => (bool) $shopifyLocation->sync_inventory,
+            ],
+        ]);
+    }
+
+    public function disconnectConnection(
+        Request $request,
+        ClientAccount $clientAccount,
+        ClientAccountShopifyConnection $shopifyConnection,
+        ShopifyConnectionService $connections
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $this->authorize('update', $clientAccount);
+        $this->assertConnectionAccount($clientAccount, $shopifyConnection);
+        $connections->disconnect($shopifyConnection);
+
+        return response()->json([
+            'message' => 'Shopify disconnected.',
+            'connection' => $connections->toPublicArray($shopifyConnection->fresh()),
+        ]);
+    }
+
+    public function syncStoreOrders(
+        Request $request,
+        ClientAccount $clientAccount,
+        ClientAccountShopifyConnection $shopifyConnection,
+        ShopifyOrderSyncService $orderSync
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $this->authorize('update', $clientAccount);
+        $this->assertConnectionAccount($clientAccount, $shopifyConnection);
+        if (! $shopifyConnection->hasCredentials()) {
+            return response()->json(['message' => 'Connect Shopify credentials first.'], 422);
+        }
+
+        try {
+            $synced = $orderSync->importOpenOrders($shopifyConnection);
+            $shopifyConnection->last_order_sync_at = now();
+            $shopifyConnection->save();
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'message' => 'Synced '.$synced.' open order'.($synced === 1 ? '' : 's').'.',
+            'synced' => $synced,
+            'connection' => app(ShopifyConnectionService::class)->toPublicArray($shopifyConnection->fresh()),
+        ]);
+    }
+
+    public function syncStoreProducts(
+        Request $request,
+        ClientAccount $clientAccount,
+        ClientAccountShopifyConnection $shopifyConnection,
+        ShopifyProductSyncService $productSync,
+        ShopifyConnectionService $connections
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $this->authorize('update', $clientAccount);
+        $this->assertConnectionAccount($clientAccount, $shopifyConnection);
+        if (! $shopifyConnection->hasCredentials()) {
+            return response()->json(['message' => 'Connect Shopify credentials first.'], 422);
+        }
+
+        try {
+            $catalog = $productSync->importActiveProducts($shopifyConnection);
+            $shopifyConnection->last_product_sync_at = now();
+            $shopifyConnection->last_sync_at = now();
+            $shopifyConnection->save();
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'message' => 'Synced '.(int) ($catalog['products'] ?? 0).' products.',
+            'products' => (int) ($catalog['products'] ?? 0),
+            'variants' => (int) ($catalog['variants'] ?? 0),
+            'connection' => $connections->toPublicArray($shopifyConnection->fresh()),
+        ]);
+    }
+
+    public function pushStoreInventory(
+        Request $request,
+        ClientAccount $clientAccount,
+        ClientAccountShopifyConnection $shopifyConnection,
+        ShopifyProductSyncService $productSync,
+        ShopifyConnectionService $connections
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $this->authorize('update', $clientAccount);
+        $this->assertConnectionAccount($clientAccount, $shopifyConnection);
+        if (! $shopifyConnection->hasCredentials()) {
+            return response()->json(['message' => 'Connect Shopify credentials first.'], 422);
+        }
+
+        $pushed = 0;
+        $variants = $shopifyConnection->variants()->whereNotNull('shopify_inventory_item_id')->get();
+        try {
+            foreach ($variants as $variant) {
+                $pushed += $productSync->pushInventoryToShopify($variant);
+            }
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'message' => 'Pushed inventory for '.$pushed.' location'.($pushed === 1 ? '' : 's').'.',
+            'pushed' => $pushed,
+            'connection' => $connections->toPublicArray($shopifyConnection->fresh()),
+        ]);
+    }
+
+    private function assertConnectionAccount(ClientAccount $clientAccount, ClientAccountShopifyConnection $connection): void
+    {
+        if ((int) $connection->client_account_id !== (int) $clientAccount->id) {
+            abort(404);
+        }
     }
 
     public function upsertConnection(Request $request, ClientAccount $clientAccount, ShopifyConnectionService $connections): JsonResponse
@@ -233,12 +437,19 @@ class ShopifyIntegrationController extends Controller
             return response()->json(['message' => 'Shop domain is required (e.g. test-store-wke6tzxl.myshopify.com).'], 422);
         }
 
+        try {
+            $connection = app(ShopifyConnectionService::class)->preparePendingConnection($clientAccount, $shop);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
         $user = $request->user();
         $payload = [
             'account_id' => (int) $clientAccount->id,
             'shop' => $shop,
             'user_id' => $user !== null ? $user->id : null,
             'import' => ! array_key_exists('import', $validated) || (bool) $validated['import'],
+            'connection_id' => (int) $connection->id,
         ];
         $oauth->rememberPendingInstall($payload);
         $state = $oauth->createState($payload);
@@ -252,6 +463,7 @@ class ShopifyIntegrationController extends Controller
         return response()->json([
             'authorization_url' => $url,
             'shop_domain' => $shop,
+            'connection_id' => (int) $connection->id,
         ]);
     }
 
@@ -320,8 +532,9 @@ class ShopifyIntegrationController extends Controller
             try {
                 $tokenPayload = $oauth->exchangeSessionToken($shop, $idToken);
                 $oauth->pullPendingInstall($shop);
-                $connections->connectAndImport($account, [
+                $connection = $connections->connectAndImport($account, [
                     'shop_domain' => $shop,
+                    'connection_id' => isset($pending['connection_id']) ? (int) $pending['connection_id'] : null,
                     'admin_api_access_token' => $tokenPayload['access_token'],
                     'refresh_token' => $tokenPayload['refresh_token'] ?? null,
                     'expires_in' => $tokenPayload['expires_in'] ?? null,
@@ -330,20 +543,16 @@ class ShopifyIntegrationController extends Controller
                 ]);
             } catch (Throwable $e) {
                 report($e);
-                $base = rtrim((string) config('app.url'), '/');
 
-                return redirect()->away(
-                    $base.'/admin/clients/accounts/'.$accountId
-                    .'?tab=settings&shopify_oauth=error&shopify_oauth_message='
-                    .rawurlencode($e->getMessage() !== '' ? $e->getMessage() : 'Shopify token exchange failed.')
+                return $this->oauthCrmRedirect(
+                    $accountId,
+                    isset($pending['connection_id']) ? (int) $pending['connection_id'] : null,
+                    false,
+                    $e->getMessage() !== '' ? $e->getMessage() : 'Shopify token exchange failed.'
                 );
             }
 
-            $base = rtrim((string) config('app.url'), '/');
-
-            return redirect()->away(
-                $base.'/admin/clients/accounts/'.$accountId.'?tab=settings&shopify_oauth=success'
-            );
+            return $this->oauthCrmRedirect($accountId, (int) $connection->id, true);
         }
 
         $state = $oauth->createState([
@@ -351,6 +560,7 @@ class ShopifyIntegrationController extends Controller
             'shop' => $shop,
             'user_id' => $pending['user_id'] ?? null,
             'import' => $shouldImport,
+            'connection_id' => isset($pending['connection_id']) ? (int) $pending['connection_id'] : null,
         ]);
 
         try {
@@ -365,18 +575,12 @@ class ShopifyIntegrationController extends Controller
         ShopifyOAuthService $oauth,
         ShopifyConnectionService $connections
     ): RedirectResponse {
-        $failRedirect = function ($message, $accountId = null) {
-            $base = rtrim((string) config('app.url'), '/');
-            $accountId = $accountId !== null ? (int) $accountId : 0;
-            if ($accountId > 0) {
-                return redirect()->away(
-                    $base.'/admin/clients/accounts/'.$accountId
-                    .'?tab=settings&shopify_oauth=error&shopify_oauth_message='.rawurlencode((string) $message)
-                );
-            }
-
-            return redirect()->away(
-                $base.'/admin/clients/accounts?shopify_oauth=error&shopify_oauth_message='.rawurlencode((string) $message)
+        $failRedirect = function ($message, $accountId = null, $connectionId = null) {
+            return $this->oauthCrmRedirect(
+                $accountId !== null ? (int) $accountId : null,
+                $connectionId !== null ? (int) $connectionId : null,
+                false,
+                (string) $message
             );
         };
 
@@ -435,8 +639,9 @@ class ShopifyIntegrationController extends Controller
                 ? (bool) $statePayload['import']
                 : true;
 
-            $connections->connectAndImport($account, [
+            $connection = $connections->connectAndImport($account, [
                 'shop_domain' => $callbackShop,
+                'connection_id' => isset($statePayload['connection_id']) ? (int) $statePayload['connection_id'] : null,
                 'admin_api_access_token' => $tokenPayload['access_token'],
                 'refresh_token' => $tokenPayload['refresh_token'] ?? null,
                 'expires_in' => $tokenPayload['expires_in'] ?? null,
@@ -448,15 +653,12 @@ class ShopifyIntegrationController extends Controller
 
             return $failRedirect(
                 $e->getMessage() !== '' ? $e->getMessage() : 'Could not complete Shopify OAuth.',
-                $accountId
+                $accountId,
+                isset($statePayload['connection_id']) ? (int) $statePayload['connection_id'] : null
             );
         }
 
-        $base = rtrim((string) config('app.url'), '/');
-
-        return redirect()->away(
-            $base.'/admin/clients/accounts/'.$accountId.'?tab=settings&shopify_oauth=success'
-        );
+        return $this->oauthCrmRedirect($accountId, (int) $connection->id, true);
     }
 
     public function ordersIndex(Request $request): JsonResponse
@@ -652,6 +854,17 @@ class ShopifyIntegrationController extends Controller
             ->get()
             ->keyBy('shopify_location_id');
 
+        $levelMap = $levels->keyBy('shopify_location_id');
+        $inventory = $locMap->values()->map(function ($loc) use ($levelMap) {
+            $level = $levelMap->get($loc->shopify_location_id);
+
+            return [
+                'location_id' => $loc->shopify_location_id,
+                'location_name' => $loc->name ?? $loc->shopify_location_id,
+                'available' => $level !== null ? (int) $level->available : '',
+            ];
+        })->values();
+
         return response()->json([
             'variant' => [
                 'id' => $shopifyVariant->id,
@@ -660,19 +873,16 @@ class ShopifyIntegrationController extends Controller
                 'product_title' => $shopifyVariant->product->title ?? null,
                 'weight' => $shopifyVariant->weight,
                 'weight_unit' => $shopifyVariant->weight_unit,
+                'barcode' => $shopifyVariant->barcode,
+                'length' => $shopifyVariant->length,
+                'width' => $shopifyVariant->width,
+                'height' => $shopifyVariant->height,
+                'dimension_unit' => $shopifyVariant->dimension_unit,
                 'shopify_variant_id' => $shopifyVariant->shopify_variant_id,
                 'shopify_product_id' => $shopifyVariant->product->shopify_product_id ?? null,
                 'crm_locked_at' => optional($shopifyVariant->crm_locked_at)->toIso8601String(),
                 'account_name' => $shopifyVariant->connection->clientAccount->company_name ?? null,
-                'inventory' => $levels->map(function ($level) use ($locMap) {
-                    $loc = $locMap->get($level->shopify_location_id);
-
-                    return [
-                        'location_id' => $level->shopify_location_id,
-                        'location_name' => $loc->name ?? $level->shopify_location_id,
-                        'available' => (int) $level->available,
-                    ];
-                })->values(),
+                'inventory' => $inventory,
             ],
         ]);
     }
@@ -687,8 +897,16 @@ class ShopifyIntegrationController extends Controller
             'sku' => ['nullable', 'string', 'max:255'],
             'title' => ['nullable', 'string', 'max:500'],
             'product_title' => ['nullable', 'string', 'max:500'],
+            'barcode' => ['nullable', 'string', 'max:255'],
             'weight' => ['nullable', 'numeric', 'min:0'],
             'weight_unit' => ['nullable', 'string', 'max:16'],
+            'length' => ['nullable', 'numeric', 'min:0'],
+            'width' => ['nullable', 'numeric', 'min:0'],
+            'height' => ['nullable', 'numeric', 'min:0'],
+            'dimension_unit' => ['nullable', 'string', 'max:16'],
+            'inventory' => ['nullable', 'array'],
+            'inventory.*.location_id' => ['required_with:inventory', 'string', 'max:64'],
+            'inventory.*.available' => ['required_with:inventory', 'integer'],
         ]);
 
         // Persist CRM copy immediately so the request finishes under Cloudflare.
@@ -705,7 +923,41 @@ class ShopifyIntegrationController extends Controller
         if (array_key_exists('weight_unit', $validated) && $validated['weight_unit'] !== null) {
             $shopifyVariant->weight_unit = (string) $validated['weight_unit'];
         }
+        if (array_key_exists('barcode', $validated) && $validated['barcode'] !== null) {
+            $shopifyVariant->barcode = trim((string) $validated['barcode']);
+        }
+        foreach (['length', 'width', 'height'] as $dimKey) {
+            if (array_key_exists($dimKey, $validated) && $validated[$dimKey] !== null) {
+                $shopifyVariant->{$dimKey} = (float) $validated[$dimKey];
+            }
+        }
+        if (array_key_exists('dimension_unit', $validated) && $validated['dimension_unit'] !== null) {
+            $shopifyVariant->dimension_unit = (string) $validated['dimension_unit'];
+        }
         $shopifyVariant->save();
+
+        $inventoryLevels = is_array($validated['inventory'] ?? null) ? $validated['inventory'] : [];
+        unset($validated['inventory']);
+        if ($inventoryLevels !== []) {
+            $itemId = trim((string) $shopifyVariant->shopify_inventory_item_id);
+            foreach ($inventoryLevels as $level) {
+                $locId = \App\Support\ShopifyGid::toId((string) ($level['location_id'] ?? ''));
+                if ($itemId === '' || $locId === '') {
+                    continue;
+                }
+                \App\Models\ShopifyInventoryLevel::query()->updateOrCreate(
+                    [
+                        'connection_id' => $shopifyVariant->connection_id,
+                        'shopify_inventory_item_id' => $itemId,
+                        'shopify_location_id' => $locId,
+                    ],
+                    [
+                        'available' => (int) $level['available'],
+                        'crm_set_at' => now(),
+                    ]
+                );
+            }
+        }
 
         if (
             array_key_exists('product_title', $validated)
@@ -721,10 +973,15 @@ class ShopifyIntegrationController extends Controller
         // Also try once after the response (helps when queue workers are down).
         $variantId = (int) $shopifyVariant->id;
         $fields = $validated;
-        app()->terminating(static function () use ($variantId, $fields) {
+        $levels = $inventoryLevels;
+        app()->terminating(static function () use ($variantId, $fields, $levels) {
             try {
-                (new \App\Jobs\PushShopifyVariantJob($variantId, $fields))
-                    ->handle(app(ShopifyProductSyncService::class));
+                $products = app(ShopifyProductSyncService::class);
+                (new \App\Jobs\PushShopifyVariantJob($variantId, $fields))->handle($products);
+                $variant = \App\Models\ShopifyProductVariant::query()->with('connection')->find($variantId);
+                if ($variant !== null) {
+                    $products->pushInventoryToShopify($variant, $levels !== [] ? $levels : null);
+                }
             } catch (Throwable $e) {
                 report($e);
             }
@@ -740,10 +997,34 @@ class ShopifyIntegrationController extends Controller
                 'sku' => $shopifyVariant->sku,
                 'title' => $shopifyVariant->title,
                 'product_title' => $shopifyVariant->product->title ?? null,
+                'barcode' => $shopifyVariant->barcode,
                 'weight' => $shopifyVariant->weight,
                 'weight_unit' => $shopifyVariant->weight_unit,
+                'length' => $shopifyVariant->length,
+                'width' => $shopifyVariant->width,
+                'height' => $shopifyVariant->height,
+                'dimension_unit' => $shopifyVariant->dimension_unit,
             ],
         ]);
+    }
+
+    private function oauthCrmRedirect(?int $accountId, ?int $connectionId, bool $success, string $message = ''): RedirectResponse
+    {
+        $base = rtrim((string) config('app.url'), '/');
+        $accountId = (int) $accountId;
+        $connectionId = (int) $connectionId;
+        $flag = $success ? 'shopify_oauth=success' : 'shopify_oauth=error';
+        if (! $success && $message !== '') {
+            $flag .= '&shopify_oauth_message='.rawurlencode($message);
+        }
+        if ($accountId > 0 && $connectionId > 0) {
+            return redirect()->away($base.'/admin/clients/accounts/'.$accountId.'/stores/'.$connectionId.'?'.$flag);
+        }
+        if ($accountId > 0) {
+            return redirect()->away($base.'/admin/clients/accounts/'.$accountId.'?tab=stores&'.$flag);
+        }
+
+        return redirect()->away($base.'/admin/clients/accounts?'.$flag);
     }
 
     private function orderListRow(ShopifyOrder $order): array

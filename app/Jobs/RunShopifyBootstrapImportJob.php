@@ -23,14 +23,18 @@ class RunShopifyBootstrapImportJob implements ShouldQueue
     /** @var bool */
     public $registerWebhooks;
 
+    /** @var bool */
+    public $locationsOnly;
+
     public $timeout = 900;
 
     public $tries = 1;
 
-    public function __construct(int $connectionId, bool $registerWebhooks = true)
+    public function __construct(int $connectionId, bool $registerWebhooks = true, bool $locationsOnly = false)
     {
         $this->connectionId = $connectionId;
         $this->registerWebhooks = $registerWebhooks;
+        $this->locationsOnly = $locationsOnly;
         $queue = (string) config('queue.default', 'database');
         if ($queue === 'sync' || $queue === '') {
             $queue = 'database';
@@ -63,7 +67,9 @@ class RunShopifyBootstrapImportJob implements ShouldQueue
         ]);
 
         try {
-            $result = $bootstrap->importAll($connection);
+            $result = $this->locationsOnly
+                ? ['locations' => $bootstrap->importLocationsOnly($connection)]
+                : $bootstrap->importAll($connection);
 
             if ($this->registerWebhooks) {
                 try {
@@ -96,7 +102,9 @@ class RunShopifyBootstrapImportJob implements ShouldQueue
 
         $fresh = ClientAccountShopifyConnection::query()->find($this->connectionId);
         if ($fresh !== null && $fresh->status === ClientAccountShopifyConnection::STATUS_IMPORTING) {
-            $this->markFailed('Shopify import stalled. Click Full Re-Import.');
+            $this->markFailed($this->locationsOnly
+                ? 'Shopify location import stalled. Open the store and try connecting again.'
+                : 'Shopify import stalled. Click Full Re-Import.');
         }
     }
 
@@ -114,9 +122,7 @@ class RunShopifyBootstrapImportJob implements ShouldQueue
         if ($connection === null) {
             return;
         }
-        if ($connection->status === ClientAccountShopifyConnection::STATUS_CONNECTED
-            && $connection->last_sync_at !== null) {
-            // Import finished; failure was likely webhook registration after status flip.
+        if ($connection->status === ClientAccountShopifyConnection::STATUS_CONNECTED) {
             return;
         }
 

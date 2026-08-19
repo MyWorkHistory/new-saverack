@@ -14,7 +14,6 @@ import ClientAccountOrdersPanel from "../../components/clients/ClientAccountOrde
 import ClientAccountInventoryPanel from "../../components/clients/ClientAccountInventoryPanel.vue";
 import ClientAccountAsnPanel from "../../components/clients/ClientAccountAsnPanel.vue";
 import AccountDetailSectionHead from "../../components/clients/AccountDetailSectionHead.vue";
-import ClientAccountShopifyPanel from "../../components/clients/ClientAccountShopifyPanel.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmNoteAuthorAvatar from "../../components/common/CrmNoteAuthorAvatar.vue";
 import { crmIsAdmin } from "../../utils/crmUser";
@@ -33,13 +32,6 @@ import { inHouseSlackDisplayLabel, inHouseSlackHref } from "../../utils/slackCha
 import { warnIfShipheroSyncFailed } from "../../utils/clientAccountShipheroSync.js";
 import { CLIENT_ACCOUNT_PAUSE_REASONS } from "../../constants/clientAccountPauseReasons.js";
 import { CLIENT_ACCOUNT_INACTIVE_REASONS } from "../../constants/clientAccountInactiveReasons.js";
-import {
-  SHIPHERO_STORE_TYPE_OPTIONS,
-  shipHeroStoreTypeLabel,
-  shipHeroStoreSettingsUrl,
-  shipHeroStoreShopId,
-  isShipHeroStoreApiType,
-} from "../../constants/shipHeroStoreTypes.js";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -62,7 +54,6 @@ const canUpdateAccount = computed(() => userHasPerm("clients.update"));
 const canViewStores = computed(() => userHasPerm("stores.view"));
 const canImportStores = computed(() => userHasPerm("stores.create"));
 const canUpdateStores = computed(() => userHasPerm("stores.update"));
-const canDeleteStores = computed(() => userHasPerm("stores.delete"));
 
 const loading = ref(true);
 const errorMsg = ref("");
@@ -70,19 +61,14 @@ const account = ref(null);
 const onboardingPanelRef = ref(null);
 const onboardingReloadKey = ref(0);
 const storesLoading = ref(false);
-const storesImporting = ref(false);
 const stores = ref([]);
-const storesImportedAt = ref(null);
+const addStoreOpen = ref(false);
+const addStoreBusy = ref(false);
+const addStoreDomain = ref("");
+const addStoreOauthConfigured = ref(true);
 
 const storeActionMenuRow = ref(null);
 const storeActionMenuRect = ref({ top: 0, left: 0 });
-const storeEditTypeOpen = ref(false);
-const storeEditTypeBusy = ref(false);
-const storeEditTypeRow = ref(null);
-const storeEditTypeForm = ref({ store_type: "", shop_id: "" });
-const storeDeleteOpen = ref(false);
-const storeDeleteBusy = ref(false);
-const storeDeleteRow = ref(null);
 
 const editAccountOpen = ref(false);
 const editAccountSection = ref("");
@@ -370,20 +356,7 @@ function accountStatusBadgeClass(status) {
 
 const storeCountDisplay = computed(() => stores.value.length);
 
-const hasShipheroCustomerId = computed(() => {
-  const id = account.value?.shiphero_customer_account_id;
-  return id != null && String(id).trim() !== "";
-});
-
-const storesEmptyMessage = computed(() => {
-  if (!hasShipheroCustomerId.value) {
-    return "Set ShipHero customer account ID on this account to import stores.";
-  }
-  if (storesImportedAt.value) {
-    return "No stores returned from ShipHero.";
-  }
-  return "No stores imported yet.";
-});
+const storesEmptyMessage = computed(() => "No stores connected yet.");
 
 const usersCountDisplay = computed(() => {
   const a = account.value;
@@ -865,12 +838,11 @@ async function loadStores() {
   if (!canViewStores.value || !props.id) return;
   storesLoading.value = true;
   try {
-    const { data } = await api.get(`/client-accounts/${props.id}/shiphero-stores`);
-    stores.value = Array.isArray(data?.stores) ? data.stores : [];
-    storesImportedAt.value = data?.imported_at ?? null;
+    const { data } = await api.get(`/client-accounts/${props.id}/shopify-connections`);
+    stores.value = Array.isArray(data?.connections) ? data.connections : [];
+    addStoreOauthConfigured.value = data?.oauth_configured !== false;
   } catch (e) {
     stores.value = [];
-    storesImportedAt.value = null;
     if (e.response?.status !== 403) {
       toast.errorFrom(e, "Could not load stores.");
     }
@@ -879,27 +851,59 @@ async function loadStores() {
   }
 }
 
-async function importStores() {
-  if (!canImportStores.value || !props.id) return;
-  if (!hasShipheroCustomerId.value) {
-    toast.error("Set ShipHero customer account ID on this account first.");
+function storeDisplayName(row) {
+  return row?.shop_name || row?.shop_domain || "Shopify Store";
+}
+
+function storeStatusBadgeClass(row) {
+  const s = String(row?.status || "");
+  if (s === "importing") return "badge bg-warning-subtle text-warning-emphasis";
+  if (s === "connected") return "badge bg-success-subtle text-success-emphasis";
+  return "badge bg-secondary-subtle text-secondary";
+}
+
+function openStoreView(row) {
+  closeStoreActionMenu();
+  if (!row?.id) return;
+  router.push({
+    name: "client-account-shopify-store",
+    params: {
+      accountId: String(props.id),
+      connectionId: String(row.id),
+    },
+  });
+}
+
+function openAddStore() {
+  addStoreDomain.value = "";
+  addStoreOpen.value = true;
+}
+
+function closeAddStore() {
+  if (addStoreBusy.value) return;
+  addStoreOpen.value = false;
+}
+
+async function submitAddStore() {
+  const domain = String(addStoreDomain.value || "").trim();
+  if (!domain) {
+    toast.error("Shopify Store Domain is required.");
     return;
   }
-  storesImporting.value = true;
+  addStoreBusy.value = true;
   try {
-    const { data } = await api.post(`/client-accounts/${props.id}/shiphero-stores/import`);
-    stores.value = Array.isArray(data?.stores) ? data.stores : [];
-    storesImportedAt.value = data?.imported_at ?? null;
-    const count = stores.value.length;
-    if (count === 0) {
-      toast.error("No stores returned from ShipHero for this account.");
-    } else {
-      toast.success(count === 1 ? "Imported 1 store." : `Imported ${count} stores.`);
+    const { data } = await api.post(`/client-accounts/${props.id}/shopify-connection/oauth/start`, {
+      shop_domain: domain,
+    });
+    const url = data?.authorization_url;
+    if (!url) {
+      toast.error("Could not start Shopify connection.");
+      return;
     }
+    window.location.assign(url);
   } catch (e) {
-    toast.errorFrom(e, "Could not import stores from ShipHero.");
-  } finally {
-    storesImporting.value = false;
+    toast.errorFrom(e, "Could not connect Shopify.");
+    addStoreBusy.value = false;
   }
 }
 
@@ -923,106 +927,18 @@ function toggleStoreActionMenu(row, event) {
   storeActionMenuRow.value = row;
 }
 
-function openStoreEditType(row) {
+async function disconnectStore(row) {
   closeStoreActionMenu();
-  if (!canUpdateStores.value) {
-    toast.error("You don't have permission to update stores.");
+  if (!row?.id || !canUpdateStores.value) {
+    toast.error("You don't have permission to disconnect stores.");
     return;
   }
-  storeEditTypeRow.value = row;
-  storeEditTypeForm.value = {
-    store_type: row?.store_type ? String(row.store_type) : "",
-    shop_id: shipHeroStoreShopId(row),
-  };
-  storeEditTypeOpen.value = true;
-}
-
-function closeStoreEditType() {
-  if (storeEditTypeBusy.value) return;
-  storeEditTypeOpen.value = false;
-  storeEditTypeRow.value = null;
-}
-
-async function saveStoreEditType() {
-  const row = storeEditTypeRow.value;
-  if (!row?.store_key || !props.id) return;
-  if (!storeEditTypeForm.value.store_type) {
-    toast.error("Select a store type.");
-    return;
-  }
-  storeEditTypeBusy.value = true;
   try {
-    const key = encodeURIComponent(String(row.store_key));
-    const { data } = await api.patch(`/client-accounts/${props.id}/shiphero-stores/${key}`, {
-      store_type: storeEditTypeForm.value.store_type || null,
-      shop_id: String(storeEditTypeForm.value.shop_id || "").trim() || null,
-    });
-    stores.value = Array.isArray(data?.stores) ? data.stores : stores.value;
-    storesImportedAt.value = data?.imported_at ?? storesImportedAt.value;
-    toast.success("Store type updated.");
-    storeEditTypeOpen.value = false;
-    storeEditTypeRow.value = null;
+    await api.delete(`/client-accounts/${props.id}/shopify-connections/${row.id}`);
+    toast.success("Shopify disconnected.");
+    await loadStores();
   } catch (e) {
-    toast.errorFrom(e, "Could not update store type.");
-  } finally {
-    storeEditTypeBusy.value = false;
-  }
-}
-
-function openStoreInShipHero(row) {
-  closeStoreActionMenu();
-  const url = shipHeroStoreSettingsUrl(row);
-  if (!url) {
-    if (isShipHeroStoreApiType(row?.store_type)) {
-      toast.error("Public API stores have no ShipHero settings link.");
-      return;
-    }
-    toast.error("This store has no shop ID yet. Use Edit Type to set Shop ID.");
-    return;
-  }
-  window.open(url, "_blank", "noopener,noreferrer");
-}
-
-function storeCanOpenShipHero(row) {
-  return Boolean(shipHeroStoreSettingsUrl(row));
-}
-
-function storeTypeDisplay(row) {
-  return shipHeroStoreTypeLabel(row?.store_type) || "—";
-}
-
-function openStoreDelete(row) {
-  closeStoreActionMenu();
-  if (!canDeleteStores.value) {
-    toast.error("You don't have permission to delete stores.");
-    return;
-  }
-  storeDeleteRow.value = row;
-  storeDeleteOpen.value = true;
-}
-
-function closeStoreDelete() {
-  if (storeDeleteBusy.value) return;
-  storeDeleteOpen.value = false;
-  storeDeleteRow.value = null;
-}
-
-async function confirmStoreDelete() {
-  const row = storeDeleteRow.value;
-  if (!row?.store_key || !props.id) return;
-  storeDeleteBusy.value = true;
-  try {
-    const key = encodeURIComponent(String(row.store_key));
-    const { data } = await api.delete(`/client-accounts/${props.id}/shiphero-stores/${key}`);
-    stores.value = Array.isArray(data?.stores) ? data.stores : [];
-    storesImportedAt.value = data?.imported_at ?? storesImportedAt.value;
-    toast.success("Store removed from CRM. Import again to restore from ShipHero.");
-    storeDeleteOpen.value = false;
-    storeDeleteRow.value = null;
-  } catch (e) {
-    toast.errorFrom(e, "Could not delete store.");
-  } finally {
-    storeDeleteBusy.value = false;
+    toast.errorFrom(e, "Could not disconnect Shopify.");
   }
 }
 
@@ -1178,67 +1094,6 @@ onUnmounted(() => {
       danger
       @close="closeNoteDelete"
       @confirm="confirmDeleteNote"
-    />
-    <ConfirmModal
-      :open="storeEditTypeOpen"
-      title="Edit Type"
-      subtitle="Choose the ShipHero store type and shop ID for deep links."
-      confirm-label="Save"
-      cancel-label="Cancel"
-      :busy="storeEditTypeBusy"
-      :danger="false"
-      form
-      @close="closeStoreEditType"
-      @confirm="saveStoreEditType"
-    >
-      <div class="text-start">
-        <div class="mb-3">
-          <label class="form-label small mb-1 text-secondary" for="store-edit-type">Type</label>
-          <select
-            id="store-edit-type"
-            v-model="storeEditTypeForm.store_type"
-            class="form-select"
-            :disabled="storeEditTypeBusy"
-            required
-          >
-            <option value="">Select type</option>
-            <option
-              v-for="opt in SHIPHERO_STORE_TYPE_OPTIONS"
-              :key="opt.value"
-              :value="opt.value"
-            >
-              {{ opt.label }}
-            </option>
-          </select>
-        </div>
-        <div>
-          <label class="form-label small mb-1 text-secondary" for="store-edit-shop-id">Shop ID</label>
-          <input
-            id="store-edit-shop-id"
-            v-model="storeEditTypeForm.shop_id"
-            type="text"
-            class="form-control"
-            placeholder="31888"
-            :disabled="storeEditTypeBusy"
-            autocomplete="off"
-          />
-                          <p class="small text-secondary mb-0 mt-1">
-                            Used in ShipHero settings URL as <code>?shop=</code>. Auto-filled from
-                            ShipHero store id when available. Public API has no link.
-                          </p>
-        </div>
-      </div>
-    </ConfirmModal>
-    <ConfirmModal
-      :open="storeDeleteOpen"
-      title="Delete Store"
-      message="Remove this store from CRM only? Importing again will bring it back from ShipHero."
-      confirm-label="Delete"
-      cancel-label="Cancel"
-      :busy="storeDeleteBusy"
-      danger
-      @close="closeStoreDelete"
-      @confirm="confirmStoreDelete"
     />
 
     <template v-if="!loading && !errorMsg && account">
@@ -1902,10 +1757,10 @@ onUnmounted(() => {
                         v-if="canImportStores"
                         type="button"
                         class="btn btn-primary staff-page-primary staff-toolbar-btn fw-semibold"
-                        :disabled="storesLoading || storesImporting || !hasShipheroCustomerId"
-                        @click="importStores"
+                        :disabled="storesLoading || addStoreBusy"
+                        @click="openAddStore"
                       >
-                        {{ storesImporting ? "Importing…" : "Import Stores" }}
+                        Add Store
                       </button>
                     </div>
                   </div>
@@ -1921,7 +1776,7 @@ onUnmounted(() => {
                     <thead class="table-light staff-table-head">
                       <tr>
                         <th class="staff-table-head__th" scope="col">Name</th>
-                        <th class="staff-table-head__th" scope="col">Type</th>
+                        <th class="staff-table-head__th" scope="col">Status</th>
                         <th
                           class="staff-table-head__th staff-actions-col text-center client-account-stores-actions-col"
                           scope="col"
@@ -1939,7 +1794,7 @@ onUnmounted(() => {
                       <tr
                         v-for="row in stores"
                         v-else
-                        :key="row.store_key || row.shiphero_id || row.legacy_id || row.shop_name"
+                        :key="row.id"
                         class="align-middle"
                       >
                         <td>
@@ -1947,26 +1802,24 @@ onUnmounted(() => {
                             <span
                               class="flex-shrink-0 rounded-circle d-inline-flex align-items-center justify-content-center small fw-semibold"
                               style="width: 2.25rem; height: 2.25rem"
-                              :class="avatarClassForEmail(row.shop_name)"
+                              :class="avatarClassForEmail(storeDisplayName(row))"
                             >
-                              {{ initials(row.shop_name) }}
+                              {{ initials(storeDisplayName(row)) }}
                             </span>
-                            <a
-                              v-if="storeCanOpenShipHero(row)"
-                              :href="shipHeroStoreSettingsUrl(row)"
-                              class="d-block fw-semibold text-truncate text-decoration-none text-primary"
-                              target="_blank"
-                              rel="noopener noreferrer"
+                            <button
+                              type="button"
+                              class="btn btn-link p-0 fw-semibold text-truncate text-decoration-none text-primary text-start"
+                              @click="openStoreView(row)"
                             >
-                              {{ row.shop_name || "—" }}
-                            </a>
-                            <span v-else class="d-block fw-semibold text-body text-truncate">{{
-                              row.shop_name || "—"
-                            }}</span>
+                              {{ storeDisplayName(row) }}
+                            </button>
                           </div>
                         </td>
-                        <td class="text-body staff-table-cell__meta">
-                          {{ storeTypeDisplay(row) }}
+                        <td>
+                          <span
+                            class="badge"
+                            :class="storeStatusBadgeClass(row)"
+                          >{{ row.status_label || "Disconnected" }}</span>
                         </td>
                         <td class="staff-actions-cell text-center client-account-stores-actions-cell" @click.stop>
                           <div data-store-row-actions class="staff-actions-inner staff-actions-inner--single">
@@ -1985,12 +1838,6 @@ onUnmounted(() => {
                     </tbody>
                   </table>
                 </div>
-                <p
-                  v-if="storesImportedAt && !storesLoading"
-                  class="small text-secondary px-3 px-md-4 py-3 mb-0 border-top"
-                >
-                  Last imported {{ formatDateTimeUs(storesImportedAt) }}.
-                </p>
               </div>
           </template>
 
@@ -2182,12 +2029,6 @@ onUnmounted(() => {
                   </dl>
                 </div>
               </div>
-
-              <ClientAccountShopifyPanel
-                v-if="account?.id && (crmIsAdmin(crmUser) || crmUser?.is_crm_owner)"
-                :account-id="account.id"
-                :can-edit="canUpdateAccount && (crmIsAdmin(crmUser) || !!crmUser?.is_crm_owner)"
-              />
             </div>
           </template>
         </div>
@@ -2195,6 +2036,73 @@ onUnmounted(() => {
       </div>
 
     </template>
+
+    <Teleport
+      v-if="addStoreOpen"
+      to="body"
+    >
+      <div class="crm-vx-modal-overlay">
+        <div
+          class="crm-vx-modal-backdrop"
+          @click="closeAddStore"
+        />
+        <div
+          class="crm-vx-modal crm-vx-modal--sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-store-modal-title"
+        >
+          <header class="crm-vx-modal__head">
+            <h2
+              id="add-store-modal-title"
+              class="crm-vx-modal__title"
+            >
+              Add Store
+            </h2>
+          </header>
+          <div class="crm-vx-modal__body pt-0">
+            <p
+              v-if="!addStoreOauthConfigured"
+              class="alert alert-warning py-2 px-3 small"
+            >
+              Shopify OAuth is not configured on this server.
+            </p>
+            <label
+              class="form-label small fw-semibold"
+              for="add-store-domain"
+            >Shopify Store Domain</label>
+            <input
+              id="add-store-domain"
+              v-model="addStoreDomain"
+              type="text"
+              class="form-control"
+              placeholder="store.myshopify.com"
+              :disabled="addStoreBusy"
+              autocomplete="off"
+              @keydown.enter.prevent="submitAddStore"
+            >
+          </div>
+          <footer class="crm-vx-modal__footer">
+            <button
+              type="button"
+              class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+              :disabled="addStoreBusy"
+              @click="closeAddStore"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+              :disabled="addStoreBusy || !addStoreDomain.trim()"
+              @click="submitAddStore"
+            >
+              {{ addStoreBusy ? "Redirecting…" : "Connect With Shopify" }}
+            </button>
+          </footer>
+        </div>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div
@@ -2209,28 +2117,18 @@ onUnmounted(() => {
           type="button"
           class="staff-row-menu__item"
           role="menuitem"
-          :disabled="!canUpdateStores"
-          @click="openStoreEditType(storeActionMenuRow)"
+          @click="openStoreView(storeActionMenuRow)"
         >
-          Edit Type
-        </button>
-        <button
-          type="button"
-          class="staff-row-menu__item"
-          role="menuitem"
-          :disabled="!storeCanOpenShipHero(storeActionMenuRow)"
-          @click="openStoreInShipHero(storeActionMenuRow)"
-        >
-          Edit Store
+          Open Store
         </button>
         <button
           type="button"
           class="staff-row-menu__item staff-row-menu__item--danger"
           role="menuitem"
-          :disabled="!canDeleteStores"
-          @click="openStoreDelete(storeActionMenuRow)"
+          :disabled="!canUpdateStores"
+          @click="disconnectStore(storeActionMenuRow)"
         >
-          Delete
+          Disconnect
         </button>
       </div>
     </Teleport>

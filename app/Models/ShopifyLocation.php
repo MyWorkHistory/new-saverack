@@ -15,6 +15,8 @@ class ShopifyLocation extends Model
         'name',
         'active',
         'legacy',
+        'import_orders',
+        'sync_inventory',
         'address_json',
     ];
 
@@ -22,6 +24,8 @@ class ShopifyLocation extends Model
         'connection_id' => 'integer',
         'active' => 'boolean',
         'legacy' => 'boolean',
+        'import_orders' => 'boolean',
+        'sync_inventory' => 'boolean',
         'address_json' => 'array',
     ];
 

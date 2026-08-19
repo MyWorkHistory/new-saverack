@@ -439,12 +439,17 @@ class AsnBillService
             return [];
         }
 
-        $bill = AsnBill::query()->with('items')->find($asn->asn_bill_id);
+        $bill = AsnBill::query()->with(['items', 'clientAccount'])->find($asn->asn_bill_id);
         if ($bill === null) {
             return [];
         }
 
-        return $bill->items->map(fn (AsnBillItem $item) => $this->itemToArray($item))->values()->all();
+        $account = $asn->clientAccount ?: $bill->clientAccount;
+        $overlay = $bill->isOpen() && $account instanceof ClientAccount;
+
+        return $bill->items->map(function (AsnBillItem $item) use ($account, $overlay) {
+            return $this->itemToArray($item, $overlay ? $account : null);
+        })->values()->all();
     }
 
     public function toDetailArray(AsnBill $bill): array
@@ -468,7 +473,9 @@ class AsnBillService
             'invoice_id' => $bill->invoice_id,
             'invoice_number' => $bill->invoice ? $bill->invoice->invoice_number : null,
             'created_by_name' => $bill->createdBy ? $bill->createdBy->name : null,
-            'items' => $bill->items->map(fn (AsnBillItem $item) => $this->itemToArray($item))->values()->all(),
+            'items' => $bill->items->map(function (AsnBillItem $item) use ($bill) {
+                return $this->itemToArray($item, $bill->isOpen() ? $bill->clientAccount : null);
+            })->values()->all(),
             'histories' => $bill->histories->map(function (AsnBillHistory $h) {
                 $meta = is_array($h->meta) ? $h->meta : [];
 
@@ -497,8 +504,28 @@ class AsnBillService
         $lineType = isset($row['line_type']) ? (string) $row['line_type'] : ($existing ? (string) $existing->line_type : '');
         AsnBillChargeCatalog::assertValidLineType($lineType);
 
+        $bill->loadMissing('clientAccount');
+        $account = $bill->clientAccount;
+        $feeId = isset($row['client_account_fee_id']) ? (int) $row['client_account_fee_id'] : 0;
+        if ($feeId <= 0 && $existing !== null && is_array($existing->metadata)) {
+            $feeId = (int) ($existing->metadata['client_account_fee_id'] ?? 0);
+        }
+
+        $option = null;
+        if ($account instanceof ClientAccount && $feeId > 0) {
+            $option = AsnBillChargeCatalog::optionForFeeId($account, $feeId);
+        }
+        if ($option === null && $account instanceof ClientAccount) {
+            $option = AsnBillChargeCatalog::optionForLineType($account, $lineType);
+        }
+        if ($option !== null && $feeId <= 0) {
+            $feeId = (int) ($option['client_account_fee_id'] ?? 0);
+        }
+
         $name = isset($row['name']) ? trim((string) $row['name']) : '';
-        if ($name === '') {
+        if ($option !== null && trim((string) ($option['display_name'] ?? '')) !== '') {
+            $name = trim((string) $option['display_name']);
+        } elseif ($name === '') {
             $name = AsnBillChargeCatalog::displayName($lineType);
         }
 
@@ -511,18 +538,22 @@ class AsnBillService
             $unitCents = (int) $row['unit_price_cents'];
         } elseif (isset($row['unit_price'])) {
             $unitCents = (int) round(((float) $row['unit_price']) * 100);
+        } elseif ($option !== null) {
+            $unitCents = (int) $option['default_unit_price_cents'];
         } elseif ($existing !== null) {
             $unitCents = (int) $existing->unit_price_cents;
         } else {
-            $bill->loadMissing('clientAccount');
-            $unitCents = $bill->clientAccount
-                ? AsnBillChargeCatalog::defaultUnitPriceCents($bill->clientAccount, $lineType)
+            $unitCents = $account
+                ? AsnBillChargeCatalog::defaultUnitPriceCents($account, $lineType)
                 : 0;
         }
 
         $metadata = is_array($row['metadata'] ?? null) ? $row['metadata'] : [];
         if ($existing !== null && is_array($existing->metadata)) {
             $metadata = array_merge($existing->metadata, $metadata);
+        }
+        if ($feeId > 0) {
+            $metadata['client_account_fee_id'] = $feeId;
         }
 
         return [
@@ -643,15 +674,41 @@ class AsnBillService
     /**
      * @return array<string, mixed>
      */
-    private function itemToArray(AsnBillItem $item): array
+    private function itemToArray(AsnBillItem $item, ?ClientAccount $account = null): array
     {
+        $name = (string) $item->name;
+        $unitCents = (int) $item->unit_price_cents;
+        $qty = (float) $item->quantity;
+        $lineTotal = (int) $item->line_total_cents;
+        $feeId = is_array($item->metadata) ? (int) ($item->metadata['client_account_fee_id'] ?? 0) : 0;
+        $option = null;
+        if ($account instanceof ClientAccount) {
+            if ($feeId > 0) {
+                $option = AsnBillChargeCatalog::optionForFeeId($account, $feeId);
+            }
+            if ($option === null) {
+                $option = AsnBillChargeCatalog::optionForLineType($account, (string) $item->line_type);
+            }
+        }
+        if ($option !== null) {
+            if (trim((string) ($option['display_name'] ?? '')) !== '') {
+                $name = (string) $option['display_name'];
+            }
+            $unitCents = (int) $option['default_unit_price_cents'];
+            $lineTotal = (int) round($qty * $unitCents);
+            if ($feeId <= 0) {
+                $feeId = (int) ($option['client_account_fee_id'] ?? 0);
+            }
+        }
+
         return [
             'id' => $item->id,
             'line_type' => $item->line_type,
-            'name' => $item->name,
-            'quantity' => (float) $item->quantity,
-            'unit_price_cents' => (int) $item->unit_price_cents,
-            'line_total_cents' => (int) $item->line_total_cents,
+            'client_account_fee_id' => $feeId > 0 ? $feeId : null,
+            'name' => $name,
+            'quantity' => $qty,
+            'unit_price_cents' => $unitCents,
+            'line_total_cents' => $lineTotal,
             'metadata' => $item->metadata,
             'sort_order' => (int) $item->sort_order,
         ];

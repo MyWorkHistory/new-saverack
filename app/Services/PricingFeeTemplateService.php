@@ -272,6 +272,7 @@ class PricingFeeTemplateService
             'Receiving (Per Box)' => 'per_box',
             'Receiving (Per Pallet)' => 'per_pallet',
             'Receiving (Per Item)' => 'per_item',
+            'Receiving (Per SKU)' => 'per_item',
             'Receiving (Per Container 20 ft)' => 'per_container_20',
             'Receiving (Per Container 40 ft)' => 'per_container_40',
             'Custom Hourly Work' => 'hourly',

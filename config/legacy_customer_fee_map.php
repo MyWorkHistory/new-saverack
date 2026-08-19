@@ -96,7 +96,12 @@ return [
     ],
     'Receiving (Per Item)' => [
         'category' => PricingFeeTemplate::CATEGORY_RECEIVING,
-        'template_names' => ['Receiving (Per Item)'],
+        'template_names' => ['Receiving (Per Item)', 'Receiving (Per SKU)'],
+        'line_code' => 'per_item',
+    ],
+    'Receiving (Per SKU)' => [
+        'category' => PricingFeeTemplate::CATEGORY_RECEIVING,
+        'template_names' => ['Receiving (Per SKU)', 'Receiving (Per Item)'],
         'line_code' => 'per_item',
     ],
     'Receiving' => [

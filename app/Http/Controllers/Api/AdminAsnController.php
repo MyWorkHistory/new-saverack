@@ -99,7 +99,7 @@ class AdminAsnController extends Controller
      */
     private function serializeAsn(ClientAccountAsn $asn): array
     {
-        $asn->loadMissing(['lines', 'trackings', 'vendorLines', 'clientAccount.feeItems', 'processedBy']);
+        $asn->loadMissing(['lines', 'trackings', 'vendorLines', 'clientAccount.feeItems.pricingTemplate', 'processedBy']);
 
         $companyName = $asn->clientAccount !== null
             ? trim((string) $asn->clientAccount->company_name)
@@ -119,6 +119,7 @@ class AdminAsnController extends Controller
             'processed_by_name' => $processedByName !== '' ? $processedByName : null,
             'total_boxes' => $asn->total_boxes,
             'total_pallets' => $asn->total_pallets,
+            'distinct_sku_count' => $this->distinctSkuCount($asn),
             'expected_qty' => $asn->expected_qty,
             'accepted_qty' => $asn->accepted_qty,
             'rejected_qty' => $asn->rejected_qty,
@@ -532,18 +533,14 @@ class AdminAsnController extends Controller
         $this->authorizeAsn($request, $asn);
 
         $validated = $request->validate([
-            'line_type' => ['required', 'string', Rule::in([
-                AsnBill::LINE_RECEIVING_PER_BOX,
-                AsnBill::LINE_RECEIVING_PER_PALLET,
-                AsnBill::LINE_RECEIVING_PER_ITEM,
-                AsnBill::LINE_CUSTOM_HOURLY_WORK,
-                AsnBill::LINE_NON_COMPLIANT,
-            ])],
+            'line_type' => ['required', 'string', 'max:64'],
+            'client_account_fee_id' => ['nullable', 'integer', 'min:1'],
             'name' => ['nullable', 'string', 'max:255'],
             'quantity' => ['required', 'numeric', 'min:0.0001'],
             'unit_price_cents' => ['nullable', 'integer', 'min:0'],
             'unit_price' => ['nullable', 'numeric', 'min:0'],
         ]);
+        AsnBillChargeCatalog::assertValidLineType((string) $validated['line_type']);
 
         $this->asnBills->addItemForAsn($asn, $validated, $request->user());
 
@@ -559,18 +556,14 @@ class AdminAsnController extends Controller
         $bill = AsnBill::query()->findOrFail($asn->asn_bill_id);
 
         $validated = $request->validate([
-            'line_type' => ['required', 'string', Rule::in([
-                AsnBill::LINE_RECEIVING_PER_BOX,
-                AsnBill::LINE_RECEIVING_PER_PALLET,
-                AsnBill::LINE_RECEIVING_PER_ITEM,
-                AsnBill::LINE_CUSTOM_HOURLY_WORK,
-                AsnBill::LINE_NON_COMPLIANT,
-            ])],
+            'line_type' => ['required', 'string', 'max:64'],
+            'client_account_fee_id' => ['nullable', 'integer', 'min:1'],
             'name' => ['nullable', 'string', 'max:255'],
             'quantity' => ['required', 'numeric', 'min:0.0001'],
             'unit_price_cents' => ['nullable', 'integer', 'min:0'],
             'unit_price' => ['nullable', 'numeric', 'min:0'],
         ]);
+        AsnBillChargeCatalog::assertValidLineType((string) $validated['line_type']);
 
         $this->asnBills->updateItem($bill, $item, $validated, $request->user());
 
@@ -595,6 +588,20 @@ class AdminAsnController extends Controller
         if ($asn->asn_bill_id === null || (int) $item->asn_bill_id !== (int) $asn->asn_bill_id) {
             abort(404);
         }
+    }
+
+    private function distinctSkuCount(ClientAccountAsn $asn): int
+    {
+        $seen = [];
+        foreach ($asn->lines as $line) {
+            $sku = strtoupper(trim((string) ($line->sku ?? '')));
+            if ($sku === '') {
+                continue;
+            }
+            $seen[$sku] = true;
+        }
+
+        return count($seen);
     }
 
     private function assertLineBelongs(ClientAccountAsn $asn, ClientAccountAsnLine $line): void

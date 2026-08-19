@@ -1,29 +1,22 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
 
-const FEE_ROW_DEFS = [
-  { lineType: "receiving_per_box", service: "Receiving (Per Box)", qtyLabel: "Boxes" },
-  { lineType: "receiving_per_pallet", service: "Receiving (Per Pallet)", qtyLabel: "Pallets" },
-  { lineType: "receiving_per_item", service: "Receiving (Per Item)", qtyLabel: "Items" },
-  { lineType: "custom_hourly_work", service: "Custom Hourly Work", qtyLabel: "Hours" },
-  { lineType: "non_compliant", service: "Non-Compliant", qtyLabel: "Amount" },
-];
-
 const props = defineProps({
   open: { type: Boolean, default: false },
   busy: { type: Boolean, default: false },
   errorMsg: { type: String, default: "" },
   chargeOptions: { type: Array, default: () => [] },
-  /** Existing bill lines keyed by line_type for prefill / upsert */
   existingLines: { type: Array, default: () => [] },
-  /** When set, modal edits a single line only */
   editLine: { type: Object, default: null },
+  qtyHints: {
+    type: Object,
+    default: () => ({ boxes: 0, pallets: 0, sku_count: 0 }),
+  },
 });
 
 const emit = defineEmits(["update:open", "submit", "delete"]);
 
 const localError = ref("");
-
 const rows = reactive([]);
 
 const isSingleEdit = computed(() => props.editLine != null);
@@ -34,75 +27,106 @@ const modalTitle = computed(() =>
 
 const submitLabel = computed(() => (isSingleEdit.value ? "Save" : "Add Fees"));
 
-const visibleDefs = computed(() => {
-  if (!isSingleEdit.value) return FEE_ROW_DEFS;
+const visibleOptions = computed(() => {
+  const options = Array.isArray(props.chargeOptions) ? props.chargeOptions : [];
+  if (!isSingleEdit.value) return options;
+  const feeId = Number(props.editLine?.client_account_fee_id || 0);
   const lt = String(props.editLine?.line_type || "");
-  return FEE_ROW_DEFS.filter((d) => d.lineType === lt);
+  const match = options.find((o) => {
+    if (feeId > 0 && Number(o.client_account_fee_id) === feeId) return true;
+    return String(o.line_type) === lt;
+  });
+  if (match) return [match];
+  return [
+    {
+      line_type: lt,
+      client_account_fee_id: feeId || null,
+      display_name: props.editLine?.name || lt,
+      qty_label: "Qty",
+      qty_mode: "none",
+      autofill: false,
+      default_unit_price_cents: Number(props.editLine?.unit_price_cents) || 0,
+    },
+  ];
 });
 
-function defaultPriceCentsForLineType(lineType) {
-  const opt = props.chargeOptions.find((o) => o.line_type === lineType);
-  return Number(opt?.default_unit_price_cents) || 0;
+function defaultPriceCentsForOption(option) {
+  return Number(option?.default_unit_price_cents) || 0;
 }
 
-function defaultPriceForLineType(lineType) {
-  return (defaultPriceCentsForLineType(lineType) / 100).toFixed(2);
+function defaultPriceForOption(option) {
+  return (defaultPriceCentsForOption(option) / 100).toFixed(2);
 }
 
-function defaultPriceLabel(lineType) {
-  const cents = defaultPriceCentsForLineType(lineType);
+function defaultPriceLabel(option) {
+  const cents = defaultPriceCentsForOption(option);
   if (cents > 0) {
     return `Account default: $${(cents / 100).toFixed(2)}`;
   }
   return "No account price configured";
 }
 
-function displayNameForLineType(lineType) {
-  const opt = props.chargeOptions.find((o) => o.line_type === lineType);
-  if (opt?.display_name) return opt.display_name;
-  const def = FEE_ROW_DEFS.find((d) => d.lineType === lineType);
-  return def?.service || lineType;
+function hintedQty(option) {
+  if (!option?.autofill) return "";
+  const mode = String(option.qty_mode || "");
+  const hints = props.qtyHints || {};
+  let n = 0;
+  if (mode === "boxes") n = Number(hints.boxes) || 0;
+  else if (mode === "pallets") n = Number(hints.pallets) || 0;
+  else if (mode === "sku") n = Number(hints.sku_count) || 0;
+  return n > 0 ? String(n) : "";
+}
+
+function findExistingLine(option) {
+  const feeId = Number(option?.client_account_fee_id || 0);
+  const lt = String(option?.line_type || "");
+  const lines = Array.isArray(props.existingLines) ? props.existingLines : [];
+  return (
+    lines.find((line) => {
+      if (feeId > 0 && Number(line.client_account_fee_id) === feeId) return true;
+      return String(line.line_type) === lt;
+    }) || null
+  );
 }
 
 function resetRows() {
   rows.splice(0, rows.length);
-  const existingByType = new Map(
-    (props.existingLines || []).map((line) => [String(line.line_type), line]),
-  );
-
-  for (const def of visibleDefs.value) {
-    const existing = existingByType.get(def.lineType);
+  for (const option of visibleOptions.value) {
     if (isSingleEdit.value && props.editLine) {
       rows.push({
-        line_type: def.lineType,
-        name: displayNameForLineType(def.lineType),
-        qtyLabel: def.qtyLabel,
-        service: def.service,
+        line_type: option.line_type,
+        client_account_fee_id: option.client_account_fee_id || null,
+        name: option.display_name,
+        qtyLabel: option.qty_label || "Qty",
+        service: option.display_name,
         quantity: String(props.editLine.quantity ?? ""),
-        unit_price: ((Number(props.editLine.unit_price_cents) || 0) / 100).toFixed(2),
+        unit_price: defaultPriceForOption(option),
         item_id: props.editLine.id ?? null,
         selected: true,
+        option,
       });
-    } else {
-      const quantity = existing ? String(existing.quantity ?? "") : "";
-      rows.push({
-        line_type: def.lineType,
-        name: displayNameForLineType(def.lineType),
-        qtyLabel: def.qtyLabel,
-        service: def.service,
-        quantity,
-        unit_price: existing
-          ? ((Number(existing.unit_price_cents) || 0) / 100).toFixed(2)
-          : defaultPriceForLineType(def.lineType),
-        item_id: existing?.id ?? null,
-        selected: Boolean(existing && String(existing.quantity ?? "").trim() !== ""),
-      });
+      continue;
     }
+    const existing = findExistingLine(option);
+    const hinted = hintedQty(option);
+    const quantity = existing ? String(existing.quantity ?? "") : hinted;
+    rows.push({
+      line_type: option.line_type,
+      client_account_fee_id: option.client_account_fee_id || null,
+      name: option.display_name,
+      qtyLabel: option.qty_label || "Qty",
+      service: option.display_name,
+      quantity,
+      unit_price: defaultPriceForOption(option),
+      item_id: existing?.id ?? null,
+      selected: Boolean(existing && String(existing.quantity ?? "").trim() !== "") || Number(hinted) > 0,
+      option,
+    });
   }
 }
 
 watch(
-  () => [props.open, props.editLine, props.existingLines],
+  () => [props.open, props.editLine, props.existingLines, props.chargeOptions, props.qtyHints],
   () => {
     if (props.open) resetRows();
   },
@@ -159,6 +183,7 @@ function submit() {
       action: row.item_id != null ? "update" : "create",
       item_id: row.item_id,
       line_type: row.line_type,
+      client_account_fee_id: row.client_account_fee_id || null,
       name: row.name,
       quantity: qty,
       unit_price: price,
@@ -184,7 +209,6 @@ function removeLine() {
   emit("delete", props.editLine);
 }
 </script>
-
 <template>
   <Teleport to="body">
     <Transition name="crm-vx-confirm">
@@ -221,7 +245,11 @@ function removeLine() {
               {{ errorMsg || localError }}
             </p>
 
-            <div class="table-responsive admin-asn-fees-modal__table-wrap">
+            <p v-if="!isSingleEdit && !rows.length" class="small text-secondary text-center mb-0">
+              No receiving fees are set on this account.
+            </p>
+
+            <div v-if="rows.length" class="table-responsive admin-asn-fees-modal__table-wrap">
               <table class="table table-sm align-middle mb-0 admin-asn-fees-modal-table">
                 <thead>
                   <tr>
@@ -232,12 +260,12 @@ function removeLine() {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(row, idx) in rows" :key="row.line_type">
+                  <tr v-for="(row, idx) in rows" :key="`${row.line_type}-${row.client_account_fee_id || idx}`">
                     <td class="fw-medium text-body">
                       <div>{{ row.service }}</div>
                       <div class="small text-secondary">{{ row.qtyLabel }}</div>
                       <div class="small text-secondary admin-asn-fees-modal__account-default">
-                        {{ defaultPriceLabel(row.line_type) }}
+                        {{ defaultPriceLabel(row.option) }}
                       </div>
                     </td>
                     <td v-if="!isSingleEdit" class="text-center align-middle admin-asn-fees-modal__add-col">
@@ -256,7 +284,7 @@ function removeLine() {
                         min="0"
                         step="any"
                         class="form-control form-control-sm text-end admin-asn-fees-modal__qty-input"
-                        placeholder="0"
+                        placeholder=""
                         :disabled="busy"
                         :aria-label="`${row.service} ${row.qtyLabel}`"
                       />

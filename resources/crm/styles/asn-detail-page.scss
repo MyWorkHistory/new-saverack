@@ -81,6 +81,26 @@
   background: rgba(22, 163, 74, 0.1);
 }
 
+.asn-detail-page__billing-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.asn-detail-page__billing-status--on {
+  color: #15803d;
+  background: rgba(22, 163, 74, 0.18);
+}
+
+.asn-detail-page__billing-status--off {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.14);
+}
+
 .asn-detail-page__billing-callout {
   display: flex;
   align-items: center;

@@ -102,10 +102,10 @@ return [
         'description' => 'Per pallet. Standard inbound pallet receiving fee.',
     ],
     [
-        'name' => 'Receiving (Per Item)',
+        'name' => 'Receiving (Per SKU)',
         'category' => PricingFeeTemplate::CATEGORY_RECEIVING,
         'amount' => 0.01,
-        'description' => 'Per item. Applies to all inbound deliveries in addition to box/pallet/container fees.',
+        'description' => 'Per SKU. Applies to all inbound deliveries in addition to box/pallet/container fees.',
     ],
     [
         'name' => 'Receiving (Per Container 20 ft)',

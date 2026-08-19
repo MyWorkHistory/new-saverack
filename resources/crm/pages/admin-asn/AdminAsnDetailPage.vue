@@ -238,6 +238,7 @@ async function submitFeesModal(payloads) {
       }
       const body = {
         line_type: item.line_type,
+        client_account_fee_id: item.client_account_fee_id || undefined,
         name: item.name,
         quantity: item.quantity,
         unit_price: item.unit_price,
@@ -2404,6 +2405,19 @@ onUnmounted(() => {
               </svg>
             </span>
             <h3 class="h6 fw-semibold mb-0">Receiving Fees</h3>
+            <span
+              class="asn-detail-page__billing-status ms-auto"
+              :class="asn.asn_billing_enabled ? 'asn-detail-page__billing-status--on' : 'asn-detail-page__billing-status--off'"
+              :title="asn.asn_billing_enabled ? 'ASN Billing On' : 'ASN Billing Off'"
+            >
+              <svg v-if="asn.asn_billing_enabled" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.41 16.09V20h-2.67v-1.93c-1.71-.36-3.16-1.46-3.27-3.4h1.96c.1.9.82 1.57 2.07 1.57 1.51 0 2.1-.64 2.1-1.52 0-.84-.44-1.31-2.32-1.84-2.22-.62-3.4-1.63-3.4-3.44 0-1.76 1.37-2.97 3.28-3.36V4h2.67v1.95c1.86.45 2.79 1.86 2.85 3.39h-1.98c-.1-.87-.69-1.52-1.9-1.52-1.28 0-1.9.57-1.9 1.45 0 .74.45 1.22 2.22 1.75 2.21.66 3.49 1.56 3.49 3.54 0 1.9-1.46 3.08-3.2 3.53z" />
+              </svg>
+              <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
+                <path stroke-linecap="round" d="M6 6l12 12M18 6L6 18" />
+              </svg>
+              <span class="visually-hidden">{{ asn.asn_billing_enabled ? "ASN Billing On" : "ASN Billing Off" }}</span>
+            </span>
           </div>
           <div v-if="receivingFees.length" class="table-responsive mb-3">
             <table class="table table-sm align-middle mb-0">
@@ -3078,6 +3092,11 @@ onUnmounted(() => {
       :charge-options="asnBillChargeOptions"
       :existing-lines="receivingFees"
       :edit-line="feesEditLine"
+      :qty-hints="{
+        boxes: Number(asn?.total_boxes) || 0,
+        pallets: Number(asn?.total_pallets) || 0,
+        sku_count: Number(asn?.distinct_sku_count) || 0,
+      }"
       @submit="submitFeesModal"
       @delete="deleteFeeFromModal"
     />

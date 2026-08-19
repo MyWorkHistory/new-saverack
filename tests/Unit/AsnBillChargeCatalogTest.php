@@ -85,18 +85,63 @@ class AsnBillChargeCatalogTest extends TestCase
 
         ClientAccountFee::query()->create([
             'client_account_id' => $account->id,
-            'fee_group' => ClientAccountFee::GROUP_CUSTOM_WORK,
+            'fee_group' => ClientAccountFee::GROUP_RECEIVING,
             'line_code' => 'template_99',
-            'label' => 'Custom Hourly Work',
+            'label' => 'Unit Count Verification (Per Hour)',
             'amount' => '95.0000',
             'currency' => 'USD',
             'sort_order' => 0,
         ]);
 
         $options = AsnBillChargeCatalog::optionsForAccount($account->fresh(['feeItems.pricingTemplate']));
-        $hourly = collect($options)->firstWhere('line_type', AsnBill::LINE_CUSTOM_HOURLY_WORK);
-
+        $hourly = collect($options)->firstWhere('qty_mode', AsnBillChargeCatalog::QTY_NONE);
         $this->assertNotNull($hourly);
+        $this->assertSame('Unit Count Verification (Per Hour)', $hourly['display_name']);
         $this->assertSame(9500, $hourly['default_unit_price_cents']);
+        $this->assertFalse($hourly['autofill']);
+    }
+
+    public function test_options_include_all_receiving_fees_and_sku_qty_mode(): void
+    {
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Recv Fees Co',
+            'email' => 'recv@example.test',
+        ]);
+
+        ClientAccountFee::query()->create([
+            'client_account_id' => $account->id,
+            'fee_group' => ClientAccountFee::GROUP_RECEIVING,
+            'line_code' => 'per_box',
+            'label' => 'Receiving (Per Box)',
+            'amount' => '2.5000',
+            'currency' => 'USD',
+            'sort_order' => 1,
+        ]);
+        ClientAccountFee::query()->create([
+            'client_account_id' => $account->id,
+            'fee_group' => ClientAccountFee::GROUP_RECEIVING,
+            'line_code' => 'per_item',
+            'label' => 'Receiving (Per SKU)',
+            'amount' => '0.0100',
+            'currency' => 'USD',
+            'sort_order' => 2,
+        ]);
+        ClientAccountFee::query()->create([
+            'client_account_id' => $account->id,
+            'fee_group' => ClientAccountFee::GROUP_RECEIVING,
+            'line_code' => 'per_container_20',
+            'label' => 'Receiving (Per Container 20 ft)',
+            'amount' => '250.0000',
+            'currency' => 'USD',
+            'sort_order' => 3,
+        ]);
+
+        $options = AsnBillChargeCatalog::optionsForAccount($account->fresh(['feeItems.pricingTemplate']));
+        $this->assertCount(3, $options);
+        $this->assertSame(AsnBillChargeCatalog::QTY_BOXES, $options[0]['qty_mode']);
+        $this->assertSame(AsnBillChargeCatalog::QTY_SKU, $options[1]['qty_mode']);
+        $this->assertSame(AsnBillChargeCatalog::QTY_NONE, $options[2]['qty_mode']);
+        $this->assertSame(25000, $options[2]['default_unit_price_cents']);
     }
 }

@@ -5,6 +5,7 @@ import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarButton.vue";
+import ShopifyInventorySubnav from "../../components/shopify/ShopifyInventorySubnav.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 
@@ -105,6 +106,8 @@ onUnmounted(() => {
         @click="load"
       />
     </div>
+
+    <ShopifyInventorySubnav products-active />
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
       <div class="staff-table-toolbar">

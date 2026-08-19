@@ -288,6 +288,7 @@ function navActive(mode) {
   if (mode === "shopify") return p.startsWith("/admin/shopify");
   if (mode === "shopify-orders") return p.startsWith("/admin/shopify/orders");
   if (mode === "shopify-inventory") return p.startsWith("/admin/shopify/inventory");
+  if (mode === "shopify-locations") return p.startsWith("/admin/shopify/locations");
   if (mode === "clients") return p.startsWith("/admin/clients");
   if (mode === "clients-accounts") return p.startsWith("/admin/clients/accounts");
   if (mode === "clients-users") return p.startsWith("/admin/clients/users");
@@ -1459,6 +1460,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Inventory
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/shopify/locations"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('shopify-locations') }"
+                    @click="closeMobile"
+                  >
+                    Locations
                   </RouterLink>
                 </li>
               </ul>

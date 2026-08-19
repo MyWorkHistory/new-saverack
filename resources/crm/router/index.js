@@ -23,6 +23,8 @@ import ShopifyOrdersPage from "../pages/shopify/ShopifyOrdersPage.vue";
 import ShopifyOrderDetailPage from "../pages/shopify/ShopifyOrderDetailPage.vue";
 import ShopifyInventoryPage from "../pages/shopify/ShopifyInventoryPage.vue";
 import ShopifyInventoryDetailPage from "../pages/shopify/ShopifyInventoryDetailPage.vue";
+import ShopifyLocationsPage from "../pages/shopify/ShopifyLocationsPage.vue";
+import ShopifyLocationDetailPage from "../pages/shopify/ShopifyLocationDetailPage.vue";
 import SettingsPricingPage from "../pages/settings/SettingsPricingPage.vue";
 import SettingsTermsPage from "../pages/settings/SettingsTermsPage.vue";
 import SettingsEmailTemplatesPage from "../pages/settings/SettingsEmailTemplatesPage.vue";
@@ -109,6 +111,14 @@ const meta = {
   shopifyInventoryDetail: {
     title: "Save Rack | Shopify Variant",
     description: "Edit Shopify variant.",
+  },
+  shopifyLocations: {
+    title: "Save Rack | Locations",
+    description: "Shopify warehouse locations.",
+  },
+  shopifyLocationDetail: {
+    title: "Save Rack | Location",
+    description: "Shopify warehouse location.",
   },
   settingsPricing: {
     title: "Save Rack | Pricing",
@@ -992,6 +1002,19 @@ const routes = [
     component: ShopifyInventoryDetailPage,
     props: true,
     meta: meta.shopifyInventoryDetail,
+  },
+  {
+    path: "/admin/shopify/locations",
+    name: "shopify-locations",
+    component: ShopifyLocationsPage,
+    meta: meta.shopifyLocations,
+  },
+  {
+    path: "/admin/shopify/locations/:id",
+    name: "shopify-location-detail",
+    component: ShopifyLocationDetailPage,
+    props: true,
+    meta: meta.shopifyLocationDetail,
   },
   // Legacy redirects from first nav placement under Webmaster
   {

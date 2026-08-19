@@ -50,6 +50,7 @@ use App\Http\Controllers\Api\ResourceCalendarEventController;
 use App\Http\Controllers\Api\ResourcePhotoController;
 use App\Http\Controllers\Api\WholesaleOrderController;
 use App\Http\Controllers\Api\ShopifyIntegrationController;
+use App\Http\Controllers\Api\ShopifyWarehouseLocationController;
 use App\Http\Controllers\ShipHeroWebhookController;
 use App\Http\Controllers\ShopifyWebhookController;
 use App\Http\Controllers\StripeWebhookController;
@@ -650,6 +651,20 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/inventory', [ShopifyIntegrationController::class, 'inventoryIndex']);
         Route::get('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'inventoryShow']);
         Route::patch('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'updateVariant']);
+        Route::get('/locations/meta', [ShopifyWarehouseLocationController::class, 'meta']);
+        Route::get('/locations/export', [ShopifyWarehouseLocationController::class, 'export']);
+        Route::get('/locations/options', [ShopifyWarehouseLocationController::class, 'options']);
+        Route::post('/locations/import', [ShopifyWarehouseLocationController::class, 'import']);
+        Route::post('/locations/bulk', [ShopifyWarehouseLocationController::class, 'bulkUpdate']);
+        Route::get('/locations', [ShopifyWarehouseLocationController::class, 'index']);
+        Route::post('/locations', [ShopifyWarehouseLocationController::class, 'store']);
+        Route::get('/locations/{shopify_warehouse_location}', [ShopifyWarehouseLocationController::class, 'show']);
+        Route::patch('/locations/{shopify_warehouse_location}', [ShopifyWarehouseLocationController::class, 'update']);
+        Route::delete('/locations/{shopify_warehouse_location}', [ShopifyWarehouseLocationController::class, 'destroy']);
+        Route::post('/locations/{shopify_warehouse_location}/transfer', [ShopifyWarehouseLocationController::class, 'transfer']);
+        Route::post('/locations/{shopify_warehouse_location}/items', [ShopifyWarehouseLocationController::class, 'storeItem']);
+        Route::patch('/locations/{shopify_warehouse_location}/items/{shopify_warehouse_location_item}', [ShopifyWarehouseLocationController::class, 'updateItemQty']);
+        Route::delete('/locations/{shopify_warehouse_location}/items/{shopify_warehouse_location_item}', [ShopifyWarehouseLocationController::class, 'destroyItem']);
     });
 
     Route::prefix('resources')->group(function () {

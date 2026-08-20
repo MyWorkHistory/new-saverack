@@ -221,6 +221,9 @@ const canViewOrdersShipped = computed(() =>
 const canViewOrdersWholesale = computed(() =>
   hasPerm("orders_wholesale.view", "orders.view"),
 );
+const canViewOrdersBatch = computed(
+  () => !isPortal.value && hasPerm("orders.view"),
+);
 
 const canWriteOrders = computed(() => {
   if (isPortal.value) return false;
@@ -306,6 +309,7 @@ function navActive(mode) {
   }
   if (mode === "orders-shipped") return p.startsWith("/admin/orders/shipped");
   if (mode === "orders-wholesale") return p.startsWith("/admin/orders/wholesale");
+  if (mode === "orders-batch") return p.startsWith("/admin/orders/batch");
   if (mode === "receiving") return p.startsWith("/admin/receiving");
   if (mode === "receiving-asn") return p.startsWith("/admin/receiving/asn");
   if (mode === "receiving-put-away") return p.startsWith("/admin/receiving/put-away");
@@ -573,6 +577,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Wholesale
+                  </RouterLink>
+                </li>
+                <li v-if="canViewOrdersBatch">
+                  <RouterLink
+                    to="/admin/orders/batch"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('orders-batch') }"
+                    @click="closeMobile"
+                  >
+                    Batch
                   </RouterLink>
                 </li>
                 <li v-if="canWriteOrders">

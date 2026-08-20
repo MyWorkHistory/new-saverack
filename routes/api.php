@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\InventoryBetaController;
 use App\Http\Controllers\Api\LocationLabelController;
 use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\OrderBatchController;
 use App\Http\Controllers\Api\OrderDraftController;
 use App\Http\Controllers\Api\CrmLookupController;
 use App\Http\Controllers\Api\PortalLookupController;
@@ -515,6 +516,15 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('can:shiphero.orders.write');
         Route::delete('/{orderDraft}', [OrderDraftController::class, 'destroy'])
             ->middleware('can:shiphero.orders.write');
+    });
+
+    Route::prefix('order-batches')->group(function () {
+        Route::get('/meta', [OrderBatchController::class, 'meta']);
+        Route::get('/', [OrderBatchController::class, 'index']);
+        Route::post('/', [OrderBatchController::class, 'store']);
+        Route::post('/complete', [OrderBatchController::class, 'complete']);
+        Route::patch('/{order_batch}', [OrderBatchController::class, 'update']);
+        Route::delete('/{order_batch}', [OrderBatchController::class, 'destroy']);
     });
 
     Route::prefix('orders')->group(function () {

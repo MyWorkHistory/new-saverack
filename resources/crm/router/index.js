@@ -345,6 +345,10 @@ const meta = {
     title: "Save Rack | Wholesale Orders",
     description: "Manage wholesale fulfillment orders.",
   },
+  orderBatches: {
+    title: "Save Rack | Batch",
+    description: "Order batch numbers.",
+  },
   wholesaleOrderDetail: {
     title: "Save Rack | Wholesale Order",
     description: "Wholesale order detail.",
@@ -840,6 +844,12 @@ const routes = [
     name: "wholesale-orders",
     component: () => import("../pages/orders/WholesaleOrdersListPage.vue"),
     meta: meta.wholesaleOrdersList,
+  },
+  {
+    path: "/admin/orders/batch",
+    name: "orders-batch",
+    component: () => import("../pages/orders/OrderBatchesPage.vue"),
+    meta: meta.orderBatches,
   },
   {
     path: "/admin/orders/wholesale/pick-list",
@@ -1428,6 +1438,7 @@ export function setOrdersNavFromUser(user) {
         backorder: true,
         shipped: true,
         wholesale: true,
+        batch: true,
         create: true,
       },
     };
@@ -1446,6 +1457,7 @@ export function setOrdersNavFromUser(user) {
         backorder: true,
         shipped: true,
         wholesale: true,
+        batch: false,
         create: false,
       },
     };
@@ -1483,6 +1495,7 @@ export function setOrdersNavFromUser(user) {
       backorder: page("orders_backorder.view"),
       shipped: page("orders_shipped.view"),
       wholesale: page("orders_wholesale.view"),
+      batch: k.includes("orders.view"),
       create: k.includes("orders_create.create") || k.includes("orders_create.update") || k.includes("orders.update") || k.includes("orders.create"),
     },
   };
@@ -2057,6 +2070,7 @@ async function ensureOrdersRouteAccess(path) {
     if (path.startsWith("/admin/orders/shipped")) return pages.shipped === true;
     if (path.startsWith("/admin/orders/wholesale")) return pages.wholesale === true;
     if (path.startsWith("/users/orders/wholesale")) return pages.wholesale === true;
+    if (path.startsWith("/admin/orders/batch")) return pages.batch === true;
     if (path.startsWith("/admin/orders/search") || path === "/admin/orders") {
       return pages.search === true;
     }

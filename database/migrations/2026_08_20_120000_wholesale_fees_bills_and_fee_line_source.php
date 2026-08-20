@@ -8,11 +8,24 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // MySQL may be using the composite unique index as the only index that
+        // satisfies the wholesale_order_id foreign key — drop FK first, then unique.
+        Schema::table('wholesale_order_fee_lines', function (Blueprint $table) {
+            $table->dropForeign(['wholesale_order_id']);
+        });
+
         Schema::table('wholesale_order_fee_lines', function (Blueprint $table) {
             $table->dropUnique(['wholesale_order_id', 'line_type']);
+        });
+
+        Schema::table('wholesale_order_fee_lines', function (Blueprint $table) {
             $table->string('source', 32)->default('wholesale')->after('line_type');
             $table->unsignedBigInteger('client_account_fee_id')->nullable()->after('source');
             $table->index(['wholesale_order_id', 'line_type']);
+            $table->foreign('wholesale_order_id')
+                ->references('id')
+                ->on('wholesale_orders')
+                ->cascadeOnDelete();
             $table->foreign('client_account_fee_id')
                 ->references('id')
                 ->on('client_account_fees')
@@ -88,9 +101,14 @@ return new class extends Migration
 
         Schema::table('wholesale_order_fee_lines', function (Blueprint $table) {
             $table->dropForeign(['client_account_fee_id']);
+            $table->dropForeign(['wholesale_order_id']);
             $table->dropIndex(['wholesale_order_id', 'line_type']);
             $table->dropColumn(['source', 'client_account_fee_id']);
             $table->unique(['wholesale_order_id', 'line_type']);
+            $table->foreign('wholesale_order_id')
+                ->references('id')
+                ->on('wholesale_orders')
+                ->cascadeOnDelete();
         });
     }
 };

@@ -117,11 +117,6 @@ async function openPdf(path, msg, params = undefined) {
   }
 }
 
-function openRmaBarcode() {
-  if (!ret.value?.id) return;
-  openPdf(`/returns/${ret.value.id}/rma-barcode.pdf`, "Could not open barcode.");
-}
-
 function printItemBarcode(row) {
   const sku = String(row?.sku || "").trim();
   if (!sku) {
@@ -275,14 +270,6 @@ onMounted(() => {
             </button>
           </div>
           <div class="d-flex flex-wrap gap-2 flex-shrink-0 align-items-center">
-            <button
-              type="button"
-              class="btn btn-outline-secondary btn-sm fw-semibold orders-toolbar-outline-btn"
-              :disabled="!ret?.id"
-              @click="openRmaBarcode"
-            >
-              Print Barcode
-            </button>
             <button type="button" class="btn btn-outline-secondary btn-sm fw-semibold" @click="cancelDraft">
               Cancel
             </button>

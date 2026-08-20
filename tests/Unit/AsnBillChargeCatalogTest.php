@@ -144,4 +144,28 @@ class AsnBillChargeCatalogTest extends TestCase
         $this->assertSame(AsnBillChargeCatalog::QTY_NONE, $options[2]['qty_mode']);
         $this->assertSame(25000, $options[2]['default_unit_price_cents']);
     }
+
+    public function test_options_fall_back_to_standard_lines_when_no_receiving_fees(): void
+    {
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'No Recv Fees Co',
+            'email' => 'norecv@example.test',
+        ]);
+
+        ClientAccountFee::query()->create([
+            'client_account_id' => $account->id,
+            'fee_group' => ClientAccountFee::GROUP_FULFILLMENT,
+            'line_code' => ClientAccountFee::LINE_FIRST_PICK,
+            'label' => 'First Pick',
+            'amount' => '1.0000',
+            'currency' => 'USD',
+            'sort_order' => 1,
+        ]);
+
+        $options = AsnBillChargeCatalog::optionsForAccount($account->fresh(['feeItems.pricingTemplate']));
+        $this->assertCount(5, $options);
+        $this->assertSame(AsnBill::LINE_RECEIVING_PER_BOX, $options[0]['line_type']);
+        $this->assertSame(AsnBillChargeCatalog::QTY_BOXES, $options[0]['qty_mode']);
+    }
 }

@@ -5,6 +5,7 @@ namespace App\Support\Billing;
 use App\Models\AsnBill;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountFee;
+use App\Models\PricingFeeTemplate;
 use Illuminate\Validation\ValidationException;
 
 class AsnBillChargeCatalog
@@ -116,6 +117,12 @@ class AsnBillChargeCatalog
         if ($option !== null) {
             return (int) $option['default_unit_price_cents'];
         }
+
+        return self::unitPriceCentsFromFeeItems($account, $lineType);
+    }
+
+    private static function unitPriceCentsFromFeeItems(ClientAccount $account, string $lineType): int
+    {
         if (! isset(self::DEFINITIONS[$lineType])) {
             return 0;
         }
@@ -166,15 +173,22 @@ class AsnBillChargeCatalog
 
     /**
      * Live receiving fees for the account (name + price). Used by the ASN fee modal.
+     * Falls back to the standard ASN line types when the account has no receiving rows.
      *
      * @return list<array<string, mixed>>
      */
     public static function optionsForAccount(ClientAccount $account): array
     {
-        $account->loadMissing(['feeItems.pricingTemplate']);
+        // Always reload so stale / partial feeItems relations cannot blank the modal.
+        $account->unsetRelation('feeItems');
+        $account->load(['feeItems.pricingTemplate']);
         $usedLineTypes = [];
         $out = [];
-        $fees = $account->feeItems->sortBy(function (ClientAccountFee $fee) {
+        $fees = $account->feeItems->sortBy(function ($fee) {
+            if (! $fee instanceof ClientAccountFee) {
+                return 0;
+            }
+
             return ((int) $fee->sort_order) * 100000 + (int) $fee->id;
         })->values();
 
@@ -182,7 +196,7 @@ class AsnBillChargeCatalog
             if (! $fee instanceof ClientAccountFee) {
                 continue;
             }
-            if ($fee->fee_group !== ClientAccountFee::GROUP_RECEIVING) {
+            if (! self::isAsnModalFee($fee)) {
                 continue;
             }
             $qtyMode = self::qtyModeForFee($fee);
@@ -209,7 +223,52 @@ class AsnBillChargeCatalog
             ];
         }
 
+        if ($out !== []) {
+            return $out;
+        }
+
+        return self::fallbackStandardOptions($account);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private static function fallbackStandardOptions(ClientAccount $account): array
+    {
+        $out = [];
+        foreach (self::DEFINITIONS as $lineType => $def) {
+            $qtyMode = self::qtyModeFromSubtype($def['subtype']);
+            $out[] = [
+                'line_type' => $lineType,
+                'client_account_fee_id' => null,
+                'display_name' => $def['display_name'],
+                'group_key' => $def['group_key'],
+                'subtype' => $def['subtype'],
+                'qty_mode' => $qtyMode,
+                'qty_label' => self::qtyLabel($qtyMode),
+                'autofill' => $qtyMode === self::QTY_BOXES || $qtyMode === self::QTY_PALLETS || $qtyMode === self::QTY_SKU,
+                'default_unit_price_cents' => self::unitPriceCentsFromFeeItems($account, $lineType),
+            ];
+        }
+
         return $out;
+    }
+
+    private static function isAsnModalFee(ClientAccountFee $fee): bool
+    {
+        $group = strtolower(trim((string) ($fee->fee_group ?? '')));
+        if ($group === ClientAccountFee::GROUP_RECEIVING) {
+            return true;
+        }
+
+        if ($fee->relationLoaded('pricingTemplate') && $fee->pricingTemplate !== null) {
+            $category = strtolower(trim((string) ($fee->pricingTemplate->category ?? '')));
+            if ($category === PricingFeeTemplate::CATEGORY_RECEIVING) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

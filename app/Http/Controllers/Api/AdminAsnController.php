@@ -99,13 +99,15 @@ class AdminAsnController extends Controller
      */
     private function serializeAsn(ClientAccountAsn $asn): array
     {
-        $asn->loadMissing(['lines', 'trackings', 'vendorLines', 'clientAccount.feeItems.pricingTemplate', 'processedBy']);
+        $asn->loadMissing(['lines', 'trackings', 'vendorLines', 'processedBy']);
 
-        $companyName = $asn->clientAccount !== null
-            ? trim((string) $asn->clientAccount->company_name)
-            : '';
+        $account = $this->resolveAsnAccount($asn);
         $processedByName = $asn->processedBy !== null
             ? trim((string) $asn->processedBy->name)
+            : '';
+
+        $companyName = $account !== null
+            ? trim((string) $account->company_name)
             : '';
 
         return [
@@ -124,15 +126,13 @@ class AdminAsnController extends Controller
             'accepted_qty' => $asn->accepted_qty,
             'rejected_qty' => $asn->rejected_qty,
             'warehouse_notes' => $asn->warehouse_notes,
-            'asn_billing_enabled' => $asn->clientAccount
-                ? (bool) $asn->clientAccount->asn_billing_enabled
-                : false,
+            'asn_billing_enabled' => $this->asnBillingEnabled($account),
             'non_compliant_fee' => $asn->non_compliant_fee,
             'custom_bill_id' => $asn->custom_bill_id,
             'asn_bill_id' => $asn->asn_bill_id,
             'asn_bill_lines' => $this->asnBills->linesForAsn($asn),
-            'asn_bill_charge_options' => $asn->clientAccount
-                ? AsnBillChargeCatalog::optionsForAccount($asn->clientAccount)
+            'asn_bill_charge_options' => $account !== null
+                ? AsnBillChargeCatalog::optionsForAccount($account)
                 : [],
             'created_at' => optional($asn->created_at)->toIso8601String(),
             'updated_at' => optional($asn->updated_at)->toIso8601String(),
@@ -149,6 +149,48 @@ class AdminAsnController extends Controller
                 'sort_order' => $v->sort_order,
             ])->values()->all(),
         ];
+    }
+
+    private function resolveAsnAccount(ClientAccountAsn $asn): ?ClientAccount
+    {
+        $account = $asn->clientAccount;
+        if ($account === null && (int) $asn->client_account_id > 0) {
+            $account = ClientAccount::query()->find((int) $asn->client_account_id);
+            if ($account !== null) {
+                $asn->setRelation('clientAccount', $account);
+            }
+        }
+        if ($account !== null) {
+            $account->unsetRelation('feeItems');
+            $account->load(['feeItems.pricingTemplate']);
+        }
+
+        return $account;
+    }
+
+    private function asnBillingEnabled(?ClientAccount $account): bool
+    {
+        if ($account === null) {
+            return false;
+        }
+
+        $raw = $account->getAttributes()['asn_billing_enabled'] ?? null;
+        if ($raw === null) {
+            return (bool) $account->asn_billing_enabled;
+        }
+        if (is_bool($raw)) {
+            return $raw;
+        }
+        if (is_int($raw) || is_float($raw)) {
+            return (int) $raw === 1;
+        }
+        if (is_string($raw)) {
+            $normalized = strtolower(trim($raw));
+
+            return in_array($normalized, ['1', 'true', 'on', 'yes'], true);
+        }
+
+        return (bool) $account->asn_billing_enabled;
     }
 
     public function summary(Request $request): JsonResponse

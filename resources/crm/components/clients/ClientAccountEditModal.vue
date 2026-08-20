@@ -50,7 +50,7 @@ const form = reactive({
   default_payment_type: "",
   postage_option: DEFAULT_POSTAGE_OPTION,
   packaging_option: DEFAULT_PACKAGING_OPTION,
-  asn_billing_enabled: false,
+  asn_billing_enabled: "0",
   payment_terms_days: 1,
   cc_fee_percent: "3.50",
   stripe_customer_id: "",
@@ -171,7 +171,12 @@ async function load() {
     form.default_payment_type = data.default_payment_type || "";
     form.postage_option = data.postage_option || DEFAULT_POSTAGE_OPTION;
     form.packaging_option = data.packaging_option || DEFAULT_PACKAGING_OPTION;
-    form.asn_billing_enabled = Boolean(data.asn_billing_enabled);
+    form.asn_billing_enabled =
+      data.asn_billing_enabled === true ||
+      data.asn_billing_enabled === 1 ||
+      data.asn_billing_enabled === "1"
+        ? "1"
+        : "0";
     form.payment_terms_days = Number(data.payment_terms_days) > 0 ? Number(data.payment_terms_days) : 1;
     form.cc_fee_percent =
       data.cc_fee_percent != null && data.cc_fee_percent !== ""
@@ -232,7 +237,7 @@ function buildPatch() {
       default_payment_type: trimOrNull(form.default_payment_type),
       postage_option: form.postage_option || DEFAULT_POSTAGE_OPTION,
       packaging_option: form.packaging_option || DEFAULT_PACKAGING_OPTION,
-      asn_billing_enabled: Boolean(form.asn_billing_enabled),
+      asn_billing_enabled: form.asn_billing_enabled === "1" || form.asn_billing_enabled === true || form.asn_billing_enabled === 1,
       payment_terms_days: Math.max(1, Number(form.payment_terms_days) || 1),
       cc_fee_percent: trimOrNull(form.cc_fee_percent),
       stripe_customer_id: trimOrNull(form.stripe_customer_id),
@@ -271,7 +276,7 @@ function buildPatch() {
       default_payment_type: trimOrNull(form.default_payment_type),
       postage_option: form.postage_option || DEFAULT_POSTAGE_OPTION,
       packaging_option: form.packaging_option || DEFAULT_PACKAGING_OPTION,
-      asn_billing_enabled: Boolean(form.asn_billing_enabled),
+      asn_billing_enabled: form.asn_billing_enabled === "1" || form.asn_billing_enabled === true || form.asn_billing_enabled === 1,
       payment_terms_days: Math.max(1, Number(form.payment_terms_days) || 1),
       cc_fee_percent: trimOrNull(form.cc_fee_percent),
       stripe_customer_id: trimOrNull(form.stripe_customer_id),
@@ -693,8 +698,8 @@ async function onSubmit() {
                           v-model="form.asn_billing_enabled"
                           class="form-select"
                         >
-                          <option :value="false">OFF</option>
-                          <option :value="true">ON</option>
+                          <option value="0">OFF</option>
+                          <option value="1">ON</option>
                         </select>
                       </div>
                     </div>

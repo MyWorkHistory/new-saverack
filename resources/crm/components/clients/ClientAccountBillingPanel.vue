@@ -88,7 +88,12 @@ const preferenceRows = computed(() => [
   {
     key: "asn_billing",
     label: "ASN Billing",
-    value: props.account.asn_billing_enabled ? "ON" : "OFF",
+    value:
+      props.account.asn_billing_enabled === true ||
+      props.account.asn_billing_enabled === 1 ||
+      props.account.asn_billing_enabled === "1"
+        ? "ON"
+        : "OFF",
     icon: "asn",
   },
   {

@@ -19,6 +19,7 @@ const rows = ref([]);
 const users = ref([]);
 const q = ref("");
 const userId = ref("");
+const filterMenuOpen = ref(false);
 const pagination = ref({ current_page: 1, last_page: 1, total: 0, per_page: DEFAULT_PER_PAGE });
 
 const manageOpenId = ref(null);
@@ -111,6 +112,13 @@ function onUserFilterChange() {
   void load();
 }
 
+function resetToolbarFilters() {
+  userId.value = "";
+  filterMenuOpen.value = false;
+  pagination.value.current_page = 1;
+  void load();
+}
+
 function goPage(p) {
   if (p < 1 || p > pagination.value.last_page) return;
   pagination.value.current_page = p;
@@ -152,6 +160,9 @@ async function toggleManageMenu(row, e) {
 function onDocClick(e) {
   if (!e.target?.closest?.("[data-order-batch-row-actions]")) {
     manageOpenId.value = null;
+  }
+  if (!e.target?.closest?.("[data-toolbar-filter]")) {
+    filterMenuOpen.value = false;
   }
 }
 
@@ -344,19 +355,68 @@ onUnmounted(() => {
               </button>
             </div>
           </div>
-          <div class="order-batch-user-filter flex-shrink-0">
-            <select
-              v-model="userId"
-              class="form-select staff-toolbar-search staff-toolbar-search--inline"
-              aria-label="Filter by user"
+          <div class="position-relative flex-shrink-0" data-toolbar-filter>
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+              :aria-expanded="filterMenuOpen"
+              aria-haspopup="true"
+              aria-controls="order-batch-filter-panel"
               :disabled="loading"
-              @change="onUserFilterChange"
+              @click.stop="filterMenuOpen = !filterMenuOpen"
             >
-              <option value="">All Users</option>
-              <option v-for="u in users" :key="u.id" :value="String(u.id)">
-                {{ u.name }}
-              </option>
-            </select>
+              <svg
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                />
+              </svg>
+              <span class="staff-toolbar-filter-text">Filters</span>
+            </button>
+            <div
+              v-if="filterMenuOpen"
+              id="order-batch-filter-panel"
+              class="dropdown-menu show shadow border p-0 staff-toolbar-filter-dropdown"
+              role="dialog"
+              aria-label="Batch filters"
+              @click.stop
+            >
+              <div class="staff-toolbar-filter-dropdown__head">
+                <span>Filters</span>
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                  :disabled="loading"
+                  @click="resetToolbarFilters"
+                >
+                  Reset
+                </button>
+              </div>
+              <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="order-batch-filter-user">User</label>
+                <select
+                  id="order-batch-filter-user"
+                  v-model="userId"
+                  class="form-select staff-datatable-filters__select"
+                  :disabled="loading"
+                  @change="onUserFilterChange"
+                >
+                  <option value="">All Users</option>
+                  <option v-for="u in users" :key="u.id" :value="String(u.id)">
+                    {{ u.name }}
+                  </option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -675,9 +735,6 @@ onUnmounted(() => {
 }
 .order-batch-search {
   width: min(22rem, 100%);
-}
-.order-batch-user-filter {
-  width: min(14rem, 100%);
 }
 .staff-status-badge {
   cursor: pointer;

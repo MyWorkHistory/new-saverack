@@ -34,6 +34,30 @@ class WholesaleBillController extends Controller
         return response()->json($this->bills->toDetailArray($wholesaleBill));
     }
 
+    public function update(Request $request, WholesaleBill $wholesaleBill): JsonResponse
+    {
+        $this->authorize('update', $wholesaleBill);
+        $validated = $request->validate([
+            'bill_date' => ['required', 'date'],
+        ]);
+
+        $bill = $this->bills->updateHeader(
+            $wholesaleBill,
+            $validated,
+            $request->user()
+        );
+
+        return response()->json($this->bills->toDetailArray($bill));
+    }
+
+    public function destroy(Request $request, WholesaleBill $wholesaleBill): JsonResponse
+    {
+        $this->authorize('delete', $wholesaleBill);
+        $this->bills->delete($wholesaleBill, $request->user());
+
+        return response()->json(['message' => 'Wholesale bill deleted.']);
+    }
+
     public function draftInvoices(Request $request, WholesaleBill $wholesaleBill): JsonResponse
     {
         $this->authorize('view', $wholesaleBill);

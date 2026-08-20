@@ -167,10 +167,33 @@ const feeChargeOptions = computed(() =>
   Array.isArray(order.value?.fee_charge_options) ? order.value.fee_charge_options : [],
 );
 
-const feeDefaultQuantities = computed(() => ({
-  wholesale_fulfillment: itemsSummary.value.totalQuantity,
-  barcode_labeling: itemsSummary.value.totalQuantity,
-}));
+const barcodeLabelingDefaultQty = computed(() =>
+  lines.value.reduce((sum, line) => {
+    if (!line?.has_barcode) return sum;
+    return sum + Number(line.quantity || 0);
+  }, 0),
+);
+
+/** Most fees default to 1; per_item = total units; barcode_labeling = qty of lines with uploaded labels. */
+const feeDefaultQuantities = computed(() => {
+  const totalQty = itemsSummary.value.totalQuantity;
+  const labelingQty = barcodeLabelingDefaultQty.value;
+  const map = {
+    wholesale_fulfillment: 1,
+    master_carton: 1,
+    pallet_prep: 1,
+    ltl_pickup: 1,
+    box: 1,
+    per_item: totalQty > 0 ? totalQty : 1,
+    barcode_labeling: labelingQty > 0 ? labelingQty : "",
+  };
+  for (const opt of feeChargeOptions.value) {
+    const lt = String(opt?.line_type || "");
+    if (!lt || Object.prototype.hasOwnProperty.call(map, lt)) continue;
+    map[lt] = 1;
+  }
+  return map;
+});
 
 function formatFeeCents(cents) {
   const n = Number(cents) || 0;
@@ -1650,36 +1673,39 @@ onUnmounted(() => {
 }
 
 .wholesale-items-table-wrap {
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 .wholesale-items-table {
   table-layout: fixed;
   width: 100%;
+  min-width: 40rem;
+}
+
+.wholesale-items-table th.text-center:nth-child(3),
+.wholesale-items-table td.text-center:nth-child(3) {
+  width: 5.5rem;
+  min-width: 5.5rem;
 }
 
 .wholesale-line-barcodes-col {
-  width: 7.5rem;
+  width: 8.5rem;
+  min-width: 8.5rem;
   white-space: nowrap;
 }
 
 td.wholesale-line-barcodes-col .btn {
-  display: block;
-}
-
-@media (max-width: 575.98px) {
-  .wholesale-items-table-wrap {
-    overflow-x: auto;
-  }
+  display: inline-block;
 }
 
 .wholesale-order-detail-page .order-detail-page__items-actions-col {
-  width: 3.25rem;
+  width: 3.5rem;
+  min-width: 3.5rem;
 }
 
 .wholesale-order-detail-page .asn-line-thumb {
-  width: 64px;
-  height: 64px;
+  width: 48px;
+  height: 48px;
   border-radius: 0.4rem;
   object-fit: cover;
   border: 1px solid rgba(0, 0, 0, 0.08);
@@ -1688,8 +1714,8 @@ td.wholesale-line-barcodes-col .btn {
 }
 
 .wholesale-order-detail-page .asn-line-thumb--lg {
-  width: 96px;
-  height: 96px;
+  width: 56px;
+  height: 56px;
 }
 
 .wholesale-order-detail-page .asn-line-thumb--empty {
@@ -1705,8 +1731,8 @@ td.wholesale-line-barcodes-col .btn {
 }
 
 .wholesale-order-detail-page .order-detail-page__items-col {
-  width: 42%;
-  min-width: 0;
+  width: auto;
+  min-width: 12rem;
   vertical-align: middle;
 }
 

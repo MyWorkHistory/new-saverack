@@ -187,6 +187,9 @@ export function useAsnProductCatalog(
 
   async function continueCatalogSearchInBackground(runId) {
     if (catalogSearchAutoLoading.value) return;
+    // Wholesale catalog: first page only — user taps Load More. ASN keeps limited auto-fill.
+    const maxAutoPages = resolvedWholesaleOrderId() > 0 ? 0 : 2;
+    if (maxAutoPages <= 0) return;
     catalogSearchAutoLoading.value = true;
     try {
       let guard = 0;
@@ -194,7 +197,7 @@ export function useAsnProductCatalog(
         runId === catalogSearchRunSeq &&
         catalogSearchCommitted.value.trim() &&
         catalogPageInfo.value.has_next_page &&
-        guard < 200
+        guard < maxAutoPages
       ) {
         guard += 1;
         await loadCatalogRows(false);

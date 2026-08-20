@@ -164,6 +164,35 @@ class WholesaleBillApiTest extends TestCase
         $this->assertSame('Special Handling', $wholesaleRow['details'][1]['name']);
     }
 
+    public function test_update_bill_date_and_delete_open_bill(): void
+    {
+        $account = $this->account();
+        $order = $this->order($account);
+        WholesaleOrderFeeLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'line_type' => WholesaleOrderFeeLine::TYPE_MASTER_CARTON,
+            'source' => WholesaleOrderFeeLine::SOURCE_WHOLESALE,
+            'name' => 'Master Carton',
+            'quantity' => 1,
+            'unit_price_cents' => 500,
+        ]);
+        $this->actingAsAdministrator();
+
+        $created = $this->postJson('/api/admin/wholesale-orders/'.$order->id.'/create-bill')
+            ->assertCreated();
+        $billId = (int) $created->json('id');
+
+        $this->patchJson('/api/billing/wholesale-bills/'.$billId, [
+            'bill_date' => '2026-08-15',
+        ])->assertOk()->assertJsonPath('bill_date', '2026-08-15');
+
+        $this->deleteJson('/api/billing/wholesale-bills/'.$billId)
+            ->assertOk();
+
+        $this->assertDatabaseMissing('wholesale_bills', ['id' => $billId]);
+        $this->assertNull($order->fresh()->wholesale_bill_id);
+    }
+
     public function test_portal_and_staff_share_order_comments(): void
     {
         $account = $this->account();

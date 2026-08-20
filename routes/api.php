@@ -177,6 +177,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::prefix('billing/wholesale-bills')->group(function () {
             Route::get('/', [WholesaleBillController::class, 'index']);
             Route::get('/{wholesaleBill}', [WholesaleBillController::class, 'show']);
+            Route::patch('/{wholesaleBill}', [WholesaleBillController::class, 'update']);
+            Route::delete('/{wholesaleBill}', [WholesaleBillController::class, 'destroy']);
             Route::get('/{wholesaleBill}/draft-invoices', [WholesaleBillController::class, 'draftInvoices']);
             Route::post('/{wholesaleBill}/add-to-invoice', [WholesaleBillController::class, 'addToInvoice']);
         });

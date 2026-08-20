@@ -78,6 +78,42 @@ class WholesaleBillService
         });
     }
 
+    /**
+     * @param  array{bill_date?: string}  $data
+     */
+    public function updateHeader(WholesaleBill $bill, array $data, ?User $actor): WholesaleBill
+    {
+        if (! $bill->isOpen()) {
+            throw ValidationException::withMessages(['status' => ['Only open wholesale bills can be updated.']]);
+        }
+
+        return DB::transaction(function () use ($bill, $data, $actor) {
+            if (isset($data['bill_date'])) {
+                $bill->bill_date = $data['bill_date'];
+            }
+            $bill->save();
+            $this->logHistory($bill, $actor, 'updated', 'Bill details updated.');
+
+            return $bill->fresh($this->detailRelations());
+        });
+    }
+
+    public function delete(WholesaleBill $bill, ?User $actor): void
+    {
+        if (! $bill->isOpen()) {
+            throw ValidationException::withMessages(['status' => ['Only open wholesale bills can be deleted.']]);
+        }
+
+        DB::transaction(function () use ($bill) {
+            WholesaleOrder::query()
+                ->where('wholesale_bill_id', $bill->id)
+                ->update(['wholesale_bill_id' => null]);
+            $bill->items()->delete();
+            $bill->histories()->delete();
+            $bill->delete();
+        });
+    }
+
     public function addToInvoice(WholesaleBill $bill, int $invoiceId, ?User $actor): WholesaleBill
     {
         if (! $bill->isOpen()) {

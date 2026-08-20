@@ -39,4 +39,15 @@ class WholesaleBillPolicy
             || $user->hasPermission('billing.update')
         );
     }
+
+    public function delete(User $user, WholesaleBill $bill): bool
+    {
+        if (! $bill->isOpen()) {
+            return false;
+        }
+
+        return $this->canManage($user)
+            || $user->hasPermission('billing_wholesale_bills.delete')
+            || $user->hasPermission('billing.delete');
+    }
 }

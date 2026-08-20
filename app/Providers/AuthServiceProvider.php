@@ -24,6 +24,7 @@ use App\Models\ResourcePhoto;
 use App\Models\User;
 use App\Models\LtlShipment;
 use App\Models\WholesaleOrder;
+use App\Models\WholesaleBill;
 use App\Policies\ClientAccountAsnPolicy;
 use App\Policies\LtlShipmentPolicy;
 use App\Policies\ClientAccountReturnPolicy;
@@ -46,6 +47,7 @@ use App\Policies\TicketPolicy;
 use App\Policies\TutorialPolicy;
 use App\Policies\UserPolicy;
 use App\Policies\WholesaleOrderPolicy;
+use App\Policies\WholesaleBillPolicy;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Gate;
 
@@ -78,6 +80,7 @@ class AuthServiceProvider extends ServiceProvider
         ResourcePhoto::class => ResourcePhotoPolicy::class,
         ResourceCalendarEvent::class => ResourceCalendarEventPolicy::class,
         WholesaleOrder::class => WholesaleOrderPolicy::class,
+        WholesaleBill::class => WholesaleBillPolicy::class,
         LtlShipment::class => LtlShipmentPolicy::class,
     ];
 

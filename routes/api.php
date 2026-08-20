@@ -50,6 +50,7 @@ use App\Http\Controllers\Api\TutorialPhotoController;
 use App\Http\Controllers\Api\ResourceCalendarEventController;
 use App\Http\Controllers\Api\ResourcePhotoController;
 use App\Http\Controllers\Api\WholesaleOrderController;
+use App\Http\Controllers\Api\WholesaleBillController;
 use App\Http\Controllers\Api\ShopifyIntegrationController;
 use App\Http\Controllers\Api\ShopifyWarehouseLocationController;
 use App\Http\Controllers\ShipHeroWebhookController;
@@ -171,6 +172,13 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{asnBill}/items', [AsnBillController::class, 'storeItem']);
             Route::put('/{asnBill}/items/{item}', [AsnBillController::class, 'updateItem']);
             Route::delete('/{asnBill}/items/{item}', [AsnBillController::class, 'destroyItem']);
+        });
+
+        Route::prefix('billing/wholesale-bills')->group(function () {
+            Route::get('/', [WholesaleBillController::class, 'index']);
+            Route::get('/{wholesaleBill}', [WholesaleBillController::class, 'show']);
+            Route::get('/{wholesaleBill}/draft-invoices', [WholesaleBillController::class, 'draftInvoices']);
+            Route::post('/{wholesaleBill}/add-to-invoice', [WholesaleBillController::class, 'addToInvoice']);
         });
 
         Route::prefix('custom-bills')->group(function () {
@@ -414,6 +422,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{wholesaleOrder}/fee-lines/{feeLine}', [WholesaleOrderController::class, 'destroyFeeLine'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/comments', [WholesaleOrderController::class, 'storeComment'])->middleware('can:orders.view');
         Route::get('/{wholesaleOrder}/comments/{comment}/attachment', [WholesaleOrderController::class, 'downloadCommentAttachment'])->middleware('can:orders.view');
+        Route::post('/{wholesaleOrder}/create-bill', [WholesaleOrderController::class, 'createBill'])->middleware('can:orders.update');
     });
 
         Route::prefix('admin/asns')->group(function () {

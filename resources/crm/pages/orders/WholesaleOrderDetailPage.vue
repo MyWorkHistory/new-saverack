@@ -12,6 +12,7 @@ import WholesalePackageInfoModal from "../../components/orders/WholesalePackageI
 import WholesaleRequirementRow from "../../components/orders/WholesaleRequirementRow.vue";
 import WholesaleRequirementsEditDrawer from "../../components/orders/WholesaleRequirementsEditDrawer.vue";
 import WholesaleOrderFeesModal from "../../components/orders/WholesaleOrderFeesModal.vue";
+import WholesaleOrderCustomFeesModal from "../../components/orders/WholesaleOrderCustomFeesModal.vue";
 import WholesaleShippingLabelsCard from "../../components/orders/WholesaleShippingLabelsCard.vue";
 import CrmMaterialIcon from "../../components/common/CrmMaterialIcon.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -48,8 +49,6 @@ const lineBusy = ref(false);
 const addPanelOpen = ref(false);
 const order = ref(null);
 
-const instructionsDraft = ref("");
-const instructionsSaving = ref(false);
 const statusSaving = ref(false);
 const statusModalOpen = ref(false);
 const statusDraft = ref("pending");
@@ -63,6 +62,8 @@ const feesModalOpen = ref(false);
 const feesModalBusy = ref(false);
 const feesModalError = ref("");
 const feesEditLine = ref(null);
+const customFeesModalOpen = ref(false);
+const createBillBusy = ref(false);
 
 const boxInfoOpen = ref(false);
 const palletInfoOpen = ref(false);
@@ -212,6 +213,8 @@ async function submitFeesModal(payloads) {
         name: item.name,
         quantity: item.quantity,
         unit_price: item.unit_price,
+        source: item.source,
+        client_account_fee_id: item.client_account_fee_id,
       };
       if (item.action === "update" && item.item_id) {
         const { data } = await api.put(
@@ -233,6 +236,35 @@ async function submitFeesModal(payloads) {
     toast.error(feesModalError.value || "Could not save wholesale fees.");
   } finally {
     feesModalBusy.value = false;
+  }
+}
+
+async function submitCustomFee(payload) {
+  if (!order.value?.id) return;
+  feesModalBusy.value = true;
+  try {
+    const { data } = await api.post(`/admin/wholesale-orders/${order.value.id}/fee-lines`, payload);
+    applyOrderData(data);
+    customFeesModalOpen.value = false;
+    toast.success("Custom fee added.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not add custom fee.");
+  } finally {
+    feesModalBusy.value = false;
+  }
+}
+
+async function createBill() {
+  if (!order.value?.id || createBillBusy.value) return;
+  createBillBusy.value = true;
+  try {
+    const { data } = await api.post(`/admin/wholesale-orders/${order.value.id}/create-bill`);
+    toast.success("Wholesale bill created.");
+    await router.push(`/admin/billing/wholesale-bills/${data.id}`);
+  } catch (e) {
+    toast.errorFrom(e, "Could not create wholesale bill.");
+  } finally {
+    createBillBusy.value = false;
   }
 }
 
@@ -392,13 +424,8 @@ function onPackageInfoSaved(data) {
   applyOrderData(data);
 }
 
-function syncDraftsFromOrder(data) {
-  instructionsDraft.value = String(data?.instructions || "");
-}
-
 function applyOrderData(data) {
   order.value = data;
-  syncDraftsFromOrder(data);
 }
 
 function orderStatusLabel() {
@@ -500,24 +527,6 @@ async function load() {
     router.push({ name: listRouteName.value });
   } finally {
     loading.value = false;
-  }
-}
-
-async function saveInstructions() {
-  if (!order.value?.id || !isEditable.value) return;
-  const next = instructionsDraft.value.trim();
-  if (next === String(order.value.instructions || "").trim()) return;
-  instructionsSaving.value = true;
-  try {
-    const { data } = await api.patch(`/admin/wholesale-orders/${order.value.id}`, {
-      instructions: next || null,
-    });
-    applyOrderData(data);
-    toast.success("Note saved.");
-  } catch (e) {
-    toast.errorFrom(e, "Could not save note.");
-  } finally {
-    instructionsSaving.value = false;
   }
 }
 
@@ -914,6 +923,22 @@ onUnmounted(() => {
           <div
             class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0 align-self-start wholesale-order-detail-page__header-actions"
           >
+            <RouterLink
+              v-if="!isPortal && order.wholesale_bill_id"
+              :to="`/admin/billing/wholesale-bills/${order.wholesale_bill_id}`"
+              class="btn btn-outline-primary"
+            >
+              View Bill
+            </RouterLink>
+            <button
+              v-else-if="!isPortal && feeLines.length"
+              type="button"
+              class="btn btn-primary staff-page-primary"
+              :disabled="createBillBusy"
+              @click="createBill"
+            >
+              {{ createBillBusy ? "Creating…" : "Create Bill" }}
+            </button>
             <button
               type="button"
               class="staff-detail-tab-btn"
@@ -1174,44 +1199,6 @@ onUnmounted(() => {
         </div>
 
         <div
-          v-if="!isPortal"
-          class="staff-table-card staff-datatable-card staff-datatable-card--white p-4"
-        >
-          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 order-detail-page__section-head">
-            <div class="d-flex align-items-center gap-2 min-w-0">
-              <span class="order-detail-page__section-icon order-detail-page__section-icon--note" aria-hidden="true">
-                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-              </span>
-              <h2 class="h6 mb-0 fw-semibold">Note for warehouse packer</h2>
-            </div>
-          </div>
-          <textarea
-            v-if="isEditable"
-            v-model="instructionsDraft"
-            class="form-control mb-3"
-            rows="5"
-            maxlength="20000"
-            placeholder="Add a note for the warehouse team…"
-            :disabled="instructionsSaving"
-          />
-          <p v-else class="small mb-0 text-secondary" style="white-space: pre-wrap">
-            {{ order.instructions || "—" }}
-          </p>
-          <button
-            v-if="isEditable"
-            type="button"
-            class="btn btn-primary btn-sm staff-page-primary fw-semibold"
-            :disabled="instructionsSaving"
-            @click="saveInstructions"
-          >
-            {{ instructionsSaving ? "Saving…" : "Save Note" }}
-          </button>
-        </div>
-
-        <div
-          v-if="!isPortal"
           class="staff-table-card staff-datatable-card staff-datatable-card--white p-4"
         >
           <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
@@ -1381,14 +1368,44 @@ onUnmounted(() => {
             >
               Add Fees
             </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary ms-2"
+              @click="customFeesModalOpen = true"
+            >
+              Add Custom Fees
+            </button>
           </template>
-          <div v-if="feeLines.length" class="mt-2">
+          <div v-if="feeLines.length" class="mt-2 d-flex flex-wrap gap-2">
             <button
               type="button"
               class="btn btn-sm btn-outline-secondary"
               @click="openAddFeesModal"
             >
               Add Fees
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              @click="customFeesModalOpen = true"
+            >
+              Add Custom Fees
+            </button>
+            <RouterLink
+              v-if="order.wholesale_bill_id"
+              :to="`/admin/billing/wholesale-bills/${order.wholesale_bill_id}`"
+              class="btn btn-sm btn-outline-primary"
+            >
+              View Bill
+            </RouterLink>
+            <button
+              v-else
+              type="button"
+              class="btn btn-sm btn-primary staff-page-primary"
+              :disabled="createBillBusy"
+              @click="createBill"
+            >
+              {{ createBillBusy ? "Creating…" : "Create Bill" }}
             </button>
           </div>
         </div>
@@ -1479,6 +1496,13 @@ onUnmounted(() => {
       :default-quantities="feeDefaultQuantities"
       @submit="submitFeesModal"
       @delete="deleteFeeFromModal"
+    />
+
+    <WholesaleOrderCustomFeesModal
+      v-model:open="customFeesModalOpen"
+      :busy="feesModalBusy"
+      :packaging-options="order?.packaging_fee_options || []"
+      @submit="submitCustomFee"
     />
 
     <WholesaleRequirementsEditDrawer

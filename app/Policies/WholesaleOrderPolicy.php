@@ -79,10 +79,6 @@ class WholesaleOrderPolicy
 
     public function comment(User $user, WholesaleOrder $order): bool
     {
-        if ($this->isPortalUser($user)) {
-            return false;
-        }
-
         return $this->view($user, $order);
     }
 }

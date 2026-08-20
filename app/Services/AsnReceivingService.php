@@ -6,6 +6,7 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
 use App\Models\ClientAccountAsnLine;
 use App\Models\User;
+use App\Jobs\SyncAsnReceivingInventoryJob;
 use App\Support\AsnDisplay;
 use App\Support\Billing\InvoiceLineCategory;
 use App\Support\InventoryAdjustmentActor;
@@ -359,6 +360,17 @@ class AsnReceivingService
     /**
      * @param  array<string, mixed>  $warehouseSlice
      */
+    public function applyPutAwayReceivingSlice(
+        ClientAccount $account,
+        ClientAccountAsnLine $line,
+        array $warehouseSlice
+    ): void {
+        $this->syncPutAwayReceivingRow($account, $line, $warehouseSlice);
+    }
+
+    /**
+     * @param  array<string, mixed>  $warehouseSlice
+     */
     private function syncPutAwayReceivingRow(
         ClientAccount $account,
         ClientAccountAsnLine $line,
@@ -375,6 +387,55 @@ class AsnReceivingService
             $line->barcode !== null ? (string) $line->barcode : null,
             $line->image_url !== null ? (string) $line->image_url : null
         );
+    }
+
+    private function bumpLocalReceivingOptimistic(
+        ClientAccount $account,
+        ClientAccountAsnLine $line,
+        int $deltaOrAbsolute,
+        bool $absolute
+    ): void {
+        if ($absolute) {
+            $this->putAway->upsertLocalReceivingRow(
+                (int) $account->id,
+                (string) $line->sku,
+                max(0, $deltaOrAbsolute),
+                (string) ($line->name ?? ''),
+                $line->barcode !== null ? (string) $line->barcode : null,
+                $line->image_url !== null ? (string) $line->image_url : null
+            );
+
+            return;
+        }
+        $this->putAway->bumpLocalReceivingQty(
+            (int) $account->id,
+            (string) $line->sku,
+            $deltaOrAbsolute,
+            (string) ($line->name ?? ''),
+            $line->barcode !== null ? (string) $line->barcode : null,
+            $line->image_url !== null ? (string) $line->image_url : null
+        );
+    }
+
+    private function dispatchReceivingInventorySync(
+        ClientAccount $account,
+        ClientAccountAsnLine $line,
+        string $mode,
+        int $quantity,
+        string $reason
+    ): void {
+        $pending = SyncAsnReceivingInventoryJob::dispatch([
+            'client_account_id' => (int) $account->id,
+            'asn_line_id' => (int) $line->id,
+            'mode' => $mode,
+            'quantity' => $quantity,
+            'reason' => $reason,
+        ]);
+        // In HTTP requests, run after the response so Save is instant. Keep sync in unit tests
+        // so existing ShipHero mocks still observe the mutation in-process.
+        if (! app()->runningUnitTests()) {
+            $pending->afterResponse();
+        }
     }
 
     /**
@@ -502,11 +563,10 @@ class AsnReceivingService
             ]);
         }
 
-        return DB::transaction(function () use ($asn, $line, $delta, $actor) {
-            $account = $asn->clientAccount ?? ClientAccount::query()->findOrFail($asn->client_account_id);
-            $reason = $this->receivingInventoryReason($asn, $actor, false);
-            $slice = $this->incrementReceivingInventory($account, (string) $line->sku, $delta, $reason);
-            $this->syncPutAwayReceivingRow($account, $line, $slice);
+        $account = $asn->clientAccount ?? ClientAccount::query()->findOrFail($asn->client_account_id);
+        $reason = $this->receivingInventoryReason($asn, $actor, false);
+
+        $fresh = DB::transaction(function () use ($asn, $line, $delta, $actor, $account) {
             $line->accepted_qty = (int) $line->accepted_qty + $delta;
             $line->save();
             $this->syncLineStatus($line);
@@ -514,9 +574,14 @@ class AsnReceivingService
             $asn->refresh();
             $this->markProcessedIfNeeded($asn, $actor);
             $this->applyAutoAsnStatus($asn);
+            $this->bumpLocalReceivingOptimistic($account, $line, $delta, false);
 
             return $line->fresh();
         });
+
+        $this->dispatchReceivingInventorySync($account, $fresh, 'increment', $delta, $reason);
+
+        return $fresh;
     }
 
     public function receiveOverride(
@@ -531,28 +596,12 @@ class AsnReceivingService
             ]);
         }
 
-        return DB::transaction(function () use ($asn, $line, $newAcceptedQty, $actor) {
-            $account = $asn->clientAccount ?? ClientAccount::query()->findOrFail($asn->client_account_id);
-            $previousAcceptedQty = (int) $line->accepted_qty;
-            $isCorrection = $newAcceptedQty < $previousAcceptedQty;
-            $reason = $this->receivingInventoryReason($asn, $actor, $isCorrection);
+        $account = $asn->clientAccount ?? ClientAccount::query()->findOrFail($asn->client_account_id);
+        $previousAcceptedQty = (int) $line->accepted_qty;
+        $isCorrection = $newAcceptedQty < $previousAcceptedQty;
+        $reason = $this->receivingInventoryReason($asn, $actor, $isCorrection);
 
-            if ($isCorrection) {
-                $shipheroQty = $this->receivingOnHandForSku($account, (string) $line->sku);
-                if ($shipheroQty !== $previousAcceptedQty) {
-                    Log::info('asn.receiving.override_qty_drift', [
-                        'asn_id' => $asn->id,
-                        'line_id' => $line->id,
-                        'sku' => $line->sku,
-                        'line_accepted_qty' => $previousAcceptedQty,
-                        'shiphero_receiving_qty' => $shipheroQty,
-                        'new_accepted_qty' => $newAcceptedQty,
-                    ]);
-                }
-            }
-
-            $slice = $this->setReceivingInventoryAbsolute($account, (string) $line->sku, $newAcceptedQty, $reason);
-            $this->syncPutAwayReceivingRow($account, $line, $slice);
+        $fresh = DB::transaction(function () use ($asn, $line, $newAcceptedQty, $actor, $account) {
             $line->accepted_qty = $newAcceptedQty;
             $line->save();
             $this->syncLineStatus($line);
@@ -560,9 +609,14 @@ class AsnReceivingService
             $asn->refresh();
             $this->markProcessedIfNeeded($asn, $actor);
             $this->applyAutoAsnStatus($asn);
+            $this->bumpLocalReceivingOptimistic($account, $line, $newAcceptedQty, true);
 
             return $line->fresh();
         });
+
+        $this->dispatchReceivingInventorySync($account, $fresh, 'absolute', $newAcceptedQty, $reason);
+
+        return $fresh;
     }
 
     public function rejectOverride(ClientAccountAsnLine $line, int $newRejectedQty): ClientAccountAsnLine

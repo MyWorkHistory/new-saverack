@@ -47,6 +47,7 @@ import BillingCustomBillsListPage from "../pages/billing/BillingCustomBillsListP
 import BillingCustomBillDetailPage from "../pages/billing/BillingCustomBillDetailPage.vue";
 import BillingReturnBillDetailPage from "../pages/billing/BillingReturnBillDetailPage.vue";
 import BillingAsnBillDetailPage from "../pages/billing/BillingAsnBillDetailPage.vue";
+import BillingWholesaleBillDetailPage from "../pages/billing/BillingWholesaleBillDetailPage.vue";
 import InventoryOnDemandPage from "../pages/inventory/InventoryOnDemandPage.vue";
 import InventoryRestockPage from "../pages/inventory/InventoryRestockPage.vue";
 import InventoryBetaListPage from "../pages/inventory/InventoryBetaListPage.vue";
@@ -211,6 +212,10 @@ const meta = {
   billingAsnBillDetail: {
     title: "Save Rack | ASN Bill",
     description: "ASN bill detail.",
+  },
+  billingWholesaleBillDetail: {
+    title: "Save Rack | Wholesale Bill",
+    description: "Wholesale bill detail.",
   },
   inventory: {
     title: "Save Rack | Products",
@@ -654,6 +659,13 @@ const routes = [
     component: BillingAsnBillDetailPage,
     props: true,
     meta: meta.billingAsnBillDetail,
+  },
+  {
+    path: "/admin/billing/wholesale-bills/:id",
+    name: "billing-wholesale-bill-detail",
+    component: BillingWholesaleBillDetailPage,
+    props: true,
+    meta: meta.billingWholesaleBillDetail,
   },
   { path: "/admin/billing", redirect: "/admin/billing/revenue" },
   {
@@ -1870,6 +1882,7 @@ async function ensureBillingRouteAccess(path) {
     if (path.startsWith("/admin/billing/bills") || path.startsWith("/admin/billing/custom-bills")) return pages.customBills === true;
     if (path.startsWith("/admin/billing/asn-bills")) return pages.asnBills === true;
     if (path.startsWith("/admin/billing/return-bills")) return pages.returnBills === true;
+    if (path.startsWith("/admin/billing/wholesale-bills")) return pages.customBills === true;
     return billingNavCache.view === true;
   }
   return true;

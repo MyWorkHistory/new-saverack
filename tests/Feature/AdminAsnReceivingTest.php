@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\SyncAsnReceivingInventoryJob;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
 use App\Models\ClientAccountAsnLine;
@@ -14,6 +15,7 @@ use App\Models\User;
 use App\Services\AsnReceivingService;
 use App\Services\ShipHeroInventoryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Laravel\Sanctum\Sanctum;
 use Mockery;
 use Tests\TestCase;
@@ -312,22 +314,13 @@ class AdminAsnReceivingTest extends TestCase
                 ],
             ],
         ]);
-        $mock->shouldReceive('replaceLocationQuantity')->once()->with(
-            'DEMO-SKU',
-            'wh-1',
-            'whloc-recv-99',
-            15,
-            Mockery::on(function ($reason) use ($staff) {
-                return is_string($reason)
-                    && strpos($reason, 'Received from ASN #0020') !== false
-                    && strpos($reason, '('.$staff->name.')') !== false;
-            }),
-            'sh-asn-admin-1'
-        )->andReturn($this->receivingWarehouseSlice(15));
+        $mock->shouldNotReceive('replaceLocationQuantity');
         $mock->shouldNotReceive('addLocationQuantity');
         $mock->shouldNotReceive('ensureWarehouseLocation');
         $this->app->instance(ShipHeroInventoryService::class, $mock);
         $this->app->forgetInstance(AsnReceivingService::class);
+
+        Bus::fake([SyncAsnReceivingInventoryJob::class]);
 
         $this->postJson("/api/admin/asns/{$asn->id}/lines/{$line->id}/receive", ['delta' => 10])
             ->assertOk()
@@ -338,6 +331,13 @@ class AdminAsnReceivingTest extends TestCase
         $line->refresh();
         $this->assertSame(10, $line->accepted_qty);
         $this->assertSame(ClientAccountAsnLine::LINE_STATUS_COMPLETED, $line->line_status);
+
+        Bus::assertDispatched(SyncAsnReceivingInventoryJob::class, function (SyncAsnReceivingInventoryJob $job) use ($account, $line) {
+            return $job->clientAccountId === (int) $account->id
+                && $job->asnLineId === (int) $line->id
+                && $job->mode === 'increment'
+                && $job->quantity === 10;
+        });
     }
 
     public function test_scan_barcodes_increments_accepted_qty_by_barcode(): void
@@ -381,22 +381,13 @@ class AdminAsnReceivingTest extends TestCase
                 ],
             ],
         ]);
-        $mock->shouldReceive('replaceLocationQuantity')->times(5)->with(
-            'SCAN-SKU',
-            'wh-1',
-            'whloc-recv-scan',
-            Mockery::on(static function ($qty) {
-                return is_int($qty) && $qty >= 1 && $qty <= 5;
-            }),
-            Mockery::type('string'),
-            'sh-asn-admin-scan'
-        )->andReturnUsing(function ($sku, $wh, $loc, $qty) {
-            return $this->receivingWarehouseSlice((int) $qty, 'whloc-recv-scan');
-        });
+        $mock->shouldNotReceive('replaceLocationQuantity');
         $mock->shouldNotReceive('addLocationQuantity');
         $mock->shouldNotReceive('ensureWarehouseLocation');
         $this->app->instance(ShipHeroInventoryService::class, $mock);
         $this->app->forgetInstance(AsnReceivingService::class);
+
+        Bus::fake([SyncAsnReceivingInventoryJob::class]);
 
         $barcodes = implode("\n", array_fill(0, 5, '9945422442'));
         $this->postJson("/api/admin/asns/{$asn->id}/scan-barcodes", ['barcodes' => $barcodes])
@@ -406,6 +397,7 @@ class AdminAsnReceivingTest extends TestCase
 
         $line->refresh();
         $this->assertSame(5, $line->accepted_qty);
+        Bus::assertDispatchedTimes(SyncAsnReceivingInventoryJob::class, 5);
     }
 
     public function test_receive_increment_uses_inventory_add_when_sku_has_no_receiving_row(): void
@@ -442,18 +434,13 @@ class AdminAsnReceivingTest extends TestCase
                 ],
             ],
         ]);
-        $mock->shouldReceive('ensureWarehouseLocation')->once()->andReturn(['id' => 'loc-catalog-recv', 'name' => 'Receiving']);
-        $mock->shouldReceive('addLocationQuantity')->once()->with(
-            'NEW-SKU',
-            'wh-1',
-            'loc-catalog-recv',
-            3,
-            Mockery::type('string'),
-            'sh-asn-admin-new-loc'
-        )->andReturn($this->receivingWarehouseSlice(3, 'loc-catalog-recv'));
+        $mock->shouldNotReceive('ensureWarehouseLocation');
+        $mock->shouldNotReceive('addLocationQuantity');
         $mock->shouldNotReceive('replaceLocationQuantity');
         $this->app->instance(ShipHeroInventoryService::class, $mock);
         $this->app->forgetInstance(AsnReceivingService::class);
+
+        Bus::fake([SyncAsnReceivingInventoryJob::class]);
 
         $this->postJson("/api/admin/asns/{$asn->id}/lines/{$line->id}/receive", ['delta' => 3])
             ->assertOk()
@@ -461,6 +448,9 @@ class AdminAsnReceivingTest extends TestCase
 
         $line->refresh();
         $this->assertSame(3, $line->accepted_qty);
+        Bus::assertDispatched(SyncAsnReceivingInventoryJob::class, function (SyncAsnReceivingInventoryJob $job) {
+            return $job->mode === 'increment' && $job->quantity === 3;
+        });
     }
 
     public function test_receive_override_uses_product_slice_location_id(): void

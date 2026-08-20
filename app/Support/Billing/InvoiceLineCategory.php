@@ -43,6 +43,7 @@ final class InvoiceLineCategory
             self::STORAGE,
             self::ON_DEMAND,
             self::RECEIVING,
+            self::WHOLESALE,
             self::CREDITS,
             self::OTHER,
         ];

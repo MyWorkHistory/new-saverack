@@ -1,16 +1,6 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
 
-const FEE_ROW_DEFS = [
-  { lineType: "wholesale_fulfillment", service: "Wholesale Fulfillment", qtyLabel: "Units" },
-  { lineType: "master_carton", service: "Master Carton", qtyLabel: "Cartons" },
-  { lineType: "per_item", service: "Per Item (if Master Carton not used)", qtyLabel: "Items" },
-  { lineType: "pallet_prep", service: "Pallet Prep", qtyLabel: "Pallets" },
-  { lineType: "ltl_pickup", service: "LTL Pickup", qtyLabel: "Shipments" },
-  { lineType: "barcode_labeling", service: "Barcode Labeling", qtyLabel: "Labels" },
-  { lineType: "box", service: "Box", qtyLabel: "Boxes" },
-];
-
 const props = defineProps({
   open: { type: Boolean, default: false },
   busy: { type: Boolean, default: false },
@@ -35,9 +25,25 @@ const modalTitle = computed(() =>
 const submitLabel = computed(() => (isSingleEdit.value ? "Save" : "Add Fees"));
 
 const visibleDefs = computed(() => {
-  if (!isSingleEdit.value) return FEE_ROW_DEFS;
+  const defs = (props.chargeOptions || []).map((option) => ({
+    lineType: option.line_type,
+    service: option.display_name || option.line_type,
+    qtyLabel: option.qty_label || "Qty",
+    source: option.source || "wholesale",
+    clientAccountFeeId: option.client_account_fee_id ?? null,
+  }));
+  if (!defs.length && props.editLine) {
+    defs.push({
+      lineType: props.editLine.line_type,
+      service: props.editLine.name || props.editLine.line_type,
+      qtyLabel: "Qty",
+      source: props.editLine.source || "wholesale",
+      clientAccountFeeId: props.editLine.client_account_fee_id ?? null,
+    });
+  }
+  if (!isSingleEdit.value) return defs;
   const lt = String(props.editLine?.line_type || "");
-  return FEE_ROW_DEFS.filter((d) => d.lineType === lt);
+  return defs.filter((d) => d.lineType === lt);
 });
 
 function defaultPriceCentsForLineType(lineType) {
@@ -62,8 +68,7 @@ function defaultPriceLabel(lineType) {
 function displayNameForLineType(lineType) {
   const opt = props.chargeOptions.find((o) => o.line_type === lineType);
   if (opt?.display_name) return opt.display_name;
-  const def = FEE_ROW_DEFS.find((d) => d.lineType === lineType);
-  return def?.service || lineType;
+  return lineType;
 }
 
 function defaultQtyForLineType(lineType) {
@@ -90,6 +95,8 @@ function resetRows() {
         quantity: String(props.editLine.quantity ?? ""),
         unit_price: ((Number(props.editLine.unit_price_cents) || 0) / 100).toFixed(2),
         item_id: props.editLine.id ?? null,
+        source: def.source,
+        client_account_fee_id: def.clientAccountFeeId,
         selected: true,
       });
     } else {
@@ -106,6 +113,8 @@ function resetRows() {
           ? ((Number(existing.unit_price_cents) || 0) / 100).toFixed(2)
           : defaultPriceForLineType(def.lineType),
         item_id: existing?.id ?? null,
+        source: def.source,
+        client_account_fee_id: def.clientAccountFeeId,
         selected: Boolean(existing && String(existing.quantity ?? "").trim() !== ""),
       });
     }
@@ -171,6 +180,8 @@ function submit() {
       item_id: row.item_id,
       line_type: row.line_type,
       name: row.name,
+      source: row.source,
+      client_account_fee_id: row.client_account_fee_id,
       quantity: qty,
       unit_price: price,
     });

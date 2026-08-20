@@ -354,7 +354,8 @@ function navActive(mode) {
       p.startsWith("/admin/billing/bills") ||
       p.startsWith("/admin/billing/custom-bills") ||
       p.startsWith("/admin/billing/asn-bills") ||
-      p.startsWith("/admin/billing/return-bills")
+      p.startsWith("/admin/billing/return-bills") ||
+      p.startsWith("/admin/billing/wholesale-bills")
     );
   }
   if (mode === "resources-tutorials") return p.startsWith("/admin/resources/tutorials");

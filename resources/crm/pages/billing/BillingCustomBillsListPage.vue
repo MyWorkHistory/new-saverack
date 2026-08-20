@@ -102,7 +102,7 @@ const selectedCustomOpen = computed(() =>
 const selectedEligibleForInvoice = computed(() =>
   selectedRows.value.filter(
     (r) =>
-      ["custom", "asn", "return"].includes(String(r.bill_kind || "")) &&
+      ["custom", "asn", "return", "wholesale"].includes(String(r.bill_kind || "")) &&
       r.status === "open" &&
       Number(r.items_count ?? 0) > 0,
   ),
@@ -334,6 +334,7 @@ async function confirmBulkDelete() {
 function billApiBase(row) {
   const kind = String(row.bill_kind || "");
   if (kind === "asn") return "asn-bills";
+  if (kind === "wholesale") return "billing/wholesale-bills";
   if (kind === "return") return "return-bills";
   return "custom-bills";
 }
@@ -409,7 +410,7 @@ onMounted(async () => {
   document.addEventListener("click", onDocClick);
   setCrmPageMeta({
     title: "Save Rack | Bills",
-    description: "Custom, ASN, and Return bills for client accounts.",
+    description: "Custom, ASN, Return, and Wholesale bills for client accounts.",
   });
   try {
     await fetchMeta();
@@ -433,7 +434,7 @@ onUnmounted(() => {
       <div class="min-w-0 flex-grow-1">
         <h1 class="h4 mb-1 fw-semibold text-body">Bills</h1>
         <p class="text-secondary small mb-0">
-          Custom, ASN, and Return bills — add lines to draft invoices when ready.
+          Custom, ASN, Return, and Wholesale bills — add lines to draft invoices when ready.
         </p>
       </div>
       <div v-if="canCreate" class="ms-md-auto">
@@ -501,6 +502,7 @@ onUnmounted(() => {
                   <option value="custom">Custom</option>
                   <option value="asn">ASN</option>
                   <option value="return">Return</option>
+                  <option value="wholesale">Wholesale</option>
                 </select>
                 <label class="form-label">Account</label>
                 <CrmSearchableSelect

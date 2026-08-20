@@ -56,6 +56,7 @@ class WholesaleOrder extends Model
 
     protected $fillable = [
         'client_account_id',
+        'wholesale_bill_id',
         'order_number',
         'order_type',
         'status',
@@ -99,6 +100,11 @@ class WholesaleOrder extends Model
     public function clientAccount(): BelongsTo
     {
         return $this->belongsTo(ClientAccount::class, 'client_account_id');
+    }
+
+    public function wholesaleBill(): BelongsTo
+    {
+        return $this->belongsTo(WholesaleBill::class, 'wholesale_bill_id');
     }
 
     public function createdBy(): BelongsTo

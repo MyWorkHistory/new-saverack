@@ -1524,6 +1524,7 @@ class InvoiceService
         $packaging = [];
         $storage = [];
         $receiving = [];
+        $wholesale = [];
         $adHoc = [];
         $ccFees = [];
         $returns = [];
@@ -1649,6 +1650,22 @@ class InvoiceService
                 }
                 $receiving[$key]['qty'] += $qty;
                 $receiving[$key]['total'] += $total;
+            } elseif ($category === InvoiceLineCategory::WHOLESALE) {
+                $rawName = $this->oldBetaDisplayName($item, 'Wholesale');
+                $key = strtolower($rawName);
+                if (! isset($wholesale[$key])) {
+                    $wholesale[$key] = ['name' => $rawName, 'items' => [], 'qty' => 0.0, 'total' => 0];
+                }
+                $qty = (float) $item->quantity;
+                $total = (int) $item->line_total_cents;
+                $unitRate = (int) $item->unit_price_cents;
+                $leaves = $this->detailLeafRowsFromMetadataBreakdown($item, 'Wholesale', $rawName);
+                $wholesale[$key]['items'] = array_merge(
+                    $wholesale[$key]['items'],
+                    $leaves !== [] ? $leaves : [$this->detailLeafRow($item, 'Wholesale', $rawName, $unitRate, $total)]
+                );
+                $wholesale[$key]['qty'] += $qty;
+                $wholesale[$key]['total'] += $total;
             } elseif ($category === InvoiceLineCategory::AD_HOC || $category === 'ad hoc') {
                 $rawName = $this->oldBetaDisplayName($item, 'Custom Bill');
                 $key = strtolower($rawName);
@@ -1835,6 +1852,22 @@ class InvoiceService
                 'price_cents' => $qty != 0.0 ? (int) round($total / $qty) : 0,
                 'total_cents' => $total,
                 'groupKey' => 'receiving',
+                'groupName' => $agg['name'],
+                'line_group_key' => $this->singleGroupKey($agg['items']),
+                'details' => $agg['items'],
+            ];
+        }
+        foreach ($wholesale as $key => $agg) {
+            $qty = (float) $agg['qty'];
+            $total = (int) $agg['total'];
+            $rows[] = [
+                'id' => 'wholesale-'.md5($key),
+                'name' => $agg['name'],
+                'type' => 'Wholesale',
+                'qty' => $qty,
+                'price_cents' => $qty != 0.0 ? (int) round($total / $qty) : 0,
+                'total_cents' => $total,
+                'groupKey' => 'wholesale',
                 'groupName' => $agg['name'],
                 'line_group_key' => $this->singleGroupKey($agg['items']),
                 'details' => $agg['items'],
@@ -2126,10 +2159,12 @@ class InvoiceService
             if (($orderNumber === null || $orderNumber === '') && ! empty($entry['asn_number'])) {
                 $orderNumber = trim((string) $entry['asn_number']);
             }
+            $entryName = trim((string) ($entry['name'] ?? ''));
+            $leafName = $entryName !== '' ? $entryName : $name;
 
             $leaves[] = [
                 'id' => $item->id.'-bd-'.$idx,
-                'name' => $name,
+                'name' => $leafName,
                 'type' => $type,
                 'qty' => $qty,
                 'price_cents' => $unitRate,

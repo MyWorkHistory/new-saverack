@@ -66,7 +66,11 @@ class WholesaleOrderFeeChargeCatalog
 
     public static function isValidLineType(string $lineType): bool
     {
-        return isset(self::DEFINITIONS[$lineType]);
+        if (isset(self::DEFINITIONS[$lineType])) {
+            return true;
+        }
+
+        return (bool) preg_match('/^(fee_|custom_)[a-zA-Z0-9_]+$/', $lineType);
     }
 
     public static function assertValidLineType(string $lineType): void
@@ -80,21 +84,39 @@ class WholesaleOrderFeeChargeCatalog
 
     public static function displayName(string $lineType): string
     {
+        if (isset(self::DEFINITIONS[$lineType])) {
+            return self::DEFINITIONS[$lineType]['display_name'];
+        }
         self::assertValidLineType($lineType);
 
-        return self::DEFINITIONS[$lineType]['display_name'];
+        return 'Wholesale Fee';
     }
 
     public static function qtyLabel(string $lineType): string
     {
-        self::assertValidLineType($lineType);
+        if (isset(self::DEFINITIONS[$lineType])) {
+            return self::DEFINITIONS[$lineType]['qty_label'];
+        }
 
-        return self::DEFINITIONS[$lineType]['qty_label'];
+        return 'Qty';
     }
 
     public static function defaultUnitPriceCents(ClientAccount $account, string $lineType): int
     {
-        self::assertValidLineType($lineType);
+        foreach (self::optionsForAccount($account) as $option) {
+            if (($option['line_type'] ?? '') === $lineType) {
+                return (int) $option['default_unit_price_cents'];
+            }
+        }
+
+        return self::unitPriceCentsFromDefinitions($account, $lineType);
+    }
+
+    private static function unitPriceCentsFromDefinitions(ClientAccount $account, string $lineType): int
+    {
+        if (! isset(self::DEFINITIONS[$lineType])) {
+            return 0;
+        }
         $def = self::DEFINITIONS[$lineType];
         $account->loadMissing(['feeItems.pricingTemplate']);
         foreach ($account->feeItems as $fee) {
@@ -142,10 +164,10 @@ class WholesaleOrderFeeChargeCatalog
             if ($key === '') {
                 continue;
             }
-            if ($label !== '' && str_contains($label, $key)) {
+            if ($label !== '' && strpos($label, $key) !== false) {
                 return true;
             }
-            if ($templateName !== '' && str_contains($templateName, $key)) {
+            if ($templateName !== '' && strpos($templateName, $key) !== false) {
                 return true;
             }
         }
@@ -162,21 +184,194 @@ class WholesaleOrderFeeChargeCatalog
     }
 
     /**
-     * @return list<array{line_type: string, display_name: string, qty_label: string, default_unit_price_cents: int}>
+     * Live wholesale fees for the account. Falls back to standard defs when none exist.
+     *
+     * @return list<array<string, mixed>>
      */
     public static function optionsForAccount(ClientAccount $account): array
     {
+        $account->unsetRelation('feeItems');
+        $account->load(['feeItems.pricingTemplate']);
+        $usedLineTypes = [];
         $out = [];
-        foreach (self::lineTypes() as $lineType) {
-            $def = self::DEFINITIONS[$lineType];
+        $fees = $account->feeItems->sortBy(function ($fee) {
+            if (! $fee instanceof ClientAccountFee) {
+                return 0;
+            }
+
+            return ((int) $fee->sort_order) * 100000 + (int) $fee->id;
+        })->values();
+
+        foreach ($fees as $fee) {
+            if (! $fee instanceof ClientAccountFee) {
+                continue;
+            }
+            if (! self::isWholesaleModalFee($fee)) {
+                continue;
+            }
+            $lineType = self::lineTypeForFee($fee, $usedLineTypes);
+            $usedLineTypes[$lineType] = true;
+            $label = self::feeDisplayLabel($fee, $lineType);
+            $qtyLabel = self::qtyLabelForFee($fee, $lineType);
+
             $out[] = [
                 'line_type' => $lineType,
-                'display_name' => $def['display_name'],
-                'qty_label' => $def['qty_label'],
-                'default_unit_price_cents' => self::defaultUnitPriceCents($account, $lineType),
+                'client_account_fee_id' => (int) $fee->id,
+                'display_name' => $label,
+                'qty_label' => $qtyLabel,
+                'source' => WholesaleOrderFeeLine::SOURCE_WHOLESALE,
+                'default_unit_price_cents' => (int) round(((float) ($fee->amount ?? 0)) * 100),
+            ];
+        }
+
+        if ($out !== []) {
+            return $out;
+        }
+
+        return self::fallbackStandardOptions($account);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public static function packagingOptionsForAccount(ClientAccount $account): array
+    {
+        $account->unsetRelation('feeItems');
+        $account->load(['feeItems.pricingTemplate']);
+        $out = [];
+        $fees = $account->feeItems->sortBy(function ($fee) {
+            if (! $fee instanceof ClientAccountFee) {
+                return 0;
+            }
+
+            return ((int) $fee->sort_order) * 100000 + (int) $fee->id;
+        })->values();
+
+        foreach ($fees as $fee) {
+            if (! $fee instanceof ClientAccountFee) {
+                continue;
+            }
+            if (! self::isPackagingFee($fee)) {
+                continue;
+            }
+            $label = self::feeDisplayLabel($fee, 'fee_'.$fee->id);
+            $out[] = [
+                'line_type' => 'fee_'.$fee->id,
+                'client_account_fee_id' => (int) $fee->id,
+                'display_name' => $label,
+                'qty_label' => 'Qty',
+                'source' => WholesaleOrderFeeLine::SOURCE_PACKAGING,
+                'default_unit_price_cents' => (int) round(((float) ($fee->amount ?? 0)) * 100),
             ];
         }
 
         return $out;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private static function fallbackStandardOptions(ClientAccount $account): array
+    {
+        $out = [];
+        foreach (self::DEFINITIONS as $lineType => $def) {
+            $out[] = [
+                'line_type' => $lineType,
+                'client_account_fee_id' => null,
+                'display_name' => $def['display_name'],
+                'qty_label' => $def['qty_label'],
+                'source' => WholesaleOrderFeeLine::SOURCE_WHOLESALE,
+                'default_unit_price_cents' => self::unitPriceCentsFromDefinitions($account, $lineType),
+            ];
+        }
+
+        return $out;
+    }
+
+    private static function isWholesaleModalFee(ClientAccountFee $fee): bool
+    {
+        $group = strtolower(trim((string) ($fee->fee_group ?? '')));
+        if ($group === PricingFeeTemplate::CATEGORY_WHOLESALE) {
+            return true;
+        }
+        if ($fee->relationLoaded('pricingTemplate') && $fee->pricingTemplate !== null) {
+            $category = strtolower(trim((string) ($fee->pricingTemplate->category ?? '')));
+            if ($category === PricingFeeTemplate::CATEGORY_WHOLESALE) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function isPackagingFee(ClientAccountFee $fee): bool
+    {
+        $group = strtolower(trim((string) ($fee->fee_group ?? '')));
+        if ($group === PricingFeeTemplate::CATEGORY_PACKAGING) {
+            return true;
+        }
+        if ($fee->relationLoaded('pricingTemplate') && $fee->pricingTemplate !== null) {
+            $category = strtolower(trim((string) ($fee->pricingTemplate->category ?? '')));
+            if ($category === PricingFeeTemplate::CATEGORY_PACKAGING) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, bool>  $usedLineTypes
+     */
+    private static function lineTypeForFee(ClientAccountFee $fee, array $usedLineTypes): string
+    {
+        foreach (self::DEFINITIONS as $lineType => $def) {
+            if (! empty($usedLineTypes[$lineType])) {
+                continue;
+            }
+            if (self::feeMatchesLineType($fee, $def)) {
+                return $lineType;
+            }
+        }
+
+        return 'fee_'.$fee->id;
+    }
+
+    private static function feeDisplayLabel(ClientAccountFee $fee, string $lineType): string
+    {
+        $label = trim((string) ($fee->label ?? ''));
+        if ($label === '' && $fee->relationLoaded('pricingTemplate') && $fee->pricingTemplate) {
+            $label = trim((string) ($fee->pricingTemplate->name ?? ''));
+        }
+        if ($label === '') {
+            $label = self::displayName($lineType);
+        }
+
+        return $label;
+    }
+
+    private static function qtyLabelForFee(ClientAccountFee $fee, string $lineType): string
+    {
+        if (isset(self::DEFINITIONS[$lineType])) {
+            return self::DEFINITIONS[$lineType]['qty_label'];
+        }
+        $key = self::normalizeFeeKey(self::feeDisplayLabel($fee, $lineType));
+        if (strpos($key, 'pallet') !== false) {
+            return 'Pallets';
+        }
+        if (strpos($key, 'carton') !== false) {
+            return 'Cartons';
+        }
+        if (strpos($key, 'label') !== false) {
+            return 'Labels';
+        }
+        if (strpos($key, 'box') !== false) {
+            return 'Boxes';
+        }
+        if (strpos($key, 'item') !== false || strpos($key, 'unit') !== false) {
+            return 'Units';
+        }
+
+        return 'Qty';
     }
 }

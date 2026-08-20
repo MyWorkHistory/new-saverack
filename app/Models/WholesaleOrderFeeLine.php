@@ -21,6 +21,12 @@ class WholesaleOrderFeeLine extends Model
 
     public const TYPE_BOX = 'box';
 
+    public const SOURCE_WHOLESALE = 'wholesale';
+
+    public const SOURCE_PACKAGING = 'packaging';
+
+    public const SOURCE_CUSTOM = 'custom';
+
     public const TYPES = [
         self::TYPE_WHOLESALE_FULFILLMENT,
         self::TYPE_MASTER_CARTON,
@@ -31,9 +37,17 @@ class WholesaleOrderFeeLine extends Model
         self::TYPE_BOX,
     ];
 
+    public const SOURCES = [
+        self::SOURCE_WHOLESALE,
+        self::SOURCE_PACKAGING,
+        self::SOURCE_CUSTOM,
+    ];
+
     protected $fillable = [
         'wholesale_order_id',
         'line_type',
+        'source',
+        'client_account_fee_id',
         'name',
         'quantity',
         'unit_price_cents',
@@ -47,6 +61,11 @@ class WholesaleOrderFeeLine extends Model
     public function wholesaleOrder(): BelongsTo
     {
         return $this->belongsTo(WholesaleOrder::class, 'wholesale_order_id');
+    }
+
+    public function clientAccountFee(): BelongsTo
+    {
+        return $this->belongsTo(ClientAccountFee::class, 'client_account_fee_id');
     }
 
     public function lineTotalCents(): int

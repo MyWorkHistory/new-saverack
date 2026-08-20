@@ -370,6 +370,43 @@ class PutAwayInventoryService
         $this->upsertLocalReceivingRow($clientAccountId, $sku, $next, $row->name, $row->barcode, $row->image_url, $warehouseId);
     }
 
+    /**
+     * Optimistic local Receiving qty bump (CRM save path) before ShipHero catches up in background.
+     */
+    public function bumpLocalReceivingQty(
+        int $clientAccountId,
+        string $sku,
+        int $delta,
+        ?string $name = null,
+        ?string $barcode = null,
+        ?string $imageUrl = null,
+        ?string $warehouseId = null
+    ): void {
+        if ($delta === 0 || $clientAccountId <= 0) {
+            return;
+        }
+        $sku = trim($sku);
+        if ($sku === '') {
+            return;
+        }
+        $snapshot = $this->ensureLocalReceivingSnapshot($warehouseId);
+        $row = PutAwayReceivingSnapshotRow::query()
+            ->where('put_away_receiving_snapshot_id', $snapshot->id)
+            ->where('client_account_id', $clientAccountId)
+            ->where('sku', $sku)
+            ->first();
+        $current = $row !== null ? (int) $row->receiving_qty : 0;
+        $this->upsertLocalReceivingRow(
+            $clientAccountId,
+            $sku,
+            max(0, $current + $delta),
+            $name !== null ? $name : ($row->name ?? null),
+            $barcode !== null ? $barcode : ($row->barcode ?? null),
+            $imageUrl !== null ? $imageUrl : ($row->image_url ?? null),
+            $warehouseId !== null ? $warehouseId : $snapshot->warehouse_id
+        );
+    }
+
     public function upsertLocalReceivingRow(
         int $clientAccountId,
         string $sku,

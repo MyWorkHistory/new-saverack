@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 class BillingBillsService
 {
     /**
-     * Unified paginated list of Custom + ASN + Return bills.
+     * Unified paginated list of Custom + ASN + Return + Wholesale bills.
      *
      * @param  array<string, mixed>  $filters
      * @return array{data: list<array<string, mixed>>, current_page: int, last_page: int, per_page: int, total: int}
@@ -39,6 +39,9 @@ class BillingBillsService
         }
         if (in_array('return', $kinds, true)) {
             $builders[] = $this->returnQuery($filters);
+        }
+        if (in_array('wholesale', $kinds, true)) {
+            $builders[] = $this->wholesaleQuery($filters);
         }
 
         $first = array_shift($builders);
@@ -85,6 +88,9 @@ class BillingBillsService
         }
         if ($viewer->isAdministrator() || $viewer->isCrmOwner() || $viewer->hasPermission('billing_return_bills.view')) {
             $all[] = 'return';
+        }
+        if ($viewer->isAdministrator() || $viewer->isCrmOwner() || $viewer->hasPermission('billing_wholesale_bills.view') || $viewer->hasPermission('billing.view')) {
+            $all[] = 'wholesale';
         }
 
         $want = strtolower(trim((string) $billKind));
@@ -244,6 +250,44 @@ class BillingBillsService
 
     /**
      * @param  array<string, mixed>  $filters
+     */
+    private function wholesaleQuery(array $filters)
+    {
+        $q = DB::table('wholesale_bills')
+            ->leftJoin('client_accounts', 'wholesale_bills.client_account_id', '=', 'client_accounts.id')
+            ->leftJoin('wholesale_orders', 'wholesale_bills.wholesale_order_id', '=', 'wholesale_orders.id')
+            ->selectRaw("
+                'wholesale' as bill_kind,
+                wholesale_bills.id as id,
+                wholesale_bills.bill_number as bill_number,
+                COALESCE(wholesale_bills.display_name, CAST(wholesale_bills.bill_number AS CHAR)) as display_name,
+                wholesale_bills.status as status,
+                wholesale_bills.client_account_id as client_account_id,
+                client_accounts.company_name as client_account_name,
+                wholesale_bills.bill_date as bill_date,
+                wholesale_bills.total_cents as total_cents,
+                wholesale_bills.invoice_id as invoice_id,
+                CASE WHEN wholesale_orders.order_number IS NOT NULL THEN 'Order #' ELSE NULL END as ref_label,
+                wholesale_orders.order_number as ref_value,
+                NULL as project_id,
+                (SELECT COUNT(*) FROM wholesale_bill_items WHERE wholesale_bill_items.wholesale_bill_id = wholesale_bills.id) as items_count
+            ");
+
+        $this->applyCommonFilters($q, $filters, 'wholesale_bills', function ($query, $search) {
+            $query->where(function ($inner) use ($search) {
+                if (ctype_digit($search)) {
+                    $inner->orWhere('wholesale_bills.bill_number', (int) $search);
+                }
+                $inner->orWhere('client_accounts.company_name', 'like', '%'.$search.'%')
+                    ->orWhere('wholesale_orders.order_number', 'like', '%'.$search.'%');
+            });
+        });
+
+        return $q;
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
      * @param  callable  $searchCallback
      */
     private function applyCommonFilters($query, array $filters, string $table, $searchCallback): void
@@ -280,6 +324,8 @@ class BillingBillsService
             $detailPath = '/admin/billing/asn-bills/'.$id;
         } elseif ($kind === 'return') {
             $detailPath = '/admin/billing/return-bills/'.$id;
+        } elseif ($kind === 'wholesale') {
+            $detailPath = '/admin/billing/wholesale-bills/'.$id;
         }
 
         $kindLabel = 'Custom';
@@ -287,6 +333,8 @@ class BillingBillsService
             $kindLabel = 'ASN';
         } elseif ($kind === 'return') {
             $kindLabel = 'Return';
+        } elseif ($kind === 'wholesale') {
+            $kindLabel = 'Wholesale';
         }
 
         return [

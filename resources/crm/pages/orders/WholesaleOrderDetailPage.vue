@@ -1672,14 +1672,16 @@ onUnmounted(() => {
   width: 100%;
 }
 
-.wholesale-items-table-wrap {
-  overflow-x: auto;
+/* Override global .staff-table-wrap { overflow-x: auto } + table { width: max-content }. */
+.wholesale-order-detail-page .wholesale-items-table-wrap.staff-table-wrap {
+  overflow-x: hidden;
 }
 
-.wholesale-items-table {
+.wholesale-order-detail-page .wholesale-items-table-wrap .table.staff-data-table.wholesale-items-table {
   table-layout: fixed;
   width: 100%;
-  min-width: 40rem;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .wholesale-items-table th.text-center:nth-child(3),
@@ -1689,9 +1691,9 @@ onUnmounted(() => {
 }
 
 .wholesale-line-barcodes-col {
-  width: 8.5rem;
-  min-width: 8.5rem;
-  white-space: nowrap;
+  width: 7.5rem;
+  min-width: 7.5rem;
+  white-space: normal;
 }
 
 td.wholesale-line-barcodes-col .btn {
@@ -1725,15 +1727,20 @@ td.wholesale-line-barcodes-col .btn {
 
 .wholesale-order-detail-page .order-detail-page__item-cell {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.75rem;
   min-width: 0;
 }
 
 .wholesale-order-detail-page .order-detail-page__items-col {
   width: auto;
-  min-width: 12rem;
+  min-width: 0;
   vertical-align: middle;
+}
+
+.wholesale-order-detail-page .order-detail-page__item-copy {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .wholesale-order-detail-page .order-detail-page__item-sku-title {
@@ -1741,14 +1748,27 @@ td.wholesale-line-barcodes-col .btn {
   font-weight: 600;
   line-height: 1.35;
   color: var(--bs-body-color);
+  overflow-wrap: anywhere;
   word-break: break-word;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 
 .wholesale-order-detail-page .order-detail-page__item-name-sub {
   font-size: 0.8125rem;
-  line-height: 1.4;
+  line-height: 1.35;
   color: var(--bs-secondary-color);
+  overflow-wrap: anywhere;
   word-break: break-word;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  max-height: calc(1.35em * 3);
 }
 
 .wholesale-order-detail-page .asn-line-media {

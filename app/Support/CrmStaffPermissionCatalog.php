@@ -35,7 +35,7 @@ class CrmStaffPermissionCatalog
             $add($rows, 'leads.'.$a, ucfirst($a).' leads', 'leads');
         }
 
-        // Orders subpages — full CRUD (queue mutations, wholesale, create order)
+        // Orders subpages — full CRUD (queue mutations, wholesale, batch, create order)
         foreach ([
             'orders_search' => 'orders search',
             'orders_fulfillment' => 'orders fulfillment',
@@ -44,6 +44,7 @@ class CrmStaffPermissionCatalog
             'orders_backorder' => 'orders backorder',
             'orders_shipped' => 'orders shipped',
             'orders_wholesale' => 'orders wholesale',
+            'orders_batches' => 'order batches',
             'orders_create' => 'create order',
         ] as $mod => $label) {
             foreach (['view', 'create', 'update', 'delete'] as $a) {
@@ -94,6 +95,7 @@ class CrmStaffPermissionCatalog
             'billing_custom_bills' => 'custom bills',
             'billing_asn_bills' => 'ASN bills',
             'billing_return_bills' => 'returns bills',
+            'billing_wholesale_bills' => 'wholesale bills',
         ] as $mod => $label) {
             foreach (['view', 'create', 'update', 'delete'] as $a) {
                 $add($rows, $mod.'.'.$a, ucfirst($a).' '.$label, $mod);
@@ -172,6 +174,7 @@ class CrmStaffPermissionCatalog
                 'orders_backorder',
                 'orders_shipped',
                 'orders_wholesale',
+                'orders_batches',
                 'orders_create',
             ],
             'receiving' => [
@@ -198,6 +201,7 @@ class CrmStaffPermissionCatalog
                 'billing_custom_bills',
                 'billing_asn_bills',
                 'billing_return_bills',
+                'billing_wholesale_bills',
             ],
             'resources' => [
                 'resources_tutorials',

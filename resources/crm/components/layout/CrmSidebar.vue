@@ -74,6 +74,7 @@ const canViewBilling = computed(() => {
     "billing_custom_bills",
     "billing_asn_bills",
     "billing_return_bills",
+    "billing_wholesale_bills",
     "billing",
   ]);
 });
@@ -88,7 +89,8 @@ const canViewBillingCustomBills = computed(
   () =>
     hasPerm("billing_custom_bills.view", "billing.view") ||
     hasPerm("billing_asn_bills.view", "billing.view") ||
-    hasPerm("billing_return_bills.view", "billing.view"),
+    hasPerm("billing_return_bills.view", "billing.view") ||
+    hasPerm("billing_wholesale_bills.view", "billing.view"),
 );
 
 const canViewResources = computed(() => {
@@ -192,6 +194,7 @@ const canViewOrders = computed(() => {
     "orders_backorder",
     "orders_shipped",
     "orders_wholesale",
+    "orders_batches",
     "orders_create",
     "orders",
   ]);
@@ -222,7 +225,7 @@ const canViewOrdersWholesale = computed(() =>
   hasPerm("orders_wholesale.view", "orders.view"),
 );
 const canViewOrdersBatch = computed(
-  () => !isPortal.value && hasPerm("orders.view"),
+  () => !isPortal.value && hasPerm("orders_batches.view", "orders.view"),
 );
 
 const canWriteOrders = computed(() => {

@@ -25,16 +25,50 @@ class OrderBatchController extends Controller
     private function assertCanView(Request $request): void
     {
         $this->assertStaff($request);
-        if (! $request->user()->can('orders.view')) {
-            abort(403);
+        $user = $request->user();
+        if ($user->isAdministrator() || $user->isCrmOwner()) {
+            return;
         }
+        if ($user->hasPermission('orders_batches.view')) {
+            return;
+        }
+        abort(403);
+    }
+
+    private function assertCanCreate(Request $request): void
+    {
+        $this->assertStaff($request);
+        $user = $request->user();
+        if ($user->isAdministrator() || $user->isCrmOwner()) {
+            return;
+        }
+        if ($user->hasPermission('orders_batches.create') || $user->hasPermission('orders_batches.update')) {
+            return;
+        }
+        abort(403);
     }
 
     private function assertCanUpdate(Request $request): void
     {
         $this->assertStaff($request);
         $user = $request->user();
-        if ($user->isAdministrator() || $user->isCrmOwner() || $user->can('orders.update') || $user->can('orders.create')) {
+        if ($user->isAdministrator() || $user->isCrmOwner()) {
+            return;
+        }
+        if ($user->hasPermission('orders_batches.update')) {
+            return;
+        }
+        abort(403);
+    }
+
+    private function assertCanDelete(Request $request): void
+    {
+        $this->assertStaff($request);
+        $user = $request->user();
+        if ($user->isAdministrator() || $user->isCrmOwner()) {
+            return;
+        }
+        if ($user->hasPermission('orders_batches.delete') || $user->hasPermission('orders_batches.update')) {
             return;
         }
         abort(403);
@@ -106,7 +140,7 @@ class OrderBatchController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $this->assertCanUpdate($request);
+        $this->assertCanCreate($request);
 
         $validated = $request->validate([
             'lines' => ['nullable', 'string'],
@@ -267,7 +301,7 @@ class OrderBatchController extends Controller
 
     public function destroy(Request $request, OrderBatch $orderBatch): JsonResponse
     {
-        $this->assertCanUpdate($request);
+        $this->assertCanDelete($request);
         $orderBatch->delete();
 
         return response()->json(['message' => 'Batch deleted.']);

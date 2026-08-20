@@ -25,7 +25,11 @@ class CrmStaffPermissionCatalogTest extends TestCase
 
         $this->assertContains('orders_search.view', $keys);
         $this->assertContains('orders_wholesale.update', $keys);
+        $this->assertContains('orders_batches.view', $keys);
+        $this->assertContains('orders_batches.update', $keys);
         $this->assertContains('billing_asn_bills.view', $keys);
+        $this->assertContains('billing_wholesale_bills.view', $keys);
+        $this->assertContains('receiving_ltl.view', $keys);
         $this->assertContains('inventory_restock.view', $keys);
         $this->assertContains('returns_bins.update', $keys);
         $this->assertContains('resources_tutorials.view', $keys);
@@ -71,6 +75,9 @@ class CrmStaffPermissionCatalogTest extends TestCase
         $this->assertContains('orders_search.update', $expanded);
         $this->assertContains('orders_search.create', $expanded);
         $this->assertContains('orders_search.delete', $expanded);
+        $this->assertContains('orders_batches.update', $expanded);
+        $this->assertContains('orders_batches.create', $expanded);
+        $this->assertContains('orders_batches.delete', $expanded);
 
         $this->assertFalse(CrmStaffPermissionCatalog::grants(
             ['orders.update'],

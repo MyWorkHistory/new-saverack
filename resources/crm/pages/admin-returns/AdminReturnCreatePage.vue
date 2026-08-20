@@ -102,9 +102,12 @@ async function copyRma() {
   }
 }
 
-async function openPdf(path, msg) {
+async function openPdf(path, msg, params = undefined) {
   try {
-    const { data } = await api.get(path, { responseType: "blob" });
+    const { data } = await api.get(path, {
+      responseType: "blob",
+      ...(params && Object.keys(params).length ? { params } : {}),
+    });
     const blob = new Blob([data], { type: "application/pdf" });
     const url = window.URL.createObjectURL(blob);
     window.open(url, "_blank", "noopener");
@@ -117,6 +120,25 @@ async function openPdf(path, msg) {
 function openRmaBarcode() {
   if (!ret.value?.id) return;
   openPdf(`/returns/${ret.value.id}/rma-barcode.pdf`, "Could not open barcode.");
+}
+
+function printItemBarcode(row) {
+  const sku = String(row?.sku || "").trim();
+  if (!sku) {
+    toast.error("This item has no SKU.");
+    return;
+  }
+  const params = {};
+  if (clientAccountId.value > 0) {
+    params.client_account_id = clientAccountId.value;
+  }
+  const name = String(row?.name || "").trim();
+  if (name) params.name = name;
+  openPdf(
+    `/inventory/products/${encodeURIComponent(sku)}/barcode-label.pdf`,
+    "Could not print barcode.",
+    params,
+  );
 }
 
 async function cancelDraft() {
@@ -329,7 +351,7 @@ onMounted(() => {
                     />
                   </td>
                   <td class="order-detail-page__item-td text-start">
-                    <div class="d-flex align-items-center gap-2 order-detail-page__item-cell">
+                    <div class="d-flex align-items-start gap-2 order-detail-page__item-cell">
                       <img
                         v-if="row.image_url"
                         :src="row.image_url"
@@ -347,6 +369,14 @@ onMounted(() => {
                           {{ row.name || "—" }}
                         </div>
                         <div class="order-detail-page__item-sku small text-secondary">{{ row.sku }}</div>
+                        <button
+                          type="button"
+                          class="btn btn-link btn-sm p-0 text-decoration-none mt-1"
+                          :disabled="!row.sku"
+                          @click="printItemBarcode(row)"
+                        >
+                          Print Barcode
+                        </button>
                       </div>
                     </div>
                   </td>
@@ -398,19 +428,9 @@ onMounted(() => {
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
             <h3 class="h6 fw-semibold mb-0">RMA #</h3>
-            <div class="d-flex flex-wrap gap-2">
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-secondary fw-semibold orders-toolbar-outline-btn"
-                :disabled="!ret?.id"
-                @click="openRmaBarcode"
-              >
-                Print Barcode
-              </button>
-              <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold" @click="copyRma">
-                Copy
-              </button>
-            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold" @click="copyRma">
+              Copy
+            </button>
           </div>
           <div class="user-return-page__rma-display">{{ ret.rma_number }}</div>
           <p class="small text-secondary mb-0 mt-2">{{ formatRmaLabel(ret.rma_number) }}</p>

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, ref } from "vue";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -8,11 +8,34 @@ import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.v
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
+import { crmIsAdmin } from "../../utils/crmUser.js";
 
 const MENU_W = 160;
 const MENU_H = 96;
 
 const toast = useToast();
+const crmUser = inject("crmUser", ref(null));
+
+function userHasPerm(...keys) {
+  const u = crmUser.value;
+  if (!u) return false;
+  if (crmIsAdmin(u) || u.is_crm_owner) return true;
+  const granted = Array.isArray(u.permission_keys) ? u.permission_keys : [];
+  return keys.some(
+    (key) =>
+      granted.includes(key) ||
+      granted.includes("orders.update") ||
+      (key.endsWith(".view") && granted.includes("orders.view")),
+  );
+}
+
+const canCreateBatch = computed(() =>
+  userHasPerm("orders_batches.create", "orders_batches.update"),
+);
+const canUpdateBatch = computed(() => userHasPerm("orders_batches.update"));
+const canDeleteBatch = computed(() =>
+  userHasPerm("orders_batches.delete", "orders_batches.update"),
+);
 const loading = ref(false);
 const busy = ref(false);
 const rows = ref([]);
@@ -310,6 +333,7 @@ onUnmounted(() => {
       </div>
       <div class="d-flex flex-wrap align-items-center gap-2">
         <button
+          v-if="canUpdateBatch"
           type="button"
           class="btn btn-outline-secondary orders-toolbar-outline-btn fw-semibold"
           @click="openUpdate"
@@ -317,6 +341,7 @@ onUnmounted(() => {
           Update Batch
         </button>
         <button
+          v-if="canCreateBatch"
           type="button"
           class="btn btn-primary staff-page-primary d-inline-flex align-items-center gap-2"
           @click="openAdd"
@@ -580,10 +605,17 @@ onUnmounted(() => {
         :style="{ top: `${manageMenuRect.top}px`, left: `${manageMenuRect.left}px` }"
         @click.stop
       >
-        <button type="button" class="staff-row-menu__item" role="menuitem" @click="openEdit(manageMenuRow)">
+        <button
+          v-if="canUpdateBatch"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openEdit(manageMenuRow)"
+        >
           Edit
         </button>
         <button
+          v-if="canDeleteBatch"
           type="button"
           class="staff-row-menu__item text-danger"
           role="menuitem"

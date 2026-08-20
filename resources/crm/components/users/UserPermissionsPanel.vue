@@ -121,6 +121,13 @@ const PAGE_META = {
     order: 40,
     rowOrder: 5,
   },
+  billing_wholesale_bills: {
+    moduleKey: "billing",
+    moduleLabel: "Billing",
+    rowLabel: "Wholesale Bills",
+    order: 40,
+    rowOrder: 6,
+  },
   orders_search: {
     moduleKey: "orders",
     moduleLabel: "Orders",
@@ -170,12 +177,19 @@ const PAGE_META = {
     order: 50,
     rowOrder: 7,
   },
+  orders_batches: {
+    moduleKey: "orders",
+    moduleLabel: "Orders",
+    rowLabel: "Batch",
+    order: 50,
+    rowOrder: 8,
+  },
   orders_create: {
     moduleKey: "orders",
     moduleLabel: "Orders",
     rowLabel: "Create Order",
     order: 50,
-    rowOrder: 8,
+    rowOrder: 9,
   },
   inventory_products: {
     moduleKey: "inventory",
@@ -225,6 +239,13 @@ const PAGE_META = {
     rowLabel: "Put Away",
     order: 65,
     rowOrder: 2,
+  },
+  receiving_ltl: {
+    moduleKey: "receiving",
+    moduleLabel: "Receiving",
+    rowLabel: "LTL",
+    order: 65,
+    rowOrder: 3,
   },
   returns_process: {
     moduleKey: "returns",

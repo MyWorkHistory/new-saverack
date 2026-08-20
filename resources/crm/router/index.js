@@ -1334,6 +1334,7 @@ export function setBillingNavFromUser(user) {
         customBills: true,
         asnBills: true,
         returnBills: true,
+        wholesaleBills: true,
       },
     };
     return;
@@ -1347,23 +1348,27 @@ export function setBillingNavFromUser(user) {
       page("billing_custom_bills.view") ||
       page("billing_asn_bills.view") ||
       page("billing_return_bills.view") ||
+      page("billing_wholesale_bills.view") ||
       k.includes("billing.view"),
     create:
       k.includes("billing_invoices.create") ||
       k.includes("billing_custom_bills.create") ||
       k.includes("billing_asn_bills.create") ||
+      k.includes("billing_wholesale_bills.create") ||
       k.includes("billing.create"),
     update:
       k.includes("billing_invoices.update") ||
       k.includes("billing_custom_bills.update") ||
       k.includes("billing_asn_bills.update") ||
       k.includes("billing_return_bills.update") ||
+      k.includes("billing_wholesale_bills.update") ||
       k.includes("billing.update"),
     delete:
       k.includes("billing_invoices.delete") ||
       k.includes("billing_custom_bills.delete") ||
       k.includes("billing_asn_bills.delete") ||
       k.includes("billing_return_bills.delete") ||
+      k.includes("billing_wholesale_bills.delete") ||
       k.includes("billing.delete"),
     pages: {
       summary: page("billing_summary.view"),
@@ -1371,9 +1376,11 @@ export function setBillingNavFromUser(user) {
       customBills:
         page("billing_custom_bills.view") ||
         page("billing_asn_bills.view") ||
-        page("billing_return_bills.view"),
+        page("billing_return_bills.view") ||
+        page("billing_wholesale_bills.view"),
       asnBills: page("billing_asn_bills.view"),
       returnBills: page("billing_return_bills.view"),
+      wholesaleBills: page("billing_wholesale_bills.view"),
     },
   };
 }
@@ -1486,6 +1493,7 @@ export function setOrdersNavFromUser(user) {
       page("orders_backorder.view") ||
       page("orders_shipped.view") ||
       page("orders_wholesale.view") ||
+      page("orders_batches.view") ||
       page("orders_create.view") ||
       k.includes("orders.view"),
     update:
@@ -1497,6 +1505,7 @@ export function setOrdersNavFromUser(user) {
       k.includes("orders_backorder.update") ||
       k.includes("orders_shipped.update") ||
       k.includes("orders_wholesale.update") ||
+      k.includes("orders_batches.update") ||
       k.includes("orders.update"),
     pages: {
       search: page("orders_search.view"),
@@ -1507,7 +1516,7 @@ export function setOrdersNavFromUser(user) {
       backorder: page("orders_backorder.view"),
       shipped: page("orders_shipped.view"),
       wholesale: page("orders_wholesale.view"),
-      batch: k.includes("orders.view"),
+      batch: page("orders_batches.view"),
       create: k.includes("orders_create.create") || k.includes("orders_create.update") || k.includes("orders.update") || k.includes("orders.create"),
     },
   };
@@ -1882,7 +1891,7 @@ async function ensureBillingRouteAccess(path) {
     if (path.startsWith("/admin/billing/bills") || path.startsWith("/admin/billing/custom-bills")) return pages.customBills === true;
     if (path.startsWith("/admin/billing/asn-bills")) return pages.asnBills === true;
     if (path.startsWith("/admin/billing/return-bills")) return pages.returnBills === true;
-    if (path.startsWith("/admin/billing/wholesale-bills")) return pages.customBills === true;
+    if (path.startsWith("/admin/billing/wholesale-bills")) return pages.wholesaleBills === true;
     return billingNavCache.view === true;
   }
   return true;

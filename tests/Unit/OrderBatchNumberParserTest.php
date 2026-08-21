@@ -14,6 +14,16 @@ class OrderBatchNumberParserTest extends TestCase
         $this->assertSame([], $parsed['invalid']);
     }
 
+    public function test_parses_shiphero_batch_links(): void
+    {
+        $parsed = OrderBatchNumberParser::parseLines(
+            "https://shipping.shiphero.com/bulk-ship/batch/?batchId=7768504\n".
+            "https://shipping.shiphero.com/bulk-ship/batch/?batchId=7768505\n"
+        );
+        $this->assertSame(['7768504', '7768505'], $parsed['numbers']);
+        $this->assertSame([], $parsed['invalid']);
+    }
+
     public function test_rejects_non_numeric_lines(): void
     {
         $parsed = OrderBatchNumberParser::parseLines("Batch ABC\n7763953");
@@ -21,9 +31,19 @@ class OrderBatchNumberParserTest extends TestCase
         $this->assertCount(1, $parsed['invalid']);
     }
 
-    public function test_dedupes_numbers(): void
+    public function test_dedupes_numbers_and_links(): void
     {
-        $parsed = OrderBatchNumberParser::parseLines("7763953\nBatch 7763953");
+        $parsed = OrderBatchNumberParser::parseLines(
+            "7763953\nBatch 7763953\nhttps://shipping.shiphero.com/bulk-ship/batch/?batchId=7763953"
+        );
         $this->assertSame(['7763953'], $parsed['numbers']);
+    }
+
+    public function test_ship_hero_url_builder(): void
+    {
+        $this->assertSame(
+            'https://shipping.shiphero.com/bulk-ship/batch/?batchId=7768504',
+            OrderBatchNumberParser::shipHeroUrl('7768504')
+        );
     }
 }

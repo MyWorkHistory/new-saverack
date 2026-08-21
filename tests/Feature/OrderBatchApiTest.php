@@ -62,6 +62,28 @@ class OrderBatchApiTest extends TestCase
         $this->assertNull($row->completed_by_user_id);
     }
 
+    public function test_can_create_from_shiphero_links_and_list_exposes_url(): void
+    {
+        $this->actingAsAdmin();
+
+        $this->postJson('/api/order-batches', [
+            'lines' => "https://shipping.shiphero.com/bulk-ship/batch/?batchId=7768504\n".
+                "https://shipping.shiphero.com/bulk-ship/batch/?batchId=7768505",
+        ])->assertCreated()
+            ->assertJsonPath('created', 2);
+
+        $this->assertDatabaseHas('order_batches', ['batch_number' => '7768504']);
+        $this->assertDatabaseHas('order_batches', ['batch_number' => '7768505']);
+
+        $list = $this->getJson('/api/order-batches')->assertOk();
+        $first = collect($list->json('data'))->firstWhere('batch_number', '7768504');
+        $this->assertNotNull($first);
+        $this->assertSame(
+            'https://shipping.shiphero.com/bulk-ship/batch/?batchId=7768504',
+            $first['batch_url']
+        );
+    }
+
     public function test_status_completed_registers_user(): void
     {
         $admin = $this->actingAsAdmin();

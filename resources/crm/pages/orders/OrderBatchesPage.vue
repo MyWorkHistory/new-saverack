@@ -90,6 +90,13 @@ function statusBadgeClass(status) {
     : "bg-secondary-subtle text-secondary-emphasis";
 }
 
+function batchShipHeroUrl(row) {
+  if (row?.batch_url) return String(row.batch_url);
+  const id = String(row?.batch_number || "").trim();
+  if (!id) return "#";
+  return `https://shipping.shiphero.com/bulk-ship/batch/?batchId=${encodeURIComponent(id)}`;
+}
+
 async function loadMeta() {
   try {
     const { data } = await api.get("/order-batches/meta");
@@ -480,7 +487,16 @@ onUnmounted(() => {
                   {{ statusLabel(row.status) }}
                 </button>
               </td>
-              <td class="fw-semibold text-body">{{ row.batch_number }}</td>
+              <td>
+                <a
+                  :href="batchShipHeroUrl(row)"
+                  class="fw-semibold text-decoration-none"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {{ row.batch_number }}
+                </a>
+              </td>
               <td class="text-body">{{ row.user_name || "—" }}</td>
               <td class="staff-actions-cell text-center" @click.stop>
                 <div
@@ -542,7 +558,14 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="crm-mobile-item-card__product">
-              <div class="crm-mobile-item-card__name">{{ row.batch_number }}</div>
+              <a
+                :href="batchShipHeroUrl(row)"
+                class="crm-mobile-item-card__name text-decoration-none"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {{ row.batch_number }}
+              </a>
             </div>
             <div class="crm-mobile-item-card__meta">
               <div class="crm-mobile-item-card__meta-row">
@@ -637,17 +660,17 @@ onUnmounted(() => {
           <header class="crm-vx-modal__head" style="text-align: left">
             <h2 class="crm-vx-modal__title">Add Batch</h2>
             <p class="crm-vx-modal__subtitle mb-0">
-              Enter one batch number per line. “Batch 7763953” or “7763953” both work.
+              Paste one ShipHero batch link per line. The batch ID is taken from each link.
             </p>
           </header>
           <div class="crm-vx-modal__body">
-            <label class="form-label" for="order-batch-add-lines">Batch Numbers</label>
+            <label class="form-label" for="order-batch-add-lines">Batch Links</label>
             <textarea
               id="order-batch-add-lines"
               v-model="addLines"
               class="form-control"
               rows="8"
-              placeholder="Batch 7763953&#10;Batch 7763954&#10;7763924"
+              placeholder="https://shipping.shiphero.com/bulk-ship/batch/?batchId=7768504&#10;https://shipping.shiphero.com/bulk-ship/batch/?batchId=7768505"
               :disabled="busy"
             />
           </div>
@@ -674,17 +697,17 @@ onUnmounted(() => {
           <header class="crm-vx-modal__head" style="text-align: left">
             <h2 class="crm-vx-modal__title">Update Batch</h2>
             <p class="crm-vx-modal__subtitle mb-0">
-              Enter batch numbers to mark as Completed. You will be registered as the user.
+              Paste ShipHero batch links (one per line) to mark as Completed. You will be registered as the user.
             </p>
           </header>
           <div class="crm-vx-modal__body">
-            <label class="form-label" for="order-batch-update-lines">Batch Numbers</label>
+            <label class="form-label" for="order-batch-update-lines">Batch Links</label>
             <textarea
               id="order-batch-update-lines"
               v-model="updateLines"
               class="form-control"
               rows="8"
-              placeholder="7763953&#10;7763954&#10;7763924"
+              placeholder="https://shipping.shiphero.com/bulk-ship/batch/?batchId=7768504&#10;https://shipping.shiphero.com/bulk-ship/batch/?batchId=7768505"
               :disabled="busy"
             />
           </div>
@@ -712,12 +735,13 @@ onUnmounted(() => {
             <h2 class="crm-vx-modal__title">Edit Batch</h2>
           </header>
           <div class="crm-vx-modal__body">
-            <label class="form-label" for="order-batch-edit-number">Batch #</label>
+            <label class="form-label" for="order-batch-edit-number">Batch Link Or ID</label>
             <input
               id="order-batch-edit-number"
               v-model="editNumber"
               type="text"
               class="form-control"
+              placeholder="https://shipping.shiphero.com/bulk-ship/batch/?batchId=7768504"
               :disabled="busy"
             />
           </div>

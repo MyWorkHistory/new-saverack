@@ -145,7 +145,7 @@ class OrderBatchController extends Controller
         $validated = $request->validate([
             'lines' => ['nullable', 'string'],
             'batch_numbers' => ['nullable', 'array'],
-            'batch_numbers.*' => ['string', 'max:64'],
+            'batch_numbers.*' => ['string', 'max:512'],
         ]);
 
         $numbers = [];
@@ -155,7 +155,7 @@ class OrderBatchController extends Controller
             $parsed = OrderBatchNumberParser::parseLines((string) ($validated['lines'] ?? ''));
             if ($parsed['invalid'] !== []) {
                 throw ValidationException::withMessages([
-                    'lines' => ['Each non-empty line must be a batch number (digits only, optional "Batch" prefix).'],
+                    'lines' => ['Each non-empty line must be a ShipHero batch link (or batch ID).'],
                 ]);
             }
             $numbers = $parsed['numbers'];
@@ -163,7 +163,7 @@ class OrderBatchController extends Controller
 
         if ($numbers === []) {
             throw ValidationException::withMessages([
-                'lines' => ['Enter at least one batch number.'],
+                'lines' => ['Enter at least one ShipHero batch link.'],
             ]);
         }
 
@@ -210,8 +210,7 @@ class OrderBatchController extends Controller
             'batch_number' => [
                 'sometimes',
                 'string',
-                'max:64',
-                Rule::unique('order_batches', 'batch_number')->ignore($orderBatch->id),
+                'max:512',
             ],
             'status' => ['sometimes', 'string', Rule::in(OrderBatch::STATUSES)],
         ]);
@@ -220,7 +219,16 @@ class OrderBatchController extends Controller
             $parsed = OrderBatchNumberParser::parseOne(trim((string) $validated['batch_number']));
             if ($parsed === null) {
                 throw ValidationException::withMessages([
-                    'batch_number' => ['Batch number must be digits only (optional "Batch" prefix).'],
+                    'batch_number' => ['Enter a ShipHero batch link or numeric batch ID.'],
+                ]);
+            }
+            $clash = OrderBatch::query()
+                ->where('batch_number', $parsed)
+                ->where('id', '!=', $orderBatch->id)
+                ->exists();
+            if ($clash) {
+                throw ValidationException::withMessages([
+                    'batch_number' => ['That batch ID is already in use.'],
                 ]);
             }
             $orderBatch->batch_number = $parsed;
@@ -243,7 +251,7 @@ class OrderBatchController extends Controller
         $validated = $request->validate([
             'lines' => ['nullable', 'string'],
             'batch_numbers' => ['nullable', 'array'],
-            'batch_numbers.*' => ['string', 'max:64'],
+            'batch_numbers.*' => ['string', 'max:512'],
         ]);
 
         if (! empty($validated['batch_numbers']) && is_array($validated['batch_numbers'])) {
@@ -252,7 +260,7 @@ class OrderBatchController extends Controller
             $parsed = OrderBatchNumberParser::parseLines((string) ($validated['lines'] ?? ''));
             if ($parsed['invalid'] !== []) {
                 throw ValidationException::withMessages([
-                    'lines' => ['Each non-empty line must be a batch number (digits only, optional "Batch" prefix).'],
+                    'lines' => ['Each non-empty line must be a ShipHero batch link (or batch ID).'],
                 ]);
             }
             $numbers = $parsed['numbers'];
@@ -260,7 +268,7 @@ class OrderBatchController extends Controller
 
         if ($numbers === []) {
             throw ValidationException::withMessages([
-                'lines' => ['Enter at least one batch number.'],
+                'lines' => ['Enter at least one ShipHero batch link.'],
             ]);
         }
 
@@ -331,6 +339,7 @@ class OrderBatchController extends Controller
         return [
             'id' => $batch->id,
             'batch_number' => $batch->batch_number,
+            'batch_url' => OrderBatchNumberParser::shipHeroUrl((string) $batch->batch_number),
             'status' => $batch->status,
             'created_by_user_id' => $batch->created_by_user_id,
             'completed_by_user_id' => $batch->completed_by_user_id,

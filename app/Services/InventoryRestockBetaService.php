@@ -235,14 +235,7 @@ final class InventoryRestockBetaService
             throw new RuntimeException('Invalid restock status.');
         }
 
-        $snapshot = InventoryRestockBetaSnapshot::query()
-            ->orderByDesc('uploaded_at')
-            ->orderByDesc('id')
-            ->first();
-
-        if ($snapshot === null) {
-            throw new RuntimeException('No restock snapshot to update.');
-        }
+        $snapshot = $this->latestSnapshotOrFail();
 
         $statuses = $this->normalizedSkuStatuses($snapshot);
         $key = mb_strtolower($sku);
@@ -260,6 +253,227 @@ final class InventoryRestockBetaService
         $snapshot->save();
 
         return $this->toArray($snapshot);
+    }
+
+    /**
+     * After a restock transfer, update CSV snapshot location labels/qtys so the
+     * Restocks table reflects source + destination (not only status).
+     *
+     * @param  array{
+     *   from_location_name?: string|null,
+     *   to_location_name?: string|null,
+     *   quantity?: int,
+     *   source_kind?: string|null,
+     *   destination_kind?: string|null,
+     *   next_status?: string|null,
+     *   from_qty_before?: int|null,
+     *   to_qty_before?: int|null
+     * }  $transfer
+     * @return array<string, mixed>|null Snapshot payload, or null when no snapshot/row.
+     */
+    public function applyTransferToSku(string $sku, array $transfer): ?array
+    {
+        $sku = trim($sku);
+        if ($sku === '') {
+            return null;
+        }
+
+        $snapshot = InventoryRestockBetaSnapshot::query()
+            ->orderByDesc('uploaded_at')
+            ->orderByDesc('id')
+            ->first();
+        if ($snapshot === null) {
+            return null;
+        }
+
+        $qty = max(0, (int) ($transfer['quantity'] ?? 0));
+        $fromName = trim((string) ($transfer['from_location_name'] ?? ''));
+        $toName = trim((string) ($transfer['to_location_name'] ?? ''));
+        $sourceKind = strtolower(trim((string) ($transfer['source_kind'] ?? 'backstock')));
+        $destinationKind = strtolower(trim((string) ($transfer['destination_kind'] ?? 'pick')));
+        $nextStatus = isset($transfer['next_status']) ? trim((string) $transfer['next_status']) : '';
+        $fromQtyBefore = array_key_exists('from_qty_before', $transfer) && $transfer['from_qty_before'] !== null
+            ? max(0, (int) $transfer['from_qty_before'])
+            : null;
+        $toQtyBefore = array_key_exists('to_qty_before', $transfer) && $transfer['to_qty_before'] !== null
+            ? max(0, (int) $transfer['to_qty_before'])
+            : null;
+
+        $rows = is_array($snapshot->rows) ? $snapshot->rows : [];
+        $key = mb_strtolower($sku);
+        $found = false;
+        foreach ($rows as $index => $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            if (mb_strtolower(trim((string) ($row['sku'] ?? ''))) !== $key) {
+                continue;
+            }
+            $found = true;
+
+            if ($qty > 0 && $fromName !== '' && in_array($sourceKind, ['backstock', 'non_pickable'], true)) {
+                $adjusted = $this->adjustLocationListQuantity(
+                    (string) ($row['backstock_locations'] ?? ''),
+                    $fromName,
+                    -$qty,
+                    $fromQtyBefore
+                );
+                $rows[$index]['backstock_locations'] = $adjusted['text'];
+                $rows[$index]['backstock_qty'] = max(
+                    0,
+                    (int) ($row['backstock_qty'] ?? 0) - $qty
+                );
+            }
+
+            if ($qty > 0 && $toName !== '' && in_array($destinationKind, ['pick', 'pickable'], true)) {
+                $adjusted = $this->adjustLocationListQuantity(
+                    (string) ($row['pick_location'] ?? ''),
+                    $toName,
+                    $qty,
+                    $toQtyBefore
+                );
+                $rows[$index]['pick_location'] = $adjusted['text'];
+                $rows[$index]['pickable_qty'] = max(
+                    0,
+                    (int) ($row['pickable_qty'] ?? 0) + $qty
+                );
+            }
+
+            break;
+        }
+
+        if (! $found) {
+            return null;
+        }
+
+        $snapshot->rows = $rows;
+
+        if ($nextStatus !== '' && in_array(strtolower($nextStatus), self::ROW_STATUSES, true)) {
+            $statuses = $this->normalizedSkuStatuses($snapshot);
+            $statuses[$key] = strtolower($nextStatus);
+            $snapshot->sku_statuses = $statuses;
+            $completed = [];
+            foreach ($statuses as $skuKey => $skuStatus) {
+                if ($skuStatus === self::STATUS_COMPLETE) {
+                    $completed[] = $skuKey;
+                }
+            }
+            $snapshot->completed_skus = $completed;
+        }
+
+        $snapshot->save();
+
+        return $this->toArray($snapshot);
+    }
+
+    /**
+     * @return array{text: string, matched: bool, quantity: int}
+     */
+    public function adjustLocationListQuantity(
+        string $list,
+        string $locationName,
+        int $delta,
+        ?int $knownQtyBefore = null
+    ): array {
+        $locationName = trim($locationName);
+        if ($locationName === '' || $delta === 0) {
+            return ['text' => trim($list), 'matched' => false, 'quantity' => 0];
+        }
+
+        $parts = preg_split('/\s*[,;|]\s*|\n+/', $list) ?: [];
+        $parts = array_values(array_filter(array_map(
+            static fn ($part): string => trim((string) $part),
+            $parts
+        ), static fn (string $part): bool => $part !== '' && $part !== '—'));
+
+        $matched = false;
+        $resultQty = 0;
+        $out = [];
+        $needle = mb_strtolower($locationName);
+
+        foreach ($parts as $part) {
+            $parsed = $this->parseLocationLabel($part);
+            $nameKey = mb_strtolower($parsed['name']);
+            $hasExplicitQty = preg_match('/\(\s*QTY\s*:/i', $part) === 1;
+            if (! $matched && $nameKey !== '' && (
+                $nameKey === $needle
+                || str_contains($nameKey, $needle)
+                || str_contains($needle, $nameKey)
+            )) {
+                $matched = true;
+                $baseQty = $parsed['quantity'];
+                if (! $hasExplicitQty && $knownQtyBefore !== null) {
+                    $baseQty = max(0, $knownQtyBefore);
+                }
+                $nextQty = max(0, $baseQty + $delta);
+                $resultQty = $nextQty;
+                if ($nextQty > 0) {
+                    $out[] = $this->formatLocationLabel($parsed['name'], $nextQty);
+                }
+                continue;
+            }
+            $out[] = $hasExplicitQty || $parsed['quantity'] > 0
+                ? $this->formatLocationLabel($parsed['name'], $parsed['quantity'])
+                : $parsed['name'];
+        }
+
+        if (! $matched && $delta > 0) {
+            $base = $knownQtyBefore !== null ? max(0, $knownQtyBefore) : 0;
+            $resultQty = $base + $delta;
+            $out[] = $this->formatLocationLabel($locationName, $resultQty);
+            $matched = true;
+        }
+
+        return [
+            'text' => implode(', ', $out),
+            'matched' => $matched,
+            'quantity' => $resultQty,
+        ];
+    }
+
+    /**
+     * @return array{name: string, quantity: int}
+     */
+    private function parseLocationLabel(string $label): array
+    {
+        $raw = trim($label);
+        if ($raw === '') {
+            return ['name' => '', 'quantity' => 0];
+        }
+        if (preg_match('/^(.+?)\s*\(\s*QTY\s*:\s*([-\d,]+)\s*\)\s*$/i', $raw, $m) === 1) {
+            $qtyRaw = str_replace(',', '', (string) ($m[2] ?? '0'));
+
+            return [
+                'name' => trim((string) ($m[1] ?? '')),
+                'quantity' => max(0, (int) $qtyRaw),
+            ];
+        }
+
+        return ['name' => $raw, 'quantity' => 0];
+    }
+
+    private function formatLocationLabel(string $name, int $quantity): string
+    {
+        $name = trim($name);
+        if ($name === '') {
+            $name = '—';
+        }
+
+        return $name.' (QTY: '.number_format(max(0, $quantity)).')';
+    }
+
+    private function latestSnapshotOrFail(): InventoryRestockBetaSnapshot
+    {
+        $snapshot = InventoryRestockBetaSnapshot::query()
+            ->orderByDesc('uploaded_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($snapshot === null) {
+            throw new RuntimeException('No restock snapshot to update.');
+        }
+
+        return $snapshot;
     }
 
     public function restockQueueConnection(): ?string

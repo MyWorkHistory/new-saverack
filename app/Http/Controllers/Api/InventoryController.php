@@ -1438,6 +1438,12 @@ class InventoryController extends Controller
             'background' => ['nullable', 'boolean'],
             'restock_previous_status' => ['nullable', 'string', 'in:pending,transfer_cart,complete'],
             'restock_next_status' => ['nullable', 'string', 'in:pending,transfer_cart,complete'],
+            'restock_from_location_name' => ['nullable', 'string', 'max:255'],
+            'restock_to_location_name' => ['nullable', 'string', 'max:255'],
+            'restock_source_kind' => ['nullable', 'string', 'in:backstock,cart,other'],
+            'restock_destination_kind' => ['nullable', 'string', 'in:pick,cart,new,other'],
+            'restock_from_qty_before' => ['nullable', 'integer', 'min:0'],
+            'restock_to_qty_before' => ['nullable', 'integer', 'min:0'],
         ]);
         $reason = $this->inventoryReasonWithActor(
             isset($validated['reason']) && is_string($validated['reason'])
@@ -1455,6 +1461,24 @@ class InventoryController extends Controller
         $restockPreviousStatus = isset($validated['restock_previous_status']) && is_string($validated['restock_previous_status'])
             ? trim($validated['restock_previous_status'])
             : '';
+        $restockFromLocationName = isset($validated['restock_from_location_name']) && is_string($validated['restock_from_location_name'])
+            ? trim($validated['restock_from_location_name'])
+            : '';
+        $restockToLocationName = isset($validated['restock_to_location_name']) && is_string($validated['restock_to_location_name'])
+            ? trim($validated['restock_to_location_name'])
+            : '';
+        $restockSourceKind = isset($validated['restock_source_kind']) && is_string($validated['restock_source_kind'])
+            ? trim($validated['restock_source_kind'])
+            : '';
+        $restockDestinationKind = isset($validated['restock_destination_kind']) && is_string($validated['restock_destination_kind'])
+            ? trim($validated['restock_destination_kind'])
+            : '';
+        $restockFromQtyBefore = array_key_exists('restock_from_qty_before', $validated)
+            ? (int) $validated['restock_from_qty_before']
+            : null;
+        $restockToQtyBefore = array_key_exists('restock_to_qty_before', $validated)
+            ? (int) $validated['restock_to_qty_before']
+            : null;
 
         try {
             // Prefer account ShipHero id, but fall back to SKU index like product detail does.
@@ -1504,6 +1528,12 @@ class InventoryController extends Controller
                         'client_account_id' => $clientAccountId,
                         'restock_previous_status' => $restockPreviousStatus !== '' ? $restockPreviousStatus : null,
                         'restock_next_status' => $restockNextStatus !== '' ? $restockNextStatus : null,
+                        'restock_from_location_name' => $restockFromLocationName !== '' ? $restockFromLocationName : null,
+                        'restock_to_location_name' => $restockToLocationName !== '' ? $restockToLocationName : null,
+                        'restock_source_kind' => $restockSourceKind !== '' ? $restockSourceKind : null,
+                        'restock_destination_kind' => $restockDestinationKind !== '' ? $restockDestinationKind : null,
+                        'restock_from_qty_before' => $restockFromQtyBefore,
+                        'restock_to_qty_before' => $restockToQtyBefore,
                     ]);
                 } catch (ValidationException $e) {
                     throw $e;
@@ -1574,12 +1604,39 @@ class InventoryController extends Controller
                 );
             }
 
-            if ($restockNextStatus !== '') {
+            if ($restockNextStatus !== '' || $restockFromLocationName !== '' || $restockToLocationName !== '') {
                 try {
-                    app(InventoryRestockBetaService::class)->setSkuStatus(
-                        $validated['sku'],
-                        $restockNextStatus
-                    );
+                    $restock = app(InventoryRestockBetaService::class);
+                    $fromName = $restockFromLocationName;
+                    $toName = $restockToLocationName;
+                    if (($fromName === '' || $toName === '') && is_array($updated)) {
+                        foreach (($updated['locations'] ?? []) as $loc) {
+                            if (! is_array($loc)) {
+                                continue;
+                            }
+                            $locId = trim((string) ($loc['location_id'] ?? ''));
+                            $locName = trim((string) ($loc['location_name'] ?? $locId));
+                            if ($fromName === '' && $locId !== '' && $locId === $fromLocationId) {
+                                $fromName = $locName;
+                            }
+                            if ($toName === '' && $locId !== '' && $locId === $toLocationId) {
+                                $toName = $locName;
+                            }
+                        }
+                    }
+                    $applied = $restock->applyTransferToSku($validated['sku'], [
+                        'from_location_name' => $fromName,
+                        'to_location_name' => $toName,
+                        'quantity' => (int) $validated['quantity'],
+                        'source_kind' => $restockSourceKind !== '' ? $restockSourceKind : 'backstock',
+                        'destination_kind' => $restockDestinationKind !== '' ? $restockDestinationKind : 'pick',
+                        'next_status' => $restockNextStatus !== '' ? $restockNextStatus : null,
+                        'from_qty_before' => $restockFromQtyBefore,
+                        'to_qty_before' => $restockToQtyBefore,
+                    ]);
+                    if ($applied === null && $restockNextStatus !== '') {
+                        $restock->setSkuStatus($validated['sku'], $restockNextStatus);
+                    }
                 } catch (Throwable $e) {
                     report($e);
                 }

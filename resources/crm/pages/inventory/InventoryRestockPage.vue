@@ -78,6 +78,9 @@ const inventoryReasons = ref([
   "Returns Processing",
 ]);
 
+/** SKU → optimistic location/status until snapshot catch-up after background transfer. */
+const transferOverridesBySku = ref({});
+
 let enrichPollTimer = null;
 
 const canTransfer = computed(() => {
@@ -408,7 +411,36 @@ async function enrichMissingPickLocations(list) {
 }
 
 function applySnapshot(data, { silent = false } = {}) {
-  rows.value = Array.isArray(data?.rows) ? data.rows : [];
+  const incoming = Array.isArray(data?.rows) ? data.rows : [];
+  const overrides = { ...transferOverridesBySku.value };
+  rows.value = incoming.map((row) => {
+    const key = String(row?.sku || "")
+      .trim()
+      .toLowerCase();
+    const override = key ? overrides[key] : null;
+    if (!override) return row;
+
+    const snapshotStatus = rowStatus(row);
+    const overrideStatus = String(override.status || "").toLowerCase();
+    const caughtUp = snapshotStatus === overrideStatus;
+
+    if (caughtUp) {
+      delete overrides[key];
+      return row;
+    }
+
+    // Job not persisted yet — keep optimistic from/to so polls don't flash stale CSV qtys.
+    return {
+      ...row,
+      backstock_locations: override.backstock_locations,
+      backstock_qty: override.backstock_qty,
+      pick_location: override.pick_location,
+      pickable_qty: override.pickable_qty,
+      status: override.status,
+      status_label: override.status_label,
+    };
+  });
+  transferOverridesBySku.value = overrides;
   meta.value = {
     original_filename: data?.original_filename ?? null,
     row_count: Number(data?.row_count || 0),
@@ -672,13 +704,18 @@ async function submitTransfer() {
   }
 
   const destMode = String(transferForm.destination_mode || "current");
+  const fromLoc = transferFromLocation.value;
+  const fromName = String(fromLoc.location_name || fromLoc.location_id || "").trim();
   const body = {
     sku: transferRow.value.sku,
-    warehouse_id: transferFromLocation.value.warehouse_id,
-    from_location_id: transferFromLocation.value.location_id,
+    warehouse_id: fromLoc.warehouse_id,
+    from_location_id: fromLoc.location_id,
     quantity: qty,
     reason: transferForm.reason,
     background: 1,
+    restock_from_location_name: fromName,
+    restock_source_kind:
+      transferMode.value === RESTOCK_STATUS_TRANSFER_CART ? "cart" : "backstock",
   };
   const accountId = Number(transferRow.value.client_account_id || 0);
   if (accountId > 0) {
@@ -686,6 +723,8 @@ async function submitTransfer() {
   }
 
   let nextStatus = RESTOCK_STATUS_COMPLETE;
+  let toName = "";
+  let destinationKind = "pick";
   if (transferMode.value === "pending" && destMode === "cart") {
     const cartCode = String(transferForm.cart_location || "").trim();
     if (!cartCode) {
@@ -698,6 +737,8 @@ async function submitTransfer() {
     } else {
       body.to_location = dest?.to_location || cartCode;
     }
+    toName = String(dest?.to_location || cartCode).trim();
+    destinationKind = "cart";
     nextStatus = RESTOCK_STATUS_TRANSFER_CART;
   } else if (destMode === "new") {
     if (!String(transferForm.to_location || "").trim()) {
@@ -705,12 +746,29 @@ async function submitTransfer() {
       return;
     }
     body.to_location = String(transferForm.to_location).trim();
+    toName = body.to_location;
+    destinationKind = "new";
   } else {
     if (!String(transferForm.to_location_id || "").trim()) {
       toast.error("Select a pick location.");
       return;
     }
     body.to_location_id = String(transferForm.to_location_id).trim();
+    const pick = transferPickOptions.value.find(
+      (loc) => String(loc.location_id || "") === String(body.to_location_id),
+    );
+    toName = String(pick?.location_name || pick?.location_id || "").trim();
+    destinationKind = "pick";
+  }
+
+  body.restock_to_location_name = toName;
+  body.restock_destination_kind = destinationKind;
+  body.restock_from_qty_before = Number(fromLoc.quantity ?? 0);
+  if (destinationKind === "pick") {
+    const pick = transferPickOptions.value.find(
+      (loc) => String(loc.location_id || "") === String(body.to_location_id || ""),
+    );
+    body.restock_to_qty_before = Number(pick?.quantity ?? 0);
   }
 
   const row = transferRow.value;
@@ -729,6 +787,12 @@ async function submitTransfer() {
   // Close after queue/accept; keep prior status until job applies next status.
   const previousStatus = rowStatus(row);
   const previousLabel = row.status_label;
+  const previousSnapshot = {
+    backstock_locations: row.backstock_locations,
+    backstock_qty: row.backstock_qty,
+    pick_location: row.pick_location,
+    pickable_qty: row.pickable_qty,
+  };
   transferModalOpen.value = false;
   transferBusy.value = false;
   toast.success(
@@ -737,7 +801,131 @@ async function submitTransfer() {
       : "Transfer queued. Marked complete when ShipHero finishes.",
   );
 
-  // Soft preview only; snapshot polls reconcile to persisted status / transfer_error.
+  // Immediate UI update for from + to (snapshot polls then confirm persisted values).
+  const toQtyBefore =
+    destinationKind === "pick"
+      ? Number(
+          transferPickOptions.value.find(
+            (loc) => String(loc.location_id || "") === String(body.to_location_id || ""),
+          )?.quantity ?? 0,
+        )
+      : 0;
+  applyOptimisticTransferToRow(row, {
+    fromName,
+    toName,
+    quantity: qty,
+    fromQtyBefore: Number(fromLoc.quantity ?? 0),
+    toQtyBefore,
+    sourceKind: body.restock_source_kind,
+    destinationKind,
+    nextStatus,
+  });
+
+  const skuKey = String(row.sku || "")
+    .trim()
+    .toLowerCase();
+  if (skuKey) {
+    transferOverridesBySku.value = {
+      ...transferOverridesBySku.value,
+      [skuKey]: {
+        backstock_locations: row.backstock_locations,
+        backstock_qty: row.backstock_qty,
+        pick_location: row.pick_location,
+        pickable_qty: row.pickable_qty,
+        status: row.status,
+        status_label: row.status_label,
+      },
+    };
+  }
+
+  // Refresh soon so the page picks up persisted snapshot fields after the job.
+  loadSnapshot({ showSpinner: false }).catch(() => {});
+  const pollMs = [2500, 6000, 12000, 25000];
+  pollMs.forEach((ms, index) => {
+    window.setTimeout(() => {
+      loadSnapshot({ showSpinner: false }).catch(() => {
+        if (index === pollMs.length - 1) {
+          row.status = previousStatus;
+          row.status_label = previousLabel;
+          row.backstock_locations = previousSnapshot.backstock_locations;
+          row.backstock_qty = previousSnapshot.backstock_qty;
+          row.pick_location = previousSnapshot.pick_location;
+          row.pickable_qty = previousSnapshot.pickable_qty;
+          if (skuKey) {
+            const next = { ...transferOverridesBySku.value };
+            delete next[skuKey];
+            transferOverridesBySku.value = next;
+          }
+        }
+      });
+    }, ms);
+  });
+}
+
+function adjustLocationListQuantity(list, locationName, delta, knownQtyBefore = null) {
+  const needle = String(locationName || "")
+    .trim()
+    .toLowerCase();
+  if (!needle || !delta) {
+    return { text: String(list || "").trim(), matched: false };
+  }
+  const parts = splitLocationText(list);
+  let matched = false;
+  const out = [];
+  for (const part of parts) {
+    const name = parseBackstockLocationName(part) || String(part).trim();
+    const nameKey = name.toLowerCase();
+    const qtyMatch = String(part).match(/\(\s*QTY\s*:\s*([-\d,]+)\s*\)/i);
+    let qty = qtyMatch ? Number(String(qtyMatch[1]).replace(/,/g, "")) : 0;
+    if (Number.isNaN(qty)) qty = 0;
+    if (
+      !matched &&
+      nameKey &&
+      (nameKey === needle || nameKey.includes(needle) || needle.includes(nameKey))
+    ) {
+      matched = true;
+      if (!qtyMatch && knownQtyBefore !== null && knownQtyBefore !== undefined) {
+        qty = Math.max(0, Number(knownQtyBefore) || 0);
+      }
+      const nextQty = Math.max(0, qty + delta);
+      if (nextQty > 0) {
+        out.push(`${name} (QTY: ${nextQty.toLocaleString()})`);
+      }
+      continue;
+    }
+    out.push(qty > 0 || qtyMatch ? `${name} (QTY: ${qty.toLocaleString()})` : name);
+  }
+  if (!matched && delta > 0) {
+    const base = knownQtyBefore !== null && knownQtyBefore !== undefined
+      ? Math.max(0, Number(knownQtyBefore) || 0)
+      : 0;
+    out.push(`${String(locationName).trim()} (QTY: ${(base + delta).toLocaleString()})`);
+    matched = true;
+  }
+  return { text: out.join(", "), matched };
+}
+
+function applyOptimisticTransferToRow(
+  row,
+  { fromName, toName, quantity, fromQtyBefore, toQtyBefore, sourceKind, destinationKind, nextStatus },
+) {
+  if (!row || !quantity) return;
+  if (sourceKind === "backstock" && fromName) {
+    const adjusted = adjustLocationListQuantity(
+      row.backstock_locations,
+      fromName,
+      -quantity,
+      fromQtyBefore,
+    );
+    row.backstock_locations = adjusted.text;
+    row.backstock_qty = Math.max(0, Number(row.backstock_qty || 0) - quantity);
+  }
+  if (destinationKind === "pick" && toName) {
+    const pickText = pickLocationText(row);
+    const adjusted = adjustLocationListQuantity(pickText, toName, quantity, toQtyBefore);
+    row.pick_location = adjusted.text;
+    row.pickable_qty = Math.max(0, Number(row.pickable_qty || 0) + quantity);
+  }
   row.status = nextStatus;
   row.status_label =
     nextStatus === RESTOCK_STATUS_TRANSFER_CART
@@ -745,18 +933,6 @@ async function submitTransfer() {
       : nextStatus === RESTOCK_STATUS_COMPLETE
         ? "Complete"
         : "Pending";
-
-  const pollMs = [3000, 8000, 20000];
-  pollMs.forEach((ms, index) => {
-    window.setTimeout(() => {
-      loadSnapshot({ showSpinner: false }).catch(() => {
-        if (index === pollMs.length - 1) {
-          row.status = previousStatus;
-          row.status_label = previousLabel;
-        }
-      });
-    }, ms);
-  });
 }
 
 async function loadAdjustmentReasons() {

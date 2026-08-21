@@ -670,7 +670,6 @@ onUnmounted(() => {
               v-model="addLines"
               class="form-control"
               rows="8"
-              placeholder="https://shipping.shiphero.com/bulk-ship/batch/?batchId=7768504&#10;https://shipping.shiphero.com/bulk-ship/batch/?batchId=7768505"
               :disabled="busy"
             />
           </div>
@@ -697,17 +696,17 @@ onUnmounted(() => {
           <header class="crm-vx-modal__head" style="text-align: left">
             <h2 class="crm-vx-modal__title">Update Batch</h2>
             <p class="crm-vx-modal__subtitle mb-0">
-              Paste ShipHero batch links (one per line) to mark as Completed. You will be registered as the user.
+              Enter one batch number per line to mark as Completed. You will be registered as the user.
             </p>
           </header>
           <div class="crm-vx-modal__body">
-            <label class="form-label" for="order-batch-update-lines">Batch Links</label>
+            <label class="form-label" for="order-batch-update-lines">Batch Numbers</label>
             <textarea
               id="order-batch-update-lines"
               v-model="updateLines"
               class="form-control"
               rows="8"
-              placeholder="https://shipping.shiphero.com/bulk-ship/batch/?batchId=7768504&#10;https://shipping.shiphero.com/bulk-ship/batch/?batchId=7768505"
+              placeholder="Scan or type each batch number you have completed"
               :disabled="busy"
             />
           </div>
@@ -735,13 +734,13 @@ onUnmounted(() => {
             <h2 class="crm-vx-modal__title">Edit Batch</h2>
           </header>
           <div class="crm-vx-modal__body">
-            <label class="form-label" for="order-batch-edit-number">Batch Link Or ID</label>
+            <label class="form-label" for="order-batch-edit-number">Batch Number</label>
             <input
               id="order-batch-edit-number"
               v-model="editNumber"
               type="text"
               class="form-control"
-              placeholder="https://shipping.shiphero.com/bulk-ship/batch/?batchId=7768504"
+              placeholder="Batch number"
               :disabled="busy"
             />
           </div>

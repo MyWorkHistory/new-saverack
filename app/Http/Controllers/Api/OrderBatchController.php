@@ -219,7 +219,7 @@ class OrderBatchController extends Controller
             $parsed = OrderBatchNumberParser::parseOne(trim((string) $validated['batch_number']));
             if ($parsed === null) {
                 throw ValidationException::withMessages([
-                    'batch_number' => ['Enter a ShipHero batch link or numeric batch ID.'],
+                    'batch_number' => ['Enter a numeric batch ID.'],
                 ]);
             }
             $clash = OrderBatch::query()
@@ -260,7 +260,7 @@ class OrderBatchController extends Controller
             $parsed = OrderBatchNumberParser::parseLines((string) ($validated['lines'] ?? ''));
             if ($parsed['invalid'] !== []) {
                 throw ValidationException::withMessages([
-                    'lines' => ['Each non-empty line must be a ShipHero batch link (or batch ID).'],
+                    'lines' => ['Each non-empty line must be a batch number.'],
                 ]);
             }
             $numbers = $parsed['numbers'];
@@ -268,7 +268,7 @@ class OrderBatchController extends Controller
 
         if ($numbers === []) {
             throw ValidationException::withMessages([
-                'lines' => ['Enter at least one ShipHero batch link.'],
+                'lines' => ['Enter at least one batch number.'],
             ]);
         }
 

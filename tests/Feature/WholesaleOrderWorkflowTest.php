@@ -232,6 +232,65 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonCount(0, 'lines');
     }
 
+    public function test_sync_line_boxes_persists_and_warns_on_qty_mismatch(): void
+    {
+        $account = $this->account('boxes');
+        Sanctum::actingAs($this->staffUser());
+
+        $create = $this->postJson('/api/admin/wholesale-orders', [
+            'client_account_id' => $account->id,
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'order_number' => 'BOX-1',
+        ])->assertCreated();
+
+        $orderId = (int) $create->json('id');
+        $lineResponse = $this->postJson('/api/admin/wholesale-orders/'.$orderId.'/lines', [
+            'sku' => 'SKU-BOX',
+            'name' => 'Boxed Product',
+            'quantity' => 138,
+        ])->assertOk();
+
+        $lineId = (int) $lineResponse->json('lines.0.id');
+
+        $sync = $this->putJson('/api/admin/wholesale-orders/'.$orderId.'/lines/'.$lineId.'/boxes', [
+            'boxes' => [
+                ['length' => 18, 'width' => 12, 'height' => 6, 'weight' => 6.2, 'quantity' => 48],
+                ['length' => 18, 'width' => 12, 'height' => 6, 'weight' => 6.5, 'quantity' => 50],
+                ['length' => 16, 'width' => 12, 'height' => 6, 'weight' => 5.1, 'quantity' => 40],
+            ],
+        ])
+            ->assertOk()
+            ->assertJsonPath('quantity_mismatch', false)
+            ->assertJsonPath('boxes_quantity_sum', 138)
+            ->assertJsonPath('line_boxes_count', 3)
+            ->assertJsonPath('line_boxes_total_weight', 17.8)
+            ->assertJsonPath('lines.0.boxes.0.quantity', 48)
+            ->assertJsonPath('lines.0.boxes.2.height', 6)
+            ->assertJsonPath('lines.0.boxes_quantity_mismatch', false);
+
+        $this->assertCount(3, $sync->json('lines.0.boxes'));
+
+        $this->putJson('/api/admin/wholesale-orders/'.$orderId.'/lines/'.$lineId.'/boxes', [
+            'boxes' => [
+                ['length' => 18, 'width' => 12, 'height' => 6, 'weight' => 6.2, 'quantity' => 10],
+            ],
+        ])
+            ->assertOk()
+            ->assertJsonPath('quantity_mismatch', true)
+            ->assertJsonPath('boxes_quantity_sum', 10)
+            ->assertJsonPath('line_quantity', 138)
+            ->assertJsonPath('lines.0.boxes_quantity_mismatch', true)
+            ->assertJsonPath('line_boxes_count', 1);
+
+        $this->putJson('/api/admin/wholesale-orders/'.$orderId.'/lines/'.$lineId.'/boxes', [
+            'boxes' => [],
+        ])
+            ->assertOk()
+            ->assertJsonPath('quantity_mismatch', false)
+            ->assertJsonPath('line_boxes_count', 0)
+            ->assertJsonCount(0, 'lines.0.boxes');
+    }
+
     public function test_staff_can_manually_update_wholesale_status(): void
     {
         $account = $this->account();

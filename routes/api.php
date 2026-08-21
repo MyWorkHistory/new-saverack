@@ -417,6 +417,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{wholesaleOrder}/shipping-label', [WholesaleOrderController::class, 'uploadShippingLabel'])->middleware('can:orders.update');
         Route::get('/{wholesaleOrder}/shipping-label.pdf', [WholesaleOrderController::class, 'shippingLabelDownload'])->middleware('can:orders.view');
         Route::delete('/{wholesaleOrder}/shipping-labels/{shippingLabel}', [WholesaleOrderController::class, 'destroyShippingLabel'])->middleware('can:orders.update');
+        Route::put('/{wholesaleOrder}/lines/{line}/boxes', [WholesaleOrderController::class, 'syncLineBoxes'])->middleware('can:orders.update');
         Route::put('/{wholesaleOrder}/packages', [WholesaleOrderController::class, 'syncPackages'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/packages/send-slack', [WholesaleOrderController::class, 'sendPackagesSlack'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/fee-lines', [WholesaleOrderController::class, 'storeFeeLine'])->middleware('can:orders.update');

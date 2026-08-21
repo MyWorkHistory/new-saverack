@@ -12,6 +12,7 @@ use App\Models\WholesaleOrder;
 use App\Models\WholesaleOrderComment;
 use App\Models\WholesaleOrderFeeLine;
 use App\Models\WholesaleOrderLine;
+use App\Models\WholesaleOrderLineBox;
 use App\Support\Billing\WholesaleOrderFeeChargeCatalog;
 use App\Support\CrmCommentUserSerializer;
 use App\Models\WholesaleOrderPackage;
@@ -185,6 +186,12 @@ class WholesaleOrderController extends Controller
     private function serializeLine(WholesaleOrderLine $line, ?string $resolvedImageUrl = null): array
     {
         $imageUrl = $resolvedImageUrl ?? $line->image_url;
+        $line->loadMissing('boxes');
+        $boxes = $line->boxes->map(fn (WholesaleOrderLineBox $box) => $this->serializeLineBox($box))->values()->all();
+        $boxesQtySum = 0;
+        foreach ($boxes as $box) {
+            $boxesQtySum += (int) ($box['quantity'] ?? 0);
+        }
 
         return [
             'id' => $line->id,
@@ -202,6 +209,25 @@ class WholesaleOrderController extends Controller
             'barcode_original_name' => $line->barcode_original_name,
             'barcode_mime' => $line->barcode_mime,
             'sort_order' => $line->sort_order,
+            'boxes' => $boxes,
+            'boxes_quantity_sum' => $boxesQtySum,
+            'boxes_quantity_mismatch' => $boxes !== [] && $boxesQtySum !== (int) $line->quantity,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeLineBox(WholesaleOrderLineBox $box): array
+    {
+        return [
+            'id' => $box->id,
+            'sort_order' => (int) $box->sort_order,
+            'length' => $box->length !== null ? (float) $box->length : null,
+            'width' => $box->width !== null ? (float) $box->width : null,
+            'height' => $box->height !== null ? (float) $box->height : null,
+            'weight' => $box->weight !== null ? (float) $box->weight : null,
+            'quantity' => (int) $box->quantity,
         ];
     }
 
@@ -439,7 +465,7 @@ class WholesaleOrderController extends Controller
         $order->loadMissing([
             'clientAccount.feeItems.pricingTemplate',
             'createdBy',
-            'lines',
+            'lines.boxes',
             'comments.user.profile',
             'shippingLabels',
             'packages',
@@ -449,21 +475,31 @@ class WholesaleOrderController extends Controller
         $imageBySku = $this->resolveLineImageUrls($order);
         $this->hydrateMissingLineWeights($order);
         $order->unsetRelation('lines');
-        $order->load('lines');
+        $order->load(['lines.boxes']);
 
         $totalWeight = null;
         $weightSum = 0.0;
         $hasWeight = false;
+        $lineBoxesCount = 0;
+        $lineBoxesWeightSum = 0.0;
+        $hasLineBoxWeight = false;
         foreach ($order->lines as $line) {
-            if ($line->weight === null) {
-                continue;
+            if ($line->weight !== null) {
+                $hasWeight = true;
+                $weightSum += (float) $line->weight * (int) $line->quantity;
             }
-            $hasWeight = true;
-            $weightSum += (float) $line->weight * (int) $line->quantity;
+            foreach ($line->boxes as $box) {
+                $lineBoxesCount++;
+                if ($box->weight !== null) {
+                    $hasLineBoxWeight = true;
+                    $lineBoxesWeightSum += (float) $box->weight;
+                }
+            }
         }
         if ($hasWeight) {
             $totalWeight = round($weightSum, 4);
         }
+        $lineBoxesTotalWeight = $hasLineBoxWeight ? round($lineBoxesWeightSum, 2) : null;
 
         $labels = $order->shippingLabels;
         if ($labels->isEmpty() && $order->hasUploadedShippingLabel() && trim((string) ($order->shipping_label_path ?? '')) !== '') {
@@ -534,6 +570,8 @@ class WholesaleOrderController extends Controller
             'total_items' => $this->totalItemsCount($order),
             'total_weight' => $totalWeight,
             'total_weight_unit' => 'lbs',
+            'line_boxes_count' => $lineBoxesCount,
+            'line_boxes_total_weight' => $lineBoxesTotalWeight,
             'boxes' => $boxes->map(fn (WholesaleOrderPackage $p) => $this->serializePackage($p))->values()->all(),
             'pallets' => $pallets->map(fn (WholesaleOrderPackage $p) => $this->serializePackage($p))->values()->all(),
             'boxes_saved_at' => optional($order->boxes_saved_at)->toIso8601String(),
@@ -1437,8 +1475,74 @@ class WholesaleOrderController extends Controller
         $wholesaleOrder->save();
 
         return response()->json($this->serializeDetail($wholesaleOrder->fresh([
-            'clientAccount', 'createdBy', 'lines', 'comments.user.profile', 'shippingLabels', 'packages',
+            'clientAccount', 'createdBy', 'lines.boxes', 'comments.user.profile', 'shippingLabels', 'packages',
         ])));
+    }
+
+    public function syncLineBoxes(
+        Request $request,
+        WholesaleOrder $wholesaleOrder,
+        WholesaleOrderLine $line
+    ): JsonResponse {
+        Gate::authorize('update', $wholesaleOrder);
+        $this->assertLineBelongsToOrder($wholesaleOrder, $line);
+
+        $validated = $request->validate([
+            'boxes' => ['present', 'array'],
+            'boxes.*.length' => ['nullable', 'numeric', 'min:0'],
+            'boxes.*.width' => ['nullable', 'numeric', 'min:0'],
+            'boxes.*.height' => ['nullable', 'numeric', 'min:0'],
+            'boxes.*.weight' => ['nullable', 'numeric', 'min:0'],
+            'boxes.*.quantity' => ['nullable', 'integer', 'min:0', 'max:99999999'],
+        ]);
+
+        WholesaleOrderLineBox::query()
+            ->where('wholesale_order_line_id', $line->id)
+            ->delete();
+
+        $sort = 0;
+        $qtySum = 0;
+        foreach ($validated['boxes'] as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $sort++;
+            $qty = isset($row['quantity']) ? max(0, (int) $row['quantity']) : 0;
+            $qtySum += $qty;
+            WholesaleOrderLineBox::query()->create([
+                'wholesale_order_line_id' => $line->id,
+                'length' => isset($row['length']) && $row['length'] !== '' && $row['length'] !== null
+                    ? (float) $row['length']
+                    : null,
+                'width' => isset($row['width']) && $row['width'] !== '' && $row['width'] !== null
+                    ? (float) $row['width']
+                    : null,
+                'height' => isset($row['height']) && $row['height'] !== '' && $row['height'] !== null
+                    ? (float) $row['height']
+                    : null,
+                'weight' => isset($row['weight']) && $row['weight'] !== '' && $row['weight'] !== null
+                    ? (float) $row['weight']
+                    : null,
+                'quantity' => $qty,
+                'sort_order' => $sort,
+            ]);
+        }
+
+        $lineQuantity = (int) $line->quantity;
+        $quantityMismatch = $sort > 0 && $qtySum !== $lineQuantity;
+
+        $detail = $this->serializeDetail($wholesaleOrder->fresh([
+            'clientAccount', 'createdBy', 'lines.boxes', 'comments.user.profile', 'shippingLabels', 'packages',
+        ]));
+
+        return response()->json(array_merge($detail, [
+            'quantity_mismatch' => $quantityMismatch,
+            'boxes_quantity_sum' => $qtySum,
+            'line_quantity' => $lineQuantity,
+            'warning' => $quantityMismatch
+                ? 'Box quantities ('.$qtySum.') do not match line qty ('.$lineQuantity.').'
+                : null,
+        ]));
     }
 
     public function sendPackagesSlack(

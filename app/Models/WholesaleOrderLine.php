@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class WholesaleOrderLine extends Model
 {
@@ -49,6 +50,13 @@ class WholesaleOrderLine extends Model
     public function wholesaleOrder(): BelongsTo
     {
         return $this->belongsTo(WholesaleOrder::class, 'wholesale_order_id');
+    }
+
+    public function boxes(): HasMany
+    {
+        return $this->hasMany(WholesaleOrderLineBox::class, 'wholesale_order_line_id')
+            ->orderBy('sort_order')
+            ->orderBy('id');
     }
 
     public function hasUploadedBarcode(): bool

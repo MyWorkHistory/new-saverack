@@ -8,6 +8,7 @@ import CrmNoteAuthorAvatar from "../../components/common/CrmNoteAuthorAvatar.vue
 import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
 import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
 import WholesaleBarcodeUploadModal from "../../components/orders/WholesaleBarcodeUploadModal.vue";
+import WholesaleLineBoxBreakdown from "../../components/orders/WholesaleLineBoxBreakdown.vue";
 import WholesalePackageInfoModal from "../../components/orders/WholesalePackageInfoModal.vue";
 import WholesaleRequirementRow from "../../components/orders/WholesaleRequirementRow.vue";
 import WholesaleRequirementsEditDrawer from "../../components/orders/WholesaleRequirementsEditDrawer.vue";
@@ -375,10 +376,32 @@ const formattedShippingAddress = computed(() => {
 const itemsSummary = computed(() => {
   const rows = lines.value;
   const totalQuantity = rows.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
+  let totalBoxes = 0;
+  let totalWeight = 0;
+  let hasWeight = false;
+  for (const line of rows) {
+    const boxes = Array.isArray(line.boxes) ? line.boxes : [];
+    totalBoxes += boxes.length;
+    for (const box of boxes) {
+      if (box?.weight != null && box.weight !== "") {
+        hasWeight = true;
+        totalWeight += Number(box.weight) || 0;
+      }
+    }
+  }
+  if (order.value?.line_boxes_count != null && !rows.some((l) => Array.isArray(l.boxes))) {
+    totalBoxes = Number(order.value.line_boxes_count) || 0;
+  }
+  const orderBoxWeight = order.value?.line_boxes_total_weight;
   return {
     totalItems: rows.length,
     totalQuantity,
-    quantityToShip: totalQuantity,
+    totalBoxes,
+    totalWeight: hasWeight
+      ? totalWeight
+      : orderBoxWeight != null
+        ? Number(orderBoxWeight)
+        : null,
   };
 });
 
@@ -1063,7 +1086,8 @@ onUnmounted(() => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="line in lines" :key="line.id">
+                <template v-for="line in lines" :key="line.id">
+                <tr>
                   <td class="order-detail-page__items-col">
                     <div class="order-detail-page__item-cell">
                       <div class="asn-line-media">
@@ -1166,6 +1190,22 @@ onUnmounted(() => {
                     </div>
                   </td>
                 </tr>
+                <tr
+                  v-if="canEditLines || (Array.isArray(line.boxes) && line.boxes.length)"
+                  class="wholesale-line-boxes-row"
+                >
+                  <td :colspan="canEditLines ? 5 : 4" class="wholesale-line-boxes-cell">
+                    <WholesaleLineBoxBreakdown
+                      :order-id="orderId"
+                      :line-id="line.id"
+                      :line-quantity="line.quantity"
+                      :boxes="line.boxes || []"
+                      :read-only="!canEditLines"
+                      @saved="applyOrderData"
+                    />
+                  </td>
+                </tr>
+                </template>
                 <tr v-if="!lines.length">
                   <td :colspan="canEditLines ? 5 : 4" class="text-center text-secondary py-4">No items yet.</td>
                 </tr>
@@ -1199,23 +1239,28 @@ onUnmounted(() => {
             <div class="order-detail-page__items-summary-tile">
               <span class="order-detail-page__items-summary-icon order-detail-page__items-summary-icon--ship" aria-hidden="true">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                 </svg>
               </span>
               <div>
-                <div class="order-detail-page__items-summary-label">Quantity to Ship</div>
-                <div class="order-detail-page__items-summary-value">{{ itemsSummary.quantityToShip }}</div>
+                <div class="order-detail-page__items-summary-label">Total Boxes</div>
+                <div class="order-detail-page__items-summary-value">{{ itemsSummary.totalBoxes }}</div>
               </div>
             </div>
             <div class="order-detail-page__items-summary-tile">
               <span class="order-detail-page__items-summary-icon order-detail-page__items-summary-icon--cost" aria-hidden="true">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
                 </svg>
               </span>
               <div>
-                <div class="order-detail-page__items-summary-label">Label Cost</div>
-                <div class="order-detail-page__items-summary-value">—</div>
+                <div class="order-detail-page__items-summary-label">Total Weight</div>
+                <div class="order-detail-page__items-summary-value">
+                  <template v-if="itemsSummary.totalWeight != null">
+                    {{ Number(itemsSummary.totalWeight).toLocaleString(undefined, { maximumFractionDigits: 2 }) }} lb
+                  </template>
+                  <template v-else>—</template>
+                </div>
               </div>
             </div>
           </div>
@@ -1682,6 +1727,18 @@ onUnmounted(() => {
   width: 100%;
   max-width: 100%;
   min-width: 0;
+}
+
+.wholesale-line-boxes-row > .wholesale-line-boxes-cell {
+  background: #fafbfc;
+  border-top: 0;
+  padding-top: 0.15rem;
+  padding-bottom: 0.75rem;
+  vertical-align: top;
+}
+
+.wholesale-line-boxes-row:hover > .wholesale-line-boxes-cell {
+  background: #fafbfc;
 }
 
 .wholesale-items-table th.text-center:nth-child(3),

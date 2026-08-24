@@ -128,9 +128,11 @@ onMounted(load);
       <div class="border-top pt-3">
         <h2 class="h6 fw-semibold mb-3">Message Body</h2>
         <div
+          v-if="email.body_html"
           class="admin-email-detail__body"
-          v-html="email.body_html || '<p class=\"text-secondary\">—</p>'"
+          v-html="email.body_html"
         />
+        <p v-else class="text-secondary mb-0">—</p>
         <p class="small text-secondary mt-3 mb-0">
           The From signature was appended when the message was sent and is not stored in this body.
         </p>

@@ -76,10 +76,32 @@ class ShopifyWarehouseLocationController extends Controller
         $this->assertAdmin($request);
 
         $perPage = max(10, min(100, (int) $request->query('per_page', 25)));
-        $itemsPage = ShopifyWarehouseLocationItem::query()
+        $q = trim((string) $request->query('q', ''));
+        $accountId = (int) $request->query('client_account_id', 0);
+
+        $itemsQuery = ShopifyWarehouseLocationItem::query()
             ->where('location_id', $shopifyWarehouseLocation->id)
             ->where('available', '>', 0)
-            ->with(['variant.product', 'variant.connection.clientAccount'])
+            ->with(['variant.product', 'variant.connection.clientAccount']);
+
+        if ($accountId > 0) {
+            $itemsQuery->whereHas('variant.connection', function ($builder) use ($accountId) {
+                $builder->where('client_account_id', $accountId);
+            });
+        }
+
+        if ($q !== '') {
+            $itemsQuery->where(function ($builder) use ($q) {
+                $builder->whereHas('variant', function ($v) use ($q) {
+                    $v->where('sku', 'like', '%'.$q.'%')
+                        ->orWhere('title', 'like', '%'.$q.'%');
+                })->orWhereHas('variant.product', function ($p) use ($q) {
+                    $p->where('title', 'like', '%'.$q.'%');
+                });
+            });
+        }
+
+        $itemsPage = $itemsQuery
             ->orderByDesc('available')
             ->orderBy('id')
             ->paginate($perPage);
@@ -226,17 +248,45 @@ class ShopifyWarehouseLocationController extends Controller
     {
         $this->assertAdmin($request);
         $validated = $request->validate([
-            'sku' => ['required', 'string', 'max:255'],
+            'sku' => ['nullable', 'string', 'max:255'],
+            'shopify_variant_id' => ['nullable', 'integer', 'exists:shopify_product_variants,id'],
+            'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
             'available' => ['required', 'integer', 'min:1'],
         ]);
-        $sku = trim((string) $validated['sku']);
-        $variant = ShopifyProductVariant::query()
-            ->where('sku', $sku)
-            ->orderByDesc('id')
-            ->first();
+
+        $variantId = isset($validated['shopify_variant_id']) ? (int) $validated['shopify_variant_id'] : 0;
+        $accountId = isset($validated['client_account_id']) ? (int) $validated['client_account_id'] : 0;
+        $sku = trim((string) ($validated['sku'] ?? ''));
+
+        if ($variantId <= 0 && $sku === '') {
+            throw ValidationException::withMessages([
+                'sku' => ['Select a product SKU.'],
+            ]);
+        }
+
+        $variant = null;
+        if ($variantId > 0) {
+            $variantQuery = ShopifyProductVariant::query()->where('id', $variantId);
+            if ($accountId > 0) {
+                $variantQuery->whereHas('connection', function ($builder) use ($accountId) {
+                    $builder->where('client_account_id', $accountId);
+                });
+            }
+            $variant = $variantQuery->first();
+        } else {
+            $variantQuery = ShopifyProductVariant::query()->where('sku', $sku);
+            if ($accountId > 0) {
+                $variantQuery->whereHas('connection', function ($builder) use ($accountId) {
+                    $builder->where('client_account_id', $accountId);
+                });
+            }
+            $variant = $variantQuery->orderByDesc('id')->first();
+        }
+
         if ($variant === null) {
             throw ValidationException::withMessages([
-                'sku' => ['No Shopify variant found for that SKU.'],
+                'sku' => ['No Shopify variant found for that SKU'
+                    .($accountId > 0 ? ' on the selected account.' : '.')],
             ]);
         }
         /** @var ShopifyWarehouseLocationItem $item */
@@ -480,6 +530,7 @@ class ShopifyWarehouseLocationController extends Controller
             'product_title' => $product ? $product->title : ($variant ? $variant->title : null),
             'variant_title' => $variant ? $variant->title : null,
             'image_url' => ShopifyProductImage::url($raw),
+            'client_account_id' => $account ? (int) $account->id : null,
             'account_name' => $account ? $account->company_name : null,
         ];
     }

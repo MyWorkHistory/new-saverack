@@ -806,6 +806,7 @@ class ShopifyIntegrationController extends Controller
         $this->assertAdmin($request);
 
         $q = trim((string) $request->query('q', ''));
+        $accountId = (int) $request->query('client_account_id', 0);
         $perPage = max(10, min(100, (int) $request->query('per_page', 25)));
 
         $query = ShopifyProductVariant::query()
@@ -816,6 +817,12 @@ class ShopifyIntegrationController extends Controller
                 });
             })
             ->orderByDesc('id');
+
+        if ($accountId > 0) {
+            $query->whereHas('connection', function ($builder) use ($accountId) {
+                $builder->where('client_account_id', $accountId);
+            });
+        }
 
         if ($q !== '') {
             $query->where(function ($builder) use ($q) {
@@ -849,15 +856,22 @@ class ShopifyIntegrationController extends Controller
                 $levelRows = $levels->get($key, collect());
                 $locMap = ($locations->get($variant->connection_id) ?? collect())->keyBy('shopify_location_id');
 
+                $rawJson = $variant->product?->raw_json;
+                $raw = is_array($rawJson) ? $rawJson : null;
+
                 return [
                     'id' => $variant->id,
                     'sku' => $variant->sku,
                     'title' => $variant->title,
                     'product_title' => $variant->product->title ?? null,
+                    'image_url' => \App\Support\ShopifyProductImage::url($raw),
                     'shopify_variant_id' => $variant->shopify_variant_id,
                     'shopify_product_id' => $variant->product->shopify_product_id ?? null,
                     'weight' => $variant->weight,
                     'weight_unit' => $variant->weight_unit,
+                    'client_account_id' => $variant->connection?->client_account_id
+                        ? (int) $variant->connection->client_account_id
+                        : null,
                     'account_name' => $variant->connection->clientAccount->company_name ?? null,
                     'inventory' => $levelRows->map(function ($level) use ($locMap) {
                         $loc = $locMap->get($level->shopify_location_id);

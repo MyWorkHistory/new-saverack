@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import ShopifyLocationTransferModal from "../../components/shopify/ShopifyLocationTransferModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
@@ -27,13 +28,30 @@ const types = ref([]);
 const destLocations = ref([]);
 const pagination = ref({ current_page: 1, last_page: 1, total: 0, per_page: 25 });
 
+const accountOptions = ref([]);
+const accountsLoading = ref(false);
+const filterAccountId = ref("");
+const searchQuery = ref("");
+
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
 const editOpen = ref(false);
 const qtyOpen = ref(false);
 const transferOpen = ref(false);
 const addItemOpen = ref(false);
-const addItemForm = reactive({ sku: "", available: 1 });
+const addItemForm = reactive({
+  client_account_id: "",
+  shopify_variant_id: "",
+  sku: "",
+  product_label: "",
+  available: 1,
+});
+const skuSearchOpen = ref(false);
+const skuSearchQ = ref("");
+const skuSearchLoading = ref(false);
+const skuSearchResults = ref([]);
+let skuSearchTimer = null;
+
 const form = reactive({ name: "", type: "", pickable: true, sellable: true, active: true });
 const qtyForm = reactive({ available: 0 });
 const activeItem = ref(null);
@@ -47,12 +65,42 @@ function yesNoBadge(on) {
   return on ? "shopify-loc-badge shopify-loc-badge--yes" : "shopify-loc-badge shopify-loc-badge--no";
 }
 
+function activeBadge(on) {
+  return on ? "shopify-loc-badge shopify-loc-badge--yes" : "shopify-loc-badge shopify-loc-badge--no";
+}
+
+async function loadAccounts() {
+  accountsLoading.value = true;
+  try {
+    const { data } = await api.get("/inventory/client-account-options");
+    const list = Array.isArray(data?.accounts) ? data.accounts : Array.isArray(data) ? data : [];
+    accountOptions.value = list
+      .filter((a) => a?.id)
+      .map((a) => ({
+        id: a.id,
+        name: a.company_name || a.name || `Account #${a.id}`,
+        email: a.email || "",
+      }));
+  } catch {
+    accountOptions.value = [];
+  } finally {
+    accountsLoading.value = false;
+  }
+}
+
 async function load() {
   loading.value = true;
   try {
-    const { data } = await api.get(`/shopify/locations/${locationId.value}`, {
-      params: { per_page: pagination.value.per_page, page: pagination.value.current_page },
-    });
+    const params = {
+      per_page: pagination.value.per_page,
+      page: pagination.value.current_page,
+    };
+    const q = searchQuery.value.trim();
+    if (q) params.q = q;
+    const accountId = Number(filterAccountId.value || 0);
+    if (accountId > 0) params.client_account_id = accountId;
+
+    const { data } = await api.get(`/shopify/locations/${locationId.value}`, { params });
     location.value = data?.location || null;
     items.value = Array.isArray(data?.items) ? data.items : [];
     totalQty.value = Number(data?.total_qty || 0);
@@ -73,6 +121,11 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+
+function applyFilters() {
+  pagination.value.current_page = 1;
+  void load();
 }
 
 function openEdit() {
@@ -133,6 +186,7 @@ async function toggleManageMenu(row, e) {
 
 function onDocClick(e) {
   if (!e.target?.closest?.("[data-shopify-loc-item-actions]")) manageOpenId.value = null;
+  if (!e.target?.closest?.("[data-shopify-loc-sku-search]")) skuSearchOpen.value = false;
 }
 
 function openQty(row) {
@@ -202,22 +256,99 @@ async function submitTransfer() {
   }
 }
 
+function openAddItem() {
+  addItemForm.client_account_id = "";
+  addItemForm.shopify_variant_id = "";
+  addItemForm.sku = "";
+  addItemForm.product_label = "";
+  addItemForm.available = 1;
+  skuSearchQ.value = "";
+  skuSearchResults.value = [];
+  skuSearchOpen.value = false;
+  addItemOpen.value = true;
+}
+
+function clearSelectedSku() {
+  addItemForm.shopify_variant_id = "";
+  addItemForm.sku = "";
+  addItemForm.product_label = "";
+  skuSearchQ.value = "";
+  skuSearchResults.value = [];
+}
+
+watch(
+  () => addItemForm.client_account_id,
+  () => {
+    clearSelectedSku();
+  },
+);
+
+function scheduleSkuSearch() {
+  if (skuSearchTimer) clearTimeout(skuSearchTimer);
+  skuSearchTimer = setTimeout(() => {
+    skuSearchTimer = null;
+    void searchSkus();
+  }, 280);
+}
+
+async function searchSkus() {
+  const accountId = Number(addItemForm.client_account_id || 0);
+  if (accountId <= 0) {
+    skuSearchResults.value = [];
+    return;
+  }
+  skuSearchLoading.value = true;
+  skuSearchOpen.value = true;
+  try {
+    const { data } = await api.get("/shopify/inventory", {
+      params: {
+        client_account_id: accountId,
+        q: skuSearchQ.value.trim() || undefined,
+        per_page: 25,
+      },
+    });
+    skuSearchResults.value = Array.isArray(data?.data) ? data.data : [];
+  } catch (e) {
+    skuSearchResults.value = [];
+    toast.errorFrom(e, "Could not search products.");
+  } finally {
+    skuSearchLoading.value = false;
+  }
+}
+
+function selectSkuResult(row) {
+  addItemForm.shopify_variant_id = String(row.id || "");
+  addItemForm.sku = String(row.sku || "");
+  const title = String(row.product_title || row.title || "").trim();
+  addItemForm.product_label = title
+    ? `${title}${row.sku ? ` (${row.sku})` : ""}`
+    : String(row.sku || "Selected product");
+  skuSearchOpen.value = false;
+  skuSearchQ.value = "";
+}
+
 async function addItem() {
+  const accountId = Number(addItemForm.client_account_id || 0);
+  const variantId = Number(addItemForm.shopify_variant_id || 0);
   const sku = String(addItemForm.sku || "").trim();
-  if (!sku) {
-    toast.error("SKU is required.");
+  if (accountId <= 0) {
+    toast.error("Select an account.");
+    return;
+  }
+  if (variantId <= 0 && !sku) {
+    toast.error("Select a product SKU.");
     return;
   }
   busy.value = true;
   try {
     await api.post(`/shopify/locations/${locationId.value}/items`, {
-      sku,
+      client_account_id: accountId,
+      shopify_variant_id: variantId > 0 ? variantId : undefined,
+      sku: sku || undefined,
       available: Number(addItemForm.available || 0),
     });
     toast.success("Item added.");
     addItemOpen.value = false;
-    addItemForm.sku = "";
-    addItemForm.available = 1;
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not add item.");
@@ -250,16 +381,24 @@ onMounted(async () => {
   } catch (_) {
     types.value = ["Large Bin", "Medium Bin", "Small Bin", "Large Pallet", "Medium Pallet", "Small Pallet"];
   }
+  void loadAccounts();
   void load();
 });
 
 watch(() => route.params.id, () => {
   pagination.value.current_page = 1;
+  searchQuery.value = "";
+  filterAccountId.value = "";
   void load();
+});
+
+watch(filterAccountId, () => {
+  applyFilters();
 });
 
 onUnmounted(() => {
   document.removeEventListener("click", onDocClick);
+  if (skuSearchTimer) clearTimeout(skuSearchTimer);
 });
 </script>
 
@@ -282,8 +421,7 @@ onUnmounted(() => {
         <div class="d-flex align-items-start gap-3 min-w-0">
           <div class="shopify-loc-hero-icon" aria-hidden="true">
             <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="#2563eb" stroke-width="1.6">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
             </svg>
           </div>
           <div class="min-w-0">
@@ -292,7 +430,7 @@ onUnmounted(() => {
               <span class="text-secondary">Type: <strong class="text-body">{{ location.type || "—" }}</strong></span>
               <span class="text-secondary">Pickable: <span :class="yesNoBadge(location.pickable)">{{ location.pickable ? "Yes" : "No" }}</span></span>
               <span class="text-secondary">Sellable: <span :class="yesNoBadge(location.sellable)">{{ location.sellable ? "Yes" : "No" }}</span></span>
-              <span class="text-secondary">Active: <span class="shopify-loc-badge shopify-loc-badge--yes">{{ location.active ? "Active" : "Inactive" }}</span></span>
+              <span class="text-secondary">Active: <span :class="activeBadge(location.active)">{{ location.active ? "Active" : "Inactive" }}</span></span>
             </div>
           </div>
         </div>
@@ -314,10 +452,52 @@ onUnmounted(() => {
             <h2 class="h6 fw-semibold mb-1">Inventory at this location</h2>
             <p class="small text-secondary mb-0">All inventory items currently stored at this location.</p>
           </div>
-          <button type="button" class="btn btn-sm btn-primary staff-page-primary" @click="addItemOpen = true">
+          <button type="button" class="btn btn-sm btn-primary staff-page-primary" @click="openAddItem">
             Add Item
           </button>
         </div>
+
+        <div class="staff-table-toolbar px-3 px-md-4">
+          <div class="staff-table-toolbar--row shopify-loc-toolbar-row">
+            <div class="shopify-loc-toolbar-account">
+              <CrmSearchableSelect
+                v-model="filterAccountId"
+                class="staff-toolbar-search staff-toolbar-search--inline w-100"
+                appearance="staff"
+                aria-label="Filter by account"
+                :options="accountOptions"
+                :disabled="accountsLoading || loading"
+                placeholder="All Accounts"
+                empty-label="All Accounts"
+                search-placeholder="Search accounts…"
+              />
+            </div>
+            <div class="shopify-loc-toolbar-search flex-grow-1">
+              <div class="input-group orders-toolbar-search-group">
+                <input
+                  v-model="searchQuery"
+                  type="search"
+                  class="form-control"
+                  placeholder="Search by name or SKU…"
+                  autocomplete="off"
+                  enterkeyhint="search"
+                  aria-label="Search products at this location"
+                  :disabled="loading"
+                  @keydown.enter.prevent="applyFilters"
+                />
+                <button
+                  type="button"
+                  class="btn btn-primary staff-page-primary orders-toolbar-search-btn fw-semibold"
+                  :disabled="loading"
+                  @click="applyFilters"
+                >
+                  Search
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="table-responsive staff-table-wrap">
           <table class="table table-hover align-middle mb-0 staff-data-table">
             <thead class="table-light staff-table-head">
@@ -368,7 +548,7 @@ onUnmounted(() => {
           </table>
         </div>
         <p class="small text-secondary px-3 px-md-4 py-3 mb-0 border-top">
-          Showing 1 to {{ items.length }} of {{ pagination.total }} items.
+          Showing {{ items.length ? 1 : 0 }} to {{ items.length }} of {{ pagination.total }} items.
         </p>
       </div>
     </template>
@@ -456,8 +636,79 @@ onUnmounted(() => {
             <h2 class="crm-vx-modal__title">Add Item</h2>
           </header>
           <div class="crm-vx-modal__body">
-            <label class="form-label" for="add-item-sku">SKU</label>
-            <input id="add-item-sku" v-model="addItemForm.sku" type="text" class="form-control mb-3" />
+            <label class="form-label" for="add-item-account">Account</label>
+            <CrmSearchableSelect
+              id="add-item-account"
+              v-model="addItemForm.client_account_id"
+              class="mb-3"
+              appearance="staff"
+              aria-label="Select account"
+              :options="accountOptions"
+              :disabled="accountsLoading || busy"
+              :allow-empty="false"
+              placeholder="Select Account"
+              empty-label="Select Account"
+              search-placeholder="Search accounts…"
+              teleport-panel
+            />
+
+            <label class="form-label" for="add-item-sku-search">SKU</label>
+            <div data-shopify-loc-sku-search class="position-relative mb-3">
+              <template v-if="addItemForm.shopify_variant_id">
+                <div class="shopify-loc-sku-selected d-flex align-items-center justify-content-between gap-2">
+                  <span class="small text-body min-w-0 text-truncate">{{ addItemForm.product_label || addItemForm.sku }}</span>
+                  <button
+                    type="button"
+                    class="btn btn-link btn-sm p-0 text-decoration-none flex-shrink-0"
+                    :disabled="busy || !addItemForm.client_account_id"
+                    @click="clearSelectedSku"
+                  >
+                    Change
+                  </button>
+                </div>
+              </template>
+              <template v-else>
+                <input
+                  id="add-item-sku-search"
+                  v-model="skuSearchQ"
+                  type="search"
+                  class="form-control"
+                  placeholder="Search by name or SKU…"
+                  autocomplete="off"
+                  :disabled="busy || !addItemForm.client_account_id"
+                  @focus="addItemForm.client_account_id && searchSkus()"
+                  @input="scheduleSkuSearch"
+                />
+                <div
+                  v-if="skuSearchOpen && addItemForm.client_account_id"
+                  class="shopify-loc-sku-dropdown"
+                  role="listbox"
+                >
+                  <div v-if="skuSearchLoading" class="px-3 py-2 small text-secondary">Searching…</div>
+                  <button
+                    v-for="row in skuSearchResults"
+                    :key="row.id"
+                    type="button"
+                    class="shopify-loc-sku-dropdown__item"
+                    role="option"
+                    @click="selectSkuResult(row)"
+                  >
+                    <span class="fw-semibold d-block text-truncate">{{ row.product_title || row.title || "—" }}</span>
+                    <span class="small text-secondary">{{ row.sku || "—" }}</span>
+                  </button>
+                  <div
+                    v-if="!skuSearchLoading && !skuSearchResults.length"
+                    class="px-3 py-2 small text-secondary"
+                  >
+                    No products found for this account.
+                  </div>
+                </div>
+              </template>
+              <p v-if="!addItemForm.client_account_id" class="small text-secondary mb-0 mt-1">
+                Select an account to search SKUs.
+              </p>
+            </div>
+
             <label class="form-label" for="add-item-qty">QTY</label>
             <input id="add-item-qty" v-model="addItemForm.available" type="number" min="1" class="form-control" />
           </div>
@@ -555,6 +806,20 @@ onUnmounted(() => {
   font-weight: 700;
   padding: 0.2rem 0.5rem;
 }
+.shopify-loc-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: stretch;
+  width: 100%;
+}
+.shopify-loc-toolbar-account {
+  width: min(100%, 16rem);
+  flex-shrink: 0;
+}
+.shopify-loc-toolbar-search {
+  min-width: min(100%, 16rem);
+}
 .shopify-loc-item-thumb {
   width: 36px;
   height: 36px;
@@ -567,5 +832,40 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+.shopify-loc-sku-selected {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  background: #f8fafc;
+}
+.shopify-loc-sku-dropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  max-height: 220px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+}
+.shopify-loc-sku-dropdown__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+.shopify-loc-sku-dropdown__item:hover,
+.shopify-loc-sku-dropdown__item:focus-visible {
+  background: #eff6ff;
+}
+.shopify-loc-sku-dropdown__item:last-child {
+  border-bottom: 0;
 }
 </style>

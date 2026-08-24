@@ -46,31 +46,33 @@ final class ProjectCreatedSlackServiceTest extends TestCase
         $this->assertStringContainsString("Name: P-1015\n", $payload['text']);
     }
 
-    public function test_notify_posts_only_to_account_channel(): void
+    public function test_notify_posts_to_account_and_projects_channels(): void
     {
         $slack = $this->createMock(SlackDeliveryService::class);
         $slack->method('hasBotToken')->willReturn(true);
         $slack->method('channelFromInHouseSlack')
             ->with('demo-co')
             ->willReturn('#demo-co');
-        $slack->expects($this->once())
+        $slack->method('normalizeChannelName')
+            ->with('projects')
+            ->willReturn('#projects');
+
+        $posted = [];
+        $slack->expects($this->exactly(2))
             ->method('post')
-            ->with(
-                '#demo-co',
-                $this->callback(function ($text) {
-                    return str_contains((string) $text, 'is created')
-                        && str_contains((string) $text, 'Name:')
-                        && str_contains((string) $text, 'View Project')
-                        && ! str_contains((string) $text, '#projects');
-                }),
-                'Project Created For Quote',
-                $this->anything()
-            )
-            ->willReturn(['method' => 'bot', 'channel' => '#demo-co', 'ts' => '1.0']);
+            ->willReturnCallback(function ($channel, $text, $username) use (&$posted) {
+                $posted[] = $channel;
+                $this->assertSame('Project Created For Quote', $username);
+                $this->assertStringContainsString('is created', (string) $text);
+                $this->assertStringContainsString('Name:', (string) $text);
+                $this->assertStringContainsString('View Project', (string) $text);
+
+                return ['method' => 'bot', 'channel' => $channel, 'ts' => '1.0'];
+            });
 
         $this->app->instance(SlackDeliveryService::class, $slack);
 
-        Log::shouldReceive('info')->once()->andReturnNull();
+        Log::shouldReceive('info')->twice()->andReturnNull();
 
         $project = new Project(['pid' => 'P-1015', 'name' => 'Demo Project']);
         $project->id = 42;
@@ -80,24 +82,31 @@ final class ProjectCreatedSlackServiceTest extends TestCase
         ]));
 
         app(ProjectCreatedSlackService::class)->notify($project);
+
+        $this->assertSame(['#demo-co', '#projects'], $posted);
     }
 
-    public function test_notify_skips_when_no_in_house_slack(): void
+    public function test_notify_posts_to_projects_when_no_in_house_slack(): void
     {
         $slack = $this->createMock(SlackDeliveryService::class);
         $slack->method('hasBotToken')->willReturn(true);
         $slack->method('channelFromInHouseSlack')->willReturn(null);
-        $slack->expects($this->never())->method('post');
+        $slack->method('normalizeChannelName')
+            ->with('projects')
+            ->willReturn('#projects');
+        $slack->expects($this->once())
+            ->method('post')
+            ->with(
+                '#projects',
+                $this->anything(),
+                'Project Created For Quote',
+                $this->anything()
+            )
+            ->willReturn(['method' => 'bot', 'channel' => '#projects', 'ts' => '1.0']);
 
         $this->app->instance(SlackDeliveryService::class, $slack);
 
-        Log::shouldReceive('info')
-            ->once()
-            ->withArgs(function ($message, $context) {
-                return $message === 'project.created_slack_skipped'
-                    && ($context['reason'] ?? null) === 'no_slack_channels';
-            })
-            ->andReturnNull();
+        Log::shouldReceive('info')->once()->andReturnNull();
 
         $project = new Project(['pid' => 'P-1015', 'name' => 'Demo Project']);
         $project->id = 42;
@@ -114,6 +123,7 @@ final class ProjectCreatedSlackServiceTest extends TestCase
         $slack = $this->createMock(SlackDeliveryService::class);
         $slack->method('hasBotToken')->willReturn(false);
         $slack->method('channelFromInHouseSlack')->willReturn('#demo-co');
+        $slack->method('normalizeChannelName')->willReturn('#projects');
         $slack->method('post')->willThrowException(new \RuntimeException('slack down'));
 
         $this->app->instance(SlackDeliveryService::class, $slack);

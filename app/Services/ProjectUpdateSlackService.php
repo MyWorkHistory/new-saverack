@@ -20,8 +20,8 @@ class ProjectUpdateSlackService
     }
 
     /**
-     * Post to the account in-house Slack channel when project status changes
-     * (except Draft). Failures are logged and do not block.
+     * Post to the account in-house Slack channel and #projects when project
+     * status changes (except Draft). Failures are logged and do not block.
      */
     public function notifyStatusChange(Project $project, string $status): void
     {
@@ -141,18 +141,28 @@ class ProjectUpdateSlackService
     }
 
     /**
-     * Account in-house Slack only; no shared #projects fallback.
+     * Account in-house Slack (when set) plus shared projects channel.
      *
      * @return list<string>
      */
     private function resolveChannels(ClientAccount $account): array
     {
+        $channels = [];
+
         $accountChannel = $this->slack->channelFromInHouseSlack($account->in_house_slack);
-        if ($accountChannel === null || $accountChannel === '') {
-            return [];
+        if ($accountChannel !== null && $accountChannel !== '') {
+            $channels[] = $accountChannel;
         }
 
-        return [$accountChannel];
+        $projectsChannel = trim((string) (config('projects.slack_channel') ?: '#projects'));
+        if ($projectsChannel !== '') {
+            $normalized = $this->slack->normalizeChannelName(ltrim($projectsChannel, '#'));
+            if ($normalized !== '') {
+                $channels[] = $normalized;
+            }
+        }
+
+        return array_values(array_unique($channels));
     }
 
     /**

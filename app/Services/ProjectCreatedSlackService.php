@@ -20,8 +20,8 @@ class ProjectCreatedSlackService
     }
 
     /**
-     * Post to the account in-house Slack channel when a project is created.
-     * Failures are logged and do not block creation.
+     * Post to the account in-house Slack channel and #projects when a project
+     * is created. Failures are logged and do not block creation.
      */
     public function notify(Project $project): void
     {
@@ -103,18 +103,28 @@ class ProjectCreatedSlackService
     }
 
     /**
-     * Account in-house Slack only; no shared #projects fallback.
+     * Account in-house Slack (when set) plus shared projects channel.
      *
      * @return list<string>
      */
     private function resolveChannels(ClientAccount $account): array
     {
+        $channels = [];
+
         $accountChannel = $this->slack->channelFromInHouseSlack($account->in_house_slack);
-        if ($accountChannel === null || $accountChannel === '') {
-            return [];
+        if ($accountChannel !== null && $accountChannel !== '') {
+            $channels[] = $accountChannel;
         }
 
-        return [$accountChannel];
+        $projectsChannel = trim((string) (config('projects.slack_channel') ?: '#projects'));
+        if ($projectsChannel !== '') {
+            $normalized = $this->slack->normalizeChannelName(ltrim($projectsChannel, '#'));
+            if ($normalized !== '') {
+                $channels[] = $normalized;
+            }
+        }
+
+        return array_values(array_unique($channels));
     }
 
     /**

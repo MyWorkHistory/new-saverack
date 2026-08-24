@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\AdminBroadcastEmail;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
 use App\Models\ClientAccountReturn;
@@ -25,6 +26,7 @@ use App\Models\User;
 use App\Models\LtlShipment;
 use App\Models\WholesaleOrder;
 use App\Models\WholesaleBill;
+use App\Policies\AdminBroadcastEmailPolicy;
 use App\Policies\ClientAccountAsnPolicy;
 use App\Policies\LtlShipmentPolicy;
 use App\Policies\ClientAccountReturnPolicy;
@@ -60,6 +62,7 @@ class AuthServiceProvider extends ServiceProvider
      */
     protected $policies = [
         User::class => UserPolicy::class,
+        AdminBroadcastEmail::class => AdminBroadcastEmailPolicy::class,
         ClientAccount::class => ClientAccountPolicy::class,
         ClientAccountAsn::class => ClientAccountAsnPolicy::class,
         ClientAccountReturn::class => ClientAccountReturnPolicy::class,

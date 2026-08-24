@@ -25,6 +25,8 @@ import ShopifyInventoryPage from "../pages/shopify/ShopifyInventoryPage.vue";
 import ShopifyInventoryDetailPage from "../pages/shopify/ShopifyInventoryDetailPage.vue";
 import ShopifyLocationsPage from "../pages/shopify/ShopifyLocationsPage.vue";
 import ShopifyLocationDetailPage from "../pages/shopify/ShopifyLocationDetailPage.vue";
+import AdminEmailsListPage from "../pages/admin-email/AdminEmailsListPage.vue";
+import AdminEmailDetailPage from "../pages/admin-email/AdminEmailDetailPage.vue";
 import SettingsPricingPage from "../pages/settings/SettingsPricingPage.vue";
 import SettingsTermsPage from "../pages/settings/SettingsTermsPage.vue";
 import SettingsEmailTemplatesPage from "../pages/settings/SettingsEmailTemplatesPage.vue";
@@ -120,6 +122,14 @@ const meta = {
   shopifyLocationDetail: {
     title: "Save Rack | Location",
     description: "Shopify warehouse location.",
+  },
+  adminEmail: {
+    title: "Save Rack | Email",
+    description: "Admin broadcast emails to client primary users.",
+  },
+  adminEmailDetail: {
+    title: "Save Rack | Email",
+    description: "Broadcast email detail.",
   },
   settingsPricing: {
     title: "Save Rack | Pricing",
@@ -1037,6 +1047,19 @@ const routes = [
     component: ShopifyLocationDetailPage,
     props: true,
     meta: meta.shopifyLocationDetail,
+  },
+  {
+    path: "/admin/email",
+    name: "admin-email",
+    component: AdminEmailsListPage,
+    meta: meta.adminEmail,
+  },
+  {
+    path: "/admin/email/:id",
+    name: "admin-email-detail",
+    component: AdminEmailDetailPage,
+    props: true,
+    meta: meta.adminEmailDetail,
   },
   // Legacy redirects from first nav placement under Webmaster
   {
@@ -2181,6 +2204,16 @@ router.beforeEach(async (to) => {
   }
 
   if (to.path === "/admin/shopify" || to.path.startsWith("/admin/shopify/")) {
+    const ok = await ensureWebmasterRouteAccess();
+    if (!ok) {
+      if (!localStorage.getItem("auth_token")) {
+        return { name: "login", query: { redirect: to.fullPath } };
+      }
+      return { path: "/admin/home" };
+    }
+  }
+
+  if (to.path === "/admin/email" || to.path.startsWith("/admin/email/")) {
     const ok = await ensureWebmasterRouteAccess();
     if (!ok) {
       if (!localStorage.getItem("auth_token")) {

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AdminAsnController;
+use App\Http\Controllers\Api\AdminBroadcastEmailController;
 use App\Http\Controllers\Api\AdminReturnController;
 use App\Http\Controllers\Api\AsnController;
 use App\Http\Controllers\Api\ReturnController;
@@ -146,6 +147,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{emailTemplate}', [EmailTemplateController::class, 'show']);
         Route::patch('/{emailTemplate}', [EmailTemplateController::class, 'update']);
         Route::delete('/{emailTemplate}', [EmailTemplateController::class, 'destroy']);
+    });
+
+    Route::prefix('admin/broadcast-emails')->group(function () {
+        Route::get('/', [AdminBroadcastEmailController::class, 'index']);
+        Route::get('/recipient-count', [AdminBroadcastEmailController::class, 'recipientCount']);
+        Route::post('/', [AdminBroadcastEmailController::class, 'store']);
+        Route::get('/{adminBroadcastEmail}', [AdminBroadcastEmailController::class, 'show']);
+        Route::delete('/{adminBroadcastEmail}', [AdminBroadcastEmailController::class, 'destroy']);
     });
 
         Route::prefix('return-bills')->group(function () {

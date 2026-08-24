@@ -18,9 +18,13 @@ const rows = reactive([]);
 
 const isSingleEdit = computed(() => props.editLine != null);
 
-const modalTitle = computed(() =>
-  isSingleEdit.value ? "Edit Wholesale Fee" : "Add Wholesale Fees",
-);
+const modalTitle = computed(() => {
+  if (!isSingleEdit.value) return "Add Wholesale Fees";
+  const source = String(props.editLine?.source || "").toLowerCase();
+  if (source === "packaging") return "Edit Packaging Fee";
+  if (source === "custom") return "Edit Custom Fee";
+  return "Edit Wholesale Fee";
+});
 
 const submitLabel = computed(() => (isSingleEdit.value ? "Save" : "Add Fees"));
 
@@ -32,23 +36,35 @@ const visibleDefs = computed(() => {
     source: option.source || "wholesale",
     clientAccountFeeId: option.client_account_fee_id ?? null,
   }));
-  if (!defs.length && props.editLine) {
-    defs.push({
-      lineType: props.editLine.line_type,
-      service: props.editLine.name || props.editLine.line_type,
-      qtyLabel: "Qty",
-      source: props.editLine.source || "wholesale",
-      clientAccountFeeId: props.editLine.client_account_fee_id ?? null,
-    });
-  }
   if (!isSingleEdit.value) return defs;
+
   const lt = String(props.editLine?.line_type || "");
-  return defs.filter((d) => d.lineType === lt);
+  const matched = defs.filter((d) => d.lineType === lt);
+  if (matched.length) return matched;
+
+  // Packaging / custom / orphaned line types are not in wholesale chargeOptions.
+  if (props.editLine) {
+    return [
+      {
+        lineType: props.editLine.line_type,
+        service: props.editLine.name || props.editLine.line_type,
+        qtyLabel: "Qty",
+        source: props.editLine.source || "wholesale",
+        clientAccountFeeId: props.editLine.client_account_fee_id ?? null,
+      },
+    ];
+  }
+
+  return [];
 });
 
 function defaultPriceCentsForLineType(lineType) {
   const opt = props.chargeOptions.find((o) => o.line_type === lineType);
-  return Number(opt?.default_unit_price_cents) || 0;
+  if (opt) return Number(opt?.default_unit_price_cents) || 0;
+  if (isSingleEdit.value && props.editLine && String(props.editLine.line_type) === String(lineType)) {
+    return Number(props.editLine.unit_price_cents) || 0;
+  }
+  return 0;
 }
 
 function defaultPriceForLineType(lineType) {
@@ -68,6 +84,9 @@ function defaultPriceLabel(lineType) {
 function displayNameForLineType(lineType) {
   const opt = props.chargeOptions.find((o) => o.line_type === lineType);
   if (opt?.display_name) return opt.display_name;
+  if (isSingleEdit.value && props.editLine && String(props.editLine.line_type) === String(lineType)) {
+    return props.editLine.name || lineType;
+  }
   return lineType;
 }
 

@@ -35,6 +35,26 @@ return [
     'account_welcome_from_address' => env('CRM_ACCOUNT_WELCOME_FROM_ADDRESS', 'info@saverack.com'),
     'account_welcome_from_name' => env('CRM_ACCOUNT_WELCOME_FROM_NAME', env('CRM_MAIL_FROM_NAME', 'Save Rack')),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Admin broadcast emails (mass client updates)
+    |--------------------------------------------------------------------------
+    |
+    | From addresses must be verified in Amazon SES (same SMTP as MAIL_*).
+    | Include audi@saverack.com as a verified identity before sending from it.
+    |
+    */
+    'broadcast_from_options' => [
+        'info@saverack.com' => [
+            'name' => 'Save Rack',
+            'signature' => 'info',
+        ],
+        'audi@saverack.com' => [
+            'name' => 'Audi K | Save Rack',
+            'signature' => 'audi',
+        ],
+    ],
+
     /** Notified when a new 3PL self-serve account is created. */
     'registration_notify_email' => env('REGISTRATION_NOTIFY_EMAIL') ?: env('ADMIN_EMAIL'),
 

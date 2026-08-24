@@ -102,6 +102,15 @@ const canEditPackages = computed(() => {
   const status = String(order.value?.status || "").toLowerCase();
   return status !== "shipped";
 });
+/**
+ * Line SKU add / edit / delete: staff only (portal is view-only).
+ * Still limited by order status (draft / pending / in_progress).
+ */
+const canManageLineItems = computed(() => !isPortal.value && canEditLines.value);
+/**
+ * Per-SKU box breakdown: staff until shipped (same window as order Box Info).
+ */
+const canEditLineBoxes = computed(() => canEditPackages.value);
 /** Shipping labels: staff can manage until shipped; portal only while draft/pending. */
 const canEditShippingLabels = computed(() => {
   if (isPortal.value) return isEditable.value;
@@ -650,7 +659,7 @@ function buildLinePayload(product, quantity) {
 }
 
 async function addFromCatalog({ product, quantity }) {
-  if (!order.value?.id || !canEditLines.value) return;
+  if (!order.value?.id || !canManageLineItems.value) return;
   const payload = buildLinePayload(product, quantity);
   if (!payload.sku) {
     toast.error("This product has no SKU.");
@@ -669,7 +678,7 @@ async function addFromCatalog({ product, quantity }) {
 }
 
 async function saveLineQty(line, rawQty) {
-  if (!order.value?.id || !canEditLines.value || !line?.id) return;
+  if (!order.value?.id || !canManageLineItems.value || !line?.id) return;
   const qty = Math.max(1, Number(rawQty) || 1);
   if (qty === Number(line.quantity)) return;
   lineBusy.value = true;
@@ -687,7 +696,7 @@ async function saveLineQty(line, rawQty) {
 }
 
 async function removeLine(line) {
-  if (!order.value?.id || !canEditLines.value || !line?.id) return;
+  if (!order.value?.id || !canManageLineItems.value || !line?.id) return;
   lineBusy.value = true;
   try {
     const { data } = await api.delete(`/admin/wholesale-orders/${order.value.id}/lines/${line.id}`);
@@ -701,7 +710,7 @@ async function removeLine(line) {
 }
 
 async function markShipAsIs(line) {
-  if (!order.value?.id || !canEditLines.value || !line?.id) return;
+  if (!order.value?.id || !canManageLineItems.value || !line?.id) return;
   if (String(line.status || "").toLowerCase() === "ship_as_is") return;
   lineBusy.value = true;
   try {
@@ -718,7 +727,7 @@ async function markShipAsIs(line) {
 }
 
 function openBarcodeModal(line) {
-  if (!canEditLines.value || !line?.id) return;
+  if (!canManageLineItems.value || !line?.id) return;
   barcodeLine.value = line;
   barcodeModalOpen.value = true;
   closeLineMenu();
@@ -1050,7 +1059,7 @@ onUnmounted(() => {
               <h2 class="h6 mb-0 fw-semibold">Items</h2>
             </div>
             <button
-              v-if="canEditLines"
+              v-if="canManageLineItems"
               type="button"
               class="btn btn-sm btn-primary staff-page-primary"
               :disabled="lineBusy"
@@ -1060,7 +1069,7 @@ onUnmounted(() => {
             </button>
           </div>
 
-          <div v-if="canEditLines && addPanelOpen" class="border-bottom">
+          <div v-if="canManageLineItems && addPanelOpen" class="border-bottom">
             <AsnProductCatalogPanel
               :client-account-id="clientAccountId"
               :wholesale-order-id="orderId"
@@ -1080,7 +1089,7 @@ onUnmounted(() => {
                   <th class="staff-table-head__th" scope="col">SKU</th>
                   <th class="staff-table-head__th text-center" scope="col">Qty</th>
                   <th class="staff-table-head__th text-center wholesale-line-barcodes-col" scope="col">Barcodes</th>
-                  <th v-if="canEditLines" class="staff-table-head__th text-center order-detail-page__items-actions-col" scope="col">
+                  <th v-if="canManageLineItems" class="staff-table-head__th text-center order-detail-page__items-actions-col" scope="col">
                     Actions
                   </th>
                 </tr>
@@ -1139,7 +1148,7 @@ onUnmounted(() => {
                   </td>
                   <td class="text-center">
                     <input
-                      v-if="canEditLines"
+                      v-if="canManageLineItems"
                       type="number"
                       min="1"
                       class="form-control form-control-sm text-center mx-auto wholesale-line-qty-input"
@@ -1159,7 +1168,7 @@ onUnmounted(() => {
                       Print Labels
                     </button>
                     <button
-                      v-else-if="canEditLines"
+                      v-else-if="canManageLineItems"
                       type="button"
                       class="btn btn-link btn-sm p-0 text-decoration-none"
                       :disabled="lineBusy"
@@ -1169,7 +1178,7 @@ onUnmounted(() => {
                     </button>
                     <span v-else class="text-secondary">—</span>
                   </td>
-                  <td v-if="canEditLines" class="text-center align-middle order-detail-page__items-actions-col">
+                  <td v-if="canManageLineItems" class="text-center align-middle order-detail-page__items-actions-col">
                     <div
                       data-row-actions
                       class="staff-actions-inner staff-actions-inner--single justify-content-center"
@@ -1191,23 +1200,23 @@ onUnmounted(() => {
                   </td>
                 </tr>
                 <tr
-                  v-if="canEditLines || (Array.isArray(line.boxes) && line.boxes.length)"
+                  v-if="canEditLineBoxes || (Array.isArray(line.boxes) && line.boxes.length)"
                   class="wholesale-line-boxes-row"
                 >
-                  <td :colspan="canEditLines ? 5 : 4" class="wholesale-line-boxes-cell">
+                  <td :colspan="canManageLineItems ? 5 : 4" class="wholesale-line-boxes-cell">
                     <WholesaleLineBoxBreakdown
                       :order-id="orderId"
                       :line-id="line.id"
                       :line-quantity="line.quantity"
                       :boxes="line.boxes || []"
-                      :read-only="!canEditLines"
+                      :read-only="!canEditLineBoxes"
                       @saved="applyOrderData"
                     />
                   </td>
                 </tr>
                 </template>
                 <tr v-if="!lines.length">
-                  <td :colspan="canEditLines ? 5 : 4" class="text-center text-secondary py-4">No items yet.</td>
+                  <td :colspan="canManageLineItems ? 5 : 4" class="text-center text-secondary py-4">No items yet.</td>
                 </tr>
               </tbody>
             </table>
@@ -1673,7 +1682,7 @@ onUnmounted(() => {
         @click.stop
       >
         <button
-          v-if="canEditLines"
+          v-if="canManageLineItems"
           type="button"
           class="staff-row-menu__item"
           role="menuitem"
@@ -1681,7 +1690,13 @@ onUnmounted(() => {
         >
           Upload Labels
         </button>
-        <button type="button" class="staff-row-menu__item staff-row-menu__item--danger" role="menuitem" @click="onLineMenuRemove">
+        <button
+          v-if="canManageLineItems"
+          type="button"
+          class="staff-row-menu__item staff-row-menu__item--danger"
+          role="menuitem"
+          @click="onLineMenuRemove"
+        >
           Remove
         </button>
       </div>

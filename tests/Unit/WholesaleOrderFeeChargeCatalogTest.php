@@ -51,6 +51,30 @@ class WholesaleOrderFeeChargeCatalogTest extends TestCase
         $this->assertSame(475, $packagingOptions[0]['default_unit_price_cents']);
     }
 
+    public function test_wholesale_box_fee_appears_in_packaging_dropdown(): void
+    {
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Box Fee Co',
+            'email' => 'box-fee@example.test',
+        ]);
+        $box = ClientAccountFee::query()->create([
+            'client_account_id' => $account->id,
+            'fee_group' => PricingFeeTemplate::CATEGORY_WHOLESALE,
+            'line_code' => 'box_price',
+            'label' => 'Box',
+            'amount' => '1.2500',
+            'currency' => 'USD',
+            'sort_order' => 1,
+        ]);
+
+        $packagingOptions = WholesaleOrderFeeChargeCatalog::packagingOptionsForAccount($account);
+        $this->assertCount(1, $packagingOptions);
+        $this->assertSame($box->id, $packagingOptions[0]['client_account_fee_id']);
+        $this->assertSame('Box', $packagingOptions[0]['display_name']);
+        $this->assertSame(125, $packagingOptions[0]['default_unit_price_cents']);
+    }
+
     public function test_dynamic_fee_and_custom_line_types_are_valid(): void
     {
         $this->assertTrue(WholesaleOrderFeeChargeCatalog::isValidLineType('fee_123'));

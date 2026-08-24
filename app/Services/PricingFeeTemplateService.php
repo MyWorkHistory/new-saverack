@@ -120,6 +120,10 @@ class PricingFeeTemplateService
 
             $this->syncLinkedAccountFees($template);
 
+            if (PricingFeeTemplate::isAccountScheduleCategory((string) $template->category)) {
+                $this->provisionTemplateToAllAccounts($template);
+            }
+
             return $template->fresh();
         });
     }
@@ -233,6 +237,7 @@ class PricingFeeTemplateService
                 'label' => $template->name,
                 'description' => $template->description,
                 'icon_path' => $template->icon_path,
+                'amount' => $template->amount,
             ]);
     }
 

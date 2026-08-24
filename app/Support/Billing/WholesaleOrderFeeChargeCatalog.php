@@ -239,6 +239,7 @@ class WholesaleOrderFeeChargeCatalog
         $account->unsetRelation('feeItems');
         $account->load(['feeItems.pricingTemplate']);
         $out = [];
+        $seenFeeIds = [];
         $fees = $account->feeItems->sortBy(function ($fee) {
             if (! $fee instanceof ClientAccountFee) {
                 return 0;
@@ -251,21 +252,44 @@ class WholesaleOrderFeeChargeCatalog
             if (! $fee instanceof ClientAccountFee) {
                 continue;
             }
-            if (! self::isPackagingFee($fee)) {
+            if (! self::isPackagingDropdownFee($fee)) {
                 continue;
             }
+            $feeId = (int) $fee->id;
+            if (isset($seenFeeIds[$feeId])) {
+                continue;
+            }
+            $seenFeeIds[$feeId] = true;
             $label = self::feeDisplayLabel($fee, 'fee_'.$fee->id);
             $out[] = [
                 'line_type' => 'fee_'.$fee->id,
-                'client_account_fee_id' => (int) $fee->id,
+                'client_account_fee_id' => $feeId,
                 'display_name' => $label,
-                'qty_label' => 'Qty',
+                'qty_label' => self::qtyLabelForFee($fee, 'fee_'.$fee->id),
                 'source' => WholesaleOrderFeeLine::SOURCE_PACKAGING,
                 'default_unit_price_cents' => (int) round(((float) ($fee->amount ?? 0)) * 100),
             ];
         }
 
         return $out;
+    }
+
+    /**
+     * Packaging category fees, plus Box-style fees (even if stored under wholesale).
+     */
+    private static function isPackagingDropdownFee(ClientAccountFee $fee): bool
+    {
+        if (self::isPackagingFee($fee)) {
+            return true;
+        }
+
+        // Account fees named/templated as Box often live under wholesale category.
+        $boxDef = self::DEFINITIONS[WholesaleOrderFeeLine::TYPE_BOX] ?? null;
+        if ($boxDef !== null && self::feeMatchesLineType($fee, $boxDef)) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

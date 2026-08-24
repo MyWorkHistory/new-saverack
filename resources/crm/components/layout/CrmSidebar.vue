@@ -40,13 +40,15 @@ const canViewSettings = computed(() => !isPortal.value && isCrmAdmin.value);
 
 const canViewWebmaster = computed(() => !isPortal.value && isCrmAdmin.value);
 const canViewShopify = computed(() => !isPortal.value && isCrmAdmin.value);
+const canViewEmail = computed(() => !isPortal.value && isCrmAdmin.value);
 
 const showAdminNavSection = computed(
   () =>
     canViewUsers.value ||
     canViewSettings.value ||
     canViewWebmaster.value ||
-    canViewShopify.value,
+    canViewShopify.value ||
+    canViewEmail.value,
 );
 
 const canViewClients = computed(() => {
@@ -295,6 +297,7 @@ function navActive(mode) {
   if (mode === "shopify-orders") return p.startsWith("/admin/shopify/orders");
   if (mode === "shopify-inventory") return p.startsWith("/admin/shopify/inventory");
   if (mode === "shopify-locations") return p.startsWith("/admin/shopify/locations");
+  if (mode === "email") return p === "/admin/email" || p.startsWith("/admin/email/");
   if (mode === "clients") return p.startsWith("/admin/clients");
   if (mode === "clients-accounts") return p.startsWith("/admin/clients/accounts");
   if (mode === "clients-users") return p.startsWith("/admin/clients/users");
@@ -1512,6 +1515,29 @@ function collapseNav() {
                 d="M13.5 21v-7.5a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 .75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349M3.75 21V9.349m0 0a3.001 3.001 0 0 0 3.75-.615A2.993 2.993 0 0 0 9.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 0 0 2.25 1.016c.896 0 1.7-.393 2.25-1.015a3.001 3.001 0 0 0 3.75.614m-16.5 0a3.004 3.004 0 0 1-.621-4.72l1.189-1.19A1.5 1.5 0 0 1 5.378 3h13.243a1.5 1.5 0 0 1 1.06.44l1.19 1.189a3 3 0 0 1-.621 4.72M6.75 18h3.75a.75.75 0 0 0 .75-.75V13.5a.75.75 0 0 0-.75-.75H6.75a.75.75 0 0 0-.75.75v3.75c0 .414.336.75.75.75Z"
               />
             </svg>
+          </RouterLink>
+        </li>
+        <li v-if="canViewEmail">
+          <RouterLink
+            to="/admin/email"
+            class="vx-nav-link"
+            :class="{ 'vx-nav-link--active': navActive('email') }"
+            :title="!isExpanded ? 'Email' : undefined"
+            @click="closeMobile"
+          >
+            <svg
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
+              />
+            </svg>
+            <span v-if="isExpanded">Email</span>
           </RouterLink>
         </li>
       </ul>

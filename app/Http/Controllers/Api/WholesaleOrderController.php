@@ -644,6 +644,15 @@ class WholesaleOrderController extends Controller
         }
     }
 
+    private function assertPackagesEditable(WholesaleOrder $order): void
+    {
+        if (! $order->canEditPackages()) {
+            throw ValidationException::withMessages([
+                'status' => ['Package dimensions cannot be changed after the order is shipped.'],
+            ]);
+        }
+    }
+
     /**
      * @param  array<string, mixed>  $validated
      */
@@ -1484,7 +1493,9 @@ class WholesaleOrderController extends Controller
         WholesaleOrder $wholesaleOrder,
         WholesaleOrderLine $line
     ): JsonResponse {
+        $this->assertStaff($request);
         Gate::authorize('update', $wholesaleOrder);
+        $this->assertPackagesEditable($wholesaleOrder);
         $this->assertLineBelongsToOrder($wholesaleOrder, $line);
 
         $validated = $request->validate([

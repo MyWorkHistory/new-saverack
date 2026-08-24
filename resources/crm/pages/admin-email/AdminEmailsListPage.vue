@@ -1,8 +1,8 @@
 <script setup>
 import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 import api from "../../services/api";
-import AdminEmailCreateModal from "../../components/admin-email/AdminEmailCreateModal.vue";
+import AdminEmailCreateDrawer from "../../components/admin-email/AdminEmailCreateDrawer.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -157,6 +157,7 @@ async function confirmSend() {
 
 function goDetail(row) {
   if (!row?.id) return;
+  manageOpenId.value = null;
   router.push(`/admin/email/${row.id}`);
 }
 
@@ -190,16 +191,23 @@ onUnmounted(() => {
 <template>
   <div class="staff-page">
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-      <div>
-        <h1 class="h4 mb-1 fw-semibold text-body">Email</h1>
-        <p class="text-secondary small mb-0">
-          Broadcast client updates to primary account users.
-        </p>
+      <div class="d-flex align-items-center gap-2 min-w-0">
+        <span class="order-detail-page__section-icon order-detail-page__section-icon--details flex-shrink-0" aria-hidden="true">
+          <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+        </span>
+        <div>
+          <h1 class="h4 mb-1 fw-semibold text-body">Email</h1>
+          <p class="text-secondary small mb-0">
+            Broadcast client updates to primary account users.
+          </p>
+        </div>
       </div>
       <button
         v-if="canManage()"
         type="button"
-        class="btn btn-primary staff-page-primary"
+        class="btn btn-primary staff-page-primary fw-semibold"
         @click="createOpen = true"
       >
         Create Email
@@ -231,7 +239,7 @@ onUnmounted(() => {
             <tr>
               <th class="staff-table-head__th" scope="col">Date</th>
               <th class="staff-table-head__th" scope="col">Subject</th>
-              <th class="staff-table-head__th text-center" scope="col">QTY Sent</th>
+              <th class="staff-table-head__th text-center" scope="col">Qty Sent</th>
               <th class="staff-table-head__th text-center staff-actions-col" scope="col">
                 Action
               </th>
@@ -241,17 +249,18 @@ onUnmounted(() => {
             <tr v-if="!rows.length">
               <td colspan="4" class="text-center text-secondary py-4">No emails found.</td>
             </tr>
-            <tr
-              v-for="row in rows"
-              :key="row.id"
-              class="staff-data-table__row--clickable"
-              style="cursor: pointer"
-              @click="goDetail(row)"
-            >
+            <tr v-for="row in rows" :key="row.id">
               <td>{{ formatDateUs(row.sent_at || row.created_at) || "—" }}</td>
-              <td class="fw-semibold">{{ row.subject || "—" }}</td>
+              <td>
+                <RouterLink
+                  :to="`/admin/email/${row.id}`"
+                  class="fw-semibold text-decoration-none"
+                >
+                  {{ row.subject || "—" }}
+                </RouterLink>
+              </td>
               <td class="text-center">{{ row.qty_sent ?? 0 }}</td>
-              <td class="staff-actions-cell text-center" @click.stop>
+              <td class="staff-actions-cell text-center">
                 <div
                   data-row-actions
                   class="staff-actions-inner staff-actions-inner--single justify-content-center"
@@ -282,19 +291,14 @@ onUnmounted(() => {
         </div>
         <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">No emails found.</div>
         <template v-else>
-          <article
-            v-for="row in rows"
-            :key="`mobile-${row.id}`"
-            class="crm-mobile-item-card"
-            @click="goDetail(row)"
-          >
+          <article v-for="row in rows" :key="`mobile-${row.id}`" class="crm-mobile-item-card">
             <div class="crm-mobile-item-card__head">
               <div class="crm-mobile-item-card__head-start">
                 <span class="small text-secondary">
                   {{ formatDateUs(row.sent_at || row.created_at) || "—" }}
                 </span>
               </div>
-              <div class="crm-mobile-item-card__head-end" data-row-actions @click.stop>
+              <div class="crm-mobile-item-card__head-end" data-row-actions>
                 <button
                   type="button"
                   class="staff-action-btn staff-action-btn--more"
@@ -310,12 +314,17 @@ onUnmounted(() => {
             </div>
             <div class="crm-mobile-item-card__product">
               <div class="crm-mobile-item-card__copy">
-                <span class="crm-mobile-item-card__name">{{ row.subject || "—" }}</span>
+                <RouterLink
+                  :to="`/admin/email/${row.id}`"
+                  class="crm-mobile-item-card__name text-decoration-none"
+                >
+                  {{ row.subject || "—" }}
+                </RouterLink>
               </div>
             </div>
             <div class="crm-mobile-item-card__meta">
               <div class="crm-mobile-item-card__meta-row">
-                <span class="crm-mobile-item-card__meta-label">QTY Sent</span>
+                <span class="crm-mobile-item-card__meta-label">Qty Sent</span>
                 <span class="crm-mobile-item-card__meta-value">{{ row.qty_sent ?? 0 }}</span>
               </div>
             </div>
@@ -324,17 +333,17 @@ onUnmounted(() => {
       </div>
 
       <div
-        v-if="meta.last_page > 1"
+        v-if="meta.last_page > 1 || meta.total > 0"
         class="staff-table-footer card-footer d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-2"
       >
         <span class="small text-secondary">
-          Page {{ meta.current_page }} of {{ meta.last_page }}
+          {{ meta.total }} total · Page {{ meta.current_page }} of {{ meta.last_page }}
         </span>
         <div class="btn-group btn-group-sm ms-sm-auto">
           <button
             type="button"
             class="btn btn-outline-secondary"
-            :disabled="meta.current_page <= 1"
+            :disabled="loading || meta.current_page <= 1"
             @click="loadList(meta.current_page - 1)"
           >
             Previous
@@ -342,7 +351,7 @@ onUnmounted(() => {
           <button
             type="button"
             class="btn btn-outline-secondary"
-            :disabled="meta.current_page >= meta.last_page"
+            :disabled="loading || meta.current_page >= meta.last_page"
             @click="loadList(meta.current_page + 1)"
           >
             Next
@@ -365,6 +374,15 @@ onUnmounted(() => {
       >
         <button
           type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="goDetail(manageMenuRow)"
+        >
+          View
+        </button>
+        <button
+          v-if="canManage()"
+          type="button"
           class="staff-row-menu__item staff-row-menu__item--danger"
           role="menuitem"
           @click="requestDelete(manageMenuRow)"
@@ -374,7 +392,7 @@ onUnmounted(() => {
       </div>
     </Teleport>
 
-    <AdminEmailCreateModal
+    <AdminEmailCreateDrawer
       v-model:open="createOpen"
       :busy="createBusy || sendConfirmBusy"
       :from-options="fromOptions"

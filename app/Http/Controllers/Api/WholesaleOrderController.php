@@ -13,6 +13,7 @@ use App\Models\WholesaleOrderComment;
 use App\Models\WholesaleOrderFeeLine;
 use App\Models\WholesaleOrderLine;
 use App\Models\WholesaleOrderLineBox;
+use App\Support\Billing\WholesaleOrderBoxFeeMatcher;
 use App\Support\Billing\WholesaleOrderFeeChargeCatalog;
 use App\Support\CrmCommentUserSerializer;
 use App\Models\WholesaleOrderPackage;
@@ -171,6 +172,7 @@ class WholesaleOrderController extends Controller
             'id' => $comment->id,
             'body' => $comment->body,
             'created_at' => optional($comment->created_at)->toIso8601String(),
+            'updated_at' => optional($comment->updated_at)->toIso8601String(),
             'user' => CrmCommentUserSerializer::fromUser($comment->user),
             'attachment' => $comment->hasAttachment() ? [
                 'original_name' => $comment->attachment_original_name,
@@ -489,10 +491,11 @@ class WholesaleOrderController extends Controller
                 $weightSum += (float) $line->weight * (int) $line->quantity;
             }
             foreach ($line->boxes as $box) {
-                $lineBoxesCount++;
+                $boxQty = max(1, (int) $box->quantity);
+                $lineBoxesCount += $boxQty;
                 if ($box->weight !== null) {
                     $hasLineBoxWeight = true;
-                    $lineBoxesWeightSum += (float) $box->weight;
+                    $lineBoxesWeightSum += (float) $box->weight * $boxQty;
                 }
             }
         }
@@ -1488,6 +1491,80 @@ class WholesaleOrderController extends Controller
         ])));
     }
 
+    public function lineBoxFeeSuggestions(Request $request, WholesaleOrder $wholesaleOrder): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('view', $wholesaleOrder);
+
+        $wholesaleOrder->loadMissing(['clientAccount', 'lines.boxes']);
+        $serializedLines = $wholesaleOrder->lines
+            ->map(fn (WholesaleOrderLine $line) => $this->serializeLine($line))
+            ->values()
+            ->all();
+
+        $rows = WholesaleOrderBoxFeeMatcher::aggregateLineBoxes(
+            $serializedLines,
+            $wholesaleOrder->clientAccount,
+        );
+
+        return response()->json(['rows' => $rows]);
+    }
+
+    public function sendLineBoxesSlack(
+        Request $request,
+        WholesaleOrder $wholesaleOrder,
+        WholesaleOrderLine $line,
+        SlackDeliveryService $slack
+    ): JsonResponse {
+        $this->assertStaff($request);
+        Gate::authorize('update', $wholesaleOrder);
+        $this->assertLineBelongsToOrder($wholesaleOrder, $line);
+
+        $wholesaleOrder->loadMissing('clientAccount');
+        $line->loadMissing('boxes');
+
+        $channel = $slack->channelFromInHouseSlack(
+            $wholesaleOrder->clientAccount ? $wholesaleOrder->clientAccount->in_house_slack : null
+        );
+        if ($channel === null || $channel === '') {
+            throw ValidationException::withMessages([
+                'slack' => ['This account has no In-House Slack channel configured.'],
+            ]);
+        }
+
+        if ($line->boxes->isEmpty()) {
+            throw ValidationException::withMessages([
+                'boxes' => ['Add box dimensions for this SKU before sending to Slack.'],
+            ]);
+        }
+
+        $lines = [
+            '*Box Info* — Order #'.$wholesaleOrder->order_number,
+            'Account: '.(($wholesaleOrder->clientAccount !== null ? $wholesaleOrder->clientAccount->company_name : null) ?: '—'),
+            'SKU: '.($line->sku ?: '—'),
+            'Item: '.($line->name ?: '—'),
+            '',
+        ];
+
+        $i = 1;
+        foreach ($line->boxes as $box) {
+            $dims = sprintf(
+                '%s × %s × %s in',
+                $this->fmtDim($box->length),
+                $this->fmtDim($box->width),
+                $this->fmtDim($box->height)
+            );
+            $wt = $this->fmtDim($box->weight).' lbs';
+            $qty = max(0, (int) $box->quantity);
+            $lines[] = "• *Box {$i}:* {$dims} · {$wt} · qty {$qty}";
+            $i++;
+        }
+
+        $slack->post($channel, implode("\n", $lines), 'Wholesale Box Info');
+
+        return response()->json(['ok' => true]);
+    }
+
     public function syncLineBoxes(
         Request $request,
         WholesaleOrder $wholesaleOrder,
@@ -1725,6 +1802,64 @@ class WholesaleOrderController extends Controller
         $comment->load('user:id,name,email');
 
         return response()->json($this->serializeComment($comment), 201);
+    }
+
+    public function updateComment(Request $request, WholesaleOrder $wholesaleOrder, WholesaleOrderComment $comment): JsonResponse
+    {
+        Gate::authorize('view', $wholesaleOrder);
+        $this->assertCommentBelongsToOrder($wholesaleOrder, $comment);
+        $this->authorizeCommentModify($request, $comment);
+
+        $validated = $request->validate([
+            'body' => ['required', 'string', 'max:65535'],
+        ]);
+
+        $comment->update(['body' => $validated['body']]);
+        $comment->load('user:id,name,email');
+
+        return response()->json($this->serializeComment($comment));
+    }
+
+    public function destroyComment(
+        Request $request,
+        WholesaleOrder $wholesaleOrder,
+        WholesaleOrderComment $comment
+    ): JsonResponse {
+        Gate::authorize('view', $wholesaleOrder);
+        $this->assertCommentBelongsToOrder($wholesaleOrder, $comment);
+        $this->authorizeCommentModify($request, $comment);
+
+        if ($comment->hasAttachment() && $comment->attachment_path) {
+            Storage::disk('local')->delete($comment->attachment_path);
+        }
+        $comment->delete();
+
+        return response()->json(['ok' => true]);
+    }
+
+    private function assertCommentBelongsToOrder(WholesaleOrder $order, WholesaleOrderComment $comment): void
+    {
+        if ((int) $comment->wholesale_order_id !== (int) $order->id) {
+            abort(404);
+        }
+    }
+
+    private function authorizeCommentModify(Request $request, WholesaleOrderComment $comment): void
+    {
+        $user = $request->user();
+        if (! $user instanceof User) {
+            abort(403);
+        }
+        if ((int) ($user->client_account_id ?? 0) > 0) {
+            abort(403, 'Wholesale comment moderation is for staff only.');
+        }
+        if ((int) $comment->user_id === (int) $user->id) {
+            return;
+        }
+        if ($user->is_crm_owner || Gate::forUser($user)->allows('users.update')) {
+            return;
+        }
+        abort(403, 'You can only edit or delete your own comments.');
     }
 
     public function downloadCommentAttachment(

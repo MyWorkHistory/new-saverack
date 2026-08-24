@@ -427,12 +427,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{wholesaleOrder}/shipping-label.pdf', [WholesaleOrderController::class, 'shippingLabelDownload'])->middleware('can:orders.view');
         Route::delete('/{wholesaleOrder}/shipping-labels/{shippingLabel}', [WholesaleOrderController::class, 'destroyShippingLabel'])->middleware('can:orders.update');
         Route::put('/{wholesaleOrder}/lines/{line}/boxes', [WholesaleOrderController::class, 'syncLineBoxes'])->middleware('can:orders.update');
+        Route::get('/{wholesaleOrder}/line-boxes/fee-suggestions', [WholesaleOrderController::class, 'lineBoxFeeSuggestions'])->middleware('can:orders.view');
+        Route::post('/{wholesaleOrder}/lines/{line}/boxes/send-slack', [WholesaleOrderController::class, 'sendLineBoxesSlack'])->middleware('can:orders.update');
         Route::put('/{wholesaleOrder}/packages', [WholesaleOrderController::class, 'syncPackages'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/packages/send-slack', [WholesaleOrderController::class, 'sendPackagesSlack'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/fee-lines', [WholesaleOrderController::class, 'storeFeeLine'])->middleware('can:orders.update');
         Route::put('/{wholesaleOrder}/fee-lines/{feeLine}', [WholesaleOrderController::class, 'updateFeeLine'])->middleware('can:orders.update');
         Route::delete('/{wholesaleOrder}/fee-lines/{feeLine}', [WholesaleOrderController::class, 'destroyFeeLine'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/comments', [WholesaleOrderController::class, 'storeComment'])->middleware('can:orders.view');
+        Route::patch('/{wholesaleOrder}/comments/{comment}', [WholesaleOrderController::class, 'updateComment'])->middleware('can:orders.view');
+        Route::delete('/{wholesaleOrder}/comments/{comment}', [WholesaleOrderController::class, 'destroyComment'])->middleware('can:orders.view');
         Route::get('/{wholesaleOrder}/comments/{comment}/attachment', [WholesaleOrderController::class, 'downloadCommentAttachment'])->middleware('can:orders.view');
         Route::post('/{wholesaleOrder}/create-bill', [WholesaleOrderController::class, 'createBill'])->middleware('can:orders.update');
     });

@@ -10,7 +10,6 @@ import WholesaleOrderCreateDrawer from "../../components/orders/WholesaleOrderCr
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
-import { crmIsPortalUser } from "../../utils/crmUser.js";
 import {
   WHOLESALE_STATUS_OPTIONS,
   WHOLESALE_TYPE_OPTIONS,
@@ -24,11 +23,9 @@ const router = useRouter();
 const route = useRoute();
 const crmUser = inject("crmUser", ref(null));
 
-const isPortal = computed(
-  () => Boolean(route.meta?.userPortal) || crmIsPortalUser(crmUser.value),
-);
+const isPortalView = computed(() => Boolean(route.meta?.userPortal));
 const detailRouteName = computed(() =>
-  isPortal.value ? "user-wholesale-order-detail" : "wholesale-order-detail",
+  isPortalView.value ? "user-wholesale-order-detail" : "wholesale-order-detail",
 );
 
 const accounts = ref([]);
@@ -56,7 +53,7 @@ const deleteConfirmOpen = ref(false);
 const deleteBusy = ref(false);
 const deleteTarget = ref(null);
 
-const tableColspan = computed(() => (isPortal.value ? 6 : 7));
+const tableColspan = computed(() => (isPortalView.value ? 6 : 7));
 
 const accountOptions = computed(() =>
   (accounts.value || []).map((a) => ({
@@ -77,7 +74,7 @@ const manageMenuRow = computed(
 
 function canDeleteRow(row) {
   if (!row?.id) return false;
-  if (isPortal.value) {
+  if (isPortalView.value) {
     return String(row.status || "").toLowerCase() === "draft";
   }
   return true;
@@ -100,7 +97,7 @@ function resetToolbarFilters() {
 }
 
 async function loadAccounts() {
-  if (isPortal.value) return;
+  if (isPortalView.value) return;
   accountsLoading.value = true;
   try {
     const { data } = await api.get("/inventory/client-account-options");
@@ -121,7 +118,7 @@ async function loadList() {
   loading.value = true;
   try {
     const params = {};
-    if (!isPortal.value && accountFilter.value) {
+    if (!isPortalView.value && accountFilter.value) {
       params.client_account_id = Number(accountFilter.value);
     }
     if (orderNumber.value.trim()) params.q = orderNumber.value.trim();
@@ -170,7 +167,7 @@ async function toggleManageMenu(row, e) {
 }
 
 function openCreate() {
-  createAccountId.value = isPortal.value
+  createAccountId.value = isPortalView.value
     ? String(crmUser.value?.client_account_id || "")
     : accountFilter.value || "";
   createOrderType.value = "";
@@ -181,9 +178,9 @@ function openCreate() {
 
 async function submitCreate() {
   const accountId = Number(
-    isPortal.value ? crmUser.value?.client_account_id : createAccountId.value,
+    isPortalView.value ? crmUser.value?.client_account_id : createAccountId.value,
   );
-  if (!isPortal.value && !accountId) {
+  if (!isPortalView.value && !accountId) {
     toast.error("Select an account.");
     return;
   }
@@ -192,7 +189,7 @@ async function submitCreate() {
     return;
   }
   const num = createOrderNumber.value.trim();
-  if (!isPortal.value && !num) {
+  if (!isPortalView.value && !num) {
     toast.error("Enter an order number.");
     return;
   }
@@ -203,19 +200,19 @@ async function submitCreate() {
       order_number: num || null,
       instructions: createInstructions.value.trim() || null,
     };
-    if (!isPortal.value) {
+    if (!isPortalView.value) {
       body.client_account_id = accountId;
     }
     const { data } = await api.post("/admin/wholesale-orders", body);
     createOpen.value = false;
-    toast.success(isPortal.value ? "Wholesale order submitted." : "Wholesale order created.");
+    toast.success(isPortalView.value ? "Wholesale order submitted." : "Wholesale order created.");
     if (data?.id) {
       router.push({ name: detailRouteName.value, params: { id: String(data.id) } });
     } else {
       await loadList();
     }
   } catch (e) {
-    toast.errorFrom(e, isPortal.value ? "Could not submit wholesale order." : "Could not create wholesale order.");
+    toast.errorFrom(e, isPortalView.value ? "Could not submit wholesale order." : "Could not create wholesale order.");
   } finally {
     createBusy.value = false;
   }
@@ -247,7 +244,7 @@ async function confirmDelete() {
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Wholesale Orders",
-    description: isPortal.value
+    description: isPortalView.value
       ? "Your wholesale fulfillment orders."
       : "Manage wholesale fulfillment orders.",
   });
@@ -268,7 +265,7 @@ onUnmounted(() => {
         <h1 class="h4 mb-1 fw-semibold text-body">Wholesale</h1>
         <p class="small text-secondary mb-0">
           {{
-            isPortal
+            isPortalView
               ? "Submit and track wholesale fulfillment orders."
               : "Wholesale fulfillment orders by account."
           }}
@@ -276,7 +273,7 @@ onUnmounted(() => {
       </div>
       <div class="d-flex flex-wrap gap-2">
         <RouterLink
-          v-if="!isPortal"
+          v-if="!isPortalView"
           :to="pickListRoute"
           class="btn btn-outline-secondary fw-semibold orders-toolbar-outline-btn"
         >
@@ -287,7 +284,7 @@ onUnmounted(() => {
           class="btn btn-primary staff-page-primary fw-semibold"
           @click="openCreate"
         >
-          {{ isPortal ? "Submit Order" : "Create Order" }}
+          {{ isPortalView ? "Submit Order" : "Create Order" }}
         </button>
       </div>
     </div>
@@ -297,7 +294,7 @@ onUnmounted(() => {
     >
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row wholesale-orders-toolbar-row">
-          <div v-if="!isPortal" class="wholesale-orders-toolbar-account flex-shrink-0">
+          <div v-if="!isPortalView" class="wholesale-orders-toolbar-account flex-shrink-0">
             <CrmSearchableSelect
               v-model="accountFilter"
               class="staff-toolbar-search staff-toolbar-search--inline"
@@ -427,7 +424,7 @@ onUnmounted(() => {
               <th class="staff-table-head__th text-center" scope="col">Order #</th>
               <th class="staff-table-head__th text-center" scope="col">Type</th>
               <th class="staff-table-head__th text-center" scope="col">Items</th>
-              <th v-if="!isPortal" class="staff-table-head__th text-center" scope="col">Account</th>
+              <th v-if="!isPortalView" class="staff-table-head__th text-center" scope="col">Account</th>
               <th class="staff-table-head__th text-center" scope="col">Date</th>
               <th class="staff-table-head__th text-center" scope="col">Action</th>
             </tr>
@@ -461,7 +458,7 @@ onUnmounted(() => {
               <td class="text-center fw-semibold">{{ row.order_number || "—" }}</td>
               <td class="text-center">{{ row.order_type_label || wholesaleTypeLabel(row.order_type) }}</td>
               <td class="text-center">{{ row.items_count ?? "—" }}</td>
-              <td v-if="!isPortal" class="text-center">{{ row.client_account_company_name || "—" }}</td>
+              <td v-if="!isPortalView" class="text-center">{{ row.client_account_company_name || "—" }}</td>
               <td class="text-center small text-secondary">{{ formatDateUs(row.created_at) || "—" }}</td>
               <td class="text-center staff-actions-cell" @click.stop>
                 <div
@@ -537,7 +534,7 @@ onUnmounted(() => {
                 <span class="crm-mobile-item-card__meta-label">Items</span>
                 <span class="crm-mobile-item-card__meta-value">{{ row.items_count ?? "—" }}</span>
               </div>
-              <div v-if="!isPortal" class="crm-mobile-item-card__meta-row">
+              <div v-if="!isPortalView" class="crm-mobile-item-card__meta-row">
                 <span class="crm-mobile-item-card__meta-label">Account</span>
                 <span class="crm-mobile-item-card__meta-value">{{ row.client_account_company_name || "—" }}</span>
               </div>
@@ -598,7 +595,7 @@ onUnmounted(() => {
       v-model:instructions="createInstructions"
       :account-options="accountOptions"
       :busy="createBusy"
-      :portal="isPortal"
+      :portal="isPortalView"
       @submit="submitCreate"
     />
   </div>

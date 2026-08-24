@@ -2,6 +2,7 @@
 import { computed, inject, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
+import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmNoteAuthorAvatar from "../../components/common/CrmNoteAuthorAvatar.vue";
@@ -14,13 +15,14 @@ import WholesaleRequirementRow from "../../components/orders/WholesaleRequiremen
 import WholesaleRequirementsEditDrawer from "../../components/orders/WholesaleRequirementsEditDrawer.vue";
 import WholesaleOrderFeesModal from "../../components/orders/WholesaleOrderFeesModal.vue";
 import WholesaleOrderCustomFeesModal from "../../components/orders/WholesaleOrderCustomFeesModal.vue";
+import WholesaleOrderAddBoxesModal from "../../components/orders/WholesaleOrderAddBoxesModal.vue";
 import WholesaleShippingLabelsCard from "../../components/orders/WholesaleShippingLabelsCard.vue";
 import CrmMaterialIcon from "../../components/common/CrmMaterialIcon.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateUs, formatDateTimeUs } from "../../utils/formatUserDates.js";
 import { noteAuthorFromRecord } from "../../utils/noteAuthor.js";
-import { crmIsPortalUser } from "../../utils/crmUser.js";
+import { crmIsAdmin } from "../../utils/crmUser.js";
 import { errorMessage } from "../../utils/apiError.js";
 import {
   wholesaleLineStatusBadgeClass,
@@ -38,12 +40,11 @@ const router = useRouter();
 const toast = useToast();
 const crmUser = inject("crmUser", ref(null));
 
-const isPortal = computed(
-  () => Boolean(route.meta?.userPortal) || crmIsPortalUser(crmUser.value),
-);
+/** Portal view-only mode: determined by route, not user record (staff always edit on /admin). */
+const isPortalView = computed(() => Boolean(route.meta?.userPortal));
 
-const LINE_MENU_W = 176;
-const LINE_MENU_H = 88;
+const LINE_MENU_W = 220;
+const LINE_MENU_H = 132;
 
 const loading = ref(true);
 const lineBusy = ref(false);
@@ -66,8 +67,9 @@ const feesEditLine = ref(null);
 const customFeesModalOpen = ref(false);
 const createBillBusy = ref(false);
 
-const boxInfoOpen = ref(false);
 const palletInfoOpen = ref(false);
+const addBoxesModalOpen = ref(false);
+const addBoxesModalBusy = ref(false);
 
 const editOrderNumberOpen = ref(false);
 const editOrderNumberBusy = ref(false);
@@ -87,6 +89,13 @@ const commentFile = ref(null);
 const commentFileInput = ref(null);
 const commentSubmitting = ref(false);
 const commentError = ref("");
+const commentEditId = ref(null);
+const commentEditBody = ref("");
+const commentEditBusy = ref(false);
+const commentDeleteOpen = ref(false);
+const commentDeleteTarget = ref(null);
+const commentDeleteBusy = ref(false);
+const lineSlackBusyId = ref(null);
 const imagePreviewUrls = ref({});
 
 const orderId = computed(() => String(route.params.id || ""));
@@ -95,7 +104,7 @@ const isEditable = computed(() => Boolean(order.value?.is_editable));
 const canEditLines = computed(() => Boolean(order.value?.is_lines_editable));
 /** Box/pallet dims are staff warehouse work — not limited to draft/pending like client-facing edit. */
 const canEditPackages = computed(() => {
-  if (isPortal.value) return false;
+  if (isPortalView.value) return false;
   if (order.value?.is_packages_editable != null) {
     return Boolean(order.value.is_packages_editable);
   }
@@ -106,14 +115,14 @@ const canEditPackages = computed(() => {
  * Line SKU add / edit / delete: staff only (portal is view-only).
  * Still limited by order status (draft / pending / in_progress).
  */
-const canManageLineItems = computed(() => !isPortal.value && canEditLines.value);
+const canManageLineItems = computed(() => !isPortalView.value && canEditLines.value);
 /**
  * Per-SKU box breakdown: staff until shipped (same window as order Box Info).
  */
-const canEditLineBoxes = computed(() => canEditPackages.value);
+const canEditLineBoxes = computed(() => !isPortalView.value && canEditPackages.value);
 /** Shipping labels: staff can manage until shipped; portal only while draft/pending. */
 const canEditShippingLabels = computed(() => {
-  if (isPortal.value) return isEditable.value;
+  if (isPortalView.value) return isEditable.value;
   if (order.value?.is_shipping_labels_editable != null) {
     return Boolean(order.value.is_shipping_labels_editable);
   }
@@ -121,7 +130,7 @@ const canEditShippingLabels = computed(() => {
   return status !== "shipped";
 });
 const canEditOrderNumber = computed(() => {
-  if (isPortal.value) return isEditable.value;
+  if (isPortalView.value) return isEditable.value;
   const status = String(order.value?.status || "").toLowerCase();
   return status !== "shipped";
 });
@@ -152,7 +161,7 @@ const showReadyToShipButton = computed(() => {
 });
 
 const showPickListLink = computed(() => {
-  if (isPortal.value) return false;
+  if (isPortalView.value) return false;
   return String(order.value?.status || "").toLowerCase() === "in_progress";
 });
 
@@ -165,9 +174,9 @@ const pickListRoute = computed(() => {
   return { name: "wholesale-pick-list", query };
 });
 
-const canClickStatusBadge = computed(() => !isPortal.value);
+const canClickStatusBadge = computed(() => !isPortalView.value);
 
-const canManageFees = computed(() => !isPortal.value);
+const canManageFees = computed(() => !isPortalView.value);
 
 const feeLines = computed(() =>
   Array.isArray(order.value?.fee_lines) ? order.value.fee_lines : [],
@@ -272,6 +281,32 @@ async function submitFeesModal(payloads) {
   }
 }
 
+async function submitAddBoxesFees(rows) {
+  if (!order.value?.id || !Array.isArray(rows) || !rows.length) return;
+  addBoxesModalBusy.value = true;
+  try {
+    let latest = order.value;
+    for (const row of rows) {
+      const { data } = await api.post(`/admin/wholesale-orders/${order.value.id}/fee-lines`, {
+        line_type: row.line_type,
+        source: "packaging",
+        client_account_fee_id: row.client_account_fee_id,
+        name: row.name,
+        quantity: row.quantity,
+        unit_price: row.unit_price,
+      });
+      latest = data;
+    }
+    applyOrderData(latest);
+    addBoxesModalOpen.value = false;
+    toast.success("Box fees added.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not add box fees.");
+  } finally {
+    addBoxesModalBusy.value = false;
+  }
+}
+
 async function submitCustomFee(payload) {
   if (!order.value?.id) return;
   feesModalBusy.value = true;
@@ -321,7 +356,7 @@ async function deleteFeeFromModal(line) {
 }
 
 const listRouteName = computed(() =>
-  isPortal.value ? "user-wholesale-orders" : "wholesale-orders",
+  isPortalView.value ? "user-wholesale-orders" : "wholesale-orders",
 );
 
 function collectSubmitOrderErrors() {
@@ -390,11 +425,12 @@ const itemsSummary = computed(() => {
   let hasWeight = false;
   for (const line of rows) {
     const boxes = Array.isArray(line.boxes) ? line.boxes : [];
-    totalBoxes += boxes.length;
     for (const box of boxes) {
+      const boxQty = Math.max(1, Number(box?.quantity) || 0);
+      totalBoxes += boxQty;
       if (box?.weight != null && box.weight !== "") {
         hasWeight = true;
-        totalWeight += Number(box.weight) || 0;
+        totalWeight += (Number(box.weight) || 0) * boxQty;
       }
     }
   }
@@ -435,7 +471,7 @@ const shipheroAdminUrl = computed(() => {
 });
 
 const showMarkAsShippedButton = computed(() => {
-  if (isPortal.value) return false;
+  if (isPortalView.value) return false;
   if (!shipheroAdminUrl.value) return false;
   return String(order.value?.status || "").toLowerCase() !== "shipped";
 });
@@ -825,6 +861,99 @@ function onDocClickMenus(e) {
   }
 }
 
+function canModifyComment(comment) {
+  const user = crmUser.value;
+  if (!user || !comment) return false;
+  if (isPortalView.value) return false;
+  if (Number(comment.user?.id || comment.user_id) === Number(user.id)) return true;
+  return crmIsAdmin(user) || !!user.is_crm_owner;
+}
+
+function startCommentEdit(comment) {
+  if (!canModifyComment(comment)) return;
+  commentEditId.value = comment.id;
+  commentEditBody.value = comment.body || "";
+}
+
+function cancelCommentEdit() {
+  commentEditId.value = null;
+  commentEditBody.value = "";
+}
+
+async function saveCommentEdit(comment) {
+  if (!order.value?.id || !comment?.id || commentEditBusy.value) return;
+  const body = commentEditBody.value?.trim() || "";
+  if (!body) return;
+  commentEditBusy.value = true;
+  try {
+    const { data } = await api.patch(
+      `/admin/wholesale-orders/${order.value.id}/comments/${comment.id}`,
+      { body },
+    );
+    const list = comments.value.map((c) => (c.id === comment.id ? data : c));
+    order.value = { ...order.value, comments: list };
+    cancelCommentEdit();
+    toast.success("Comment updated.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not update comment.");
+  } finally {
+    commentEditBusy.value = false;
+  }
+}
+
+function requestCommentDelete(comment) {
+  if (!canModifyComment(comment)) return;
+  commentDeleteTarget.value = comment;
+  commentDeleteOpen.value = true;
+}
+
+async function confirmCommentDelete() {
+  if (!order.value?.id || !commentDeleteTarget.value?.id || commentDeleteBusy.value) return;
+  commentDeleteBusy.value = true;
+  try {
+    await api.delete(
+      `/admin/wholesale-orders/${order.value.id}/comments/${commentDeleteTarget.value.id}`,
+    );
+    const list = comments.value.filter((c) => c.id !== commentDeleteTarget.value.id);
+    order.value = { ...order.value, comments: list };
+    commentDeleteOpen.value = false;
+    commentDeleteTarget.value = null;
+    toast.success("Comment deleted.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete comment.");
+  } finally {
+    commentDeleteBusy.value = false;
+  }
+}
+
+async function sendLineBoxesSlack(line) {
+  if (!order.value?.id || !line?.id || lineSlackBusyId.value) return;
+  lineSlackBusyId.value = line.id;
+  try {
+    await api.post(
+      `/admin/wholesale-orders/${order.value.id}/lines/${line.id}/boxes/send-slack`,
+    );
+    toast.success("Box info sent to Slack.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not send box info to Slack.");
+  } finally {
+    lineSlackBusyId.value = null;
+  }
+}
+
+function onLineMenuSlack() {
+  const line = lineMenuOpenLine.value;
+  closeLineMenu();
+  if (line) sendLineBoxesSlack(line);
+}
+
+const orderBoxTotalWeight = computed(() => {
+  if (order.value?.line_boxes_total_weight != null) {
+    return Number(order.value.line_boxes_total_weight);
+  }
+  return itemsSummary.value.totalWeight;
+});
+
 async function submitComment() {
   if (!order.value?.id) return;
   const body = commentBody.value?.trim() || "";
@@ -959,7 +1088,7 @@ onUnmounted(() => {
                 {{ orderStatusLabel() }}
               </span>
               <a
-                v-if="shipheroAdminUrl && !isPortal"
+                v-if="shipheroAdminUrl && !isPortalView"
                 :href="shipheroAdminUrl"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -979,30 +1108,20 @@ onUnmounted(() => {
             class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0 align-self-start wholesale-order-detail-page__header-actions"
           >
             <RouterLink
-              v-if="!isPortal && order.wholesale_bill_id"
+              v-if="!isPortalView && order.wholesale_bill_id"
               :to="`/admin/billing/wholesale-bills/${order.wholesale_bill_id}`"
               class="btn btn-outline-primary"
             >
               View Bill
             </RouterLink>
             <button
-              v-else-if="!isPortal && feeLines.length"
+              v-else-if="!isPortalView && feeLines.length"
               type="button"
               class="btn btn-primary staff-page-primary"
               :disabled="createBillBusy"
               @click="createBill"
             >
               {{ createBillBusy ? "Creating…" : "Create Bill" }}
-            </button>
-            <button
-              type="button"
-              class="staff-detail-tab-btn"
-              @click="boxInfoOpen = true"
-            >
-              <span class="staff-detail-tab-btn__icon" aria-hidden="true">
-                <CrmMaterialIcon name="inventoryBox" :size="18" />
-              </span>
-              <span class="staff-detail-tab-btn__label">Box Info</span>
             </button>
             <button
               type="button"
@@ -1086,10 +1205,9 @@ onUnmounted(() => {
               <thead class="table-light staff-table-head">
                 <tr>
                   <th class="staff-table-head__th order-detail-page__items-col" scope="col">Item</th>
-                  <th class="staff-table-head__th" scope="col">SKU</th>
                   <th class="staff-table-head__th text-center" scope="col">Qty</th>
                   <th class="staff-table-head__th text-center wholesale-line-barcodes-col" scope="col">Barcodes</th>
-                  <th v-if="canManageLineItems" class="staff-table-head__th text-center order-detail-page__items-actions-col" scope="col">
+                  <th v-if="!isPortalView" class="staff-table-head__th text-center order-detail-page__items-actions-col" scope="col">
                     Actions
                   </th>
                 </tr>
@@ -1137,13 +1255,9 @@ onUnmounted(() => {
                         </span>
                       </div>
                       <div class="order-detail-page__item-copy">
-                        <div class="order-detail-page__item-name-sub" :title="line.name">{{ line.name || "—" }}</div>
+                        <div class="order-detail-page__item-sku-title" :title="line.name">{{ line.name || "—" }}</div>
+                        <div v-if="line.sku" class="order-detail-page__item-name-sub" :title="line.sku">{{ line.sku }}</div>
                       </div>
-                    </div>
-                  </td>
-                  <td>
-                    <div class="order-detail-page__item-sku-title" :title="line.sku || undefined">
-                      {{ line.sku || "—" }}
                     </div>
                   </td>
                   <td class="text-center">
@@ -1178,7 +1292,7 @@ onUnmounted(() => {
                     </button>
                     <span v-else class="text-secondary">—</span>
                   </td>
-                  <td v-if="canManageLineItems" class="text-center align-middle order-detail-page__items-actions-col">
+                  <td v-if="!isPortalView" class="text-center align-middle order-detail-page__items-actions-col">
                     <div
                       data-row-actions
                       class="staff-actions-inner staff-actions-inner--single justify-content-center"
@@ -1200,23 +1314,23 @@ onUnmounted(() => {
                   </td>
                 </tr>
                 <tr
-                  v-if="canEditLineBoxes || (Array.isArray(line.boxes) && line.boxes.length)"
+                  v-if="!isPortalView || (Array.isArray(line.boxes) && line.boxes.length)"
                   class="wholesale-line-boxes-row"
                 >
-                  <td :colspan="canManageLineItems ? 5 : 4" class="wholesale-line-boxes-cell">
+                  <td :colspan="!isPortalView ? 4 : 3" class="wholesale-line-boxes-cell">
                     <WholesaleLineBoxBreakdown
                       :order-id="orderId"
                       :line-id="line.id"
                       :line-quantity="line.quantity"
                       :boxes="line.boxes || []"
-                      :read-only="!canEditLineBoxes"
+                      :read-only="isPortalView || !canEditLineBoxes"
                       @saved="applyOrderData"
                     />
                   </td>
                 </tr>
                 </template>
                 <tr v-if="!lines.length">
-                  <td :colspan="canManageLineItems ? 5 : 4" class="text-center text-secondary py-4">No items yet.</td>
+                  <td :colspan="!isPortalView ? 4 : 3" class="text-center text-secondary py-4">No items yet.</td>
                 </tr>
               </tbody>
             </table>
@@ -1300,8 +1414,52 @@ onUnmounted(() => {
                 <div class="d-flex flex-wrap align-items-baseline gap-2">
                   <span class="small fw-medium">{{ c.user?.name || "User" }}</span>
                   <span class="small text-secondary">{{ formatDateTimeUs(c.created_at) }}</span>
+                  <div v-if="canModifyComment(c)" data-row-actions class="ms-auto">
+                    <button
+                      type="button"
+                      class="staff-action-btn staff-action-btn--more"
+                      aria-label="Comment actions"
+                      @click.stop="startCommentEdit(c)"
+                    >
+                      <CrmIconRowActions variant="horizontal" />
+                    </button>
+                  </div>
                 </div>
-                <p class="mt-1 mb-0 small" style="white-space: pre-wrap">{{ c.body }}</p>
+                <div v-if="commentEditId === c.id" class="mt-2">
+                  <textarea
+                    v-model="commentEditBody"
+                    rows="3"
+                    class="form-control form-control-sm"
+                    :disabled="commentEditBusy"
+                  />
+                  <div class="d-flex gap-2 mt-2">
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-primary staff-page-primary"
+                      :disabled="commentEditBusy"
+                      @click="saveCommentEdit(c)"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-secondary"
+                      :disabled="commentEditBusy"
+                      @click="cancelCommentEdit"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-danger ms-auto"
+                      :disabled="commentEditBusy"
+                      @click="requestCommentDelete(c)"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+                <p v-else class="mt-1 mb-0 small" style="white-space: pre-wrap">{{ c.body }}</p>
                 <div v-if="c.attachment" class="mt-2">
                   <img
                     v-if="isImageMime(c.attachment.mime)"
@@ -1450,7 +1608,14 @@ onUnmounted(() => {
               class="btn btn-sm btn-outline-secondary ms-2"
               @click="customFeesModalOpen = true"
             >
-              Add Custom Fees
+              Add Custom Fee
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary ms-2"
+              @click="addBoxesModalOpen = true"
+            >
+              Add Boxes
             </button>
           </template>
           <div v-if="feeLines.length" class="mt-2 d-flex flex-wrap gap-2">
@@ -1466,7 +1631,14 @@ onUnmounted(() => {
               class="btn btn-sm btn-outline-secondary"
               @click="customFeesModalOpen = true"
             >
-              Add Custom Fees
+              Add Custom Fee
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              @click="addBoxesModalOpen = true"
+            >
+              Add Boxes
             </button>
             <RouterLink
               v-if="order.wholesale_bill_id"
@@ -1522,12 +1694,12 @@ onUnmounted(() => {
             <div class="order-detail-page__detail-row">
               <span class="order-detail-page__detail-label">Total Weight</span>
               <span class="order-detail-page__detail-value">{{
-                order.total_weight != null
-                  ? `${order.total_weight} ${order.total_weight_unit || "lbs"}`
+                orderBoxTotalWeight != null
+                  ? `${Number(orderBoxTotalWeight).toLocaleString(undefined, { maximumFractionDigits: 2 })} lbs`
                   : "—"
               }}</span>
             </div>
-            <div v-if="shipheroAdminUrl && !isPortal" class="order-detail-page__detail-row">
+            <div v-if="shipheroAdminUrl && !isPortalView" class="order-detail-page__detail-row">
               <span class="order-detail-page__detail-label">ShipHero Order</span>
               <span class="order-detail-page__detail-value">
                 <a
@@ -1578,7 +1750,6 @@ onUnmounted(() => {
     <WholesaleOrderCustomFeesModal
       v-model:open="customFeesModalOpen"
       :busy="feesModalBusy"
-      :packaging-options="order?.packaging_fee_options || []"
       @submit="submitCustomFee"
     />
 
@@ -1591,26 +1762,33 @@ onUnmounted(() => {
 
     <WholesalePackageInfoModal
       v-if="order"
-      v-model:open="boxInfoOpen"
-      :order-id="order.id"
-      package-type="box"
-      :packages="order.boxes || []"
-      :saved-at="order.boxes_saved_at"
-      :read-only="!canEditPackages"
-      :hide-slack="isPortal"
-      @saved="onPackageInfoSaved"
-    />
-
-    <WholesalePackageInfoModal
-      v-if="order"
       v-model:open="palletInfoOpen"
       :order-id="order.id"
       package-type="pallet"
       :packages="order.pallets || []"
       :saved-at="order.pallets_saved_at"
       :read-only="!canEditPackages"
-      :hide-slack="isPortal"
+      :hide-slack="isPortalView"
       @saved="onPackageInfoSaved"
+    />
+
+    <WholesaleOrderAddBoxesModal
+      v-if="order"
+      v-model:open="addBoxesModalOpen"
+      :order-id="order.id"
+      :busy="addBoxesModalBusy"
+      @submit="submitAddBoxesFees"
+    />
+
+    <ConfirmModal
+      :open="commentDeleteOpen"
+      title="Delete Comment"
+      message="Delete this comment?"
+      confirm-label="Delete"
+      :busy="commentDeleteBusy"
+      danger
+      @close="commentDeleteOpen = false"
+      @confirm="confirmCommentDelete"
     />
 
     <WholesaleBarcodeUploadModal
@@ -1691,6 +1869,16 @@ onUnmounted(() => {
           Upload Labels
         </button>
         <button
+          v-if="!isPortalView"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          :disabled="lineSlackBusyId === lineMenuOpenLine?.id"
+          @click="onLineMenuSlack"
+        >
+          Send Box Info to Slack
+        </button>
+        <button
           v-if="canManageLineItems"
           type="button"
           class="staff-row-menu__item staff-row-menu__item--danger"
@@ -1756,8 +1944,8 @@ onUnmounted(() => {
   background: #fafbfc;
 }
 
-.wholesale-items-table th.text-center:nth-child(3),
-.wholesale-items-table td.text-center:nth-child(3) {
+.wholesale-items-table th.text-center:nth-child(2),
+.wholesale-items-table td.text-center:nth-child(2) {
   width: 5.5rem;
   min-width: 5.5rem;
 }

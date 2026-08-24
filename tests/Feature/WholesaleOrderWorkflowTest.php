@@ -262,8 +262,8 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('quantity_mismatch', false)
             ->assertJsonPath('boxes_quantity_sum', 138)
-            ->assertJsonPath('line_boxes_count', 3)
-            ->assertJsonPath('line_boxes_total_weight', 17.8)
+            ->assertJsonPath('line_boxes_count', 138)
+            ->assertJsonPath('line_boxes_total_weight', 826.6)
             ->assertJsonPath('lines.0.boxes.0.quantity', 48)
             ->assertJsonPath('lines.0.boxes.2.height', 6)
             ->assertJsonPath('lines.0.boxes_quantity_mismatch', false);
@@ -280,7 +280,7 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonPath('boxes_quantity_sum', 10)
             ->assertJsonPath('line_quantity', 138)
             ->assertJsonPath('lines.0.boxes_quantity_mismatch', true)
-            ->assertJsonPath('line_boxes_count', 1);
+            ->assertJsonPath('line_boxes_count', 10);
 
         $this->putJson('/api/admin/wholesale-orders/'.$orderId.'/lines/'.$lineId.'/boxes', [
             'boxes' => [],
@@ -289,6 +289,67 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonPath('quantity_mismatch', false)
             ->assertJsonPath('line_boxes_count', 0)
             ->assertJsonCount(0, 'lines.0.boxes');
+    }
+
+    public function test_staff_can_sync_line_boxes_on_completed_order(): void
+    {
+        $account = $this->account('completed-boxes');
+        Sanctum::actingAs($this->staffUser());
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'BOX-COMPLETED',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_COMPLETED,
+            'items_count' => 1,
+        ]);
+
+        $line = WholesaleOrderLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'sku' => 'SKU-DONE',
+            'name' => 'Completed Product',
+            'quantity' => 12,
+            'sort_order' => 1,
+        ]);
+
+        $this->putJson('/api/admin/wholesale-orders/'.$order->id.'/lines/'.$line->id.'/boxes', [
+            'boxes' => [
+                ['length' => 12, 'width' => 10, 'height' => 8, 'weight' => 5, 'quantity' => 12],
+            ],
+        ])
+            ->assertOk()
+            ->assertJsonPath('is_packages_editable', true)
+            ->assertJsonPath('is_lines_editable', false)
+            ->assertJsonPath('lines.0.boxes.0.quantity', 12);
+    }
+
+    public function test_portal_user_cannot_sync_line_boxes(): void
+    {
+        $account = $this->account('portal-boxes');
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        Sanctum::actingAs($user);
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'PORTAL-BOX',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_IN_PROGRESS,
+            'items_count' => 1,
+        ]);
+
+        $line = WholesaleOrderLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'sku' => 'SKU-P',
+            'name' => 'Portal Product',
+            'quantity' => 5,
+            'sort_order' => 1,
+        ]);
+
+        $this->putJson('/api/admin/wholesale-orders/'.$order->id.'/lines/'.$line->id.'/boxes', [
+            'boxes' => [
+                ['length' => 10, 'width' => 8, 'height' => 6, 'weight' => 2, 'quantity' => 5],
+            ],
+        ])->assertForbidden();
     }
 
     public function test_staff_can_manually_update_wholesale_status(): void

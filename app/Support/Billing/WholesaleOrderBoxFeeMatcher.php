@@ -32,10 +32,8 @@ class WholesaleOrderBoxFeeMatcher
                 if ($length === null || $width === null || $height === null) {
                     continue;
                 }
-                $qty = max(0, (int) ($box['quantity'] ?? 0));
-                if ($qty <= 0) {
-                    continue;
-                }
+                // Each box row is one physical carton; line quantity is units packed, not carton count.
+                $qty = 1;
                 $key = self::dimensionKey($length, $width, $height);
                 if (! isset($groups[$key])) {
                     $groups[$key] = [
@@ -192,7 +190,10 @@ class WholesaleOrderBoxFeeMatcher
         return implode('x', array_map(static fn (float $v) => number_format($v, 2, '.', ''), $triple));
     }
 
-    private static function toFloat(mixed $value): ?float
+    /**
+     * @param  mixed  $value
+     */
+    private static function toFloat($value): ?float
     {
         if ($value === null || $value === '') {
             return null;

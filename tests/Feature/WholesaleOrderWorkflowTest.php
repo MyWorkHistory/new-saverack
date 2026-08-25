@@ -262,8 +262,8 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('quantity_mismatch', false)
             ->assertJsonPath('boxes_quantity_sum', 138)
-            ->assertJsonPath('line_boxes_count', 138)
-            ->assertJsonPath('line_boxes_total_weight', 826.6)
+            ->assertJsonPath('line_boxes_count', 3)
+            ->assertJsonPath('line_boxes_total_weight', 17.8)
             ->assertJsonPath('lines.0.boxes.0.quantity', 48)
             ->assertJsonPath('lines.0.boxes.2.height', 6)
             ->assertJsonPath('lines.0.boxes_quantity_mismatch', false);
@@ -280,7 +280,7 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonPath('boxes_quantity_sum', 10)
             ->assertJsonPath('line_quantity', 138)
             ->assertJsonPath('lines.0.boxes_quantity_mismatch', true)
-            ->assertJsonPath('line_boxes_count', 10);
+            ->assertJsonPath('line_boxes_count', 1);
 
         $this->putJson('/api/admin/wholesale-orders/'.$orderId.'/lines/'.$lineId.'/boxes', [
             'boxes' => [],

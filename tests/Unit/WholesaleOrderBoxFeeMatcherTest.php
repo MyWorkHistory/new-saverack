@@ -57,6 +57,7 @@ class WholesaleOrderBoxFeeMatcherTest extends TestCase
         $rows = WholesaleOrderBoxFeeMatcher::aggregateLineBoxes($lines, null);
 
         $this->assertCount(1, $rows);
-        $this->assertSame(10, $rows[0]['quantity']);
+        // Three physical box rows of the same size (unit qty is ignored for carton billing).
+        $this->assertSame(3, $rows[0]['quantity']);
     }
 }

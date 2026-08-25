@@ -491,11 +491,10 @@ class WholesaleOrderController extends Controller
                 $weightSum += (float) $line->weight * (int) $line->quantity;
             }
             foreach ($line->boxes as $box) {
-                $boxQty = max(1, (int) $box->quantity);
-                $lineBoxesCount += $boxQty;
+                $lineBoxesCount++;
                 if ($box->weight !== null) {
                     $hasLineBoxWeight = true;
-                    $lineBoxesWeightSum += (float) $box->weight * $boxQty;
+                    $lineBoxesWeightSum += (float) $box->weight;
                 }
             }
         }

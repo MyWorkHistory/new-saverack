@@ -425,12 +425,11 @@ const itemsSummary = computed(() => {
   let hasWeight = false;
   for (const line of rows) {
     const boxes = Array.isArray(line.boxes) ? line.boxes : [];
+    totalBoxes += boxes.length;
     for (const box of boxes) {
-      const boxQty = Math.max(1, Number(box?.quantity) || 0);
-      totalBoxes += boxQty;
       if (box?.weight != null && box.weight !== "") {
         hasWeight = true;
-        totalWeight += (Number(box.weight) || 0) * boxQty;
+        totalWeight += Number(box.weight) || 0;
       }
     }
   }
@@ -1246,6 +1245,12 @@ onUnmounted(() => {
                           />
                           <div v-else class="asn-line-thumb asn-line-thumb--lg asn-line-thumb--empty" aria-hidden="true" />
                         </template>
+                      </div>
+                      <div class="order-detail-page__item-copy">
+                        <div class="order-detail-page__item-name" :title="line.name">{{ line.name || "—" }}</div>
+                        <div v-if="line.sku" class="order-detail-page__item-sku" :title="line.sku">
+                          SKU: {{ line.sku }}
+                        </div>
                         <span
                           v-if="showLineStatusBadge(line)"
                           class="badge rounded-pill fw-medium asn-line-status-badge"
@@ -1253,10 +1258,6 @@ onUnmounted(() => {
                         >
                           {{ lineStatusLabel(line) }}
                         </span>
-                      </div>
-                      <div class="order-detail-page__item-copy">
-                        <div class="order-detail-page__item-sku-title" :title="line.name">{{ line.name || "—" }}</div>
-                        <div v-if="line.sku" class="order-detail-page__item-name-sub" :title="line.sku">{{ line.sku }}</div>
                       </div>
                     </div>
                   </td>
@@ -2001,10 +2002,14 @@ td.wholesale-line-barcodes-col .btn {
 .wholesale-order-detail-page .order-detail-page__item-copy {
   min-width: 0;
   flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
 }
 
-.wholesale-order-detail-page .order-detail-page__item-sku-title {
-  font-size: 1rem;
+.wholesale-order-detail-page .order-detail-page__item-name {
+  font-size: 0.9375rem;
   font-weight: 600;
   line-height: 1.35;
   color: var(--bs-body-color);
@@ -2017,32 +2022,26 @@ td.wholesale-line-barcodes-col .btn {
   overflow: hidden;
 }
 
-.wholesale-order-detail-page .order-detail-page__item-name-sub {
+.wholesale-order-detail-page .order-detail-page__item-sku {
   font-size: 0.8125rem;
   line-height: 1.35;
   color: var(--bs-secondary-color);
   overflow-wrap: anywhere;
   word-break: break-word;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  overflow: hidden;
-  max-height: calc(1.35em * 3);
 }
 
 .wholesale-order-detail-page .asn-line-media {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
+  justify-content: flex-start;
   flex-shrink: 0;
 }
 
 .wholesale-order-detail-page .asn-line-status-badge {
   font-size: 0.6875rem;
   white-space: nowrap;
+  margin-top: 0.15rem;
 }
 
 .wholesale-order-detail-page__status-btn {

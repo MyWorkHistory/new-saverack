@@ -1962,8 +1962,9 @@ td.wholesale-line-barcodes-col .btn {
 }
 
 .wholesale-order-detail-page .order-detail-page__items-actions-col {
-  width: 3.5rem;
-  min-width: 3.5rem;
+  width: 5.5rem;
+  min-width: 5.5rem;
+  white-space: nowrap;
 }
 
 .wholesale-order-detail-page .asn-line-thumb {

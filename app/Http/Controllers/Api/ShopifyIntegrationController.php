@@ -919,12 +919,16 @@ class ShopifyIntegrationController extends Controller
             ];
         })->values();
 
+        $rawJson = $shopifyVariant->product ? $shopifyVariant->product->raw_json : null;
+        $raw = is_array($rawJson) ? $rawJson : null;
+
         return response()->json([
             'variant' => [
                 'id' => $shopifyVariant->id,
                 'sku' => $shopifyVariant->sku,
                 'title' => $shopifyVariant->title,
                 'product_title' => $shopifyVariant->product->title ?? null,
+                'image_url' => \App\Support\ShopifyProductImage::url($raw),
                 'weight' => $shopifyVariant->weight,
                 'weight_unit' => $shopifyVariant->weight_unit,
                 'barcode' => $shopifyVariant->barcode,
@@ -934,8 +938,12 @@ class ShopifyIntegrationController extends Controller
                 'dimension_unit' => $shopifyVariant->dimension_unit,
                 'shopify_variant_id' => $shopifyVariant->shopify_variant_id,
                 'shopify_product_id' => $shopifyVariant->product->shopify_product_id ?? null,
+                'connection_id' => (int) $shopifyVariant->connection_id,
+                'client_account_id' => $shopifyVariant->connection && $shopifyVariant->connection->client_account_id
+                    ? (int) $shopifyVariant->connection->client_account_id
+                    : null,
                 'crm_locked_at' => optional($shopifyVariant->crm_locked_at)->toIso8601String(),
-                'account_name' => $shopifyVariant->connection->clientAccount->company_name ?? null,
+                'account_name' => optional(optional($shopifyVariant->connection)->clientAccount)->company_name,
                 'inventory' => $inventory,
             ],
         ]);

@@ -15,6 +15,50 @@ import { crmIsAdmin } from "../../utils/crmUser.js";
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
 
+const CART_STORAGE_PREFIX = "crm.resources.supplies.cart";
+
+function cartStorageKey() {
+  const id = crmUser.value?.id;
+  return id != null ? `${CART_STORAGE_PREFIX}.${id}` : `${CART_STORAGE_PREFIX}.guest`;
+}
+
+function loadCartFromStorage() {
+  try {
+    const raw = localStorage.getItem(cartStorageKey());
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((line) => ({
+        supply_id: Number(line.supply_id),
+        name: String(line.name || ""),
+        type: String(line.type || ""),
+        type_label: String(line.type_label || supplyTypeLabel(line.type)),
+        link: line.link ? String(line.link) : null,
+        quantity: Math.max(1, Math.min(99999999, Number(line.quantity) || 1)),
+      }))
+      .filter((line) => Number.isFinite(line.supply_id) && line.supply_id > 0);
+  } catch {
+    return [];
+  }
+}
+
+function saveCartToStorage(lines) {
+  try {
+    localStorage.setItem(cartStorageKey(), JSON.stringify(lines));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function clearCartStorage() {
+  try {
+    localStorage.removeItem(cartStorageKey());
+  } catch {
+    /* ignore */
+  }
+}
+
 function userHasPerm(key) {
   const u = crmUser.value;
   if (!u) return false;
@@ -38,7 +82,7 @@ setCrmPageMeta({
 const catalogLoading = ref(true);
 const historyLoading = ref(true);
 const catalog = ref([]);
-const cart = ref([]);
+const cart = ref(loadCartFromStorage());
 const history = ref([]);
 const historyQ = ref("");
 const historyQDebounced = ref("");
@@ -50,6 +94,16 @@ const submitting = ref(false);
 const searchRoot = ref(null);
 
 let historySearchTimer = null;
+let cartPersistReady = false;
+
+watch(
+  cart,
+  (lines) => {
+    if (!cartPersistReady) return;
+    saveCartToStorage(lines);
+  },
+  { deep: true },
+);
 
 const typeFilterOptions = computed(() => [
   { id: "", name: "All Types" },
@@ -199,6 +253,7 @@ function clampQty(line) {
   if (!Number.isFinite(n) || n < 1) n = 1;
   if (n > 99999999) n = 99999999;
   line.quantity = n;
+  saveCartToStorage(cart.value);
 }
 
 function openItemLink(link) {
@@ -252,6 +307,7 @@ async function submitOrder() {
       })),
     });
     cart.value = [];
+    clearCartStorage();
     if (data?.slack_warning) {
       toast.warning(data.slack_warning);
     } else {
@@ -273,6 +329,9 @@ function onDocClick(event) {
 
 onMounted(async () => {
   document.addEventListener("click", onDocClick);
+  // Re-load after crmUser is available so the key is user-scoped.
+  cart.value = loadCartFromStorage();
+  cartPersistReady = true;
   await Promise.all([loadCatalog(), loadHistory()]);
 });
 

@@ -109,8 +109,8 @@ const meta = {
     description: "Shopify order detail.",
   },
   shopifyInventory: {
-    title: "Save Rack | Shopify Inventory",
-    description: "Shopify inventory from connected stores.",
+    title: "Save Rack | Products",
+    description: "View and manage your product inventory across all accounts.",
   },
   shopifyInventoryDetail: {
     title: "Save Rack | Shopify Variant",

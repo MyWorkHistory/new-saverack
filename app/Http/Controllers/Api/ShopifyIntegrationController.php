@@ -801,22 +801,87 @@ class ShopifyIntegrationController extends Controller
         ]);
     }
 
+    public function inventoryAccounts(Request $request): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        $connections = ClientAccountShopifyConnection::query()
+            ->with(['clientAccount:id,company_name'])
+            ->whereNotNull('shop_domain')
+            ->where('shop_domain', '!=', '')
+            ->orderBy('id')
+            ->get();
+
+        $seen = [];
+        $data = [];
+        foreach ($connections as $connection) {
+            if (! $connection->hasCredentials()) {
+                continue;
+            }
+            $account = $connection->clientAccount;
+            if ($account === null) {
+                continue;
+            }
+            $accountId = (int) $account->id;
+            if (isset($seen[$accountId])) {
+                continue;
+            }
+            $seen[$accountId] = true;
+            $data[] = [
+                'id' => $accountId,
+                'company_name' => (string) ($account->company_name ?? ''),
+                'connection_id' => (int) $connection->id,
+            ];
+        }
+
+        usort($data, function ($a, $b) {
+            return strcasecmp((string) $a['company_name'], (string) $b['company_name']);
+        });
+
+        return response()->json(['data' => $data]);
+    }
+
     public function inventoryIndex(Request $request): JsonResponse
     {
         $this->assertAdmin($request);
 
         $q = trim((string) $request->query('q', ''));
         $accountId = (int) $request->query('client_account_id', 0);
+        $status = strtolower(trim((string) $request->query('status', '')));
+        $bundle = strtolower(trim((string) $request->query('bundle', '')));
+        $allocated = strtolower(trim((string) $request->query('allocated', 'all')));
+        $backorder = strtolower(trim((string) $request->query('backorder', 'all')));
         $perPage = max(10, min(100, (int) $request->query('per_page', 25)));
 
         $query = ShopifyProductVariant::query()
             ->with(['product', 'connection.clientAccount:id,company_name'])
-            ->whereHas('product', function ($builder) {
+            ->orderByDesc('id');
+
+        if ($status === 'active') {
+            $query->whereHas('product', function ($builder) {
                 $builder->where(function ($p) {
                     $p->whereNull('status')->orWhere('status', 'active');
                 });
-            })
-            ->orderByDesc('id');
+            });
+        } elseif ($status === 'inactive') {
+            $query->whereHas('product', function ($builder) {
+                $builder->whereNotNull('status')->where('status', '!=', 'active');
+            });
+        }
+
+        // Bundle data is not wired yet; Bundle=Yes returns an empty set.
+        if ($bundle === 'yes') {
+            $query->whereRaw('1 = 0');
+        }
+
+        // Allocated / backorder are 0 until CRM inventory is connected.
+        if ($allocated === 'show') {
+            $query->whereRaw('1 = 0');
+        }
+        if ($backorder === 'show') {
+            $query->whereRaw('1 = 0');
+        }
+        // allocated=hide / backorder=hide / all: no extra filter (all rows are 0 today)
 
         if ($accountId > 0) {
             $query->whereHas('connection', function ($builder) use ($accountId) {
@@ -828,6 +893,7 @@ class ShopifyIntegrationController extends Controller
             $query->where(function ($builder) use ($q) {
                 $builder->where('sku', 'like', '%'.$q.'%')
                     ->orWhere('title', 'like', '%'.$q.'%')
+                    ->orWhere('barcode', 'like', '%'.$q.'%')
                     ->orWhere('shopify_variant_id', 'like', '%'.$q.'%')
                     ->orWhereHas('product', function ($p) use ($q) {
                         $p->where('title', 'like', '%'.$q.'%');
@@ -843,7 +909,9 @@ class ShopifyIntegrationController extends Controller
             ->whereIn('connection_id', $connectionIds)
             ->whereIn('shopify_inventory_item_id', $variantIds)
             ->get()
-            ->groupBy(fn ($row) => $row->connection_id.'|'.$row->shopify_inventory_item_id);
+            ->groupBy(function ($row) {
+                return $row->connection_id.'|'.$row->shopify_inventory_item_id;
+            });
 
         $locations = \App\Models\ShopifyLocation::query()
             ->whereIn('connection_id', $connectionIds)
@@ -858,20 +926,32 @@ class ShopifyIntegrationController extends Controller
 
                 $rawJson = $variant->product ? $variant->product->raw_json : null;
                 $raw = is_array($rawJson) ? $rawJson : null;
+                $onHand = (int) $levelRows->sum('available');
+                $productStatus = $variant->product ? (string) ($variant->product->status ?? 'active') : 'active';
+                if ($productStatus === '') {
+                    $productStatus = 'active';
+                }
 
                 return [
                     'id' => $variant->id,
                     'sku' => $variant->sku,
                     'title' => $variant->title,
                     'product_title' => $variant->product->title ?? null,
+                    'barcode' => $variant->barcode,
                     'image_url' => \App\Support\ShopifyProductImage::url($raw),
                     'shopify_variant_id' => $variant->shopify_variant_id,
                     'shopify_product_id' => $variant->product->shopify_product_id ?? null,
                     'weight' => $variant->weight,
                     'weight_unit' => $variant->weight_unit,
+                    'status' => $productStatus,
+                    'bundle' => false,
+                    'on_hand' => $onHand,
+                    'allocated' => 0,
+                    'backorder' => 0,
                     'client_account_id' => $variant->connection && $variant->connection->client_account_id
                         ? (int) $variant->connection->client_account_id
                         : null,
+                    'connection_id' => (int) $variant->connection_id,
                     'account_name' => optional(optional($variant->connection)->clientAccount)->company_name,
                     'inventory' => $levelRows->map(function ($level) use ($locMap) {
                         $loc = $locMap->get($level->shopify_location_id);
@@ -882,7 +962,7 @@ class ShopifyIntegrationController extends Controller
                             'available' => (int) $level->available,
                         ];
                     })->values(),
-                    'available_total' => (int) $levelRows->sum('available'),
+                    'available_total' => $onHand,
                 ];
             })->values(),
             'meta' => [

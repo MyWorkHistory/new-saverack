@@ -1,11 +1,13 @@
 <script setup>
-import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import BillingDollarStatIcon from "../../components/billing/BillingDollarStatIcon.vue";
 import BillingBillAddToInvoiceDrawer from "../../components/billing/BillingBillAddToInvoiceDrawer.vue";
 import BillingBillDetailsCard from "../../components/billing/BillingBillDetailsCard.vue";
+import BillingWholesaleBillLineModal from "../../components/billing/BillingWholesaleBillLineModal.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { useToast } from "../../composables/useToast.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -39,6 +41,8 @@ const loading = ref(true);
 const bill = ref(null);
 const actionMenuOpen = ref(false);
 const actionMenuRect = ref({ top: 0, left: 0 });
+const lineMenuOpenId = ref(null);
+const lineMenuPos = ref({ top: 0, left: 0 });
 
 const editDateModalOpen = ref(false);
 const editDateValue = ref("");
@@ -47,10 +51,32 @@ const editDateBusy = ref(false);
 const deleteBillModalOpen = ref(false);
 const deleteBillBusy = ref(false);
 
+const addLineModalOpen = ref(false);
+const addLineBusy = ref(false);
+const addLineError = ref("");
+
+const lineEditModalOpen = ref(false);
+const lineEditBusy = ref(false);
+const lineEditError = ref("");
+const lineEditTarget = ref(null);
+
+const lineDeleteModalOpen = ref(false);
+const lineDeleteBusy = ref(false);
+const lineDeleteTarget = ref(null);
+
 const addToInvoiceModalOpen = ref(false);
 const addToInvoiceBusy = ref(false);
 const draftInvoices = ref([]);
 const selectedInvoiceId = ref("");
+
+function emptyLineForm() {
+  return { line_type: "", name: "", quantity: "1", unit_price: "0.00" };
+}
+
+const addLineForm = reactive(emptyLineForm());
+const lineEditForm = reactive(emptyLineForm());
+
+const chargeOptions = computed(() => bill.value?.charge_options || []);
 
 const isOpen = computed(() => bill.value?.status === "open");
 
@@ -113,11 +139,35 @@ const billDetailFields = computed(() => {
   return fields;
 });
 
+const MENU_W = 128;
+const MENU_H = 96;
 const ACTION_MENU_W = 168;
 const ACTION_MENU_H = 120;
 
+const lineMenuStyle = computed(() => ({
+  top: `${lineMenuPos.value.top}px`,
+  left: `${lineMenuPos.value.left}px`,
+  zIndex: 2200,
+}));
+
 function formatHistoryTimestamp(iso) {
   return iso ? formatDateTimeUs(iso) : "—";
+}
+
+function unitPriceFromCents(cents) {
+  return ((Number(cents) || 0) / 100).toFixed(2);
+}
+
+function linePayloadFromForm(form) {
+  const opt = chargeOptions.value.find((o) => o.line_type === form.line_type);
+  return {
+    line_type: form.line_type,
+    name: String(form.name || "").trim(),
+    quantity: Number(form.quantity),
+    unit_price: Number(form.unit_price),
+    source: opt?.source || undefined,
+    client_account_fee_id: opt?.client_account_fee_id ?? undefined,
+  };
 }
 
 async function loadBill() {
@@ -143,6 +193,7 @@ function statusBadgeClass(status) {
 
 function onDocClick(e) {
   if (!e.target?.closest?.("[data-wb-action]")) actionMenuOpen.value = false;
+  if (!e.target?.closest?.("[data-row-actions]")) lineMenuOpenId.value = null;
 }
 
 function placeActionMenu(anchorEl, rectRef, width, height) {
@@ -169,6 +220,150 @@ async function toggleActionMenu(event) {
   requestAnimationFrame(() => {
     placeActionMenu(btn, actionMenuRect, ACTION_MENU_W, ACTION_MENU_H);
   });
+}
+
+function placeOverlayMenu(anchorEl, setPos) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const rect = anchorEl.getBoundingClientRect();
+  let top = rect.bottom + 4;
+  let left = rect.right - MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+  if (top + MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, rect.top - MENU_H - 4);
+  }
+  setPos({ top, left });
+}
+
+async function toggleLineMenu(lineId, event) {
+  event?.stopPropagation?.();
+  if (lineMenuOpenId.value === lineId) {
+    lineMenuOpenId.value = null;
+    return;
+  }
+  const btn = event?.currentTarget;
+  lineMenuOpenId.value = lineId;
+  await nextTick();
+  requestAnimationFrame(() => {
+    placeOverlayMenu(btn, (v) => {
+      lineMenuPos.value = v;
+    });
+  });
+}
+
+function openAddLineModal() {
+  Object.assign(addLineForm, emptyLineForm());
+  const first = chargeOptions.value[0];
+  if (first) {
+    addLineForm.line_type = first.line_type;
+    addLineForm.name = first.display_name;
+    addLineForm.unit_price = unitPriceFromCents(first.default_unit_price_cents);
+  }
+  addLineError.value = "";
+  addLineModalOpen.value = true;
+}
+
+function openLineEdit(item) {
+  lineEditTarget.value = item;
+  lineEditForm.line_type = item.line_type;
+  lineEditForm.name = item.name;
+  lineEditForm.quantity = String(item.quantity);
+  lineEditForm.unit_price = unitPriceFromCents(item.unit_price_cents);
+  lineEditError.value = "";
+  lineEditModalOpen.value = true;
+}
+
+function openLineEditFromMenu(item) {
+  lineMenuOpenId.value = null;
+  openLineEdit(item);
+}
+
+function openLineDeleteFromMenu(item) {
+  lineMenuOpenId.value = null;
+  lineDeleteTarget.value = item;
+  lineDeleteModalOpen.value = true;
+}
+
+async function submitAddLine() {
+  const payload = linePayloadFromForm(addLineForm);
+  if (!payload.line_type) {
+    addLineError.value = "Select a charge type.";
+    return;
+  }
+  if (!payload.name) {
+    addLineError.value = "Service / name is required.";
+    return;
+  }
+  if (!Number.isFinite(payload.quantity) || payload.quantity <= 0) {
+    addLineError.value = "Quantity must be greater than zero.";
+    return;
+  }
+  addLineError.value = "";
+  addLineBusy.value = true;
+  try {
+    const { data } = await api.post(`/billing/wholesale-bills/${props.id}/items`, payload);
+    bill.value = data;
+    addLineModalOpen.value = false;
+    toast.success("Line added.");
+  } catch (e) {
+    const d = e?.response?.data;
+    addLineError.value = d?.message || d?.errors?.quantity?.[0] || "";
+    toast.errorFrom(e, addLineError.value || "Could not add line.");
+  } finally {
+    addLineBusy.value = false;
+  }
+}
+
+async function submitEditLine() {
+  if (!lineEditTarget.value) return;
+  const payload = linePayloadFromForm(lineEditForm);
+  if (!payload.line_type) {
+    lineEditError.value = "Select a charge type.";
+    return;
+  }
+  if (!payload.name) {
+    lineEditError.value = "Service / name is required.";
+    return;
+  }
+  if (!Number.isFinite(payload.quantity) || payload.quantity <= 0) {
+    lineEditError.value = "Quantity must be greater than zero.";
+    return;
+  }
+  lineEditError.value = "";
+  lineEditBusy.value = true;
+  try {
+    const { data } = await api.put(
+      `/billing/wholesale-bills/${props.id}/items/${lineEditTarget.value.id}`,
+      payload,
+    );
+    bill.value = data;
+    lineEditModalOpen.value = false;
+    lineEditTarget.value = null;
+    toast.success("Line updated.");
+  } catch (e) {
+    const d = e?.response?.data;
+    lineEditError.value = d?.message || d?.errors?.quantity?.[0] || "";
+    toast.errorFrom(e, lineEditError.value || "Could not update line.");
+  } finally {
+    lineEditBusy.value = false;
+  }
+}
+
+async function confirmDeleteLine() {
+  if (!lineDeleteTarget.value) return;
+  lineDeleteBusy.value = true;
+  try {
+    const { data } = await api.delete(
+      `/billing/wholesale-bills/${props.id}/items/${lineDeleteTarget.value.id}`,
+    );
+    bill.value = data;
+    lineDeleteModalOpen.value = false;
+    lineDeleteTarget.value = null;
+    toast.success("Line removed.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not remove line.");
+  } finally {
+    lineDeleteBusy.value = false;
+  }
 }
 
 function openEditDateModal() {
@@ -363,8 +558,16 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
-            <div class="px-4 py-3 border-bottom">
+            <div class="px-4 py-3 border-bottom d-flex align-items-center justify-content-between gap-2">
               <h2 class="h6 mb-0 fw-semibold">Line Items</h2>
+              <button
+                v-if="isOpen && canUpdate"
+                type="button"
+                class="btn btn-sm btn-primary staff-page-primary"
+                @click="openAddLineModal"
+              >
+                Add To Bill
+              </button>
             </div>
             <div class="table-responsive staff-table-wrap">
               <table class="table table-hover align-middle mb-0 staff-data-table">
@@ -374,17 +577,69 @@ onUnmounted(() => {
                     <th class="staff-table-head__th text-end">Qty</th>
                     <th class="staff-table-head__th text-end">Price</th>
                     <th class="staff-table-head__th text-end">Total</th>
+                    <th
+                      v-if="isOpen && canUpdate"
+                      class="staff-table-head__th text-center billing-wholesale-bill-lines-actions-col"
+                    >
+                      Action
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-if="!bill.items?.length">
-                    <td colspan="4" class="text-center text-secondary py-4">No line items.</td>
+                    <td :colspan="isOpen && canUpdate ? 5 : 4" class="text-center text-secondary py-4">
+                      No line items.
+                    </td>
                   </tr>
                   <tr v-for="item in bill.items" :key="item.id">
                     <td class="fw-medium">{{ item.name }}</td>
                     <td class="text-end text-nowrap">{{ item.quantity }}</td>
                     <td class="text-end">{{ formatCents(item.unit_price_cents) }}</td>
                     <td class="text-end fw-semibold">{{ formatCents(item.line_total_cents) }}</td>
+                    <td
+                      v-if="isOpen && canUpdate"
+                      class="text-center align-middle billing-wholesale-bill-lines-actions-cell"
+                      @click.stop
+                    >
+                      <div data-row-actions class="position-relative d-inline-block">
+                        <button
+                          type="button"
+                          class="staff-action-btn staff-action-btn--more"
+                          :class="{ 'is-open': lineMenuOpenId === item.id }"
+                          :aria-expanded="lineMenuOpenId === item.id ? 'true' : 'false'"
+                          aria-haspopup="true"
+                          aria-label="Line item actions"
+                          @click.stop="toggleLineMenu(item.id, $event)"
+                        >
+                          <CrmIconRowActions variant="horizontal" />
+                        </button>
+                        <div
+                          v-if="lineMenuOpenId === item.id"
+                          data-row-actions
+                          class="staff-row-menu overflow-hidden"
+                          role="menu"
+                          :style="lineMenuStyle"
+                          @click.stop
+                        >
+                          <button
+                            type="button"
+                            class="staff-row-menu__item"
+                            role="menuitem"
+                            @click="openLineEditFromMenu(item)"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            class="staff-row-menu__item staff-row-menu__item--danger"
+                            role="menuitem"
+                            @click="openLineDeleteFromMenu(item)"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -483,6 +738,44 @@ onUnmounted(() => {
       @confirm="confirmDeleteBill"
     />
 
+    <ConfirmModal
+      v-model:open="lineDeleteModalOpen"
+      title="Delete Line Item"
+      message="Remove this line from the wholesale bill?"
+      confirm-label="Delete"
+      variant="danger"
+      :busy="lineDeleteBusy"
+      @confirm="confirmDeleteLine"
+    />
+
+    <BillingWholesaleBillLineModal
+      v-model:open="addLineModalOpen"
+      v-model:line-type="addLineForm.line_type"
+      v-model:name="addLineForm.name"
+      v-model:quantity="addLineForm.quantity"
+      v-model:unit-price="addLineForm.unit_price"
+      title="Add To Bill"
+      submit-label="Add To Bill"
+      :busy="addLineBusy"
+      :error-msg="addLineError"
+      :charge-options="chargeOptions"
+      @submit="submitAddLine"
+    />
+
+    <BillingWholesaleBillLineModal
+      v-model:open="lineEditModalOpen"
+      v-model:line-type="lineEditForm.line_type"
+      v-model:name="lineEditForm.name"
+      v-model:quantity="lineEditForm.quantity"
+      v-model:unit-price="lineEditForm.unit_price"
+      title="Edit Line Item"
+      submit-label="Save"
+      :busy="lineEditBusy"
+      :error-msg="lineEditError"
+      :charge-options="chargeOptions"
+      @submit="submitEditLine"
+    />
+
     <Teleport to="body">
       <Transition name="crm-vx-confirm">
         <div
@@ -550,6 +843,11 @@ onUnmounted(() => {
   width: 100%;
   min-width: 0;
   table-layout: fixed;
+}
+
+.billing-wholesale-bill-lines-actions-col,
+.billing-wholesale-bill-lines-actions-cell {
+  width: 3.5rem;
 }
 
 .billing-wholesale-bill-history__item + .billing-wholesale-bill-history__item {

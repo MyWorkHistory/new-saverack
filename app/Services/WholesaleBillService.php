@@ -10,6 +10,7 @@ use App\Models\WholesaleBillItem;
 use App\Models\WholesaleOrder;
 use App\Models\WholesaleOrderFeeLine;
 use App\Support\Billing\InvoiceLineCategory;
+use App\Support\Billing\WholesaleOrderFeeChargeCatalog;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -111,6 +112,72 @@ class WholesaleBillService
             $bill->items()->delete();
             $bill->histories()->delete();
             $bill->delete();
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    public function addItem(WholesaleBill $bill, array $row, ?User $actor): WholesaleBill
+    {
+        $this->assertOpen($bill);
+        $normalized = $this->normalizeItemRow($bill, $row);
+
+        return DB::transaction(function () use ($bill, $normalized, $actor) {
+            $order = (int) $bill->items()->max('sort_order') + 1;
+            $this->insertItem($bill, $order, $normalized);
+            $this->recalculateTotal($bill);
+            $this->logHistory($bill, $actor, 'line_add', 'Added bill line item.');
+
+            return $bill->fresh($this->detailRelations());
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    public function updateItem(WholesaleBill $bill, WholesaleBillItem $item, array $row, ?User $actor): WholesaleBill
+    {
+        $this->assertOpen($bill);
+        if ((int) $item->wholesale_bill_id !== (int) $bill->id) {
+            throw new \InvalidArgumentException('Line item does not belong to this bill.');
+        }
+        $normalized = $this->normalizeItemRow($bill, $row, $item);
+
+        return DB::transaction(function () use ($bill, $item, $normalized, $actor) {
+            $qty = $normalized['quantity'];
+            $unitCents = $normalized['unit_price_cents'];
+            $item->fill([
+                'line_type' => $normalized['line_type'],
+                'source' => $normalized['source'],
+                'client_account_fee_id' => $normalized['client_account_fee_id'],
+                'name' => $normalized['name'],
+                'quantity' => $qty,
+                'unit_price_cents' => $unitCents,
+                'line_total_cents' => (int) round($qty * $unitCents),
+                'metadata' => $normalized['metadata'],
+            ]);
+            $item->save();
+            $this->recalculateTotal($bill);
+            $this->logHistory($bill, $actor, 'line_edit', 'Updated bill line item.');
+
+            return $bill->fresh($this->detailRelations());
+        });
+    }
+
+    public function deleteItem(WholesaleBill $bill, WholesaleBillItem $item, ?User $actor): WholesaleBill
+    {
+        $this->assertOpen($bill);
+        if ((int) $item->wholesale_bill_id !== (int) $bill->id) {
+            throw new \InvalidArgumentException('Line item does not belong to this bill.');
+        }
+
+        return DB::transaction(function () use ($bill, $item, $actor) {
+            $item->delete();
+            $this->recalculateTotal($bill);
+            $this->logHistory($bill, $actor, 'line_delete', 'Removed bill line item.');
+
+            return $bill->fresh($this->detailRelations());
         });
     }
 
@@ -230,6 +297,9 @@ class WholesaleBillService
     public function toDetailArray(WholesaleBill $bill): array
     {
         $bill->loadMissing($this->detailRelations());
+        $chargeOptions = $bill->clientAccount
+            ? $this->chargeOptionsForAccount($bill->clientAccount)
+            : [];
 
         return array_merge($this->toListArray($bill), [
             'invoice_number' => $bill->invoice ? $bill->invoice->invoice_number : null,
@@ -250,14 +320,37 @@ class WholesaleBillService
                 return [
                     'id' => (int) $history->id,
                     'event_type' => $history->event_type,
+                    'event_label' => $this->historyEventLabel((string) $history->event_type),
                     'message' => $history->message,
                     'actor_name' => $history->actor_name ?: ($history->user ? $history->user->name : 'System'),
                     'created_at' => $history->created_at ? $history->created_at->toIso8601String() : null,
                 ];
             })->values()->all(),
+            'charge_options' => $chargeOptions,
             'created_at' => $bill->created_at ? $bill->created_at->toIso8601String() : null,
             'updated_at' => $bill->updated_at ? $bill->updated_at->toIso8601String() : null,
         ]);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function chargeOptionsForAccount(\App\Models\ClientAccount $account): array
+    {
+        $wholesale = WholesaleOrderFeeChargeCatalog::optionsForAccount($account);
+        $packaging = WholesaleOrderFeeChargeCatalog::packagingOptionsForAccount($account);
+        $seen = [];
+        $out = [];
+        foreach (array_merge($wholesale, $packaging) as $opt) {
+            $key = (string) ($opt['line_type'] ?? '');
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = $opt;
+        }
+
+        return $out;
     }
 
     private function toListArray(WholesaleBill $bill): array
@@ -292,6 +385,144 @@ class WholesaleBillService
         $max = (int) WholesaleBill::query()->lockForUpdate()->max('bill_number');
 
         return $max < WholesaleBill::FIRST_BILL_NUMBER ? WholesaleBill::FIRST_BILL_NUMBER : $max + 1;
+    }
+
+    private function assertOpen(WholesaleBill $bill): void
+    {
+        if (! $bill->isOpen()) {
+            throw ValidationException::withMessages([
+                'status' => ['Only open wholesale bills can be modified.'],
+            ]);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array{line_type: string, source: string, client_account_fee_id: int|null, name: string, quantity: float, unit_price_cents: int, metadata: array}
+     */
+    private function normalizeItemRow(WholesaleBill $bill, array $row, ?WholesaleBillItem $existing = null): array
+    {
+        $lineType = isset($row['line_type']) ? (string) $row['line_type'] : ($existing ? (string) $existing->line_type : '');
+        WholesaleOrderFeeChargeCatalog::assertValidLineType($lineType);
+
+        $name = isset($row['name']) ? trim((string) $row['name']) : '';
+        if ($name === '') {
+            $name = WholesaleOrderFeeChargeCatalog::displayName($lineType);
+        }
+
+        $qty = isset($row['quantity']) ? (float) $row['quantity'] : ($existing ? (float) $existing->quantity : 1.0);
+        if ($qty <= 0) {
+            throw ValidationException::withMessages(['quantity' => ['Quantity must be greater than zero.']]);
+        }
+
+        if (array_key_exists('unit_price_cents', $row) && $row['unit_price_cents'] !== null && $row['unit_price_cents'] !== '') {
+            $unitCents = (int) $row['unit_price_cents'];
+        } elseif (array_key_exists('unit_price', $row) && $row['unit_price'] !== null && $row['unit_price'] !== '') {
+            $unitCents = (int) round(((float) $row['unit_price']) * 100);
+        } elseif ($existing !== null) {
+            $unitCents = (int) $existing->unit_price_cents;
+        } else {
+            $bill->loadMissing('clientAccount');
+            $unitCents = $bill->clientAccount
+                ? WholesaleOrderFeeChargeCatalog::defaultUnitPriceCents($bill->clientAccount, $lineType)
+                : 0;
+        }
+
+        if ($unitCents < 0) {
+            throw ValidationException::withMessages(['unit_price' => ['Unit price cannot be negative.']]);
+        }
+
+        $source = isset($row['source']) ? trim((string) $row['source']) : '';
+        $feeId = array_key_exists('client_account_fee_id', $row)
+            ? ($row['client_account_fee_id'] !== null && $row['client_account_fee_id'] !== '' ? (int) $row['client_account_fee_id'] : null)
+            : ($existing ? $existing->client_account_fee_id : null);
+
+        if ($source === '' || $feeId === null) {
+            $bill->loadMissing('clientAccount');
+            if ($bill->clientAccount) {
+                foreach ($this->chargeOptionsForAccount($bill->clientAccount) as $opt) {
+                    if (($opt['line_type'] ?? '') !== $lineType) {
+                        continue;
+                    }
+                    if ($source === '') {
+                        $source = (string) ($opt['source'] ?? WholesaleOrderFeeLine::SOURCE_WHOLESALE);
+                    }
+                    if ($feeId === null && isset($opt['client_account_fee_id'])) {
+                        $feeId = (int) $opt['client_account_fee_id'];
+                    }
+                    break;
+                }
+            }
+        }
+        if ($source === '') {
+            $source = $existing && $existing->source
+                ? (string) $existing->source
+                : WholesaleOrderFeeLine::SOURCE_WHOLESALE;
+        }
+        if (! in_array($source, WholesaleOrderFeeLine::SOURCES, true)) {
+            $source = WholesaleOrderFeeLine::SOURCE_WHOLESALE;
+        }
+
+        $metadata = is_array($row['metadata'] ?? null) ? $row['metadata'] : [];
+        if ($existing !== null && is_array($existing->metadata)) {
+            $metadata = array_merge($existing->metadata, $metadata);
+        }
+
+        return [
+            'line_type' => $lineType,
+            'source' => $source,
+            'client_account_fee_id' => $feeId,
+            'name' => $name,
+            'quantity' => $qty,
+            'unit_price_cents' => $unitCents,
+            'metadata' => $metadata,
+        ];
+    }
+
+    /**
+     * @param  array{line_type: string, source: string, client_account_fee_id: int|null, name: string, quantity: float, unit_price_cents: int, metadata: array}  $normalized
+     */
+    private function insertItem(WholesaleBill $bill, int $sortOrder, array $normalized): WholesaleBillItem
+    {
+        $qty = $normalized['quantity'];
+        $unitCents = $normalized['unit_price_cents'];
+
+        return WholesaleBillItem::query()->create([
+            'wholesale_bill_id' => $bill->id,
+            'line_type' => $normalized['line_type'],
+            'source' => $normalized['source'],
+            'client_account_fee_id' => $normalized['client_account_fee_id'],
+            'name' => $normalized['name'],
+            'quantity' => $qty,
+            'unit_price_cents' => $unitCents,
+            'line_total_cents' => (int) round($qty * $unitCents),
+            'metadata' => $normalized['metadata'],
+            'sort_order' => $sortOrder,
+        ]);
+    }
+
+    private function recalculateTotal(WholesaleBill $bill): void
+    {
+        $total = (int) $bill->items()->sum('line_total_cents');
+        $bill->total_cents = $total;
+        $bill->saveQuietly();
+    }
+
+    private function historyEventLabel(string $eventType): string
+    {
+        switch ($eventType) {
+            case 'created':
+                return 'Created';
+            case 'invoiced':
+                return 'Added to Invoice';
+            case 'updated':
+            case 'line_add':
+            case 'line_edit':
+            case 'line_delete':
+                return 'Updated';
+            default:
+                return ucfirst(str_replace('_', ' ', $eventType));
+        }
     }
 
     /** @param array<string, mixed> $meta */

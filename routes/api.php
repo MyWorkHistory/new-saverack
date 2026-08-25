@@ -204,6 +204,9 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/{wholesaleBill}', [WholesaleBillController::class, 'destroy']);
             Route::get('/{wholesaleBill}/draft-invoices', [WholesaleBillController::class, 'draftInvoices']);
             Route::post('/{wholesaleBill}/add-to-invoice', [WholesaleBillController::class, 'addToInvoice']);
+            Route::post('/{wholesaleBill}/items', [WholesaleBillController::class, 'storeItem']);
+            Route::put('/{wholesaleBill}/items/{item}', [WholesaleBillController::class, 'updateItem']);
+            Route::delete('/{wholesaleBill}/items/{item}', [WholesaleBillController::class, 'destroyItem']);
         });
 
         Route::prefix('custom-bills')->group(function () {
@@ -698,6 +701,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/orders/{shopifyOrder}', [ShopifyIntegrationController::class, 'ordersShow']);
         Route::post('/orders/{shopifyOrder}/fulfill', [ShopifyIntegrationController::class, 'fulfillOrder']);
         Route::get('/inventory', [ShopifyIntegrationController::class, 'inventoryIndex']);
+        Route::get('/inventory/accounts', [ShopifyIntegrationController::class, 'inventoryAccounts']);
         Route::get('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'inventoryShow']);
         Route::patch('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'updateVariant']);
         Route::get('/locations/meta', [ShopifyWarehouseLocationController::class, 'meta']);

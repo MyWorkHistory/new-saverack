@@ -531,7 +531,7 @@ onUnmounted(() => {
 
 <style scoped>
 .resources-supplies {
-  max-width: 960px;
+  width: 100%;
 }
 .resources-supplies__panel {
   background: #fff;

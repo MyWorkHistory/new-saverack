@@ -4,7 +4,6 @@ import { useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
-import ShopifyInventorySubnav from "../../components/shopify/ShopifyInventorySubnav.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 
@@ -376,8 +375,6 @@ onUnmounted(() => {
         <input ref="importInput" type="file" accept=".csv,text/csv" class="d-none" @change="onImportFile" />
       </div>
     </div>
-
-    <ShopifyInventorySubnav locations-active />
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
       <div class="staff-table-toolbar">

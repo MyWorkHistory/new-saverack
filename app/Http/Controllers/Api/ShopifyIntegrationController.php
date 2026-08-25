@@ -856,7 +856,7 @@ class ShopifyIntegrationController extends Controller
                 $levelRows = $levels->get($key, collect());
                 $locMap = ($locations->get($variant->connection_id) ?? collect())->keyBy('shopify_location_id');
 
-                $rawJson = $variant->product?->raw_json;
+                $rawJson = $variant->product ? $variant->product->raw_json : null;
                 $raw = is_array($rawJson) ? $rawJson : null;
 
                 return [
@@ -869,10 +869,10 @@ class ShopifyIntegrationController extends Controller
                     'shopify_product_id' => $variant->product->shopify_product_id ?? null,
                     'weight' => $variant->weight,
                     'weight_unit' => $variant->weight_unit,
-                    'client_account_id' => $variant->connection?->client_account_id
+                    'client_account_id' => $variant->connection && $variant->connection->client_account_id
                         ? (int) $variant->connection->client_account_id
                         : null,
-                    'account_name' => $variant->connection->clientAccount->company_name ?? null,
+                    'account_name' => optional(optional($variant->connection)->clientAccount)->company_name,
                     'inventory' => $levelRows->map(function ($level) use ($locMap) {
                         $loc = $locMap->get($level->shopify_location_id);
 

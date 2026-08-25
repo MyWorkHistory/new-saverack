@@ -19,7 +19,6 @@ const editOpen = ref(false);
 const actionsOpen = ref(false);
 const actionsRoot = ref(null);
 
-/** Placeholder inventory until CRM location wiring exists. */
 const inventoryStats = {
   total_on_hand: 0,
   allocated: 0,
@@ -29,9 +28,9 @@ const inventoryStats = {
 };
 
 const locationGroups = [
-  { key: "pick", label: "Pick Locations", icon: "cart", count: 0, rows: [] },
-  { key: "backstock", label: "Backstock Locations", icon: "cube", count: 0, rows: [] },
-  { key: "other", label: "Other Locations", icon: "bag", count: 0, rows: [] },
+  { key: "pick", label: "Pick Locations", icon: "cart", count: 0 },
+  { key: "backstock", label: "Backstock Locations", icon: "cube", count: 0 },
+  { key: "other", label: "Other Locations", icon: "bag", count: 0 },
 ];
 
 const dimUnitLabel = computed(() =>
@@ -183,18 +182,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide shopify-inv-detail">
+  <div class="staff-page staff-page--wide sid">
     <div v-if="loading" class="p-5 d-flex justify-content-center">
       <CrmLoadingSpinner message="Loading…" />
     </div>
 
     <template v-else-if="!variant">
-      <button
-        type="button"
-        class="shopify-inv-detail__back"
-        @click="router.push({ name: 'shopify-inventory' })"
-      >
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <button type="button" class="sid-back" @click="router.push({ name: 'shopify-inventory' })">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
         </svg>
         Back to Products
@@ -203,47 +198,42 @@ onUnmounted(() => {
     </template>
 
     <template v-else>
-      <header class="shopify-inv-detail__header">
-        <button
-          type="button"
-          class="shopify-inv-detail__back"
-          @click="router.push({ name: 'shopify-inventory' })"
-        >
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <header class="sid-header">
+        <button type="button" class="sid-back" @click="router.push({ name: 'shopify-inventory' })">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
           </svg>
           Back to Products
         </button>
-        <div class="shopify-inv-detail__header-actions">
-          <button type="button" class="shopify-inv-detail__btn-edit" @click="openEdit">
-            <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <div class="sid-header__actions">
+          <button type="button" class="sid-btn" @click="openEdit">
+            <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
               <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 7.125L16.875 4.5" />
             </svg>
             Edit Product
           </button>
-          <div ref="actionsRoot" class="position-relative">
+          <div ref="actionsRoot" class="sid-actions-wrap">
             <button
               type="button"
-              class="shopify-inv-detail__btn-actions"
+              class="sid-btn"
               :disabled="actionBusy"
               :aria-expanded="actionsOpen"
               @click.stop="actionsOpen = !actionsOpen"
             >
               {{ actionBusy ? "Working…" : "Actions" }}
-              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
               </svg>
             </button>
-            <div v-if="actionsOpen" class="shopify-inv-detail__actions-menu" role="menu">
-              <button type="button" class="shopify-inv-detail__actions-item" role="menuitem" @click="syncProductInfo">
-                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <div v-if="actionsOpen" class="sid-menu" role="menu">
+              <button type="button" class="sid-menu__item" role="menuitem" @click="syncProductInfo">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
                 </svg>
                 Sync Product Info
               </button>
-              <button type="button" class="shopify-inv-detail__actions-item" role="menuitem" @click="pushInventory">
-                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+              <button type="button" class="sid-menu__item" role="menuitem" @click="pushInventory">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
                 </svg>
                 Push Inventory
@@ -253,163 +243,158 @@ onUnmounted(() => {
         </div>
       </header>
 
-      <div class="shopify-inv-detail__grid">
-        <!-- Left -->
-        <div class="shopify-inv-detail__col">
-          <!-- Product overview -->
-          <section class="shopify-inv-card">
-            <div class="shopify-inv-hero">
-              <div class="shopify-inv-hero__thumb" aria-hidden="true">
+      <div class="sid-grid">
+        <div class="sid-col">
+          <!-- Product + dimensions (one card, divider before specs) -->
+          <section class="sid-card">
+            <div class="sid-product">
+              <div class="sid-product__img">
                 <img
                   v-if="variant.image_url"
                   :src="variant.image_url"
                   :alt="variant.product_title || 'Product'"
                 />
-                <span v-else class="shopify-inv-hero__thumb-empty">
-                  <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.4">
+                <span v-else class="sid-product__img-empty" aria-hidden="true">
+                  <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.35">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
                   </svg>
                 </span>
               </div>
-              <div class="shopify-inv-hero__body">
-                <div class="shopify-inv-hero__title-row">
-                  <h1 class="shopify-inv-hero__title">
+
+              <div class="sid-product__info">
+                <div class="sid-product__title-row">
+                  <h1 class="sid-product__title">
                     {{ variant.product_title || variant.title || "Product" }}
                   </h1>
-                  <button type="button" class="shopify-inv-detail__btn-edit shopify-inv-detail__btn-edit--sm" @click="openEdit">
-                    <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                  <button type="button" class="sid-btn sid-btn--sm" @click="openEdit">
+                    <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
                     </svg>
                     Edit
                   </button>
                 </div>
 
-                <div class="shopify-inv-hero__ids">
-                  <div>
-                    <div class="shopify-inv-label">SKU</div>
-                    <div class="shopify-inv-sku">{{ variant.sku || "—" }}</div>
-                  </div>
-                  <div>
-                    <div class="shopify-inv-label">Barcode</div>
-                    <div class="shopify-inv-barcode">
-                      <span>{{ variant.barcode || "—" }}</span>
-                      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-                        <path stroke-linecap="round" d="M4 7v10M7 7v10M10 7v10M14 7v10M17 7v10M20 7v10" />
-                      </svg>
-                    </div>
+                <div class="sid-field">
+                  <div class="sid-field__label">SKU</div>
+                  <div class="sid-field__sku">{{ variant.sku || "—" }}</div>
+                </div>
+
+                <div class="sid-field sid-field--gap">
+                  <div class="sid-field__label">Barcode</div>
+                  <div class="sid-field__barcode">
+                    <span>{{ variant.barcode || "—" }}</span>
+                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                      <path stroke-linecap="round" d="M3.75 5.25v13.5M7.5 5.25v13.5M10.5 5.25v13.5M14.25 5.25v13.5M17.25 5.25v13.5M20.25 5.25v13.5" />
+                    </svg>
                   </div>
                 </div>
 
-                <div class="shopify-inv-hero__meta">
-                  <div class="shopify-inv-hero__meta-item">
-                    <span class="shopify-inv-hero__meta-icon" aria-hidden="true">
-                      <!-- Storefront -->
-                      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 21v-7.5a.75.75 0 01.75-.75h3a.75.75 0 01.75.75V21M3.75 21V9.834c0-.345.134-.676.372-.92l6.75-6.938a1.5 1.5 0 012.256 0l6.75 6.938c.238.244.372.575.372.92V21M3.75 21h16.5M9 21v-4.5a.75.75 0 01.75-.75h1.5a.75.75 0 01.75.75V21" />
+                <div class="sid-product__meta">
+                  <div class="sid-meta">
+                    <span class="sid-meta__icon" aria-hidden="true">
+                      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955a1.125 1.125 0 011.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
                       </svg>
                     </span>
                     <div>
-                      <div class="shopify-inv-label">Account</div>
-                      <div class="shopify-inv-meta-value">{{ variant.account_name || "—" }}</div>
+                      <div class="sid-field__label">Account</div>
+                      <div class="sid-meta__value">{{ variant.account_name || "—" }}</div>
                     </div>
                   </div>
-                  <div class="shopify-inv-hero__meta-item">
-                    <span class="shopify-inv-hero__meta-icon" aria-hidden="true">
-                      <!-- Price tag -->
-                      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                  <div class="sid-meta">
+                    <span class="sid-meta__icon" aria-hidden="true">
+                      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
                         <path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6z" />
                       </svg>
                     </span>
                     <div>
-                      <div class="shopify-inv-label">Type</div>
-                      <div class="shopify-inv-meta-value">Product</div>
+                      <div class="sid-field__label">Type</div>
+                      <div class="sid-meta__value">Product</div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-          </section>
 
-          <!-- Dimensions -->
-          <section class="shopify-inv-card shopify-inv-dims">
-            <div class="shopify-inv-dims__item">
-              <span class="shopify-inv-dims__icon" aria-hidden="true">
-                <!-- Horizontal double arrow -->
-                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 12H3m0 0l3-3M3 12l3 3M16.5 12H21m0 0l-3-3m3 3l-3 3M8 12h8" />
-                </svg>
-              </span>
-              <div class="shopify-inv-label">Length</div>
-              <div class="shopify-inv-dims__value">{{ formatDim(variant.length) }}</div>
-            </div>
-            <div class="shopify-inv-dims__item">
-              <span class="shopify-inv-dims__icon" aria-hidden="true">
-                <!-- Vertical double arrow -->
-                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 7.5V3m0 0L9 6m3-3l3 3M12 16.5V21m0 0l3-3m-3 3l-3-3M12 8v8" />
-                </svg>
-              </span>
-              <div class="shopify-inv-label">Width</div>
-              <div class="shopify-inv-dims__value">{{ formatDim(variant.width) }}</div>
-            </div>
-            <div class="shopify-inv-dims__item">
-              <span class="shopify-inv-dims__icon" aria-hidden="true">
-                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 7.5V3m0 0L9 6m3-3l3 3M12 16.5V21m0 0l3-3m-3 3l-3-3M12 8v8" />
-                </svg>
-              </span>
-              <div class="shopify-inv-label">Height</div>
-              <div class="shopify-inv-dims__value">{{ formatDim(variant.height) }}</div>
-            </div>
-            <div class="shopify-inv-dims__item">
-              <span class="shopify-inv-dims__icon" aria-hidden="true">
-                <!-- 3D box -->
-                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
-                </svg>
-              </span>
-              <div class="shopify-inv-label">Cubic Ft</div>
-              <div class="shopify-inv-dims__value">
-                <template v-if="cubicFeet != null">{{ formatNum(cubicFeet, 3) }} ft³</template>
-                <template v-else>—</template>
+            <div class="sid-specs">
+              <div class="sid-specs__item">
+                <span class="sid-specs__icon" aria-hidden="true">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m0 0l-3.75-3.75M20.25 12L16.5 15.75M3.75 12L7.5 8.25M3.75 12L7.5 15.75" />
+                  </svg>
+                </span>
+                <div class="sid-field__label">Length</div>
+                <div class="sid-specs__value">{{ formatDim(variant.length) }}</div>
               </div>
-            </div>
-            <div class="shopify-inv-dims__item">
-              <span class="shopify-inv-dims__icon" aria-hidden="true">
-                <!-- Scale / weight -->
-                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1.5m0 0a3 3 0 013 3v.75M12 4.5a3 3 0 00-3 3v.75m3 12.75V21m-6.75-3.75h13.5M5.25 9.75l1.5 6h10.5l1.5-6H5.25z" />
-                </svg>
-              </span>
-              <div class="shopify-inv-label">Weight</div>
-              <div class="shopify-inv-dims__value">
-                <template v-if="variant.weight != null && variant.weight !== ''">
-                  {{ formatNum(variant.weight) }} {{ weightUnitLabel }}
-                </template>
-                <template v-else>—</template>
+              <div class="sid-specs__item">
+                <span class="sid-specs__icon" aria-hidden="true">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3.75v16.5m0 0l3.75-3.75M12 20.25L8.25 16.5M12 3.75L8.25 7.5M12 3.75L15.75 7.5" />
+                  </svg>
+                </span>
+                <div class="sid-field__label">Width</div>
+                <div class="sid-specs__value">{{ formatDim(variant.width) }}</div>
+              </div>
+              <div class="sid-specs__item">
+                <span class="sid-specs__icon" aria-hidden="true">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3.75v16.5m0 0l3.75-3.75M12 20.25L8.25 16.5M12 3.75L8.25 7.5M12 3.75L15.75 7.5" />
+                  </svg>
+                </span>
+                <div class="sid-field__label">Height</div>
+                <div class="sid-specs__value">{{ formatDim(variant.height) }}</div>
+              </div>
+              <div class="sid-specs__item">
+                <span class="sid-specs__icon" aria-hidden="true">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                  </svg>
+                </span>
+                <div class="sid-field__label">Cubic Ft</div>
+                <div class="sid-specs__value">
+                  <template v-if="cubicFeet != null">{{ formatNum(cubicFeet, 3) }} ft³</template>
+                  <template v-else>—</template>
+                </div>
+              </div>
+              <div class="sid-specs__item">
+                <span class="sid-specs__icon" aria-hidden="true">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 7.5V6.75A3.75 3.75 0 0112 3h0a3.75 3.75 0 013.75 3.75V7.5M6.75 7.5h10.5c1.243 0 2.25 1.455 2.25 3.25v3c0 3.038-2.015 5.5-4.5 5.5h-6c-2.485 0-4.5-2.462-4.5-5.5v-3c0-1.795 1.007-3.25 2.25-3.25z" />
+                  </svg>
+                </span>
+                <div class="sid-field__label">Weight</div>
+                <div class="sid-specs__value">
+                  <template v-if="variant.weight != null && variant.weight !== ''">
+                    {{ formatNum(variant.weight) }} {{ weightUnitLabel }}
+                  </template>
+                  <template v-else>—</template>
+                </div>
               </div>
             </div>
           </section>
 
-          <!-- Bundle shell -->
-          <section class="shopify-inv-card">
-            <div class="shopify-inv-card__head">
-              <div class="shopify-inv-card__head-left">
-                <span class="shopify-inv-card__head-icon" aria-hidden="true">
-                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+          <!-- Bundle -->
+          <section class="sid-card">
+            <div class="sid-card__head">
+              <div class="sid-card__head-title">
+                <span class="sid-card__head-icon sid-card__head-icon--bundle" aria-hidden="true">
+                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.55">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007z" />
                   </svg>
                 </span>
-                <h2 class="shopify-inv-card__title">Bundle</h2>
+                <h2>Bundle</h2>
               </div>
-              <button type="button" class="shopify-inv-link-btn" @click="comingSoon('Add Items')">
-                + Add Items
+              <button type="button" class="sid-btn sid-btn--sm" @click="comingSoon('Add Items')">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Add Items
               </button>
             </div>
-            <div class="shopify-inv-label mb-2">Items in this bundle</div>
-            <div class="shopify-inv-bundle-empty">
-              <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.25" aria-hidden="true">
+            <div class="sid-field__label sid-bundle-label">Items in this bundle</div>
+            <div class="sid-bundle-empty">
+              <svg width="42" height="42" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
               </svg>
               <p>This item is not a bundle.</p>
@@ -417,133 +402,126 @@ onUnmounted(() => {
           </section>
         </div>
 
-        <!-- Right -->
-        <div class="shopify-inv-detail__col">
-          <section class="shopify-inv-card">
-            <div class="shopify-inv-onhand">
-              <span class="shopify-inv-onhand__icon" aria-hidden="true">
-                <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+        <div class="sid-col">
+          <!-- Inventory summary -->
+          <section class="sid-card">
+            <div class="sid-onhand">
+              <span class="sid-onhand__icon" aria-hidden="true">
+                <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.55">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
                 </svg>
               </span>
               <div>
-                <div class="shopify-inv-label">Total On Hand</div>
-                <div class="shopify-inv-onhand__value">
-                  {{ inventoryStats.total_on_hand.toLocaleString("en-US") }}
-                </div>
+                <div class="sid-field__label">Total On Hand</div>
+                <div class="sid-onhand__value">{{ inventoryStats.total_on_hand.toLocaleString("en-US") }}</div>
               </div>
             </div>
-            <div class="shopify-inv-stats">
-              <div class="shopify-inv-stats__item">
-                <span class="shopify-inv-stats__icon shopify-inv-stats__icon--alloc" aria-hidden="true">
-                  <!-- Stacked layers -->
+            <div class="sid-stats">
+              <div class="sid-stat">
+                <span class="sid-stat__icon sid-stat__icon--alloc" aria-hidden="true">
                   <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3" />
                   </svg>
                 </span>
                 <div>
-                  <div class="shopify-inv-label">Allocated</div>
-                  <div class="shopify-inv-stats__value">{{ inventoryStats.allocated }}</div>
+                  <div class="sid-field__label">Allocated</div>
+                  <div class="sid-stat__value">{{ inventoryStats.allocated }}</div>
                 </div>
               </div>
-              <div class="shopify-inv-stats__item">
-                <span class="shopify-inv-stats__icon shopify-inv-stats__icon--avail" aria-hidden="true">
+              <div class="sid-stat">
+                <span class="sid-stat__icon sid-stat__icon--avail" aria-hidden="true">
                   <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </span>
                 <div>
-                  <div class="shopify-inv-label">Available</div>
-                  <div class="shopify-inv-stats__value">{{ inventoryStats.available }}</div>
+                  <div class="sid-field__label">Available</div>
+                  <div class="sid-stat__value">{{ inventoryStats.available }}</div>
                 </div>
               </div>
-              <div class="shopify-inv-stats__item">
-                <span class="shopify-inv-stats__icon shopify-inv-stats__icon--back" aria-hidden="true">
+              <div class="sid-stat">
+                <span class="sid-stat__icon sid-stat__icon--back" aria-hidden="true">
                   <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
                   </svg>
                 </span>
                 <div>
-                  <div class="shopify-inv-label">Backorder</div>
-                  <div class="shopify-inv-stats__value">{{ inventoryStats.backorder }}</div>
+                  <div class="sid-field__label">Backorder</div>
+                  <div class="sid-stat__value">{{ inventoryStats.backorder }}</div>
                 </div>
               </div>
-              <div class="shopify-inv-stats__item">
-                <span class="shopify-inv-stats__icon shopify-inv-stats__icon--asn" aria-hidden="true">
+              <div class="sid-stat">
+                <span class="sid-stat__icon sid-stat__icon--asn" aria-hidden="true">
                   <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.886c0-.9-.682-1.738-1.53-1.972a49.001 49.001 0 00-6.94-.052C4.682 4.95 4 5.787 4 6.687v.887" />
                   </svg>
                 </span>
                 <div>
-                  <div class="shopify-inv-label">ASN</div>
-                  <div class="shopify-inv-stats__value">{{ inventoryStats.asn }}</div>
+                  <div class="sid-field__label">ASN</div>
+                  <div class="sid-stat__value">{{ inventoryStats.asn }}</div>
                 </div>
               </div>
             </div>
           </section>
 
-          <section class="shopify-inv-card">
-            <div class="shopify-inv-card__head">
+          <!-- Locations -->
+          <section class="sid-card">
+            <div class="sid-card__head">
               <div>
-                <div class="shopify-inv-card__head-left mb-1">
-                  <span class="shopify-inv-card__head-icon" aria-hidden="true">
-                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                <div class="sid-card__head-title">
+                  <span class="sid-card__head-icon" aria-hidden="true">
+                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.55">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
                       <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
                     </svg>
                   </span>
-                  <h2 class="shopify-inv-card__title">Locations</h2>
+                  <h2>Locations</h2>
                 </div>
-                <p class="shopify-inv-card__sub">Manage inventory by location.</p>
+                <p class="sid-card__sub">Manage inventory by location.</p>
               </div>
-              <button type="button" class="shopify-inv-link-btn" @click="comingSoon('Add Location')">
-                + Add Location
+              <button type="button" class="sid-btn sid-btn--sm" @click="comingSoon('Add Location')">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Add Location
               </button>
             </div>
 
-            <div class="shopify-inv-loc-groups">
+            <div class="sid-locs">
               <button
                 v-for="group in locationGroups"
                 :key="group.key"
                 type="button"
-                class="shopify-inv-loc-group"
+                class="sid-loc"
                 @click="comingSoon(group.label)"
               >
-                <span
-                  class="shopify-inv-loc-group__icon"
-                  :class="`shopify-inv-loc-group__icon--${group.key}`"
-                  aria-hidden="true"
-                >
-                  <svg v-if="group.icon === 'cart'" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7">
+                <span class="sid-loc__icon" :class="`sid-loc__icon--${group.key}`" aria-hidden="true">
+                  <svg v-if="group.icon === 'cart'" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
                   </svg>
-                  <svg v-else-if="group.icon === 'cube'" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7">
+                  <svg v-else-if="group.icon === 'cube'" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
                   </svg>
-                  <svg v-else width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7">
+                  <svg v-else width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007z" />
                   </svg>
                 </span>
-                <div class="min-w-0 flex-grow-1 text-start">
-                  <div class="shopify-inv-loc-group__title-row">
-                    <span class="shopify-inv-loc-group__title">{{ group.label }}</span>
-                    <span class="shopify-inv-loc-group__badge">{{ group.count }}</span>
+                <div class="sid-loc__body">
+                  <div class="sid-loc__title-row">
+                    <span class="sid-loc__title">{{ group.label }}</span>
+                    <span class="sid-loc__badge">{{ group.count }}</span>
                   </div>
-                  <div class="shopify-inv-loc-group__empty">No locations yet</div>
+                  <div class="sid-loc__empty">No locations yet</div>
                 </div>
-                <svg class="shopify-inv-loc-group__chevron" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <svg class="sid-loc__chevron" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                 </svg>
               </button>
             </div>
 
-            <button
-              type="button"
-              class="shopify-inv-detail__view-all"
-              @click="router.push({ name: 'shopify-locations' })"
-            >
+            <button type="button" class="sid-view-all" @click="router.push({ name: 'shopify-locations' })">
               View All Locations
-              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
               </svg>
             </button>
@@ -562,122 +540,129 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.shopify-inv-detail__header {
+.sid-header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-bottom: 1.25rem;
+  margin-bottom: 1.15rem;
 }
-.shopify-inv-detail__back {
+.sid-back {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.2rem;
   border: 0;
   background: transparent;
-  color: #2563eb;
+  color: #3b82f6;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 500;
   padding: 0;
+  cursor: pointer;
 }
-.shopify-inv-detail__back:hover {
-  color: #1d4ed8;
+.sid-back:hover {
+  color: #2563eb;
 }
-.shopify-inv-detail__header-actions {
+.sid-header__actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
+  gap: 0.55rem;
 }
-.shopify-inv-detail__btn-edit {
+/* Outline buttons matching mock: white, thin blue border, blue text/icons */
+.sid-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
-  border: 1px solid #93c5fd;
-  background: #fff;
-  color: #2563eb;
+  height: 2.4rem;
+  padding: 0 1rem;
+  border: 1px solid #3b82f6;
   border-radius: 0.5rem;
-  padding: 0.5rem 0.9rem;
+  background: #fff;
+  color: #3b82f6;
   font-size: 0.875rem;
   font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: none;
 }
-.shopify-inv-detail__btn-edit:hover {
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-.shopify-inv-detail__btn-edit--sm {
-  padding: 0.3rem 0.65rem;
-  font-size: 0.8rem;
+.sid-btn svg {
+  color: inherit;
   flex-shrink: 0;
 }
-.shopify-inv-detail__btn-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  border: 0;
-  border-radius: 0.5rem;
-  padding: 0.5rem 0.95rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  background: #2563eb;
-  color: #fff;
+.sid-btn:hover:not(:disabled) {
+  background: #eff6ff;
+  border-color: #2563eb;
+  color: #2563eb;
 }
-.shopify-inv-detail__btn-actions:hover:not(:disabled) {
-  background: #1d4ed8;
+.sid-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
-.shopify-inv-detail__btn-actions:disabled {
-  opacity: 0.7;
+.sid-btn--sm {
+  height: 2rem;
+  padding: 0 0.7rem;
+  font-size: 0.8125rem;
+  border-radius: 0.45rem;
 }
-.shopify-inv-detail__actions-menu {
+.sid-actions-wrap {
+  position: relative;
+}
+.sid-menu {
   position: absolute;
   right: 0;
-  top: calc(100% + 4px);
-  z-index: 20;
-  min-width: 13rem;
+  top: calc(100% + 6px);
+  z-index: 30;
+  min-width: 13.75rem;
   padding: 0.35rem;
   background: #fff;
   border: 1px solid #e5e7eb;
-  border-radius: 0.55rem;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  border-radius: 0.6rem;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
 }
-.shopify-inv-detail__actions-item {
+.sid-menu__item {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.65rem;
   width: 100%;
   border: 0;
   background: transparent;
   text-align: left;
-  padding: 0.55rem 0.65rem;
+  padding: 0.65rem 0.75rem;
   border-radius: 0.4rem;
   font-size: 0.875rem;
-  font-weight: 600;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+}
+.sid-menu__item svg {
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+.sid-menu__item:hover {
+  background: #f9fafb;
   color: #111827;
 }
-.shopify-inv-detail__actions-item:hover {
-  background: #f3f4f6;
-}
-.shopify-inv-detail__grid {
+.sid-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr);
   gap: 1rem;
   align-items: start;
 }
-.shopify-inv-detail__col {
+.sid-col {
   display: flex;
   flex-direction: column;
   gap: 1rem;
   min-width: 0;
 }
-.shopify-inv-card {
+.sid-card {
   background: #fff;
   border: 1px solid #e5e7eb;
-  border-radius: 0.85rem;
-  padding: 1.2rem 1.3rem;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  border-radius: 0.75rem;
+  padding: 1.35rem 1.4rem;
 }
-.shopify-inv-card__head {
+.sid-card__head {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -685,191 +670,182 @@ onUnmounted(() => {
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
-.shopify-inv-card__head-left {
+.sid-card__head-title {
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
-.shopify-inv-card__title {
+.sid-card__head-title h2 {
   margin: 0;
   font-size: 1.05rem;
   font-weight: 700;
   color: #111827;
 }
-.shopify-inv-card__sub {
-  margin: 0 0 0 1.7rem;
-  font-size: 0.8rem;
-  color: #6b7280;
-}
-.shopify-inv-card__head-icon {
+.sid-card__head-icon {
   display: inline-flex;
-  color: #2563eb;
+  color: #3b82f6;
 }
-.shopify-inv-link-btn {
-  border: 0;
-  background: transparent;
-  color: #2563eb;
-  padding: 0.2rem 0.35rem;
-  font-size: 0.875rem;
-  font-weight: 600;
+.sid-card__head-icon--bundle {
+  color: #7c3aed;
 }
-.shopify-inv-link-btn:hover {
-  color: #1d4ed8;
-  background: #eff6ff;
-  border-radius: 0.35rem;
-}
-.shopify-inv-label {
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+.sid-card__sub {
+  margin: 0.2rem 0 0 1.7rem;
+  font-size: 0.8rem;
   color: #9ca3af;
-  margin-bottom: 0.2rem;
 }
-.shopify-inv-hero {
+.sid-field__label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #9ca3af;
+  margin-bottom: 0.15rem;
+  line-height: 1.2;
+}
+.sid-field--gap {
+  margin-top: 0.85rem;
+}
+.sid-product {
   display: flex;
-  gap: 1.25rem;
-  align-items: stretch;
+  gap: 1.35rem;
+  align-items: flex-start;
 }
-.shopify-inv-hero__thumb {
-  width: 8.75rem;
-  height: 8.75rem;
-  border-radius: 0.75rem;
+.sid-product__img {
+  width: 10.5rem;
+  height: 10.5rem;
+  border-radius: 0.7rem;
   overflow: hidden;
   background: #f3f4f6;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #eceff3;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.shopify-inv-hero__thumb img {
+.sid-product__img img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
-.shopify-inv-hero__thumb-empty {
-  color: #9ca3af;
+.sid-product__img-empty {
+  color: #c0c4cc;
 }
-.shopify-inv-hero__body {
+.sid-product__info {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
 }
-.shopify-inv-hero__title-row {
+.sid-product__title-row {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.65rem;
-  margin-bottom: 1rem;
+  gap: 0.6rem;
+  margin-bottom: 0.95rem;
 }
-.shopify-inv-hero__title {
+.sid-product__title {
   margin: 0;
   font-size: 1.4rem;
   font-weight: 700;
   color: #111827;
   line-height: 1.25;
 }
-.shopify-inv-hero__ids {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-.shopify-inv-sku {
-  font-size: 1.05rem;
+.sid-field__sku {
+  font-size: 1.45rem;
   font-weight: 700;
   color: #2563eb;
+  letter-spacing: 0.01em;
   word-break: break-word;
+  line-height: 1.2;
 }
-.shopify-inv-barcode {
+.sid-field__barcode {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.95rem;
+  gap: 0.45rem;
+  font-size: 0.98rem;
   font-weight: 600;
   color: #111827;
   word-break: break-all;
 }
-.shopify-inv-barcode svg {
-  color: #2563eb;
+.sid-field__barcode svg {
+  color: #3b82f6;
   flex-shrink: 0;
 }
-.shopify-inv-hero__meta {
+.sid-product__meta {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.85rem;
-  margin-top: auto;
-  padding-top: 0.95rem;
-  border-top: 1px solid #f3f4f6;
+  gap: 0.85rem 1.25rem;
+  margin-top: 1.05rem;
 }
-.shopify-inv-hero__meta-item {
+.sid-meta {
   display: flex;
   align-items: flex-start;
   gap: 0.55rem;
 }
-.shopify-inv-hero__meta-icon {
+.sid-meta__icon {
   display: inline-flex;
-  color: #6b7280;
-  margin-top: 0.1rem;
+  color: #9ca3af;
+  margin-top: 0.05rem;
 }
-.shopify-inv-meta-value {
-  font-size: 0.92rem;
+.sid-meta__value {
+  font-size: 0.95rem;
   font-weight: 600;
   color: #111827;
 }
-.shopify-inv-dims {
+/* Specs row inside product card */
+.sid-specs {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.35rem;
-  padding-top: 1.1rem;
-  padding-bottom: 1.1rem;
+  gap: 0.5rem;
+  margin-top: 1.3rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid #e5e7eb;
 }
-.shopify-inv-dims__item {
+.sid-specs__item {
   text-align: center;
   min-width: 0;
-  padding: 0.15rem;
 }
-.shopify-inv-dims__icon {
+.sid-specs__icon {
   display: inline-flex;
   color: #9ca3af;
   margin-bottom: 0.35rem;
 }
-.shopify-inv-dims__value {
+.sid-specs .sid-field__label {
+  margin-bottom: 0.2rem;
+}
+.sid-specs__value {
   font-size: 0.92rem;
   font-weight: 700;
   color: #111827;
   line-height: 1.25;
 }
-.shopify-inv-bundle-empty {
+.sid-bundle-label {
+  margin-bottom: 0.55rem;
+}
+.sid-bundle-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 0.55rem;
-  min-height: 9rem;
+  min-height: 9.5rem;
   border: 1px dashed #d1d5db;
-  border-radius: 0.7rem;
+  border-radius: 0.65rem;
+  background: #fafafa;
   color: #9ca3af;
   font-size: 0.9rem;
-  background: #fafafa;
   text-align: center;
   padding: 1.25rem;
 }
-.shopify-inv-bundle-empty p {
+.sid-bundle-empty p {
   margin: 0;
 }
-.shopify-inv-onhand {
+.sid-onhand {
   display: flex;
   align-items: center;
   gap: 0.85rem;
-  padding-bottom: 1.05rem;
-  margin-bottom: 1.05rem;
-  border-bottom: 1px solid #f3f4f6;
+  padding-bottom: 1.1rem;
+  margin-bottom: 1.1rem;
+  border-bottom: 1px solid #eef0f3;
 }
-.shopify-inv-onhand__icon {
+.sid-onhand__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -880,27 +856,27 @@ onUnmounted(() => {
   color: #2563eb;
   flex-shrink: 0;
 }
-.shopify-inv-onhand__value {
-  font-size: 1.85rem;
+.sid-onhand__value {
+  font-size: 1.95rem;
   font-weight: 700;
   color: #2563eb;
-  line-height: 1.1;
+  line-height: 1.05;
 }
-.shopify-inv-stats {
+.sid-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.65rem;
 }
-.shopify-inv-stats__item {
+.sid-stat {
   display: flex;
   align-items: flex-start;
   gap: 0.55rem;
-  padding: 0.75rem 0.8rem;
-  border: 1px solid #f3f4f6;
+  padding: 0.8rem;
+  border: 1px solid #eef0f3;
   border-radius: 0.6rem;
   background: #fafafa;
 }
-.shopify-inv-stats__icon {
+.sid-stat__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -909,78 +885,81 @@ onUnmounted(() => {
   border-radius: 999px;
   flex-shrink: 0;
 }
-.shopify-inv-stats__icon--alloc {
+.sid-stat__icon--alloc {
   background: #ffedd5;
   color: #ea580c;
 }
-.shopify-inv-stats__icon--avail {
+.sid-stat__icon--avail {
   background: #dcfce7;
   color: #16a34a;
 }
-.shopify-inv-stats__icon--back {
+.sid-stat__icon--back {
   background: #fee2e2;
   color: #dc2626;
 }
-.shopify-inv-stats__icon--asn {
+.sid-stat__icon--asn {
   background: #ede9fe;
   color: #7c3aed;
 }
-.shopify-inv-stats__value {
+.sid-stat__value {
   font-size: 1.1rem;
   font-weight: 700;
   color: #111827;
 }
-.shopify-inv-loc-groups {
+.sid-locs {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
 }
-.shopify-inv-loc-group {
+.sid-loc {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   width: 100%;
   padding: 0.9rem 0.95rem;
   border: 1px solid #e5e7eb;
-  border-radius: 0.7rem;
+  border-radius: 0.65rem;
   background: #fff;
-  color: #6b7280;
   text-align: left;
+  cursor: pointer;
 }
-.shopify-inv-loc-group:hover {
+.sid-loc:hover {
   background: #f9fafb;
-  border-color: #d1d5db;
 }
-.shopify-inv-loc-group__icon {
+.sid-loc__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 2.25rem;
   height: 2.25rem;
-  border-radius: 0.55rem;
+  border-radius: 0.5rem;
   flex-shrink: 0;
 }
-.shopify-inv-loc-group__icon--pick,
-.shopify-inv-loc-group__icon--backstock {
+.sid-loc__icon--pick,
+.sid-loc__icon--backstock {
   background: #eff6ff;
   color: #2563eb;
 }
-.shopify-inv-loc-group__icon--other {
+.sid-loc__icon--other {
   background: #f3e8ff;
   color: #7c3aed;
 }
-.shopify-inv-loc-group__title-row {
+.sid-loc__body {
+  flex: 1;
+  min-width: 0;
+}
+.sid-loc__title-row {
   display: flex;
   align-items: center;
   gap: 0.45rem;
   flex-wrap: wrap;
 }
-.shopify-inv-loc-group__title {
+.sid-loc__title {
   font-size: 0.9rem;
   font-weight: 700;
   color: #111827;
 }
-.shopify-inv-loc-group__badge {
+.sid-loc__badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -993,16 +972,16 @@ onUnmounted(() => {
   font-size: 0.72rem;
   font-weight: 700;
 }
-.shopify-inv-loc-group__empty {
+.sid-loc__empty {
   margin-top: 0.15rem;
   font-size: 0.78rem;
   color: #9ca3af;
 }
-.shopify-inv-loc-group__chevron {
-  color: #2563eb;
+.sid-loc__chevron {
+  color: #3b82f6;
   flex-shrink: 0;
 }
-.shopify-inv-detail__view-all {
+.sid-view-all {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
@@ -1013,32 +992,32 @@ onUnmounted(() => {
   color: #2563eb;
   font-size: 0.875rem;
   font-weight: 600;
+  cursor: pointer;
 }
-.shopify-inv-detail__view-all:hover {
+.sid-view-all:hover {
   color: #1d4ed8;
 }
 @media (max-width: 991.98px) {
-  .shopify-inv-detail__grid {
+  .sid-grid {
     grid-template-columns: 1fr;
   }
-  .shopify-inv-dims {
+  .sid-specs {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    row-gap: 0.85rem;
+    row-gap: 0.9rem;
   }
 }
 @media (max-width: 575.98px) {
-  .shopify-inv-hero {
+  .sid-product {
     flex-direction: column;
   }
-  .shopify-inv-hero__thumb {
+  .sid-product__img {
     width: 100%;
-    height: 11rem;
+    height: 12rem;
   }
-  .shopify-inv-hero__ids,
-  .shopify-inv-hero__meta {
+  .sid-product__meta {
     grid-template-columns: 1fr;
   }
-  .shopify-inv-dims {
+  .sid-specs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

@@ -102,6 +102,7 @@ const canViewResources = computed(() => {
     "resources_photos",
     "resources_calendar",
     "resources_events",
+    "resources_supplies",
     "resources",
   ]);
 });
@@ -117,6 +118,9 @@ const canViewResourcesCalendar = computed(() =>
 );
 const canViewResourcesEvents = computed(() =>
   hasPerm("resources_events.view", "resources.view"),
+);
+const canViewResourcesSupplies = computed(() =>
+  hasPerm("resources_supplies.view", "resources.view"),
 );
 
 const canViewReturns = computed(() => {
@@ -292,6 +296,7 @@ function navActive(mode) {
   if (mode === "settings-pricing") return p.startsWith("/admin/settings/pricing");
   if (mode === "settings-terms") return p.startsWith("/admin/settings/terms");
   if (mode === "settings-email-templates") return p.startsWith("/admin/settings/email-templates");
+  if (mode === "settings-supplies") return p.startsWith("/admin/settings/supplies");
   if (mode === "webmaster") return p.startsWith("/admin/webmaster");
   if (mode === "shopify") return p.startsWith("/admin/shopify");
   if (mode === "shopify-orders") return p.startsWith("/admin/shopify/orders");
@@ -366,6 +371,7 @@ function navActive(mode) {
   }
   if (mode === "resources-tutorials") return p.startsWith("/admin/resources/tutorials");
   if (mode === "resources-photos") return p.startsWith("/admin/resources/photos");
+  if (mode === "resources-supplies") return p.startsWith("/admin/resources/supplies");
   if (mode === "resources-calendar-events") {
     return p === "/admin/resources/calendar/events" || p.startsWith("/admin/resources/calendar/events/");
   }
@@ -1249,6 +1255,16 @@ function collapseNav() {
                     Events
                   </RouterLink>
                 </li>
+                <li v-if="canViewResourcesSupplies">
+                  <RouterLink
+                    to="/admin/resources/supplies"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('resources-supplies') }"
+                    @click="closeMobile"
+                  >
+                    Supplies
+                  </RouterLink>
+                </li>
               </ul>
             </div>
           </template>
@@ -1374,6 +1390,16 @@ function collapseNav() {
                   @click="closeMobile"
                 >
                   Email Templates
+                </RouterLink>
+              </li>
+              <li>
+                <RouterLink
+                  to="/admin/settings/supplies"
+                  class="vx-nav-link vx-nav-sublink"
+                  :class="{ 'vx-nav-link--active': navActive('settings-supplies') }"
+                  @click="closeMobile"
+                >
+                  Supplies
                 </RouterLink>
               </li>
             </ul>

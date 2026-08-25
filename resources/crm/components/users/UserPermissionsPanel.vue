@@ -51,6 +51,13 @@ const PAGE_META = {
     order: 25,
     rowOrder: 4,
   },
+  resources_supplies: {
+    moduleKey: "resources",
+    moduleLabel: "Resources",
+    rowLabel: "Supplies",
+    order: 25,
+    rowOrder: 5,
+  },
   clients: {
     moduleKey: "clients",
     moduleLabel: "Clients",

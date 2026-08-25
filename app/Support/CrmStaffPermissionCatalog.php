@@ -108,6 +108,7 @@ class CrmStaffPermissionCatalog
             'resources_photos' => 'photos',
             'resources_calendar' => 'calendar',
             'resources_events' => 'events',
+            'resources_supplies' => 'supplies',
         ] as $mod => $label) {
             foreach (['view', 'create', 'update', 'delete'] as $a) {
                 $add($rows, $mod.'.'.$a, ucfirst($a).' '.$label, $mod);
@@ -208,6 +209,7 @@ class CrmStaffPermissionCatalog
                 'resources_photos',
                 'resources_calendar',
                 'resources_events',
+                'resources_supplies',
             ],
         ];
     }

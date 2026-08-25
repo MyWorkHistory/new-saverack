@@ -22,6 +22,8 @@ use App\Models\TermsOfService;
 use App\Models\Tutorial;
 use App\Models\ResourceCalendarEvent;
 use App\Models\ResourcePhoto;
+use App\Models\Supply;
+use App\Models\SupplyOrder;
 use App\Models\User;
 use App\Models\LtlShipment;
 use App\Models\WholesaleOrder;
@@ -43,6 +45,8 @@ use App\Policies\ReturnBillPolicy;
 use App\Policies\AsnBillPolicy;
 use App\Policies\ResourceCalendarEventPolicy;
 use App\Policies\ResourcePhotoPolicy;
+use App\Policies\SupplyOrderPolicy;
+use App\Policies\SupplyPolicy;
 use App\Policies\TaskPolicy;
 use App\Policies\TermsOfServicePolicy;
 use App\Policies\TicketPolicy;
@@ -82,6 +86,8 @@ class AuthServiceProvider extends ServiceProvider
         Tutorial::class => TutorialPolicy::class,
         ResourcePhoto::class => ResourcePhotoPolicy::class,
         ResourceCalendarEvent::class => ResourceCalendarEventPolicy::class,
+        Supply::class => SupplyPolicy::class,
+        SupplyOrder::class => SupplyOrderPolicy::class,
         WholesaleOrder::class => WholesaleOrderPolicy::class,
         WholesaleBill::class => WholesaleBillPolicy::class,
         LtlShipment::class => LtlShipmentPolicy::class,

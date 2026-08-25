@@ -30,6 +30,7 @@ import AdminEmailDetailPage from "../pages/admin-email/AdminEmailDetailPage.vue"
 import SettingsPricingPage from "../pages/settings/SettingsPricingPage.vue";
 import SettingsTermsPage from "../pages/settings/SettingsTermsPage.vue";
 import SettingsEmailTemplatesPage from "../pages/settings/SettingsEmailTemplatesPage.vue";
+import SettingsSuppliesPage from "../pages/settings/SettingsSuppliesPage.vue";
 import ClientAccountTermsPage from "../pages/clients/ClientAccountTermsPage.vue";
 import ClientAccountsListPage from "../pages/clients/ClientAccountsListPage.vue";
 import ClientAccountDetailPage from "../pages/clients/ClientAccountDetailPage.vue";
@@ -142,6 +143,10 @@ const meta = {
   settingsEmailTemplates: {
     title: "Save Rack | Email Templates",
     description: "Manage email templates by lead status category.",
+  },
+  settingsSupplies: {
+    title: "Save Rack | Supplies",
+    description: "Manage the staff supplies catalog.",
   },
   clientAccountTerms: {
     title: "Save Rack | Account Terms",
@@ -407,6 +412,10 @@ const meta = {
   resourcesCalendarEvents: {
     title: "Save Rack | Calendar Events",
     description: "List and manage staff calendar events.",
+  },
+  resourcesSupplies: {
+    title: "Save Rack | Supplies",
+    description: "Order warehouse and office supplies.",
   },
   userReturnOrdersList: {
     title: "Save Rack | Return Orders",
@@ -800,6 +809,12 @@ const routes = [
     component: () => import("../pages/resources/ResourcesCalendarPage.vue"),
     meta: meta.resourcesCalendar,
   },
+  {
+    path: "/admin/resources/supplies",
+    name: "resources-supplies",
+    component: () => import("../pages/resources/ResourcesSuppliesPage.vue"),
+    meta: meta.resourcesSupplies,
+  },
   { path: "/admin/resources", redirect: "/admin/resources/tutorials" },
   {
     path: "/admin/inventory",
@@ -995,6 +1010,12 @@ const routes = [
     name: "settings-email-templates",
     component: SettingsEmailTemplatesPage,
     meta: meta.settingsEmailTemplates,
+  },
+  {
+    path: "/admin/settings/supplies",
+    name: "settings-supplies",
+    component: SettingsSuppliesPage,
+    meta: meta.settingsSupplies,
   },
   {
     path: "/admin/webmaster",
@@ -1424,6 +1445,7 @@ export function setResourcesNavFromUser(user) {
         photos: true,
         calendar: true,
         events: true,
+        supplies: true,
       },
     };
     return;
@@ -1436,28 +1458,33 @@ export function setResourcesNavFromUser(user) {
       page("resources_photos.view") ||
       page("resources_calendar.view") ||
       page("resources_events.view") ||
+      page("resources_supplies.view") ||
       k.includes("resources.view"),
     create:
       k.includes("resources_tutorials.create") ||
       k.includes("resources_photos.create") ||
       k.includes("resources_calendar.create") ||
       k.includes("resources_events.create") ||
+      k.includes("resources_supplies.create") ||
       k.includes("resources.create"),
     update:
       k.includes("resources_tutorials.update") ||
       k.includes("resources_calendar.update") ||
       k.includes("resources_events.update") ||
+      k.includes("resources_supplies.update") ||
       k.includes("resources.update"),
     delete:
       k.includes("resources_tutorials.delete") ||
       k.includes("resources_photos.delete") ||
       k.includes("resources_events.delete") ||
+      k.includes("resources_supplies.delete") ||
       k.includes("resources.delete"),
     pages: {
       tutorials: page("resources_tutorials.view"),
       photos: page("resources_photos.view"),
       calendar: page("resources_calendar.view"),
       events: page("resources_events.view"),
+      supplies: page("resources_supplies.view"),
     },
   };
 }
@@ -1950,6 +1977,7 @@ async function ensureResourcesRouteAccess(path) {
     if (path.startsWith("/admin/resources/photos")) return pages.photos === true;
     if (path.startsWith("/admin/resources/calendar/events")) return pages.events === true;
     if (path.startsWith("/admin/resources/calendar")) return pages.calendar === true;
+    if (path.startsWith("/admin/resources/supplies")) return pages.supplies === true;
     return resourcesNavCache.view === true;
   }
   return true;

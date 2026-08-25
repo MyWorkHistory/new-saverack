@@ -50,6 +50,8 @@ use App\Http\Controllers\Api\TutorialController;
 use App\Http\Controllers\Api\TutorialPhotoController;
 use App\Http\Controllers\Api\ResourceCalendarEventController;
 use App\Http\Controllers\Api\ResourcePhotoController;
+use App\Http\Controllers\Api\SupplyController;
+use App\Http\Controllers\Api\SupplyOrderController;
 use App\Http\Controllers\Api\WholesaleOrderController;
 use App\Http\Controllers\Api\WholesaleBillController;
 use App\Http\Controllers\Api\ShopifyIntegrationController;
@@ -148,6 +150,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/{emailTemplate}', [EmailTemplateController::class, 'update']);
         Route::delete('/{emailTemplate}', [EmailTemplateController::class, 'destroy']);
     });
+
+    Route::prefix('settings/supplies')->group(function () {
+        Route::get('/', [SupplyController::class, 'index']);
+        Route::post('/', [SupplyController::class, 'store']);
+        Route::get('/{supply}', [SupplyController::class, 'show']);
+        Route::patch('/{supply}', [SupplyController::class, 'update']);
+        Route::delete('/{supply}', [SupplyController::class, 'destroy']);
+    });
+
+    Route::get('admin/supplies', [SupplyController::class, 'index']);
+    Route::get('admin/supply-orders', [SupplyOrderController::class, 'index']);
+    Route::post('admin/supply-orders', [SupplyOrderController::class, 'store']);
 
     Route::prefix('admin/broadcast-emails')->group(function () {
         Route::get('/', [AdminBroadcastEmailController::class, 'index']);

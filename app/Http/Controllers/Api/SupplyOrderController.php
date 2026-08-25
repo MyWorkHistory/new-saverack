@@ -57,7 +57,7 @@ class SupplyOrderController extends Controller
                 'display_name' => trim(Supply::typeLabel($line->type).' '.$line->name),
                 'link' => $line->link,
                 'quantity' => (int) $line->quantity,
-                'submitted_at' => optional($line->order?->submitted_at)->toIso8601String(),
+                'submitted_at' => optional(optional($line->order)->submitted_at)->toIso8601String(),
                 'created_at' => optional($line->created_at)->toIso8601String(),
             ];
         })->values()->all();

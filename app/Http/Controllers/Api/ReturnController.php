@@ -191,6 +191,7 @@ class ReturnController extends Controller
             'customer_name' => $return->customer_name,
             'items_count' => $return->items_count,
             'warehouse_private_note' => $return->warehouse_private_note,
+            'return_comment' => $return->return_comment,
             'created_at' => optional($return->created_at)->toIso8601String(),
             'processed_at' => optional($return->processed_at)->toIso8601String(),
             'updated_at' => optional($return->updated_at)->toIso8601String(),
@@ -509,6 +510,7 @@ class ReturnController extends Controller
             'status' => ['sometimes', 'string', Rule::in(ClientAccountReturn::LIST_STATUSES)],
             'return_type' => ['sometimes', 'string', Rule::in(ClientAccountReturn::RETURN_TYPES)],
             'warehouse_private_note' => ['nullable', 'string', 'max:20000'],
+            'return_comment' => ['nullable', 'string', 'max:20000'],
         ]);
 
         if (isset($validated['status'])) {
@@ -526,7 +528,10 @@ class ReturnController extends Controller
             $clientAccountReturn->return_type = $validated['return_type'];
         }
         if (array_key_exists('warehouse_private_note', $validated)) {
-            $clientAccountReturn->warehouse_private_note = $validated['warehouse_private_note'];
+            $clientAccountReturn->warehouse_private_note = $this->normalizeReturnComment($validated['warehouse_private_note']);
+        }
+        if (array_key_exists('return_comment', $validated)) {
+            $clientAccountReturn->return_comment = $this->normalizeReturnComment($validated['return_comment']);
         }
         $clientAccountReturn->save();
 
@@ -539,10 +544,29 @@ class ReturnController extends Controller
         $validated = $request->validate([
             'warehouse_private_note' => ['nullable', 'string', 'max:20000'],
         ]);
-        $clientAccountReturn->warehouse_private_note = $validated['warehouse_private_note'] ?? null;
+        $clientAccountReturn->warehouse_private_note = $this->normalizeReturnComment($validated['warehouse_private_note'] ?? null);
         $clientAccountReturn->save();
 
         return response()->json($this->serializeReturn($clientAccountReturn->fresh(['lines', 'clientAccount'])));
+    }
+
+    public function updateReturnComment(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
+    {
+        $this->authorizeReturn($request, $clientAccountReturn);
+        $validated = $request->validate([
+            'return_comment' => ['nullable', 'string', 'max:20000'],
+        ]);
+        $clientAccountReturn->return_comment = $this->normalizeReturnComment($validated['return_comment'] ?? null);
+        $clientAccountReturn->save();
+
+        return response()->json($this->serializeReturn($clientAccountReturn->fresh(['lines', 'clientAccount'])));
+    }
+
+    private function normalizeReturnComment($value): ?string
+    {
+        $comment = trim((string) ($value ?? ''));
+
+        return $comment !== '' ? $comment : null;
     }
 
     public function submit(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
@@ -557,6 +581,7 @@ class ReturnController extends Controller
         $validated = $request->validate([
             'return_type' => ['sometimes', 'string', Rule::in(ClientAccountReturn::RETURN_TYPES)],
             'warehouse_private_note' => ['nullable', 'string', 'max:20000'],
+            'return_comment' => ['nullable', 'string', 'max:20000'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.sku' => ['required', 'string', 'max:255'],
             'lines.*.name' => ['required', 'string', 'max:512'],
@@ -577,7 +602,10 @@ class ReturnController extends Controller
                 $clientAccountReturn->return_type = $validated['return_type'];
             }
             if (array_key_exists('warehouse_private_note', $validated)) {
-                $clientAccountReturn->warehouse_private_note = $validated['warehouse_private_note'];
+                $clientAccountReturn->warehouse_private_note = $this->normalizeReturnComment($validated['warehouse_private_note']);
+            }
+            if (array_key_exists('return_comment', $validated)) {
+                $clientAccountReturn->return_comment = $this->normalizeReturnComment($validated['return_comment']);
             }
             $this->persistLines($clientAccountReturn, $normalized);
             $clientAccountReturn->status = ClientAccountReturn::STATUS_PENDING;

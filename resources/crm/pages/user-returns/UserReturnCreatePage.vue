@@ -18,6 +18,7 @@ const ret = ref(null);
 const formLines = ref([]);
 const returnType = ref("direct");
 const warehouseNote = ref("");
+const returnComment = ref("");
 const reasonOptions = ref({});
 const selected = ref(new Set());
 
@@ -147,6 +148,7 @@ async function submitReturn() {
     const { data } = await api.put(`/returns/${ret.value.id}/submit`, {
       return_type: returnType.value,
       warehouse_private_note: warehouseNote.value.trim() || null,
+      return_comment: returnComment.value.trim() || null,
       lines,
     });
     toast.success("Return created.");
@@ -408,6 +410,19 @@ onMounted(() => {
           >
             View Shipping Label
           </button>
+        </div>
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">Return Comment</h3>
+          <p class="small text-secondary mb-2">Visible to your team and warehouse</p>
+          <textarea
+            id="return-comment"
+            v-model="returnComment"
+            class="form-control form-control-sm mb-0"
+            rows="4"
+            maxlength="20000"
+            placeholder="Optional return comment"
+          />
         </div>
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">

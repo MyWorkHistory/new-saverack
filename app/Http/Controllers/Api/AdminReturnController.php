@@ -380,6 +380,7 @@ class AdminReturnController extends Controller
             'reference_number' => $return->reference_number,
             'items_count' => $return->items_count,
             'warehouse_private_note' => $return->warehouse_private_note,
+            'return_comment' => $return->return_comment,
             'created_source' => $return->created_source,
             'created_at' => optional($return->created_at)->toIso8601String(),
             'processed_at' => optional($return->processed_at)->toIso8601String(),
@@ -631,6 +632,7 @@ class AdminReturnController extends Controller
         $validated = $request->validate([
             'return_type' => ['sometimes', 'string', Rule::in(ClientAccountReturn::RETURN_TYPES)],
             'warehouse_private_note' => ['nullable', 'string', 'max:20000'],
+            'return_comment' => ['nullable', 'string', 'max:20000'],
             'first_item_fee' => ['nullable', 'numeric', 'min:0'],
             'additional_item_fee' => ['nullable', 'numeric', 'min:0'],
             'return_bin_id' => ['nullable', 'integer', 'exists:return_bins,id'],
@@ -657,6 +659,7 @@ class AdminReturnController extends Controller
             isset($validated['additional_item_fee']) ? (float) $validated['additional_item_fee'] : null,
             $request->user() instanceof User ? $request->user() : null,
             $headerBinId && $headerBinId > 0 ? $headerBinId : null,
+            array_key_exists('return_comment', $validated) ? ($validated['return_comment'] ?? null) : null,
         );
 
         return response()->json($this->serializeReturnDetail($return));
@@ -910,6 +913,7 @@ class AdminReturnController extends Controller
             'declared_items' => ['required', 'integer', 'min:1', 'max:99999999'],
             'reason' => ['required', 'string', Rule::in(array_keys(ReturnReasonOptions::nonCompliant()))],
             'reference_number' => ['nullable', 'string', 'max:255'],
+            'return_comment' => ['nullable', 'string', 'max:20000'],
         ]);
 
         $account = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
@@ -926,6 +930,7 @@ class AdminReturnController extends Controller
             $return->non_compliant_reason = $validated['reason'];
             $return->non_compliant_declared_items = (int) $validated['declared_items'];
             $return->reference_number = $this->normalizeReferenceNumber($validated['reference_number'] ?? null);
+            $return->return_comment = $this->normalizeReturnComment($validated['return_comment'] ?? null);
             $return->items_count = 0;
             $this->assignStaffManagedOrderPlaceholders($return);
             $return->save();
@@ -947,6 +952,7 @@ class AdminReturnController extends Controller
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'third_party_type' => ['required', 'string', Rule::in(['amazon', 'other'])],
             'reference_number' => ['nullable', 'string', 'max:255'],
+            'return_comment' => ['nullable', 'string', 'max:20000'],
         ]);
 
         $account = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
@@ -961,6 +967,7 @@ class AdminReturnController extends Controller
             $return->is_third_party = true;
             $return->return_type = ClientAccountReturn::returnTypeForThirdPartyType($validated['third_party_type']);
             $return->reference_number = $this->normalizeReferenceNumber($validated['reference_number'] ?? null);
+            $return->return_comment = $this->normalizeReturnComment($validated['return_comment'] ?? null);
             $return->items_count = 0;
             $this->assignStaffManagedOrderPlaceholders($return);
             $return->save();
@@ -992,11 +999,33 @@ class AdminReturnController extends Controller
         return response()->json($this->serializeReturnDetail($clientAccountReturn->fresh(['lines', 'clientAccount'])));
     }
 
+    public function updateComment(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('view', $clientAccountReturn);
+
+        $validated = $request->validate([
+            'return_comment' => ['nullable', 'string', 'max:20000'],
+        ]);
+
+        $clientAccountReturn->return_comment = $this->normalizeReturnComment($validated['return_comment'] ?? null);
+        $clientAccountReturn->save();
+
+        return response()->json($this->serializeReturnDetail($clientAccountReturn->fresh(['lines', 'clientAccount'])));
+    }
+
     private function normalizeReferenceNumber($value): ?string
     {
         $ref = trim((string) ($value ?? ''));
 
         return $ref !== '' ? $ref : null;
+    }
+
+    private function normalizeReturnComment($value): ?string
+    {
+        $comment = trim((string) ($value ?? ''));
+
+        return $comment !== '' ? $comment : null;
     }
 
     public function storeLine(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse

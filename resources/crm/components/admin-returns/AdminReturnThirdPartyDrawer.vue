@@ -17,6 +17,7 @@ const props = defineProps({
   accountId: { type: [String, Number], default: "" },
   thirdPartyType: { type: String, default: "" },
   referenceNumber: { type: String, default: "" },
+  returnComment: { type: String, default: "" },
   accountOptions: { type: Array, default: () => [] },
   busy: { type: Boolean, default: false },
 });
@@ -26,6 +27,7 @@ const emit = defineEmits([
   "update:accountId",
   "update:thirdPartyType",
   "update:referenceNumber",
+  "update:returnComment",
   "submit",
 ]);
 
@@ -87,6 +89,19 @@ function close() {
           placeholder="Optional reference number"
           :disabled="busy"
           @input="emit('update:referenceNumber', $event.target.value)"
+        />
+      </div>
+      <div class="col-12">
+        <label class="form-label" for="admin-return-tp-comment">Return Comment</label>
+        <textarea
+          id="admin-return-tp-comment"
+          :value="returnComment"
+          class="form-control"
+          rows="3"
+          maxlength="20000"
+          placeholder="Optional comment visible to account users"
+          :disabled="busy"
+          @input="emit('update:returnComment', $event.target.value)"
         />
       </div>
       <div class="col-12">

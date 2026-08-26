@@ -68,6 +68,7 @@ class ClientAccountReturn extends Model
         'reference_number',
         'items_count',
         'warehouse_private_note',
+        'return_comment',
         'return_fee_first_item',
         'return_fee_additional_item',
         'return_fee_non_compliant',

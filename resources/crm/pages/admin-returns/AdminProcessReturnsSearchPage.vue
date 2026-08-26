@@ -32,12 +32,14 @@ const ncAccountId = ref("");
 const ncDeclaredItems = ref(1);
 const ncReason = ref("");
 const ncReferenceNumber = ref("");
+const ncReturnComment = ref("");
 
 const thirdPartyOpen = ref(false);
 const thirdPartyBusy = ref(false);
 const tpAccountId = ref("");
 const tpThirdPartyType = ref("");
 const tpReferenceNumber = ref("");
+const tpReturnComment = ref("");
 
 const tableColspan = 7;
 
@@ -168,6 +170,7 @@ function openNonCompliant() {
   ncDeclaredItems.value = 1;
   ncReason.value = "";
   ncReferenceNumber.value = "";
+  ncReturnComment.value = "";
   nonCompliantOpen.value = true;
 }
 
@@ -189,6 +192,7 @@ async function submitNonCompliant() {
       declared_items: items,
       reason: ncReason.value,
       reference_number: String(ncReferenceNumber.value || "").trim() || null,
+      return_comment: String(ncReturnComment.value || "").trim() || null,
     });
     nonCompliantOpen.value = false;
     toast.success("Non-compliant return created.");
@@ -211,6 +215,7 @@ function openThirdParty() {
   tpAccountId.value = "";
   tpThirdPartyType.value = "";
   tpReferenceNumber.value = "";
+  tpReturnComment.value = "";
   thirdPartyOpen.value = true;
 }
 
@@ -230,6 +235,7 @@ async function submitThirdParty() {
       client_account_id: id,
       third_party_type: tpThirdPartyType.value,
       reference_number: String(tpReferenceNumber.value || "").trim() || null,
+      return_comment: String(tpReturnComment.value || "").trim() || null,
     });
     thirdPartyOpen.value = false;
     toast.success("3rd party return created.");
@@ -398,6 +404,7 @@ onMounted(() => {
       v-model:declared-items="ncDeclaredItems"
       v-model:reason="ncReason"
       v-model:reference-number="ncReferenceNumber"
+      v-model:return-comment="ncReturnComment"
       :account-options="accountOptions"
       :busy="nonCompliantBusy"
       @submit="submitNonCompliant"
@@ -408,6 +415,7 @@ onMounted(() => {
       v-model:account-id="tpAccountId"
       v-model:third-party-type="tpThirdPartyType"
       v-model:reference-number="tpReferenceNumber"
+      v-model:return-comment="tpReturnComment"
       :account-options="accountOptions"
       :busy="thirdPartyBusy"
       @submit="submitThirdParty"

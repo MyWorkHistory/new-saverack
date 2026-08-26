@@ -84,7 +84,8 @@ class ReturnProcessingService
         ?float $firstItemFee,
         ?float $additionalItemFee,
         ?User $actor,
-        ?int $binId = null
+        ?int $binId = null,
+        ?string $returnComment = null
     ): ClientAccountReturn {
         if ($return->status !== ClientAccountReturn::STATUS_DRAFT) {
             throw ValidationException::withMessages([
@@ -99,12 +100,16 @@ class ReturnProcessingService
 
         $normalizedLines = $this->resolveLineBinIds($normalizedLines, $binId);
 
-        $processed = DB::transaction(function () use ($return, $normalizedLines, $returnType, $warehouseNote, $firstItemFee, $additionalItemFee, $actor) {
+        $processed = DB::transaction(function () use ($return, $normalizedLines, $returnType, $warehouseNote, $returnComment, $firstItemFee, $additionalItemFee, $actor) {
             if ($returnType !== null && $returnType !== '') {
                 $return->return_type = $returnType;
             }
             if ($warehouseNote !== null) {
                 $return->warehouse_private_note = $warehouseNote !== '' ? $warehouseNote : null;
+            }
+            if ($returnComment !== null) {
+                $trimmedComment = trim($returnComment);
+                $return->return_comment = $trimmedComment !== '' ? $trimmedComment : null;
             }
             if ($firstItemFee !== null) {
                 $return->return_fee_first_item = round($firstItemFee, 4);

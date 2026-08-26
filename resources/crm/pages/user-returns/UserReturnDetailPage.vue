@@ -18,7 +18,9 @@ const toast = useToast();
 const loading = ref(true);
 const ret = ref(null);
 const noteBusy = ref(false);
+const commentBusy = ref(false);
 const warehouseNote = ref("");
+const returnComment = ref("");
 
 const returnId = computed(() => String(route.params.id || ""));
 const accountName = computed(() => String(ret.value?.client_account_company_name || "").trim() || "Save Rack");
@@ -37,6 +39,7 @@ async function load() {
     const { data } = await api.get(`/returns/${returnId.value}`);
     ret.value = data;
     warehouseNote.value = String(data.warehouse_private_note || "");
+    returnComment.value = String(data.return_comment || "");
     setCrmPageMeta({
       title: `Save Rack | ${formatRmaLabel(data.rma_number)}`,
       description: "Return detail.",
@@ -105,6 +108,23 @@ async function saveNote() {
     toast.errorFrom(e, "Could not save note.");
   } finally {
     noteBusy.value = false;
+  }
+}
+
+async function saveReturnComment() {
+  if (!ret.value?.id) return;
+  commentBusy.value = true;
+  try {
+    const { data } = await api.patch(`/returns/${ret.value.id}/comment`, {
+      return_comment: returnComment.value.trim() || null,
+    });
+    ret.value = data;
+    returnComment.value = String(data.return_comment || "");
+    toast.success("Return Comment saved.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not save Return Comment.");
+  } finally {
+    commentBusy.value = false;
   }
 }
 
@@ -246,6 +266,27 @@ onMounted(() => {
             @click="openShippingLabel"
           >
             View Shipping Label
+          </button>
+        </div>
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">Return Comment</h3>
+          <p class="small text-secondary mb-2">Visible to your team and warehouse</p>
+          <textarea
+            id="return-detail-comment"
+            v-model="returnComment"
+            class="form-control form-control-sm mb-3"
+            rows="4"
+            maxlength="20000"
+            placeholder="Optional return comment"
+          />
+          <button
+            type="button"
+            class="btn btn-primary btn-sm staff-page-primary fw-semibold w-100"
+            :disabled="commentBusy"
+            @click="saveReturnComment"
+          >
+            {{ commentBusy ? "Saving…" : "Save Comment" }}
           </button>
         </div>
 

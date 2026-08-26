@@ -18,6 +18,7 @@ const ret = ref(null);
 const formLines = ref([]);
 const returnType = ref("direct");
 const warehouseNote = ref("");
+const returnComment = ref("");
 const reasonOptions = ref({});
 const returnFees = ref({});
 const defaultReason = ref("unknown");
@@ -170,6 +171,7 @@ async function processReturn() {
     const payload = {
       return_type: returnType.value,
       warehouse_private_note: warehouseNote.value.trim() || null,
+      return_comment: returnComment.value.trim() || null,
       lines,
     };
     if (returnFees.value.first_item != null) payload.first_item_fee = returnFees.value.first_item;
@@ -429,6 +431,19 @@ onMounted(() => {
           :editable="true"
           @update:fees="returnFees = $event"
         />
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">Return Comment</h3>
+          <p class="small text-secondary mb-2">Visible to account users</p>
+          <textarea
+            id="return-comment"
+            v-model="returnComment"
+            class="form-control form-control-sm mb-0"
+            rows="4"
+            maxlength="20000"
+            placeholder="Optional return comment"
+          />
+        </div>
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Private Note</h3>

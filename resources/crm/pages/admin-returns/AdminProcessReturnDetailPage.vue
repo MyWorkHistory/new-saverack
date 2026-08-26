@@ -36,6 +36,8 @@ const lineRestock = ref({});
 const selected = ref(new Set());
 const referenceDraft = ref("");
 const referenceBusy = ref(false);
+const returnCommentDraft = ref("");
+const returnCommentBusy = ref(false);
 
 const returnId = computed(() => String(route.params.id || ""));
 
@@ -98,6 +100,7 @@ function feeAmountMissing(value) {
 function applyReturnData(data) {
   ret.value = data;
   referenceDraft.value = String(data?.reference_number || "");
+  returnCommentDraft.value = String(data?.return_comment || "");
   returnFees.value = data?.return_fees || {};
   const restockMap = {};
   for (const line of Array.isArray(data?.lines) ? data.lines : []) {
@@ -266,6 +269,12 @@ const referenceDirty = computed(() => {
   return draft !== saved;
 });
 
+const returnCommentDirty = computed(() => {
+  const draft = String(returnCommentDraft.value || "").trim();
+  const saved = String(ret.value?.return_comment || "").trim();
+  return draft !== saved;
+});
+
 async function saveReferenceNumber() {
   if (!ret.value?.id || !usesReferenceSlot.value || referenceBusy.value) return;
   referenceBusy.value = true;
@@ -279,6 +288,22 @@ async function saveReferenceNumber() {
     toast.errorFrom(e, "Could not update Reference #.");
   } finally {
     referenceBusy.value = false;
+  }
+}
+
+async function saveReturnComment() {
+  if (!ret.value?.id || returnCommentBusy.value) return;
+  returnCommentBusy.value = true;
+  try {
+    const { data } = await api.patch(`/admin/returns/${ret.value.id}/comment`, {
+      return_comment: String(returnCommentDraft.value || "").trim() || null,
+    });
+    applyReturnData(data);
+    toast.success("Return Comment updated.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not update Return Comment.");
+  } finally {
+    returnCommentBusy.value = false;
   }
 }
 
@@ -737,6 +762,28 @@ onMounted(load);
           :return-bill-id="ret.return_bill_id"
           @update:fees="returnFees = $event"
         />
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">Return Comment</h3>
+          <p class="small text-secondary mb-2">Visible to account users</p>
+          <textarea
+            id="admin-return-detail-comment"
+            v-model="returnCommentDraft"
+            class="form-control form-control-sm mb-3"
+            rows="4"
+            maxlength="20000"
+            placeholder="Optional return comment"
+            :disabled="returnCommentBusy"
+          />
+          <button
+            type="button"
+            class="btn btn-primary btn-sm staff-page-primary fw-semibold w-100"
+            :disabled="returnCommentBusy || !returnCommentDirty"
+            @click="saveReturnComment"
+          >
+            {{ returnCommentBusy ? "Saving…" : "Save Comment" }}
+          </button>
+        </div>
 
         <div v-if="ret.warehouse_private_note" class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Private Note</h3>

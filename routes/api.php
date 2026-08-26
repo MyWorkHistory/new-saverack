@@ -389,6 +389,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{clientAccountReturn}/lines/{line}/barcode.pdf', [ReturnController::class, 'lineBarcodePdf'])->middleware('can:returns.view');
         Route::put('/{clientAccountReturn}/submit', [ReturnController::class, 'submit'])->middleware('can:returns.update');
         Route::patch('/{clientAccountReturn}/warehouse-note', [ReturnController::class, 'updateWarehouseNote'])->middleware('can:returns.update');
+        Route::patch('/{clientAccountReturn}/comment', [ReturnController::class, 'updateReturnComment'])->middleware('can:returns.update');
         Route::get('/{clientAccountReturn}', [ReturnController::class, 'show'])->middleware('can:returns.view');
         Route::patch('/{clientAccountReturn}', [ReturnController::class, 'update'])->middleware('can:returns.update');
         Route::delete('/{clientAccountReturn}', [ReturnController::class, 'destroy'])->middleware('can:returns.delete');
@@ -398,6 +399,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/non-compliant', [AdminReturnController::class, 'storeNonCompliant'])->middleware('can:returns.create');
         Route::post('/third-party', [AdminReturnController::class, 'storeThirdParty'])->middleware('can:returns.create');
         Route::patch('/{clientAccountReturn}/reference', [AdminReturnController::class, 'updateReference'])->middleware('can:returns.update');
+        Route::patch('/{clientAccountReturn}/comment', [AdminReturnController::class, 'updateComment'])->middleware('can:returns.update');
         Route::get('/bins', [AdminReturnController::class, 'listReturnBins'])->middleware('can:returns.view');
         Route::post('/bins', [AdminReturnController::class, 'storeReturnBin'])->middleware('can:returns.update');
         Route::patch('/bins/{returnBin}', [AdminReturnController::class, 'updateReturnBin'])->middleware('can:returns.update');

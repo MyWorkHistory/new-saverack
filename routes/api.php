@@ -166,6 +166,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('admin/broadcast-emails')->group(function () {
         Route::get('/', [AdminBroadcastEmailController::class, 'index']);
         Route::get('/recipient-count', [AdminBroadcastEmailController::class, 'recipientCount']);
+        Route::post('/test', [AdminBroadcastEmailController::class, 'sendTest']);
         Route::post('/', [AdminBroadcastEmailController::class, 'store']);
         Route::get('/{adminBroadcastEmail}', [AdminBroadcastEmailController::class, 'show']);
         Route::delete('/{adminBroadcastEmail}', [AdminBroadcastEmailController::class, 'destroy']);

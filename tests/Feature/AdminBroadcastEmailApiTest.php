@@ -181,6 +181,34 @@ final class AdminBroadcastEmailApiTest extends TestCase
             ->assertJsonPath('recipient_count', 1);
     }
 
+    public function test_send_test_only_goes_to_provided_email(): void
+    {
+        $this->actingAsAdmin();
+        $this->seedRecipients();
+
+        Mail::fake();
+        Queue::fake();
+
+        $this->postJson('/api/admin/broadcast-emails/test', [
+            'from_address' => 'info@saverack.com',
+            'subject' => 'Preview Subject',
+            'body_html' => '<p>Preview body</p>',
+            'test_email' => 'nelson@example.com',
+        ])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('test_email', 'nelson@example.com');
+
+        Mail::assertSent(AdminBroadcastMailable::class, function (AdminBroadcastMailable $mail) {
+            return $mail->hasTo('nelson@example.com')
+                && $mail->subjectLine === 'Preview Subject'
+                && $mail->fromAddress === 'info@saverack.com';
+        });
+        Mail::assertSent(AdminBroadcastMailable::class, 1);
+        Queue::assertNothingPushed();
+        $this->assertSame(0, AdminBroadcastEmail::query()->count());
+    }
+
     public function test_show_and_delete(): void
     {
         $this->actingAsAdmin();

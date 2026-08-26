@@ -3,12 +3,14 @@
 namespace App\Services;
 
 use App\Jobs\SendAdminBroadcastEmailJob;
+use App\Mail\AdminBroadcastMailable;
 use App\Models\AdminBroadcastEmail;
 use App\Models\ClientAccount;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 
 class AdminBroadcastEmailService
@@ -97,6 +99,56 @@ class AdminBroadcastEmailService
         SendAdminBroadcastEmailJob::dispatch((int) $broadcast->id);
 
         return $broadcast->fresh();
+    }
+
+    /**
+     * Send a one-off preview to a single address. Does not create a broadcast or email recipients.
+     *
+     * @param  array{from_address: string, subject: string, body_html: string, test_email: string}  $data
+     */
+    public function sendTest(array $data): void
+    {
+        $fromAddress = strtolower(trim((string) ($data['from_address'] ?? '')));
+        $options = config('crm.broadcast_from_options', []);
+        if (! is_array($options) || ! array_key_exists($fromAddress, $options)) {
+            throw ValidationException::withMessages([
+                'from_address' => ['Invalid Email From address.'],
+            ]);
+        }
+
+        $subject = trim((string) ($data['subject'] ?? ''));
+        if ($subject === '') {
+            throw ValidationException::withMessages([
+                'subject' => ['Subject is required.'],
+            ]);
+        }
+
+        $bodyHtml = trim((string) ($data['body_html'] ?? ''));
+        if ($this->isEmptyHtml($bodyHtml)) {
+            throw ValidationException::withMessages([
+                'body_html' => ['Body is required.'],
+            ]);
+        }
+
+        $testEmail = strtolower(trim((string) ($data['test_email'] ?? '')));
+        if ($testEmail === '' || ! filter_var($testEmail, FILTER_VALIDATE_EMAIL)) {
+            throw ValidationException::withMessages([
+                'test_email' => ['Enter a valid test email address.'],
+            ]);
+        }
+
+        $fromName = trim((string) ($options[$fromAddress]['name'] ?? 'Save Rack'));
+        $broadcast = new AdminBroadcastEmail([
+            'from_address' => $fromAddress,
+            'from_name' => $fromName !== '' ? $fromName : 'Save Rack',
+            'subject' => $subject,
+            'body_html' => $bodyHtml,
+        ]);
+
+        Mail::to($testEmail)->send(new AdminBroadcastMailable(
+            $broadcast,
+            $this->signatureHtml($fromAddress)
+        ));
     }
 
     public function delete(AdminBroadcastEmail $broadcast): void

@@ -79,6 +79,27 @@ class AdminBroadcastEmailController extends Controller
         ], 201);
     }
 
+    public function sendTest(Request $request): JsonResponse
+    {
+        $this->authorize('create', AdminBroadcastEmail::class);
+
+        $fromAddresses = array_keys(config('crm.broadcast_from_options', []));
+
+        $validated = $request->validate([
+            'from_address' => ['required', 'string', 'max:255', Rule::in($fromAddresses)],
+            'subject' => ['required', 'string', 'max:500'],
+            'body_html' => ['required', 'string'],
+            'test_email' => ['required', 'email', 'max:255'],
+        ]);
+
+        $this->broadcasts->sendTest($validated);
+
+        return response()->json([
+            'ok' => true,
+            'test_email' => strtolower(trim((string) $validated['test_email'])),
+        ]);
+    }
+
     public function show(AdminBroadcastEmail $adminBroadcastEmail): JsonResponse
     {
         $this->authorize('view', $adminBroadcastEmail);

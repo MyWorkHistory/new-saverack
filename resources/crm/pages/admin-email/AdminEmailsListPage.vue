@@ -40,6 +40,7 @@ let searchTimer = null;
 
 const createOpen = ref(false);
 const createBusy = ref(false);
+const testBusy = ref(false);
 const sendConfirmOpen = ref(false);
 const sendConfirmBusy = ref(false);
 const pendingPayload = ref(null);
@@ -135,6 +136,18 @@ async function onCreateSubmit(payload) {
     pendingPayload.value = null;
   } finally {
     createBusy.value = false;
+  }
+}
+
+async function onSendTest(payload) {
+  testBusy.value = true;
+  try {
+    await api.post("/admin/broadcast-emails/test", payload);
+    toast.success(`Test email sent to ${payload.test_email}.`);
+  } catch (e) {
+    toast.errorFrom(e, "Could not send test email.");
+  } finally {
+    testBusy.value = false;
   }
 }
 
@@ -395,8 +408,10 @@ onUnmounted(() => {
     <AdminEmailCreateDrawer
       v-model:open="createOpen"
       :busy="createBusy || sendConfirmBusy"
+      :test-busy="testBusy"
       :from-options="fromOptions"
       @submit="onCreateSubmit"
+      @test="onSendTest"
     />
 
     <ConfirmModal

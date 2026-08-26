@@ -8,6 +8,7 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
 import {
+  listOrderNumberDisplay,
   processDisplayStatusBadgeClass,
   processDisplayStatusLabel,
   returnTypeLabel,
@@ -208,7 +209,7 @@ onMounted(() => {
               @keydown.enter.prevent="openRow(row)"
             >
               <td class="text-center fw-semibold">{{ row.rma_number || "—" }}</td>
-              <td class="text-center">{{ row.order_number || "—" }}</td>
+              <td class="text-center">{{ listOrderNumberDisplay(row) }}</td>
               <td class="text-center">{{ row.client_account_company_name || "—" }}</td>
               <td class="text-center">{{ row.customer_name || "—" }}</td>
               <td class="text-center">{{ returnTypeLabel(row.return_type) }}</td>
@@ -252,7 +253,7 @@ onMounted(() => {
                 <span class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain">
                   RMA {{ row.rma_number || "—" }}
                 </span>
-                <div class="crm-mobile-item-card__name">Order {{ row.order_number || "—" }}</div>
+                <div class="crm-mobile-item-card__name">Order {{ listOrderNumberDisplay(row) }}</div>
               </div>
             </div>
 

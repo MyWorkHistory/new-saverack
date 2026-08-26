@@ -4,11 +4,12 @@ import { useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import AdminReturnNonCompliantDrawer from "../../components/admin-returns/AdminReturnNonCompliantDrawer.vue";
-import AdminReturnThirdPartyModal from "../../components/admin-returns/AdminReturnThirdPartyModal.vue";
+import AdminReturnThirdPartyDrawer from "../../components/admin-returns/AdminReturnThirdPartyDrawer.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
 import {
+  listOrderNumberDisplay,
   processDisplayStatusBadgeClass,
   processDisplayStatusLabel,
 } from "../../utils/formatReturnDisplay.js";
@@ -30,11 +31,13 @@ const nonCompliantBusy = ref(false);
 const ncAccountId = ref("");
 const ncDeclaredItems = ref(1);
 const ncReason = ref("");
+const ncReferenceNumber = ref("");
 
 const thirdPartyOpen = ref(false);
 const thirdPartyBusy = ref(false);
 const tpAccountId = ref("");
 const tpThirdPartyType = ref("");
+const tpReferenceNumber = ref("");
 
 const tableColspan = 7;
 
@@ -164,6 +167,7 @@ function openNonCompliant() {
   ncAccountId.value = "";
   ncDeclaredItems.value = 1;
   ncReason.value = "";
+  ncReferenceNumber.value = "";
   nonCompliantOpen.value = true;
 }
 
@@ -184,6 +188,7 @@ async function submitNonCompliant() {
       client_account_id: id,
       declared_items: items,
       reason: ncReason.value,
+      reference_number: String(ncReferenceNumber.value || "").trim() || null,
     });
     nonCompliantOpen.value = false;
     toast.success("Non-compliant return created.");
@@ -205,6 +210,7 @@ async function submitNonCompliant() {
 function openThirdParty() {
   tpAccountId.value = "";
   tpThirdPartyType.value = "";
+  tpReferenceNumber.value = "";
   thirdPartyOpen.value = true;
 }
 
@@ -223,6 +229,7 @@ async function submitThirdParty() {
     const { data } = await api.post("/admin/returns/third-party", {
       client_account_id: id,
       third_party_type: tpThirdPartyType.value,
+      reference_number: String(tpReferenceNumber.value || "").trim() || null,
     });
     thirdPartyOpen.value = false;
     toast.success("3rd party return created.");
@@ -374,7 +381,7 @@ onMounted(() => {
                 </span>
               </td>
               <td class="text-center fw-semibold">{{ row.rma_number || "—" }}</td>
-              <td class="text-center">{{ row.order_number || "—" }}</td>
+              <td class="text-center">{{ listOrderNumberDisplay(row) }}</td>
               <td class="text-center">{{ row.client_account_company_name || "—" }}</td>
               <td class="text-center">{{ row.customer_name || "—" }}</td>
               <td class="text-center">{{ row.items_count ?? "—" }}</td>
@@ -390,15 +397,17 @@ onMounted(() => {
       v-model:account-id="ncAccountId"
       v-model:declared-items="ncDeclaredItems"
       v-model:reason="ncReason"
+      v-model:reference-number="ncReferenceNumber"
       :account-options="accountOptions"
       :busy="nonCompliantBusy"
       @submit="submitNonCompliant"
     />
 
-    <AdminReturnThirdPartyModal
+    <AdminReturnThirdPartyDrawer
       v-model:open="thirdPartyOpen"
       v-model:account-id="tpAccountId"
       v-model:third-party-type="tpThirdPartyType"
+      v-model:reference-number="tpReferenceNumber"
       :account-options="accountOptions"
       :busy="thirdPartyBusy"
       @submit="submitThirdParty"

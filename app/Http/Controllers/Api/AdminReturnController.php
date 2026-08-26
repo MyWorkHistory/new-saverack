@@ -103,7 +103,11 @@ class AdminReturnController extends Controller
             return true;
         }
 
-        return $this->normalizeOrderNumber($return->order_number) === $needle;
+        if ($this->normalizeOrderNumber($return->order_number) === $needle) {
+            return true;
+        }
+
+        return $this->normalizeOrderNumber($return->reference_number) === $needle;
     }
 
     private function rmaNumberMatches(ClientAccountReturn $return, string $needle): bool
@@ -303,6 +307,7 @@ class AdminReturnController extends Controller
             'return_type' => $return->return_type,
             'order_number' => $return->order_number,
             'customer_name' => $return->customer_name,
+            'reference_number' => $return->reference_number,
             'items_count' => $return->items_count,
             'shiphero_order_id' => $return->shiphero_order_id,
             'created_at' => optional($return->created_at)->toIso8601String(),
@@ -372,6 +377,7 @@ class AdminReturnController extends Controller
             'shiphero_order_id' => $return->shiphero_order_id,
             'order_number' => $return->order_number,
             'customer_name' => $return->customer_name,
+            'reference_number' => $return->reference_number,
             'items_count' => $return->items_count,
             'warehouse_private_note' => $return->warehouse_private_note,
             'created_source' => $return->created_source,
@@ -758,7 +764,8 @@ class AdminReturnController extends Controller
             $query->where(function ($w) use ($like) {
                 $w->where('rma_number', 'like', $like)
                     ->orWhere('order_number', 'like', $like)
-                    ->orWhere('customer_name', 'like', $like);
+                    ->orWhere('customer_name', 'like', $like)
+                    ->orWhere('reference_number', 'like', $like);
             });
         }
 
@@ -902,6 +909,7 @@ class AdminReturnController extends Controller
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'declared_items' => ['required', 'integer', 'min:1', 'max:99999999'],
             'reason' => ['required', 'string', Rule::in(array_keys(ReturnReasonOptions::nonCompliant()))],
+            'reference_number' => ['nullable', 'string', 'max:255'],
         ]);
 
         $account = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
@@ -917,6 +925,7 @@ class AdminReturnController extends Controller
             $return->is_non_compliant = true;
             $return->non_compliant_reason = $validated['reason'];
             $return->non_compliant_declared_items = (int) $validated['declared_items'];
+            $return->reference_number = $this->normalizeReferenceNumber($validated['reference_number'] ?? null);
             $return->items_count = 0;
             $this->assignStaffManagedOrderPlaceholders($return);
             $return->save();
@@ -937,6 +946,7 @@ class AdminReturnController extends Controller
         $validated = $request->validate([
             'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
             'third_party_type' => ['required', 'string', Rule::in(['amazon', 'other'])],
+            'reference_number' => ['nullable', 'string', 'max:255'],
         ]);
 
         $account = ClientAccount::query()->findOrFail((int) $validated['client_account_id']);
@@ -950,6 +960,7 @@ class AdminReturnController extends Controller
             $return->created_source = ClientAccountReturn::SOURCE_ADMIN;
             $return->is_third_party = true;
             $return->return_type = ClientAccountReturn::returnTypeForThirdPartyType($validated['third_party_type']);
+            $return->reference_number = $this->normalizeReferenceNumber($validated['reference_number'] ?? null);
             $return->items_count = 0;
             $this->assignStaffManagedOrderPlaceholders($return);
             $return->save();
@@ -960,6 +971,32 @@ class AdminReturnController extends Controller
         });
 
         return response()->json($this->serializeReturnDetail($return->fresh(['lines', 'clientAccount'])), 201);
+    }
+
+    public function updateReference(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('view', $clientAccountReturn);
+
+        if (! $clientAccountReturn->isNonCompliant() && ! $clientAccountReturn->isThirdParty()) {
+            return response()->json(['message' => 'Reference # applies to non-compliant and 3rd party returns only.'], 422);
+        }
+
+        $validated = $request->validate([
+            'reference_number' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $clientAccountReturn->reference_number = $this->normalizeReferenceNumber($validated['reference_number'] ?? null);
+        $clientAccountReturn->save();
+
+        return response()->json($this->serializeReturnDetail($clientAccountReturn->fresh(['lines', 'clientAccount'])));
+    }
+
+    private function normalizeReferenceNumber($value): ?string
+    {
+        $ref = trim((string) ($value ?? ''));
+
+        return $ref !== '' ? $ref : null;
     }
 
     public function storeLine(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
@@ -1132,7 +1169,10 @@ class AdminReturnController extends Controller
         }
 
         if ($orderNumber !== '') {
-            $query->where('order_number', 'like', '%'.$orderNumber.'%');
+            $query->where(function ($w) use ($orderNumber) {
+                $w->where('order_number', 'like', '%'.$orderNumber.'%')
+                    ->orWhere('reference_number', 'like', '%'.$orderNumber.'%');
+            });
         }
         if ($rmaNumber !== '') {
             $query->where('rma_number', 'like', '%'.$rmaNumber.'%');

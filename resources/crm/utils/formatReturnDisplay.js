@@ -56,3 +56,13 @@ export function thirdPartyTypeLabel(row) {
   if (type === "other" || type === "third_party_other") return "Other";
   return "—";
 }
+
+/** Order # column: real order number, else Reference # for NC / 3rd party. */
+export function listOrderNumberDisplay(row) {
+  const order = String(row?.order_number || "")
+    .trim()
+    .replace(/^#+/, "");
+  if (order) return order;
+  const ref = String(row?.reference_number || "").trim();
+  return ref || "—";
+}

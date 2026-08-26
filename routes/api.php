@@ -397,6 +397,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('admin/returns')->group(function () {
         Route::post('/non-compliant', [AdminReturnController::class, 'storeNonCompliant'])->middleware('can:returns.create');
         Route::post('/third-party', [AdminReturnController::class, 'storeThirdParty'])->middleware('can:returns.create');
+        Route::patch('/{clientAccountReturn}/reference', [AdminReturnController::class, 'updateReference'])->middleware('can:returns.update');
         Route::get('/bins', [AdminReturnController::class, 'listReturnBins'])->middleware('can:returns.view');
         Route::post('/bins', [AdminReturnController::class, 'storeReturnBin'])->middleware('can:returns.update');
         Route::patch('/bins/{returnBin}', [AdminReturnController::class, 'updateReturnBin'])->middleware('can:returns.update');

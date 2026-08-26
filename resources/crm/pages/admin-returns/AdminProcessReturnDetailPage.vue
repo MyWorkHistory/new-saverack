@@ -34,6 +34,8 @@ const ret = ref(null);
 const returnFees = ref({});
 const lineRestock = ref({});
 const selected = ref(new Set());
+const referenceDraft = ref("");
+const referenceBusy = ref(false);
 
 const returnId = computed(() => String(route.params.id || ""));
 
@@ -95,6 +97,7 @@ function feeAmountMissing(value) {
 
 function applyReturnData(data) {
   ret.value = data;
+  referenceDraft.value = String(data?.reference_number || "");
   returnFees.value = data?.return_fees || {};
   const restockMap = {};
   for (const line of Array.isArray(data?.lines) ? data.lines : []) {
@@ -248,10 +251,36 @@ function stripOrderNumberHash(value) {
   return String(value || "").trim().replace(/^#+/, "");
 }
 
+const usesReferenceSlot = computed(() => isNonCompliant.value || isThirdParty.value);
+
 const displayOrderNumber = computed(() => {
   const raw = String(ret.value?.order_number || "").trim();
-  return raw ? stripOrderNumberHash(raw) : "—";
+  if (raw) return stripOrderNumberHash(raw);
+  const ref = String(ret.value?.reference_number || "").trim();
+  return ref || "—";
 });
+
+const referenceDirty = computed(() => {
+  const draft = String(referenceDraft.value || "").trim();
+  const saved = String(ret.value?.reference_number || "").trim();
+  return draft !== saved;
+});
+
+async function saveReferenceNumber() {
+  if (!ret.value?.id || !usesReferenceSlot.value || referenceBusy.value) return;
+  referenceBusy.value = true;
+  try {
+    const { data } = await api.patch(`/admin/returns/${ret.value.id}/reference`, {
+      reference_number: String(referenceDraft.value || "").trim() || null,
+    });
+    applyReturnData(data);
+    toast.success("Reference # updated.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not update Reference #.");
+  } finally {
+    referenceBusy.value = false;
+  }
+}
 
 function buildLinePayload(product, quantity) {
   const sku = String(product?.sku || "").trim();
@@ -636,9 +665,9 @@ onMounted(load);
           <div class="user-return-page__rma-display">{{ ret.rma_number || "—" }}</div>
           <div class="mt-3 pt-3 border-top">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1">
-              <h3 class="h6 fw-semibold mb-0">Order #</h3>
+              <h3 class="h6 fw-semibold mb-0">{{ usesReferenceSlot ? "Reference #" : "Order #" }}</h3>
               <button
-                v-if="displayOrderNumber !== '—'"
+                v-if="!usesReferenceSlot && displayOrderNumber !== '—'"
                 type="button"
                 class="btn btn-sm btn-outline-secondary fw-semibold"
                 @click="copyOrderNumber"
@@ -646,7 +675,29 @@ onMounted(load);
                 Copy
               </button>
             </div>
-            <div class="user-return-page__order-display">{{ displayOrderNumber }}</div>
+            <template v-if="usesReferenceSlot">
+              <div class="d-flex flex-wrap gap-2 align-items-stretch">
+                <input
+                  id="admin-return-detail-reference"
+                  v-model="referenceDraft"
+                  type="text"
+                  class="form-control"
+                  maxlength="255"
+                  placeholder="Reference number"
+                  :disabled="referenceBusy"
+                  @keydown.enter.prevent="saveReferenceNumber"
+                />
+                <button
+                  type="button"
+                  class="btn btn-primary staff-page-primary text-nowrap"
+                  :disabled="referenceBusy || !referenceDirty"
+                  @click="saveReferenceNumber"
+                >
+                  {{ referenceBusy ? "Saving…" : "Save" }}
+                </button>
+              </div>
+            </template>
+            <div v-else class="user-return-page__order-display">{{ displayOrderNumber }}</div>
           </div>
         </div>
 

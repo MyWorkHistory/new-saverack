@@ -65,6 +65,7 @@ class ClientAccountReturn extends Model
         'shiphero_order_id',
         'order_number',
         'customer_name',
+        'reference_number',
         'items_count',
         'warehouse_private_note',
         'return_fee_first_item',

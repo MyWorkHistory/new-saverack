@@ -7,27 +7,24 @@ import {
   CRM_DIALOG_FOOTER_CLASS_DRAWER,
 } from "../../constants/dialogFooter.js";
 
-const NON_COMPLIANT_REASONS = [
-  { value: "unable_to_identify_customer", label: "Missing Order or RMA Number" },
-  { value: "item_not_sold_by_client", label: "Item Not Sold by Client" },
-  { value: "mixed_products_multiple_orders", label: "Mixed Products from Multiple Orders" },
+const THIRD_PARTY_OPTIONS = [
+  { value: "amazon", label: "Amazon" },
+  { value: "other", label: "Other" },
 ];
 
 const props = defineProps({
   open: { type: Boolean, default: false },
   accountId: { type: [String, Number], default: "" },
-  accountOptions: { type: Array, default: () => [] },
-  declaredItems: { type: Number, default: 1 },
-  reason: { type: String, default: "" },
+  thirdPartyType: { type: String, default: "" },
   referenceNumber: { type: String, default: "" },
+  accountOptions: { type: Array, default: () => [] },
   busy: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
   "update:open",
   "update:accountId",
-  "update:declaredItems",
-  "update:reason",
+  "update:thirdPartyType",
   "update:referenceNumber",
   "submit",
 ]);
@@ -41,9 +38,9 @@ function close() {
 <template>
   <CrmRightDrawer
     :open="open"
-    title="Non-Compliant Return"
+    title="3rd Party Return"
     :busy="busy"
-    form-id="admin-return-non-compliant-form"
+    form-id="admin-return-third-party-form"
     max-width="3xl"
     @update:open="emit('update:open', $event)"
     @submit="emit('submit')"
@@ -64,21 +61,25 @@ function close() {
         />
       </div>
       <div class="col-12">
-        <label class="form-label">Items</label>
-        <input
-          :value="declaredItems"
-          type="number"
-          min="1"
-          class="form-control"
+        <label class="form-label" for="admin-return-third-party-type">3rd Party</label>
+        <select
+          id="admin-return-third-party-type"
+          :value="thirdPartyType"
+          class="form-select"
           :disabled="busy"
-          @input="emit('update:declaredItems', Math.max(1, Number($event.target.value) || 1))"
-        />
-        <p class="form-text mb-0">Declared physical item count for this shipment.</p>
+          required
+          @change="emit('update:thirdPartyType', $event.target.value)"
+        >
+          <option value="" disabled>Select channel…</option>
+          <option v-for="opt in THIRD_PARTY_OPTIONS" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
+        </select>
       </div>
       <div class="col-12">
-        <label class="form-label" for="admin-return-nc-reference">Reference #</label>
+        <label class="form-label" for="admin-return-tp-reference">Reference #</label>
         <input
-          id="admin-return-nc-reference"
+          id="admin-return-tp-reference"
           :value="referenceNumber"
           type="text"
           class="form-control"
@@ -87,20 +88,6 @@ function close() {
           :disabled="busy"
           @input="emit('update:referenceNumber', $event.target.value)"
         />
-      </div>
-      <div class="col-12">
-        <label class="form-label">Reason</label>
-        <select
-          :value="reason"
-          class="form-select"
-          :disabled="busy"
-          @change="emit('update:reason', $event.target.value)"
-        >
-          <option value="" disabled>Select a reason…</option>
-          <option v-for="opt in NON_COMPLIANT_REASONS" :key="opt.value" :value="opt.value">
-            {{ opt.label }}
-          </option>
-        </select>
       </div>
       <div class="col-12">
         <p class="form-text mb-0">Add return line items on the detail page after creation.</p>
@@ -114,7 +101,7 @@ function close() {
         </button>
         <button
           type="submit"
-          form="admin-return-non-compliant-form"
+          form="admin-return-third-party-form"
           :class="CRM_BTN_PRIMARY"
           :disabled="busy"
         >

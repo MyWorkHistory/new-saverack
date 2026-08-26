@@ -142,6 +142,11 @@ return [
         'chat_id' => env('WHATSAPP_GROUP_ID'),
     ],
 
+    'leads' => [
+        /** Shared secret for Google Sheets → CRM Bizy lead webhook (X-Leads-Webhook-Secret). */
+        'bizy_webhook_secret' => env('LEADS_BIZY_WEBHOOK_SECRET'),
+    ],
+
     /*
     | Lead website thumbnails via thum.io URL API (no API key).
     | Docs: https://www.thum.io/documentation/api/url

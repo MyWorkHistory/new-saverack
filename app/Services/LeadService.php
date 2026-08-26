@@ -247,6 +247,189 @@ class LeadService
     }
 
     /**
+     * Create a Bizy lead from Google Sheets webhook payload.
+     * Duplicate emails are skipped (idempotent) instead of throwing.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array{status: string, lead: Lead|null}
+     */
+    public function createFromBizyWebhook(array $payload): array
+    {
+        $normalized = $this->normalizeBizyWebhookPayload($payload);
+        $company = trim((string) ($normalized['company_name'] ?? ''));
+        $email = trim((string) ($normalized['email'] ?? ''));
+
+        $errors = [];
+        if ($company === '') {
+            $errors['company_name'] = ['Company is required.'];
+        }
+        if ($email === '') {
+            $errors['email'] = ['Email is required.'];
+        } elseif (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $errors['email'] = ['Email is invalid.'];
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+
+        $existing = $this->findByEmail($email);
+        if ($existing !== null) {
+            return [
+                'status' => 'duplicate',
+                'lead' => $existing,
+            ];
+        }
+
+        $lead = $this->create([
+            'company_name' => $company,
+            'email' => $email,
+            'website' => $normalized['website'] ?? null,
+            'name' => $normalized['name'] ?? null,
+            'comment' => $normalized['comment'] ?? null,
+            'referral' => Lead::REFERRAL_BIZY,
+        ], null);
+
+        return [
+            'status' => 'created',
+            'lead' => $lead,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{
+     *     company_name: string,
+     *     email: string,
+     *     website: ?string,
+     *     name: ?string,
+     *     comment: ?string
+     * }
+     */
+    private function normalizeBizyWebhookPayload(array $payload): array
+    {
+        $source = $payload;
+        if (isset($payload['row']) && is_array($payload['row'])) {
+            $source = array_merge($source, $payload['row']);
+        }
+        if (isset($payload['fields']) && is_array($payload['fields'])) {
+            $source = array_merge($source, $payload['fields']);
+        }
+
+        $map = [];
+        foreach ($source as $key => $value) {
+            if (! is_string($key) && ! is_int($key)) {
+                continue;
+            }
+            $normKey = $this->normalizeBizyHeaderKey((string) $key);
+            if ($normKey === '') {
+                continue;
+            }
+            if (is_array($value) || is_object($value)) {
+                continue;
+            }
+            $map[$normKey] = $value;
+        }
+
+        $company = $this->firstMappedString($map, [
+            'company_name',
+            'company',
+            'companyname',
+            'business',
+            'businessname',
+        ]);
+        $email = $this->firstMappedString($map, [
+            'email',
+            'emailaddress',
+            'e_mail',
+            'mail',
+        ]);
+        $website = $this->firstMappedString($map, [
+            'website',
+            'websiteurl',
+            'storewebsiteurl',
+            'url',
+            'web',
+            'site',
+        ]);
+        $name = $this->firstMappedString($map, [
+            'name',
+            'fullname',
+            'contact',
+            'contactname',
+            'contactperson',
+        ]);
+        $comment = $this->firstMappedString($map, [
+            'comment',
+            'comments',
+            'notes',
+            'note',
+            'response',
+            'emailthread',
+            'message',
+            'tellusaboutanyspecialrequirements',
+            'specialrequirements',
+            'requirements',
+        ]);
+        $sheetStatus = $this->firstMappedString($map, [
+            'status',
+            'sheetstatus',
+            'leadstatus',
+        ]);
+        if ($sheetStatus !== null) {
+            $statusLine = 'Sheet status: '.$sheetStatus;
+            $comment = $comment !== null && $comment !== ''
+                ? $comment."\n\n".$statusLine
+                : $statusLine;
+        }
+
+        return [
+            'company_name' => $company !== null ? $company : '',
+            'email' => $email !== null ? $email : '',
+            'website' => $website,
+            'name' => $name,
+            'comment' => $comment,
+        ];
+    }
+
+    private function normalizeBizyHeaderKey(string $key): string
+    {
+        $key = strtolower(trim($key));
+        $key = preg_replace('/[^a-z0-9]+/', '', $key) ?? '';
+
+        return $key;
+    }
+
+    /**
+     * @param  array<string, mixed>  $map
+     * @param  list<string>  $keys
+     */
+    private function firstMappedString(array $map, array $keys): ?string
+    {
+        foreach ($keys as $key) {
+            if (! array_key_exists($key, $map)) {
+                continue;
+            }
+            $value = $this->nullableTrim($map[$key]);
+            if ($value !== null) {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    private function findByEmail(string $email): ?Lead
+    {
+        $normalized = strtolower(trim($email));
+        if ($normalized === '') {
+            return null;
+        }
+
+        return Lead::query()->whereRaw('LOWER(email) = ?', [$normalized])->first();
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      */
     public function update(Lead $lead, array $data, ?User $actor = null): Lead

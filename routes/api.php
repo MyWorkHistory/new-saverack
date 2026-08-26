@@ -37,6 +37,7 @@ use App\Http\Controllers\Api\PortalProfileController;
 use App\Http\Controllers\Api\PricingFeeTemplateController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\LeadController;
+use App\Http\Controllers\LeadBizyWebhookController;
 use App\Http\Controllers\Api\EmailTemplateController;
 use App\Http\Controllers\Api\TermsOfServiceController;
 use App\Http\Controllers\Api\ClientAccountPaymentMethodController;
@@ -75,6 +76,8 @@ Route::post('stripe/webhook', [StripeWebhookController::class, 'handle']);
 Route::match(['post', 'head'], 'shiphero/webhook', [ShipHeroWebhookController::class, 'handle']);
 Route::match(['post', 'head'], 'shopify/webhook', [ShopifyWebhookController::class, 'handle'])
     ->withoutMiddleware([ThrottleRequests::class]);
+Route::match(['get', 'post', 'head'], 'leads/webhooks/bizy', [LeadBizyWebhookController::class, 'handle'])
+    ->middleware('throttle:60,1');
 Route::get('shopify/oauth/install', [ShopifyIntegrationController::class, 'oauthInstall']);
 Route::get('shopify/oauth/callback', [ShopifyIntegrationController::class, 'oauthCallback']);
 

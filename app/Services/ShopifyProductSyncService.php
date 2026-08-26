@@ -48,6 +48,12 @@ query ActiveProducts($cursor: String) {
         vendor
         productType
         updatedAt
+        featuredImage { url altText }
+        images(first: 3) {
+          edges {
+            node { url altText }
+          }
+        }
         variants(first: 100) {
           edges {
             node {
@@ -56,6 +62,7 @@ query ActiveProducts($cursor: String) {
               sku
               barcode
               price
+              image { url altText }
               inventoryItem { id measurement { weight { value unit } } }
               updatedAt
             }

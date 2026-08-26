@@ -924,8 +924,10 @@ class ShopifyIntegrationController extends Controller
                 $levelRows = $levels->get($key, collect());
                 $locMap = ($locations->get($variant->connection_id) ?? collect())->keyBy('shopify_location_id');
 
-                $rawJson = $variant->product ? $variant->product->raw_json : null;
-                $raw = is_array($rawJson) ? $rawJson : null;
+                $variantRaw = is_array($variant->raw_json) ? $variant->raw_json : null;
+                $productRaw = ($variant->product && is_array($variant->product->raw_json))
+                    ? $variant->product->raw_json
+                    : null;
                 $onHand = (int) $levelRows->sum('available');
                 $productStatus = $variant->product ? (string) ($variant->product->status ?? 'active') : 'active';
                 if ($productStatus === '') {
@@ -938,7 +940,7 @@ class ShopifyIntegrationController extends Controller
                     'title' => $variant->title,
                     'product_title' => $variant->product->title ?? null,
                     'barcode' => $variant->barcode,
-                    'image_url' => \App\Support\ShopifyProductImage::url($raw),
+                    'image_url' => \App\Support\ShopifyProductImage::url($variantRaw, $productRaw),
                     'shopify_variant_id' => $variant->shopify_variant_id,
                     'shopify_product_id' => $variant->product->shopify_product_id ?? null,
                     'weight' => $variant->weight,
@@ -999,8 +1001,10 @@ class ShopifyIntegrationController extends Controller
             ];
         })->values();
 
-        $rawJson = $shopifyVariant->product ? $shopifyVariant->product->raw_json : null;
-        $raw = is_array($rawJson) ? $rawJson : null;
+        $variantRaw = is_array($shopifyVariant->raw_json) ? $shopifyVariant->raw_json : null;
+        $productRaw = ($shopifyVariant->product && is_array($shopifyVariant->product->raw_json))
+            ? $shopifyVariant->product->raw_json
+            : null;
 
         return response()->json([
             'variant' => [
@@ -1008,7 +1012,7 @@ class ShopifyIntegrationController extends Controller
                 'sku' => $shopifyVariant->sku,
                 'title' => $shopifyVariant->title,
                 'product_title' => $shopifyVariant->product->title ?? null,
-                'image_url' => \App\Support\ShopifyProductImage::url($raw),
+                'image_url' => \App\Support\ShopifyProductImage::url($variantRaw, $productRaw),
                 'weight' => $shopifyVariant->weight,
                 'weight_unit' => $shopifyVariant->weight_unit,
                 'barcode' => $shopifyVariant->barcode,

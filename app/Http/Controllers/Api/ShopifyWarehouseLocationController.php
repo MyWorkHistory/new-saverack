@@ -517,8 +517,8 @@ class ShopifyWarehouseLocationController extends Controller
     {
         $variant = $item->variant;
         $product = $variant ? $variant->product : null;
-        $rawJson = $product ? $product->raw_json : null;
-        $raw = is_array($rawJson) ? $rawJson : null;
+        $variantRaw = ($variant && is_array($variant->raw_json)) ? $variant->raw_json : null;
+        $productRaw = ($product && is_array($product->raw_json)) ? $product->raw_json : null;
         $connection = $variant ? $variant->connection : null;
         $account = $connection ? $connection->clientAccount : null;
 
@@ -529,7 +529,7 @@ class ShopifyWarehouseLocationController extends Controller
             'sku' => $variant ? $variant->sku : null,
             'product_title' => $product ? $product->title : ($variant ? $variant->title : null),
             'variant_title' => $variant ? $variant->title : null,
-            'image_url' => ShopifyProductImage::url($raw),
+            'image_url' => ShopifyProductImage::url($variantRaw, $productRaw),
             'client_account_id' => $account ? (int) $account->id : null,
             'account_name' => $account ? $account->company_name : null,
         ];

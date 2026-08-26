@@ -9,8 +9,8 @@ import ShopifyLocationTransferModal from "../../components/shopify/ShopifyLocati
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 
-const MENU_W = 180;
-const MENU_H = 132;
+const MENU_W = 168;
+const MENU_H = 148;
 
 const props = defineProps({
   id: { type: String, default: "" },
@@ -417,31 +417,54 @@ onUnmounted(() => {
     </div>
 
     <template v-else-if="location">
-      <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
-        <div class="d-flex align-items-start gap-3 min-w-0">
+      <div class="shopify-loc-summary mb-4">
+        <div class="shopify-loc-summary__main">
           <div class="shopify-loc-hero-icon" aria-hidden="true">
-            <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="#2563eb" stroke-width="1.6">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+            <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="#2563eb" stroke-width="1.7">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"
+              />
             </svg>
           </div>
-          <div class="min-w-0">
-            <h1 class="h4 mb-2 fw-semibold text-body">{{ location.name }}</h1>
-            <div class="d-flex flex-wrap align-items-center gap-3 small">
-              <span class="text-secondary">Type: <strong class="text-body">{{ location.type || "—" }}</strong></span>
-              <span class="text-secondary">Pickable: <span :class="yesNoBadge(location.pickable)">{{ location.pickable ? "Yes" : "No" }}</span></span>
-              <span class="text-secondary">Sellable: <span :class="yesNoBadge(location.sellable)">{{ location.sellable ? "Yes" : "No" }}</span></span>
-              <span class="text-secondary">Active: <span :class="activeBadge(location.active)">{{ location.active ? "Active" : "Inactive" }}</span></span>
+          <div class="shopify-loc-summary__info min-w-0">
+            <h1 class="shopify-loc-summary__title">{{ location.name }}</h1>
+            <div class="shopify-loc-meta">
+              <div class="shopify-loc-meta__col">
+                <div class="shopify-loc-meta__label">Type</div>
+                <div class="shopify-loc-meta__value">{{ location.type || "—" }}</div>
+              </div>
+              <div class="shopify-loc-meta__col">
+                <div class="shopify-loc-meta__label">Pickable</div>
+                <span :class="yesNoBadge(location.pickable)">{{ location.pickable ? "Yes" : "No" }}</span>
+              </div>
+              <div class="shopify-loc-meta__col">
+                <div class="shopify-loc-meta__label">Sellable</div>
+                <span :class="yesNoBadge(location.sellable)">{{ location.sellable ? "Yes" : "No" }}</span>
+              </div>
+              <div class="shopify-loc-meta__col">
+                <div class="shopify-loc-meta__label">Active</div>
+                <span :class="activeBadge(location.active)">{{ location.active ? "Active" : "Inactive" }}</span>
+              </div>
             </div>
           </div>
         </div>
         <div class="shopify-loc-qty-card">
-          <button type="button" class="shopify-loc-qty-card__edit" @click="openEdit">
-            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897z" />
-            </svg>
-            Edit
-          </button>
-          <div class="shopify-loc-qty-card__label">Total QTY at Location</div>
+          <div class="shopify-loc-qty-card__top">
+            <div class="shopify-loc-qty-card__label">Total QTY at Location</div>
+            <button type="button" class="shopify-loc-qty-card__edit" @click="openEdit">
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897z" />
+              </svg>
+              Edit
+            </button>
+          </div>
           <div class="shopify-loc-qty-card__value">{{ totalQty }}</div>
         </div>
       </div>
@@ -449,8 +472,8 @@ onUnmounted(() => {
       <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
         <div class="px-3 px-md-4 pt-4 pb-2 d-flex flex-wrap align-items-start justify-content-between gap-2">
           <div>
-            <h2 class="h6 fw-semibold mb-1">Inventory at this location</h2>
-            <p class="small text-secondary mb-0">All inventory items currently stored at this location.</p>
+            <h2 class="shopify-loc-inv-title mb-1">Inventory at this location</h2>
+            <p class="shopify-loc-inv-sub mb-0">All inventory items currently stored at this location.</p>
           </div>
           <button type="button" class="btn btn-sm btn-primary staff-page-primary" @click="openAddItem">
             Add Item
@@ -562,9 +585,24 @@ onUnmounted(() => {
         :style="{ top: `${manageMenuRect.top}px`, left: `${manageMenuRect.left}px` }"
         @click.stop
       >
-        <button type="button" class="staff-row-menu__item" role="menuitem" @click="openQty(manageMenuItem)">Edit</button>
-        <button type="button" class="staff-row-menu__item" role="menuitem" @click="openTransfer(manageMenuItem)">Transfer</button>
-        <button type="button" class="staff-row-menu__item text-danger" role="menuitem" @click="deleteItem(manageMenuItem)">Delete</button>
+        <button type="button" class="staff-row-menu__item shopify-loc-menu-item" role="menuitem" @click="openQty(manageMenuItem)">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897z" />
+          </svg>
+          Edit
+        </button>
+        <button type="button" class="staff-row-menu__item shopify-loc-menu-item" role="menuitem" @click="openTransfer(manageMenuItem)">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-9L21 12m0 0L16.5 16.5M21 12H7.5" />
+          </svg>
+          Transfer
+        </button>
+        <button type="button" class="staff-row-menu__item shopify-loc-menu-item text-danger" role="menuitem" @click="deleteItem(manageMenuItem)">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+          </svg>
+          Delete
+        </button>
       </div>
     </Teleport>
 
@@ -747,64 +785,144 @@ onUnmounted(() => {
   color: #2563eb;
   font-weight: 600;
 }
+.shopify-loc-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem 1.5rem;
+  padding: 1.25rem 1.35rem;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 0.9rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.shopify-loc-summary__main {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  min-width: 0;
+  flex: 1 1 18rem;
+}
 .shopify-loc-hero-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 0.85rem;
+  width: 64px;
+  height: 64px;
+  border-radius: 0.9rem;
   background: #dbeafe;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
+.shopify-loc-summary__title {
+  margin: 0 0 0.85rem;
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #0f172a;
+}
+.shopify-loc-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem 2rem;
+}
+.shopify-loc-meta__col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-width: 4.5rem;
+}
+.shopify-loc-meta__label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #64748b;
+  line-height: 1.2;
+}
+.shopify-loc-meta__value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
 .shopify-loc-badge {
   display: inline-flex;
   align-items: center;
-  padding: 0.15rem 0.65rem;
+  padding: 0.2rem 0.7rem;
   border-radius: 999px;
   font-weight: 700;
   font-size: 0.75rem;
+  line-height: 1.2;
 }
 .shopify-loc-badge--yes {
   background: #dcfce7;
-  color: #166534;
+  color: #15803d;
 }
 .shopify-loc-badge--no {
   background: #fee2e2;
-  color: #991b1b;
+  color: #b91c1c;
 }
 .shopify-loc-qty-card {
-  position: relative;
-  min-width: 14rem;
-  padding: 1rem 1.15rem 0.9rem;
-  border: 1px solid rgba(15, 23, 42, 0.1);
+  flex: 0 0 auto;
+  min-width: 15rem;
+  padding: 0.95rem 1.1rem 0.85rem;
+  border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 0.85rem;
   background: #fff;
+}
+.shopify-loc-qty-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
 }
 .shopify-loc-qty-card__label {
   font-size: 0.8rem;
   color: #64748b;
+  line-height: 1.3;
+  padding-top: 0.15rem;
 }
 .shopify-loc-qty-card__value {
-  font-size: 1.85rem;
+  font-size: 2.15rem;
   font-weight: 800;
   color: #2563eb;
-  line-height: 1.15;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
 }
 .shopify-loc-qty-card__edit {
-  position: absolute;
-  top: 0.65rem;
-  right: 0.65rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  border: 1px solid rgba(37, 99, 235, 0.4);
+  gap: 0.3rem;
+  border: 1px solid rgba(37, 99, 235, 0.45);
   color: #2563eb;
   background: #fff;
   border-radius: 0.45rem;
   font-size: 0.8rem;
   font-weight: 700;
-  padding: 0.2rem 0.5rem;
+  padding: 0.22rem 0.55rem;
+  flex-shrink: 0;
+}
+.shopify-loc-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.shopify-loc-menu-item svg {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+.shopify-loc-inv-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.3;
+}
+.shopify-loc-inv-sub {
+  font-size: 0.875rem;
+  color: #64748b;
+  line-height: 1.4;
 }
 .shopify-loc-toolbar-row {
   display: flex;

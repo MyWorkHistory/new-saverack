@@ -50,7 +50,7 @@ class EmailTemplateController extends Controller
         $validated = $request->validate([
             'category' => ['required', 'string', Rule::in(EmailTemplate::CATEGORIES)],
             'name' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string', 'max:512'],
+            'subject' => ['nullable', 'string', 'max:512'],
             'body' => ['nullable', 'string'],
         ]);
 
@@ -73,7 +73,7 @@ class EmailTemplateController extends Controller
         $validated = $request->validate([
             'category' => ['sometimes', 'string', Rule::in(EmailTemplate::CATEGORIES)],
             'name' => ['sometimes', 'string', 'max:255'],
-            'description' => ['nullable', 'string', 'max:512'],
+            'subject' => ['nullable', 'string', 'max:512'],
             'body' => ['nullable', 'string'],
         ]);
 

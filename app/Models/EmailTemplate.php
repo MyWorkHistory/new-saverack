@@ -46,12 +46,41 @@ class EmailTemplate extends Model
         self::CATEGORY_ACCOUNT_CREATED => 'Account Created',
     ];
 
+    /**
+     * Follow-up days applied when a template email is sent (null = Off).
+     *
+     * @var array<string, int|null>
+     */
+    public const TEMPLATE_EMAIL_FOLLOW_UP_DAYS = [
+        self::CATEGORY_CONTACTED => 3,
+        self::CATEGORY_INTERESTED => 2,
+        self::CATEGORY_FUTURE_OPPORTUNITY => 90,
+        self::CATEGORY_FOLLOW_UP => 5,
+        self::CATEGORY_NON_RESPONSIVE => 15,
+        self::CATEGORY_NOT_INTERESTED => null,
+        self::CATEGORY_NOT_QUALIFIED => null,
+        self::CATEGORY_ACCOUNT_CREATED => null,
+    ];
+
     protected $fillable = [
         'category',
         'name',
-        'description',
+        'subject',
         'body',
     ];
+
+    /**
+     * @return int|null
+     */
+    public static function followUpDaysForCategory(string $category)
+    {
+        $key = strtolower(trim($category));
+        if (! array_key_exists($key, self::TEMPLATE_EMAIL_FOLLOW_UP_DAYS)) {
+            return null;
+        }
+
+        return self::TEMPLATE_EMAIL_FOLLOW_UP_DAYS[$key];
+    }
 
     public static function categoryLabel(string $category): string
     {

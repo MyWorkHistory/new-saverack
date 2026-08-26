@@ -142,12 +142,7 @@ const templateUsages = computed(() => lead.value?.template_usages || {});
 
 const emailTemplateGroupsForLead = computed(() =>
   (emailTemplateGroups.value || []).map((g) => {
-    const templates = (g.templates || []).filter((t) => {
-      const id = Number(t?.id || 0);
-      if (!id) return true;
-      const usage = templateUsages.value?.[id] || templateUsages.value?.[String(id)];
-      return !usage?.last_sent_at;
-    });
+    const templates = g.templates || [];
     return {
       ...g,
       templates,
@@ -161,6 +156,7 @@ const statusModalStatus = ref("open");
 const statusModalFollowUpDays = ref(1);
 const statusModalTemplateId = ref("custom");
 const statusBusy = ref(false);
+const templateEmailBusyId = ref(null);
 
 const editModalOpen = ref(false);
 const editBusy = ref(false);
@@ -429,6 +425,21 @@ async function saveStatusFromModal() {
     toast.errorFrom(e, "Could not update lead.");
   } finally {
     statusBusy.value = false;
+  }
+}
+
+async function sendTemplateEmail(row) {
+  if (!canUpdate.value || !lead.value?.id || !row?.id || templateEmailBusyId.value) return;
+  templateEmailBusyId.value = row.id;
+  try {
+    const { data } = await api.post(`/leads/${lead.value.id}/email-templates/${row.id}/send`);
+    lead.value = data;
+    toast.success("Email sent.");
+    await loadHistory();
+  } catch (e) {
+    toast.errorFrom(e, "Could not send email.");
+  } finally {
+    templateEmailBusyId.value = null;
   }
 }
 
@@ -1132,11 +1143,6 @@ onMounted(async () => {
                   icon="notes"
                   head-class="mb-3"
                 />
-                <p class="text-secondary small mb-3">
-                  Manage and track email templates for this lead. Templates are maintained in
-                  Settings; expand a row to read the body. Templates already sent on this lead are
-                  hidden here.
-                </p>
                 <div v-if="emailTemplatesLoading" class="d-flex justify-content-center py-5">
                   <CrmLoadingSpinner />
                 </div>
@@ -1146,9 +1152,12 @@ onMounted(async () => {
                   :collapsed="emailTemplatesCollapsed"
                   :highlight-category="emailHighlightCategory"
                   :usages="templateUsages"
+                  :show-email-action="canUpdate"
+                  :email-busy-id="templateEmailBusyId"
                   expandable
                   read-only-actions
                   @toggle-group="toggleEmailTemplateGroup"
+                  @email="sendTemplateEmail"
                 />
               </div>
             </template>

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
+import CrmRichTextEditor from "../common/CrmRichTextEditor.vue";
 import {
   EMAIL_TEMPLATE_CATEGORIES,
   emailTemplateCategoryLabel,
@@ -17,7 +18,7 @@ const emit = defineEmits(["update:open", "save"]);
 const form = reactive({
   category: "contacted",
   name: "",
-  description: "",
+  subject: "",
   body: "",
 });
 const localError = ref("");
@@ -31,7 +32,7 @@ const submitLabel = computed(() =>
 function reset() {
   form.category = props.template?.category || props.defaultCategory || "contacted";
   form.name = props.template?.name || "";
-  form.description = props.template?.description || "";
+  form.subject = props.template?.subject || props.template?.description || "";
   form.body = props.template?.body || "";
   localError.value = "";
 }
@@ -61,7 +62,7 @@ function submit() {
   emit("save", {
     category: form.category,
     name: form.name.trim(),
-    description: form.description.trim() || null,
+    subject: form.subject.trim() || null,
     body: form.body || null,
   });
 }
@@ -138,25 +139,22 @@ function submit() {
                 placeholder="Introduction Email"
               />
 
-              <label class="form-label small" for="email-tpl-description">Description</label>
+              <label class="form-label small" for="email-tpl-subject">Subject</label>
               <input
-                id="email-tpl-description"
-                v-model="form.description"
+                id="email-tpl-subject"
+                v-model="form.subject"
                 type="text"
                 class="form-control mb-3"
                 maxlength="512"
                 :disabled="busy"
-                placeholder="Short summary shown under the name"
+                placeholder="Email subject line"
               />
 
               <label class="form-label small" for="email-tpl-body">Body</label>
-              <textarea
-                id="email-tpl-body"
+              <CrmRichTextEditor
                 v-model="form.body"
-                class="form-control"
-                rows="12"
                 :disabled="busy"
-                placeholder="Enter the email template text…"
+                aria-label="Email template body"
               />
             </div>
 

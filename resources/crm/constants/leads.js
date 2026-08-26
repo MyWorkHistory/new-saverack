@@ -12,7 +12,7 @@ export const LEAD_STATUSES = [
 
 export const LEAD_REFERRALS = ["bizy", "google"];
 
-export const LEAD_FOLLOW_UP_DAY_OPTIONS = [1, 3, 5, 7, 10, 15, 30, 60, 90];
+export const LEAD_FOLLOW_UP_DAY_OPTIONS = [1, 2, 3, 5, 7, 10, 15, 30, 60, 90];
 
 /** Sentinel for Follow Up Off in selects (serialized as null to the API). */
 export const LEAD_FOLLOW_UP_OFF = "";

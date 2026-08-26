@@ -9,6 +9,7 @@ import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import LeadBulkEmailDrawer from "../../components/leads/LeadBulkEmailDrawer.vue";
 import LeadCreateDrawer from "../../components/leads/LeadCreateDrawer.vue";
 import LeadQuickAddDrawer from "../../components/leads/LeadQuickAddDrawer.vue";
 import LeadStatusUpdateModal from "../../components/leads/LeadStatusUpdateModal.vue";
@@ -93,7 +94,81 @@ const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
 const manageMenuRow = computed(() => rows.value.find((r) => r.id === manageOpenId.value) ?? null);
 
+const filterMenuOpen = ref(false);
+const selectedIds = ref(new Set());
+const bulkEmailOpen = ref(false);
+const bulkEmailBusy = ref(false);
+
+const selectedCount = computed(() => selectedIds.value.size);
+const allPageSelected = computed(() => {
+  if (!rows.value.length) return false;
+  return rows.value.every((r) => selectedIds.value.has(r.id));
+});
+const somePageSelected = computed(() => {
+  if (!rows.value.length) return false;
+  const n = rows.value.filter((r) => selectedIds.value.has(r.id)).length;
+  return n > 0 && n < rows.value.length;
+});
+
 let searchTimer = null;
+
+function clearFilters() {
+  query.value = { ...query.value, status: "all", referral: "all", page: 1 };
+}
+
+function toggleSelectAll(event) {
+  const checked = !!event?.target?.checked;
+  const next = new Set(selectedIds.value);
+  if (checked) {
+    for (const row of rows.value) next.add(row.id);
+  } else {
+    for (const row of rows.value) next.delete(row.id);
+  }
+  selectedIds.value = next;
+}
+
+function toggleSelectRow(id, event) {
+  const next = new Set(selectedIds.value);
+  if (event?.target?.checked) next.add(id);
+  else next.delete(id);
+  selectedIds.value = next;
+}
+
+function isSelected(id) {
+  return selectedIds.value.has(id);
+}
+
+async function openBulkEmail() {
+  if (!canUpdate.value || !selectedCount.value) return;
+  await loadEmailTemplatesFlat();
+  bulkEmailOpen.value = true;
+}
+
+async function submitBulkEmail({ email_template_id }) {
+  if (!email_template_id || !selectedCount.value) return;
+  bulkEmailBusy.value = true;
+  try {
+    const { data } = await api.post("/leads/bulk-email", {
+      lead_ids: Array.from(selectedIds.value),
+      email_template_id,
+    });
+    const queued = Number(data?.queued || 0);
+    const skipped = Number(data?.skipped || 0);
+    toast.success(
+      skipped
+        ? `Queued ${queued} email${queued === 1 ? "" : "s"} (${skipped} skipped).`
+        : `Queued ${queued} email${queued === 1 ? "" : "s"}.`,
+    );
+    bulkEmailOpen.value = false;
+    selectedIds.value = new Set();
+    await fetchRows();
+    await loadMeta();
+  } catch (e) {
+    toast.errorFrom(e, "Could not queue bulk email.");
+  } finally {
+    bulkEmailBusy.value = false;
+  }
+}
 
 async function loadMeta() {
   try {
@@ -144,6 +219,8 @@ async function fetchRows() {
       per_page: Number(data?.per_page || 25),
       total: Number(data?.total || 0),
     };
+    const visible = new Set(rows.value.map((r) => r.id));
+    selectedIds.value = new Set([...selectedIds.value].filter((id) => visible.has(id)));
   } catch (e) {
     toast.errorFrom(e, "Could not load leads.");
     rows.value = [];
@@ -365,7 +442,8 @@ async function toggleManageMenu(rowId, e) {
   });
 }
 
-function onDocClick() {
+function onDocClick(e) {
+  if (!e.target?.closest?.("[data-toolbar-filter]")) filterMenuOpen.value = false;
   closeManageMenu();
 }
 
@@ -414,6 +492,13 @@ onUnmounted(() => {
   <div class="staff-page">
     <LeadCreateDrawer v-model:open="createOpen" :busy="createBusy" @submit="onCreate" />
     <LeadQuickAddDrawer v-model:open="quickAddOpen" :busy="quickAddBusy" @submit="onQuickAdd" />
+    <LeadBulkEmailDrawer
+      v-model:open="bulkEmailOpen"
+      :busy="bulkEmailBusy"
+      :selected-count="selectedCount"
+      :templates="emailTemplatesFlat"
+      @submit="submitBulkEmail"
+    />
     <LeadStatusUpdateModal
       v-model:open="statusModalOpen"
       v-model:status="statusModalStatus"
@@ -449,6 +534,15 @@ onUnmounted(() => {
         <p class="text-secondary small mb-0">Track sales leads and follow-ups</p>
       </div>
       <div class="d-flex flex-wrap align-items-center gap-2 ms-md-auto flex-shrink-0">
+        <button
+          v-if="canUpdate"
+          type="button"
+          class="btn btn-outline-secondary fw-semibold"
+          :disabled="!selectedCount || bulkEmailBusy"
+          @click="openBulkEmail"
+        >
+          Bulk Sent{{ selectedCount ? ` (${selectedCount})` : "" }}
+        </button>
         <button
           v-if="canCreate"
           type="button"
@@ -487,28 +581,85 @@ onUnmounted(() => {
             placeholder="Search leads"
             autocomplete="off"
           />
-          <select
-            v-model="query.status"
-            class="form-select staff-toolbar-search staff-toolbar-search--inline"
-            aria-label="Filter by status"
-            @change="query.page = 1"
-          >
-            <option value="all">All Statuses</option>
-            <option v-for="st in statuses" :key="st" :value="st">
-              {{ leadStatusLabel(st) }}
-            </option>
-          </select>
-          <select
-            v-model="query.referral"
-            class="form-select staff-toolbar-search staff-toolbar-search--inline"
-            aria-label="Filter by referral"
-            @change="query.page = 1"
-          >
-            <option value="all">All Referrals</option>
-            <option v-for="ref in LEAD_REFERRALS" :key="ref" :value="ref">
-              {{ leadReferralLabel(ref) }}
-            </option>
-          </select>
+          <div class="position-relative flex-shrink-0" data-toolbar-filter>
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+              :aria-expanded="filterMenuOpen"
+              aria-haspopup="true"
+              aria-controls="leads-filter-panel"
+              :disabled="loading"
+              @click.stop="filterMenuOpen = !filterMenuOpen"
+            >
+              <svg
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                />
+              </svg>
+              <span class="staff-toolbar-filter-text">Filters</span>
+            </button>
+            <div
+              v-if="filterMenuOpen"
+              id="leads-filter-panel"
+              class="dropdown-menu dropdown-menu-end show shadow border p-0 staff-toolbar-filter-dropdown"
+              role="dialog"
+              aria-label="Table filters"
+              @click.stop
+            >
+              <div class="staff-toolbar-filter-dropdown__head">
+                <span>Filters</span>
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                  :disabled="loading"
+                  @click="
+                    clearFilters();
+                    filterMenuOpen = false;
+                  "
+                >
+                  Reset
+                </button>
+              </div>
+              <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="leads-filter-status">Status</label>
+                <select
+                  id="leads-filter-status"
+                  v-model="query.status"
+                  class="form-select staff-datatable-filters__select mb-3"
+                  :disabled="loading"
+                  @change="query.page = 1"
+                >
+                  <option value="all">All Statuses</option>
+                  <option v-for="st in statuses" :key="st" :value="st">
+                    {{ leadStatusLabel(st) }}
+                  </option>
+                </select>
+                <label class="form-label" for="leads-filter-referral">Referral</label>
+                <select
+                  id="leads-filter-referral"
+                  v-model="query.referral"
+                  class="form-select staff-datatable-filters__select"
+                  :disabled="loading"
+                  @change="query.page = 1"
+                >
+                  <option value="all">All Referrals</option>
+                  <option v-for="ref in LEAD_REFERRALS" :key="ref" :value="ref">
+                    {{ leadReferralLabel(ref) }}
+                  </option>
+                </select>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -519,6 +670,17 @@ onUnmounted(() => {
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
+              <th class="staff-table-head__th text-center" scope="col" style="width: 2.5rem">
+                <input
+                  v-if="canUpdate"
+                  type="checkbox"
+                  class="form-check-input"
+                  :checked="allPageSelected"
+                  :indeterminate.prop="somePageSelected"
+                  aria-label="Select all on page"
+                  @change="toggleSelectAll"
+                />
+              </th>
               <th class="staff-table-head__th" scope="col">Status</th>
               <th class="staff-table-head__th" scope="col" style="width: 3rem"></th>
               <th class="staff-table-head__th" scope="col">Company Name</th>
@@ -532,9 +694,19 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr v-if="!rows.length">
-              <td colspan="9" class="px-4 py-5 text-center text-secondary">No leads found.</td>
+              <td colspan="10" class="px-4 py-5 text-center text-secondary">No leads found.</td>
             </tr>
             <tr v-for="row in rows" :key="row.id" class="align-middle">
+              <td class="text-center" @click.stop>
+                <input
+                  v-if="canUpdate"
+                  type="checkbox"
+                  class="form-check-input"
+                  :checked="isSelected(row.id)"
+                  :aria-label="`Select ${row.company_name}`"
+                  @change="toggleSelectRow(row.id, $event)"
+                />
+              </td>
               <td>
                 <button
                   v-if="canUpdate"

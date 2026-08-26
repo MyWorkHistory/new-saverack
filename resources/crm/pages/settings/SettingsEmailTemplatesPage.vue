@@ -166,9 +166,6 @@ onUnmounted(() => {
         </span>
         <div class="min-w-0">
           <h1 class="h4 mb-1 fw-semibold text-body">Email Templates</h1>
-          <p class="text-secondary small mb-0">
-            Manage email templates by lead status category.
-          </p>
         </div>
       </div>
       <button

@@ -24,13 +24,19 @@ const props = defineProps({
    */
   usages: { type: Object, default: () => ({}) },
   readOnlyActions: { type: Boolean, default: false },
+  /** Lead detail: show Email column + Email button. */
+  showEmailAction: { type: Boolean, default: false },
+  /** Template id currently sending. */
+  emailBusyId: { type: [Number, String], default: null },
 });
 
-const emit = defineEmits(["toggle-group", "open-manage", "edit", "delete"]);
+const emit = defineEmits(["toggle-group", "open-manage", "edit", "delete", "email"]);
 
 const toast = useToast();
 const expandedRows = reactive({});
 const copyBusyId = reactive({});
+
+const colCount = computed(() => (props.showEmailAction ? 4 : 3));
 
 const displayGroups = computed(() => {
   if (Array.isArray(props.groups) && props.groups.length) {
@@ -92,6 +98,10 @@ function lastSentFor(row) {
   return "—";
 }
 
+function subjectFor(row) {
+  return String(row?.subject || row?.description || "").trim() || "—";
+}
+
 function isRowExpanded(id) {
   return !!expandedRows[id];
 }
@@ -101,13 +111,18 @@ function toggleRow(id) {
   expandedRows[id] = !expandedRows[id];
 }
 
+function isEmailBusy(row) {
+  return Number(props.emailBusyId || 0) === Number(row?.id || 0);
+}
+
 async function copyTemplateBody(row) {
   const body = String(row?.body || "");
   const id = Number(row?.id || 0);
   if (!body || copyBusyId[id]) return;
   copyBusyId[id] = true;
   try {
-    await navigator.clipboard.writeText(body);
+    const plain = body.replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
+    await navigator.clipboard.writeText(plain || body);
     toast.success("Text copied.");
   } catch {
     toast.error("Could not copy text.");
@@ -125,6 +140,7 @@ async function copyTemplateBody(row) {
           <tr>
             <th class="staff-table-head__th" scope="col">Template Name</th>
             <th class="staff-table-head__th" scope="col">Last Sent</th>
+            <th v-if="showEmailAction" class="staff-table-head__th text-center" scope="col">Email</th>
             <th class="staff-table-head__th staff-actions-col text-center" scope="col">Actions</th>
           </tr>
         </thead>
@@ -137,7 +153,7 @@ async function copyTemplateBody(row) {
                   highlightCategory && highlightCategory === group.category,
               }"
             >
-              <td colspan="3" class="p-0">
+              <td :colspan="colCount" class="p-0">
                 <button
                   type="button"
                   class="email-templates-list__group-btn w-100 text-start"
@@ -188,7 +204,7 @@ async function copyTemplateBody(row) {
             </tr>
             <template v-if="!isCollapsed(group.category)">
               <tr v-if="!(group.templates || []).length">
-                <td colspan="3" class="text-secondary small py-3 px-4">
+                <td :colspan="colCount" class="text-secondary small py-3 px-4">
                   No templates in this category yet.
                 </td>
               </tr>
@@ -234,12 +250,22 @@ async function copyTemplateBody(row) {
                           </svg>
                         </div>
                         <div class="small text-secondary text-break">
-                          {{ row.description || "—" }}
+                          {{ subjectFor(row) }}
                         </div>
                       </div>
                     </div>
                   </td>
                   <td class="text-secondary small">{{ lastSentFor(row) }}</td>
+                  <td v-if="showEmailAction" class="text-center" @click.stop>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-primary staff-page-primary"
+                      :disabled="isEmailBusy(row) || !!emailBusyId"
+                      @click="emit('email', row)"
+                    >
+                      {{ isEmailBusy(row) ? "Sending…" : "Email" }}
+                    </button>
+                  </td>
                   <td class="staff-actions-cell text-center" @click.stop>
                     <div
                       class="staff-actions-inner justify-content-center gap-2 flex-wrap"
@@ -275,7 +301,7 @@ async function copyTemplateBody(row) {
                   </td>
                 </tr>
                 <tr v-if="expandable && isRowExpanded(row.id)">
-                  <td colspan="3" class="email-templates-list__body-cell">
+                  <td :colspan="colCount" class="email-templates-list__body-cell">
                     <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
                       <span class="small text-secondary">Template body</span>
                       <button
@@ -288,7 +314,12 @@ async function copyTemplateBody(row) {
                         Copy Text
                       </button>
                     </div>
-                    <pre class="email-templates-list__body mb-0">{{ row.body || "—" }}</pre>
+                    <div
+                      v-if="row.body"
+                      class="email-templates-list__body email-templates-list__body--html mb-0"
+                      v-html="row.body"
+                    />
+                    <pre v-else class="email-templates-list__body mb-0">—</pre>
                   </td>
                 </tr>
               </template>
@@ -318,7 +349,6 @@ async function copyTemplateBody(row) {
         >
           Edit
         </button>
-        <hr class="staff-row-menu__divider" />
         <button
           type="button"
           class="staff-row-menu__item staff-row-menu__item--danger"
@@ -334,80 +364,60 @@ async function copyTemplateBody(row) {
 
 <style scoped>
 .email-templates-list__group-row td {
-  background: #f8fafc;
-  border-bottom: 1px solid #e8e6ec;
+  background: var(--bs-tertiary-bg, #f8f9fa);
 }
-
 .email-templates-list__group-row--highlight td {
-  background: #eff6ff;
+  background: #eef4ff;
 }
-
 .email-templates-list__group-btn {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.7rem 1rem;
+  padding: 0.75rem 1rem;
   border: 0;
   background: transparent;
-  color: #0f172a;
   font-weight: 600;
-  font-size: 0.875rem;
 }
-
 .email-templates-list__group-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: 999px;
-  flex-shrink: 0;
-}
-
-.email-templates-list__chevron {
-  transition: transform 0.15s ease;
-  color: #64748b;
-}
-
-.email-templates-list__chevron.is-collapsed {
-  transform: rotate(-90deg);
-}
-
-.email-templates-list__row-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   width: 2rem;
   height: 2rem;
   border-radius: 0.5rem;
-  background: #dbeafe;
-  color: #2563eb;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
-
+.email-templates-list__chevron {
+  transition: transform 0.15s ease;
+}
+.email-templates-list__chevron.is-collapsed {
+  transform: rotate(-90deg);
+}
+.email-templates-list__row-icon {
+  margin-top: 0.15rem;
+  color: var(--bs-secondary-color);
+}
 .email-templates-list__row--clickable {
   cursor: pointer;
 }
-
 .email-templates-list__row-chevron {
-  color: #64748b;
   transition: transform 0.15s ease;
 }
-
 .email-templates-list__row-chevron.is-expanded {
   transform: rotate(180deg);
 }
-
 .email-templates-list__body-cell {
-  background: #f8fafc;
-  padding: 0.85rem 1rem 1rem 3.5rem !important;
+  background: var(--bs-tertiary-bg, #f8f9fa);
+  padding: 1rem 1.25rem;
 }
-
 .email-templates-list__body {
   white-space: pre-wrap;
-  word-break: break-word;
-  font-family: inherit;
-  font-size: 0.8125rem;
-  color: #334155;
-  line-height: 1.5;
+  font-size: 0.875rem;
+}
+.email-templates-list__body--html {
+  white-space: normal;
+  line-height: 1.55;
+}
+.email-templates-list__body--html :deep(a) {
+  color: var(--bs-primary);
 }
 </style>

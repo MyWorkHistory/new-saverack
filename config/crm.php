@@ -55,6 +55,13 @@ return [
         ],
     ],
 
+    /**
+     * Lead template emails always send from Audi. Signature image lives at
+     * public/images/email/audi-signature.png (drop your PNG there).
+     */
+    'lead_template_from_address' => 'audi@saverack.com',
+    'lead_template_signature_image' => 'images/email/audi-signature.png',
+
     /** Notified when a new 3PL self-serve account is created. */
     'registration_notify_email' => env('REGISTRATION_NOTIFY_EMAIL') ?: env('ADMIN_EMAIL'),
 

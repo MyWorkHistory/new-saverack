@@ -58,7 +58,7 @@ class Lead extends Model
     ];
 
     /** @var list<int> */
-    public const FOLLOW_UP_DAY_OPTIONS = [1, 3, 5, 7, 10, 15, 30, 60, 90];
+    public const FOLLOW_UP_DAY_OPTIONS = [1, 2, 3, 5, 7, 10, 15, 30, 60, 90];
 
     public const DEFAULT_FOLLOW_UP_DAYS = 1;
 

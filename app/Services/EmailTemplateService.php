@@ -56,7 +56,7 @@ class EmailTemplateService
     }
 
     /**
-     * @param  array{category: string, name: string, description?: string|null, body?: string|null}  $data
+     * @param  array{category: string, name: string, subject?: string|null, body?: string|null}  $data
      */
     public function create(array $data): EmailTemplate
     {
@@ -66,7 +66,7 @@ class EmailTemplateService
     }
 
     /**
-     * @param  array{category?: string, name?: string, description?: string|null, body?: string|null}  $data
+     * @param  array{category?: string, name?: string, subject?: string|null, body?: string|null}  $data
      */
     public function update(EmailTemplate $template, array $data): EmailTemplate
     {
@@ -94,7 +94,7 @@ class EmailTemplateService
             'category' => (string) $template->category,
             'category_label' => EmailTemplate::categoryLabel((string) $template->category),
             'name' => (string) $template->name,
-            'description' => $template->description !== null ? (string) $template->description : null,
+            'subject' => $template->subject !== null ? (string) $template->subject : null,
             'body' => $template->body !== null ? (string) $template->body : null,
             'status' => 'ready',
             'status_label' => 'Ready',
@@ -132,9 +132,10 @@ class EmailTemplateService
             $out['name'] = mb_substr($name, 0, 255);
         }
 
-        if ($creating || array_key_exists('description', $data)) {
-            $description = isset($data['description']) ? trim((string) $data['description']) : '';
-            $out['description'] = $description !== '' ? mb_substr($description, 0, 512) : null;
+        if ($creating || array_key_exists('subject', $data) || array_key_exists('description', $data)) {
+            $raw = array_key_exists('subject', $data) ? $data['subject'] : ($data['description'] ?? null);
+            $subject = isset($raw) ? trim((string) $raw) : '';
+            $out['subject'] = $subject !== '' ? mb_substr($subject, 0, 512) : null;
         }
 
         if ($creating || array_key_exists('body', $data)) {

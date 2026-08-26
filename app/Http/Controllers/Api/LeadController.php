@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
+use App\Models\EmailTemplate;
 use App\Models\Lead;
 use App\Models\LeadComment;
 use App\Models\LeadFee;
 use App\Services\LeadService;
+use App\Services\LeadTemplateMailService;
 use App\Services\FulfillmentPricingPdfService;
 use App\Support\CrmActivityPresenter;
 use Illuminate\Http\JsonResponse;
@@ -25,10 +27,17 @@ class LeadController extends Controller
     /** @var FulfillmentPricingPdfService */
     private $pricingPdfs;
 
-    public function __construct(LeadService $leads, FulfillmentPricingPdfService $pricingPdfs)
-    {
+    /** @var LeadTemplateMailService */
+    private $templateMail;
+
+    public function __construct(
+        LeadService $leads,
+        FulfillmentPricingPdfService $pricingPdfs,
+        LeadTemplateMailService $templateMail
+    ) {
         $this->leads = $leads;
         $this->pricingPdfs = $pricingPdfs;
+        $this->templateMail = $templateMail;
     }
 
     public function meta(): JsonResponse
@@ -139,6 +148,50 @@ class LeadController extends Controller
         $lead = $this->leads->update($lead, $validated, $request->user());
 
         return response()->json($this->leads->toDetailArray($lead));
+    }
+
+    public function sendTemplateEmail(Lead $lead, EmailTemplate $emailTemplate): JsonResponse
+    {
+        Gate::authorize('update', $lead);
+
+        $result = $this->templateMail->sendToLead($lead, $emailTemplate, request()->user());
+
+        return response()->json($this->leads->toDetailArray($result['lead']));
+    }
+
+    public function bulkEmail(Request $request): JsonResponse
+    {
+        Gate::authorize('viewAny', Lead::class);
+        $user = $request->user();
+        if (
+            $user === null
+            || (! $user->isAdministrator() && ! $user->isCrmOwner() && ! $user->hasPermission('leads.update'))
+        ) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'lead_ids' => ['required', 'array', 'min:1'],
+            'lead_ids.*' => ['integer', 'distinct', 'exists:leads,id'],
+            'email_template_id' => ['required', 'integer', 'exists:email_templates,id'],
+        ]);
+
+        $template = EmailTemplate::query()->findOrFail((int) $validated['email_template_id']);
+        $summary = $this->templateMail->queueBulk(
+            $validated['lead_ids'],
+            $template,
+            $user
+        );
+
+        return response()->json([
+            'ok' => true,
+            'queued' => $summary['queued'],
+            'skipped' => $summary['skipped'],
+            'skipped_ids' => $summary['skipped_ids'],
+            'template_id' => (int) $template->id,
+            'template_name' => (string) $template->name,
+            'category' => (string) $template->category,
+        ]);
     }
 
     public function uploadLogo(Request $request, Lead $lead): JsonResponse

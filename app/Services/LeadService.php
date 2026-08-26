@@ -375,6 +375,56 @@ class LeadService
         return $lead->fresh(['feeItems.pricingTemplate']) ?? $lead;
     }
 
+    /**
+     * After a real template email send: set status to template category, apply
+     * follow-up defaults, and record a status event (Last Sent).
+     */
+    public function applyTemplateEmailSend(Lead $lead, EmailTemplate $template, ?User $actor = null): Lead
+    {
+        $category = strtolower(trim((string) $template->category));
+        if (! in_array($category, Lead::STATUSES, true) || $category === Lead::STATUS_OPEN) {
+            throw ValidationException::withMessages([
+                'email_template_id' => ['Invalid template category for lead status.'],
+            ]);
+        }
+
+        $before = [
+            'status' => $lead->status,
+            'follow_up_days' => $lead->follow_up_days,
+        ];
+
+        $lead->status = $category;
+        $days = EmailTemplate::followUpDaysForCategory($category);
+        if ($days === null) {
+            $lead->follow_up_days = null;
+            $lead->follow_up_at = null;
+        } else {
+            $lead->follow_up_days = Lead::normalizeFollowUpDays($days);
+            $lead->follow_up_at = now()->startOfDay()->addDays((int) $lead->follow_up_days)->toDateString();
+        }
+        $lead->save();
+
+        LeadStatusEvent::query()->create([
+            'lead_id' => $lead->id,
+            'status' => $lead->status,
+            'follow_up_days' => $lead->follow_up_days,
+            'email_template_id' => $template->id,
+            'template_name' => $template->name,
+            'user_id' => $actor !== null ? $actor->id : null,
+            'note' => 'Email template sent',
+        ]);
+
+        if ($actor !== null) {
+            $this->activityLog->log($actor, 'lead.updated', $lead, null, [
+                'fields' => ['status', 'follow_up_days', 'email_template'],
+                'before' => $before,
+                'email_sent' => true,
+            ]);
+        }
+
+        return $lead->fresh(['feeItems.pricingTemplate']) ?? $lead;
+    }
+
     public function uploadLogo(Lead $lead, UploadedFile $file, ?User $actor = null, array $options = []): Lead
     {
         $this->logos->replaceForLead($lead, $file, $options);

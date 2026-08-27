@@ -81,3 +81,11 @@ export function emailTemplateCategoryMeta(category) {
   const key = String(category || "").toLowerCase();
   return EMAIL_TEMPLATE_CATEGORY_META[key] || EMAIL_TEMPLATE_CATEGORY_META.contacted;
 }
+
+/** Merge fields for lead template emails (subject + body). Case-insensitive. */
+export const LEAD_EMAIL_TEMPLATE_PLACEHOLDERS = [
+  { token: "{Name}", label: "Contact name" },
+  { token: "{Company}", label: "Company name" },
+  { token: "{Website}", label: "Website URL" },
+  { token: "{Email}", label: "Lead email address" },
+];

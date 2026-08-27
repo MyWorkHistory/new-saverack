@@ -809,6 +809,8 @@ class AsnController extends Controller
     /**
      * Import ASN product lines from a CSV (Name, SKU, Expected QTY).
      * Only existing catalog SKUs are accepted; quantities merge onto matching lines.
+     * Resolves SKUs from the local inventory index in bulk (no per-row ShipHero API)
+     * so large files finish inside the proxy timeout.
      */
     public function importLinesCsv(Request $request, ClientAccountAsn $asn): JsonResponse
     {
@@ -823,7 +825,7 @@ class AsnController extends Controller
         }
 
         $validated = $request->validate([
-            'file' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+            'file' => ['required', 'file', 'mimes:csv,txt', 'max:10240'],
         ]);
 
         $path = $validated['file']->getRealPath();
@@ -833,15 +835,28 @@ class AsnController extends Controller
             ]);
         }
 
+        @set_time_limit(110);
+
         $parsed = $this->parseAsnLinesCsv($path);
         $errors = $parsed['errors'];
         $rows = $parsed['rows'];
 
         $imported = 0;
         $updated = 0;
-        $productCache = [];
         $clientAccountId = (int) $asn->client_account_id;
-        $shipheroCustomerId = null;
+
+        $skuKeys = [];
+        foreach ($rows as $row) {
+            $key = mb_strtolower(trim((string) ($row['sku'] ?? '')));
+            if ($key !== '') {
+                $skuKeys[$key] = $key;
+            }
+        }
+
+        $productCache = $this->bulkResolveCatalogProductsForAsnCsv(
+            $clientAccountId,
+            array_values($skuKeys)
+        );
 
         $asn->load('lines');
         /** @var array<string, ClientAccountAsnLine> $linesBySku */
@@ -855,17 +870,14 @@ class AsnController extends Controller
         $maxSort = (int) $asn->lines->max('sort_order');
 
         DB::transaction(function () use (
-            $request,
             $asn,
             $rows,
             &$errors,
             &$imported,
             &$updated,
-            &$productCache,
+            $productCache,
             &$linesBySku,
-            &$maxSort,
-            &$shipheroCustomerId,
-            $clientAccountId
+            &$maxSort
         ) {
             foreach ($rows as $row) {
                 $rowNum = (int) $row['row'];
@@ -874,15 +886,7 @@ class AsnController extends Controller
                 $qty = (int) $row['expected_qty'];
                 $csvName = (string) ($row['name'] ?? '');
 
-                if (! array_key_exists($skuKey, $productCache)) {
-                    $productCache[$skuKey] = $this->resolveExistingCatalogProductForAsnCsv(
-                        $clientAccountId,
-                        $sku,
-                        $request,
-                        $shipheroCustomerId
-                    );
-                }
-                $product = $productCache[$skuKey];
+                $product = $productCache[$skuKey] ?? null;
                 if ($product === null) {
                     $errors[] = [
                         'row' => $rowNum,
@@ -1063,16 +1067,43 @@ class AsnController extends Controller
     private function mapAsnLinesCsvHeaders(array $headerRow): array
     {
         $aliases = [
-            'name' => ['name'],
-            'sku' => ['sku'],
-            'expected_qty' => ['expected qty', 'expected_qty', 'expected quantity', 'expectedquantity'],
+            'name' => [
+                'name',
+                'product',
+                'product name',
+                'productname',
+                'title',
+                'item',
+                'item name',
+                'itemname',
+            ],
+            'sku' => [
+                'sku',
+                'skus',
+                'product sku',
+                'productsku',
+                'item sku',
+                'itemsku',
+            ],
+            'expected_qty' => [
+                'expected qty',
+                'expected_qty',
+                'expected quantity',
+                'expectedquantity',
+                'expected',
+                'qty',
+                'quantity',
+                'qnty',
+                'units',
+                'count',
+            ],
         ];
 
         $map = [];
         foreach ($headerRow as $index => $raw) {
             $normalized = mb_strtolower(trim((string) $raw));
             $normalized = preg_replace('/^\xEF\xBB\xBF/', '', $normalized) ?? $normalized;
-            $normalized = str_replace('_', ' ', $normalized);
+            $normalized = str_replace(['_', '-'], ' ', $normalized);
             $normalized = preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
             foreach ($aliases as $field => $names) {
                 if (in_array($normalized, $names, true) && ! isset($map[$field])) {
@@ -1100,83 +1131,113 @@ class AsnController extends Controller
     }
 
     /**
-     * Resolve an existing catalog product for the ASN client account (index, then ShipHero detail).
-     * Does not create products.
+     * Bulk-resolve catalog products from the local inventory index (SKU, then barcode).
+     * Avoids per-row ShipHero GraphQL calls that time out large CSV imports.
      *
-     * @param  string|null  $shipheroCustomerId  resolved once and reused
-     * @return array{shiphero_product_id: ?string, shiphero_legacy_id: ?int, sku: string, name: string, image_url: ?string}|null
+     * @param  list<string>  $skuKeys  lowercased SKUs
+     * @return array<string, array{shiphero_product_id: ?string, shiphero_legacy_id: ?int, sku: string, name: string, image_url: ?string}>
      */
-    private function resolveExistingCatalogProductForAsnCsv(
-        int $clientAccountId,
-        string $sku,
-        Request $request,
-        ?string &$shipheroCustomerId
-    ): ?array {
-        $skuSearch = mb_strtolower(trim($sku));
-        if ($skuSearch === '') {
-            return null;
+    private function bulkResolveCatalogProductsForAsnCsv(int $clientAccountId, array $skuKeys): array
+    {
+        $out = [];
+        if ($clientAccountId < 1 || $skuKeys === []) {
+            return $out;
+        }
+
+        $keys = [];
+        foreach ($skuKeys as $key) {
+            $normalized = mb_strtolower(trim((string) $key));
+            if ($normalized !== '') {
+                $keys[$normalized] = $normalized;
+            }
+        }
+        $keys = array_values($keys);
+        if ($keys === []) {
+            return $out;
         }
 
         try {
-            $indexRow = ShipHeroInventoryProductIndex::query()
-                ->where('client_account_id', $clientAccountId)
-                ->where('sku_search', $skuSearch)
-                ->orderByDesc('synced_at')
-                ->first();
-            if ($indexRow !== null) {
-                $productId = trim((string) ($indexRow->shiphero_product_id ?? ''));
+            $chunks = array_chunk($keys, 500);
+            foreach ($chunks as $chunk) {
+                $rows = ShipHeroInventoryProductIndex::query()
+                    ->where('client_account_id', $clientAccountId)
+                    ->whereIn('sku_search', $chunk)
+                    ->orderByDesc('synced_at')
+                    ->get([
+                        'sku',
+                        'sku_search',
+                        'name',
+                        'image_url',
+                        'shiphero_product_id',
+                        'synced_at',
+                    ]);
 
-                return [
-                    'shiphero_product_id' => $productId !== '' ? $productId : null,
-                    'shiphero_legacy_id' => null,
-                    'sku' => trim((string) $indexRow->sku) !== '' ? trim((string) $indexRow->sku) : $sku,
-                    'name' => trim((string) ($indexRow->name ?? '')),
-                    'image_url' => $indexRow->image_url !== null ? trim((string) $indexRow->image_url) : null,
-                ];
+                foreach ($rows as $indexRow) {
+                    $key = mb_strtolower(trim((string) ($indexRow->sku_search ?? '')));
+                    if ($key === '' || isset($out[$key])) {
+                        continue;
+                    }
+                    $out[$key] = $this->catalogProductFromIndexRow($indexRow, $key);
+                }
+            }
+
+            $missing = [];
+            foreach ($keys as $key) {
+                if (! isset($out[$key])) {
+                    $missing[] = $key;
+                }
+            }
+
+            if ($missing !== []) {
+                foreach (array_chunk($missing, 500) as $chunk) {
+                    $byBarcode = ShipHeroInventoryProductIndex::query()
+                        ->where('client_account_id', $clientAccountId)
+                        ->whereIn('barcode_search', $chunk)
+                        ->orderByDesc('synced_at')
+                        ->get([
+                            'sku',
+                            'sku_search',
+                            'barcode_search',
+                            'name',
+                            'image_url',
+                            'shiphero_product_id',
+                            'synced_at',
+                        ]);
+
+                    foreach ($byBarcode as $indexRow) {
+                        $barcodeKey = mb_strtolower(trim((string) ($indexRow->barcode_search ?? '')));
+                        if ($barcodeKey === '' || isset($out[$barcodeKey])) {
+                            continue;
+                        }
+                        $out[$barcodeKey] = $this->catalogProductFromIndexRow($indexRow, $barcodeKey);
+                    }
+                }
             }
         } catch (Throwable $e) {
             report($e);
         }
 
-        if ($shipheroCustomerId === null) {
-            $account = ClientAccount::query()->find($clientAccountId);
-            if ($account === null) {
-                return null;
-            }
-            try {
-                Gate::forUser($request->user())->authorize('view', $account);
-            } catch (Throwable $e) {
-                return null;
-            }
-            $sid = $account->shiphero_customer_account_id;
-            $shipheroCustomerId = is_string($sid) && trim($sid) !== '' ? trim($sid) : '';
-        }
+        return $out;
+    }
 
-        if ($shipheroCustomerId === '') {
-            return null;
-        }
-
-        $detail = $this->inventory->getProductDetailBySku($sku, null, $shipheroCustomerId, false);
-        if (! is_array($detail) || empty($detail['id'])) {
-            return null;
-        }
-
-        $legacyRaw = $detail['shiphero_legacy_id'] ?? null;
-        $legacyId = null;
-        if (is_int($legacyRaw) && $legacyRaw > 0) {
-            $legacyId = $legacyRaw;
-        } elseif (is_numeric($legacyRaw) && (int) $legacyRaw > 0) {
-            $legacyId = (int) $legacyRaw;
+    /**
+     * @param  ShipHeroInventoryProductIndex  $indexRow
+     * @return array{shiphero_product_id: ?string, shiphero_legacy_id: ?int, sku: string, name: string, image_url: ?string}
+     */
+    private function catalogProductFromIndexRow($indexRow, string $fallbackSku): array
+    {
+        $productId = trim((string) ($indexRow->shiphero_product_id ?? ''));
+        $sku = trim((string) ($indexRow->sku ?? ''));
+        if ($sku === '') {
+            $sku = $fallbackSku;
         }
 
         return [
-            'shiphero_product_id' => trim((string) $detail['id']),
-            'shiphero_legacy_id' => $legacyId,
-            'sku' => trim((string) ($detail['sku'] ?? $sku)) !== ''
-                ? trim((string) ($detail['sku'] ?? $sku))
-                : $sku,
-            'name' => trim((string) ($detail['name'] ?? '')),
-            'image_url' => isset($detail['image_url']) ? trim((string) $detail['image_url']) : null,
+            'shiphero_product_id' => $productId !== '' ? $productId : null,
+            'shiphero_legacy_id' => null,
+            'sku' => $sku,
+            'name' => trim((string) ($indexRow->name ?? '')),
+            'image_url' => $indexRow->image_url !== null ? trim((string) $indexRow->image_url) : null,
         ];
     }
 

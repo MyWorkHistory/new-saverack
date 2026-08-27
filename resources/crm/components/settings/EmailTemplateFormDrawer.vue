@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from "vue";
 import CrmRichTextEditor from "../common/CrmRichTextEditor.vue";
 import {
   EMAIL_TEMPLATE_CATEGORIES,
+  LEAD_EMAIL_TEMPLATE_PLACEHOLDERS,
   emailTemplateCategoryLabel,
 } from "../../constants/emailTemplates.js";
 
@@ -144,11 +145,20 @@ function submit() {
                 id="email-tpl-subject"
                 v-model="form.subject"
                 type="text"
-                class="form-control mb-3"
+                class="form-control mb-1"
                 maxlength="512"
                 :disabled="busy"
-                placeholder="Email subject line"
+                placeholder="Hi {Name} — quick question about {Company}"
               />
+              <p class="small text-secondary mb-3">
+                Placeholders:
+                <span
+                  v-for="(item, idx) in LEAD_EMAIL_TEMPLATE_PLACEHOLDERS"
+                  :key="item.token"
+                >
+                  <code class="user-select-all">{{ item.token }}</code>{{ item.label ? ` (${item.label})` : "" }}<template v-if="idx < LEAD_EMAIL_TEMPLATE_PLACEHOLDERS.length - 1"> · </template>
+                </span>
+              </p>
 
               <label class="form-label small" for="email-tpl-body">Body</label>
               <CrmRichTextEditor
@@ -156,6 +166,9 @@ function submit() {
                 :disabled="busy"
                 aria-label="Email template body"
               />
+              <p class="small text-secondary mt-2 mb-0">
+                Use the same placeholders in the body, e.g. <code class="user-select-all">{Company}</code> and <code class="user-select-all">{Website}</code>.
+              </p>
             </div>
 
             <footer

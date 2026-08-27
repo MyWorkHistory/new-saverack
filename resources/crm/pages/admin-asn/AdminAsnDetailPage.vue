@@ -1391,6 +1391,7 @@ async function submitCsvImport() {
     formData.append("file", csvImportFile.value);
     const { data } = await api.post(`/asns/${asnId.value}/lines/import-csv`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
+      timeout: 180000,
     });
 
     const imported = Number(data?.imported ?? 0);
@@ -1427,8 +1428,18 @@ async function submitCsvImport() {
     await loadAsn();
     closeCsvImportModal(true);
   } catch (e) {
-    csvImportError.value = errorMessage(e, "Could not import CSV.");
-    toast.errorFrom(e, "Could not import CSV.");
+    const raw = errorMessage(e, "Could not import CSV.");
+    const lower = String(raw || "").toLowerCase();
+    const timedOut =
+      e?.code === "ECONNABORTED" ||
+      lower.includes("proxy read timeout") ||
+      lower.includes("timeout") ||
+      lower.includes("504") ||
+      lower.includes("524");
+    csvImportError.value = timedOut
+      ? "Import timed out. Use a CSV with Name, SKU, and Expected QTY columns. SKUs must already exist in this account’s inventory."
+      : raw;
+    toast.error(csvImportError.value);
   } finally {
     csvImportBusy.value = false;
   }
@@ -3011,7 +3022,9 @@ onUnmounted(() => {
                 :disabled="csvImportBusy"
                 @change="onCsvImportFileChange"
               />
-              <p class="small text-secondary mt-2 mb-0">Columns: Name, SKU, Expected QTY</p>
+              <p class="small text-secondary mt-2 mb-0">
+                Columns: Name, SKU, Expected QTY. SKUs must already exist in this account’s inventory catalog.
+              </p>
               <p v-if="csvImportError" class="text-danger small mt-2 mb-0">{{ csvImportError }}</p>
             </div>
             <footer class="crm-vx-modal__footer d-flex gap-2 justify-content-end">

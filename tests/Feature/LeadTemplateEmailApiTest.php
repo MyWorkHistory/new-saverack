@@ -62,11 +62,18 @@ class LeadTemplateEmailApiTest extends TestCase
             'status' => Lead::STATUS_CONTACTED,
             'referral' => Lead::REFERRAL_BIZY,
             'company_name' => 'Acme Co',
+            'name' => 'Jordan',
+            'website' => 'acme.test',
             'email' => 'lead@example.com',
             'follow_up_days' => 3,
             'follow_up_at' => now()->addDays(3)->toDateString(),
         ]);
-        $template = $this->makeTemplate('follow_up');
+        $template = EmailTemplate::query()->create([
+            'category' => 'follow_up',
+            'name' => 'Follow Up Ping',
+            'subject' => 'Hi {Name} — {Company}',
+            'body' => '<p>Check out {website}</p>',
+        ]);
 
         $response = $this->postJson('/api/leads/'.$lead->id.'/email-templates/'.$template->id.'/send');
         $response->assertOk()
@@ -75,8 +82,12 @@ class LeadTemplateEmailApiTest extends TestCase
 
         Mail::assertSent(LeadTemplateMailable::class, function (LeadTemplateMailable $mail) {
             return $mail->hasTo('lead@example.com')
-                && $mail->subjectLine === 'Checking in'
-                && $mail->fromAddress === 'audi@saverack.com';
+                && $mail->subjectLine === 'Hi Jordan — Acme Co'
+                && $mail->bodyHtml === '<p>Check out acme.test</p>'
+                && $mail->fromAddress === 'audi@saverack.com'
+                && strpos($mail->signatureHtml, 'Audi K | Managing Partner') !== false
+                && strpos($mail->signatureHtml, 'audi@saverack.com') !== false
+                && strpos($mail->signatureHtml, '<img') === false;
         });
         Mail::assertSent(LeadTemplateMailable::class, 1);
 

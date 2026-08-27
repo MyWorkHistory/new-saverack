@@ -7,6 +7,7 @@ use App\Models\EmailTemplate;
 use App\Models\Lead;
 use App\Models\LeadStatusEvent;
 use App\Models\User;
+use App\Support\LeadEmailTemplateRenderer;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
@@ -17,9 +18,13 @@ class LeadTemplateMailService
     /** @var LeadService */
     private $leads;
 
-    public function __construct(LeadService $leads)
+    /** @var AdminBroadcastEmailService */
+    private $broadcastMail;
+
+    public function __construct(LeadService $leads, AdminBroadcastEmailService $broadcastMail)
     {
         $this->leads = $leads;
+        $this->broadcastMail = $broadcastMail;
     }
 
     /**
@@ -48,6 +53,9 @@ class LeadTemplateMailService
             ]);
         }
 
+        $subject = LeadEmailTemplateRenderer::renderSubject($subject, $lead);
+        $bodyHtml = LeadEmailTemplateRenderer::renderBody($bodyHtml, $lead);
+
         $fromAddress = strtolower(trim((string) config('crm.lead_template_from_address', 'audi@saverack.com')));
         $options = config('crm.broadcast_from_options', []);
         $fromName = 'Audi K | Save Rack';
@@ -58,7 +66,7 @@ class LeadTemplateMailService
         Mail::to($to)->send(new LeadTemplateMailable(
             $subject,
             $bodyHtml,
-            $this->signatureHtml(),
+            $this->signatureHtml($fromAddress),
             $fromAddress,
             $fromName
         ));
@@ -138,13 +146,8 @@ class LeadTemplateMailService
         }
     }
 
-    public function signatureHtml(): string
+    public function signatureHtml(string $fromAddress = 'audi@saverack.com'): string
     {
-        $relative = trim((string) config('crm.lead_template_signature_image', 'images/email/audi-signature.png'), '/');
-        $url = asset($relative);
-
-        $img = '<img src="'.e($url).'" alt="Audi K | Save Rack" style="max-width:280px;height:auto;display:block;border:0;" />';
-
-        return '<div style="margin:0;padding:0;">'.$img.'</div>';
+        return $this->broadcastMail->signatureHtml($fromAddress);
     }
 }

@@ -210,7 +210,7 @@ function submit() {
         <footer class="shopify-edit-product__foot">
           <button
             type="button"
-            class="btn btn-outline-secondary"
+            class="btn btn-outline-primary"
             :disabled="busy"
             @click="close"
           >

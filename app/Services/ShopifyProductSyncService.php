@@ -273,10 +273,57 @@ GQL
 
         $variant->shopify_updated_at = $this->parseTime($node['updatedAt'] ?? $node['updated_at'] ?? null);
         $variant->raw_json = $node;
+
+        // Capture Shopify image once; never overwrite after first sync or CRM upload.
+        if (trim((string) ($variant->synced_image_url ?? '')) === '') {
+            $productRaw = is_array($product->raw_json) ? $product->raw_json : null;
+            $fromShopify = \App\Support\ShopifyProductImage::url(
+                is_array($node) ? $node : null,
+                $productRaw
+            );
+            if (is_string($fromShopify) && trim($fromShopify) !== '') {
+                $variant->synced_image_url = trim($fromShopify);
+            }
+        }
+
         // crm_locked_at is set only when CRM pushes edits (see pushVariantToShopify).
         $variant->save();
 
         return true;
+    }
+
+    /**
+     * Push Active/Inactive product status to Shopify (ACTIVE / DRAFT).
+     */
+    public function pushProductStatusToShopify(ShopifyProduct $product, string $status): void
+    {
+        $connection = $product->connection;
+        if ($connection === null || ! $connection->hasCredentials()) {
+            return;
+        }
+
+        $shopifyStatus = strtolower(trim($status)) === 'inactive' ? 'DRAFT' : 'ACTIVE';
+        $api = $this->client->forConnection($connection);
+        $data = $api->graphql(
+            <<<'GQL'
+mutation productUpdateStatus($input: ProductInput!) {
+  productUpdate(input: $input) {
+    product { id status }
+    userErrors { field message }
+  }
+}
+GQL
+            ,
+            [
+                'input' => [
+                    'id' => ShopifyGid::of('Product', $product->shopify_product_id),
+                    'status' => $shopifyStatus,
+                ],
+            ]
+        );
+        $this->assertNoUserErrors($data['productUpdate'] ?? null);
+        $product->crm_locked_at = now();
+        $product->save();
     }
 
     /**

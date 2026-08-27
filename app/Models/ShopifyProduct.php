@@ -18,9 +18,20 @@ class ShopifyProduct extends Model
         'status',
         'vendor',
         'product_type',
+        'crm_product_kind',
         'crm_locked_at',
         'shopify_updated_at',
         'raw_json',
+    ];
+
+    public const KIND_STANDARD = 'standard';
+
+    public const KIND_BUNDLE = 'bundle';
+
+    /** @var list<string> */
+    public const CRM_PRODUCT_KINDS = [
+        self::KIND_STANDARD,
+        self::KIND_BUNDLE,
     ];
 
     protected $casts = [
@@ -43,5 +54,27 @@ class ShopifyProduct extends Model
     public function isCrmLocked(): bool
     {
         return $this->crm_locked_at !== null;
+    }
+
+    public function isBundle(): bool
+    {
+        return strtolower(trim((string) ($this->crm_product_kind ?? self::KIND_STANDARD))) === self::KIND_BUNDLE;
+    }
+
+    public static function normalizeCrmProductKind($value): string
+    {
+        $v = strtolower(trim((string) ($value ?? '')));
+        if ($v === self::KIND_BUNDLE || $v === 'bundle') {
+            return self::KIND_BUNDLE;
+        }
+
+        return self::KIND_STANDARD;
+    }
+
+    public static function crmProductKindLabel(string $kind): string
+    {
+        return self::normalizeCrmProductKind($kind) === self::KIND_BUNDLE
+            ? 'Bundle'
+            : 'Standard Product';
     }
 }

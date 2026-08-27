@@ -713,6 +713,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/inventory/accounts', [ShopifyIntegrationController::class, 'inventoryAccounts']);
         Route::get('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'inventoryShow']);
         Route::patch('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'updateVariant']);
+        Route::patch('/inventory/{shopifyVariant}/settings', [ShopifyIntegrationController::class, 'updateProductSettings']);
+        Route::post('/inventory/{shopifyVariant}/image', [ShopifyIntegrationController::class, 'uploadVariantImage']);
+        Route::get('/inventory/{shopifyVariant}/barcode-label', [ShopifyIntegrationController::class, 'barcodeLabel']);
+        Route::get('/inventory/{shopifyVariant}/bundle-components', [ShopifyIntegrationController::class, 'bundleComponents']);
+        Route::put('/inventory/{shopifyVariant}/bundle-components', [ShopifyIntegrationController::class, 'syncBundleComponents']);
+        Route::patch('/inventory/{shopifyVariant}/bundle-components/{component}', [ShopifyIntegrationController::class, 'updateBundleComponent']);
+        Route::delete('/inventory/{shopifyVariant}/bundle-components/{component}', [ShopifyIntegrationController::class, 'destroyBundleComponent']);
+        Route::get('/inventory/{shopifyVariant}/bundle-candidates', [ShopifyIntegrationController::class, 'searchBundleCandidates']);
         Route::get('/locations/meta', [ShopifyWarehouseLocationController::class, 'meta']);
         Route::get('/locations/export', [ShopifyWarehouseLocationController::class, 'export']);
         Route::get('/locations/options', [ShopifyWarehouseLocationController::class, 'options']);

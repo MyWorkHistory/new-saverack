@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 
 class ShopifyProductVariant extends Model
 {
@@ -28,6 +30,11 @@ class ShopifyProductVariant extends Model
         'crm_locked_at',
         'shopify_updated_at',
         'raw_json',
+        'crm_image_path',
+        'synced_image_url',
+        'barcode_label_path',
+        'barcode_label_payload',
+        'barcode_label_generated_at',
     ];
 
     protected $casts = [
@@ -41,6 +48,7 @@ class ShopifyProductVariant extends Model
         'requires_shipping' => 'boolean',
         'crm_locked_at' => 'datetime',
         'shopify_updated_at' => 'datetime',
+        'barcode_label_generated_at' => 'datetime',
         'raw_json' => 'array',
     ];
 
@@ -54,8 +62,30 @@ class ShopifyProductVariant extends Model
         return $this->belongsTo(ShopifyProduct::class, 'shopify_product_id');
     }
 
+    public function bundleComponents(): HasMany
+    {
+        return $this->hasMany(ShopifyVariantBundleComponent::class, 'parent_variant_id');
+    }
+
     public function isCrmLocked(): bool
     {
         return $this->crm_locked_at !== null;
+    }
+
+    public function displayImageUrl(): ?string
+    {
+        $crmPath = trim((string) ($this->crm_image_path ?? ''));
+        if ($crmPath !== '') {
+            return Storage::disk('public')->url($crmPath);
+        }
+        $synced = trim((string) ($this->synced_image_url ?? ''));
+        if ($synced !== '') {
+            return $synced;
+        }
+        $this->loadMissing('product');
+        $variantRaw = is_array($this->raw_json) ? $this->raw_json : null;
+        $productRaw = $this->product && is_array($this->product->raw_json) ? $this->product->raw_json : null;
+
+        return \App\Support\ShopifyProductImage::url($variantRaw, $productRaw);
     }
 }

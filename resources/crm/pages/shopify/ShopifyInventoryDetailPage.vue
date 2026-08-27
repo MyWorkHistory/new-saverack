@@ -4,6 +4,8 @@ import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ShopifyInventoryEditProductModal from "../../components/shopify/ShopifyInventoryEditProductModal.vue";
+import ShopifyInventoryProductSettingsModal from "../../components/shopify/ShopifyInventoryProductSettingsModal.vue";
+import ShopifyInventoryBundleItemsModal from "../../components/shopify/ShopifyInventoryBundleItemsModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 
@@ -13,11 +15,23 @@ const toast = useToast();
 
 const loading = ref(true);
 const saveBusy = ref(false);
+const settingsBusy = ref(false);
+const bundleBusy = ref(false);
+const imageBusy = ref(false);
+const printBusy = ref(false);
 const actionBusy = ref(false);
 const variant = ref(null);
 const editOpen = ref(false);
+const settingsOpen = ref(false);
+const bundleItemsOpen = ref(false);
 const actionsOpen = ref(false);
 const actionsRoot = ref(null);
+const imageInput = ref(null);
+const rowMenuOpenId = ref(null);
+const qtyEditOpen = ref(false);
+const qtyEditBusy = ref(false);
+const qtyEditComponent = ref(null);
+const qtyEditValue = ref(1);
 
 const inventoryStats = {
   total_on_hand: 0,
@@ -94,9 +108,32 @@ async function load() {
   }
 }
 
+const isBundle = computed(
+  () => String(variant.value?.product_type || "").toLowerCase() === "bundle" || !!variant.value?.bundle,
+);
+
+const bundleComponents = computed(() =>
+  Array.isArray(variant.value?.bundle_components) ? variant.value.bundle_components : [],
+);
+
+const productTypeLabel = computed(() => {
+  if (variant.value?.product_type_label) return variant.value.product_type_label;
+  return isBundle.value ? "Bundle" : "Standard Product";
+});
+
 function openEdit() {
   actionsOpen.value = false;
   editOpen.value = true;
+}
+
+function openSettings() {
+  actionsOpen.value = false;
+  settingsOpen.value = true;
+}
+
+function openBundleItems() {
+  rowMenuOpenId.value = null;
+  bundleItemsOpen.value = true;
 }
 
 async function onSaveProduct(payload) {
@@ -111,6 +148,162 @@ async function onSaveProduct(payload) {
     toast.errorFrom(e, "Could not save product.");
   } finally {
     saveBusy.value = false;
+  }
+}
+
+async function onSaveSettings(payload) {
+  if (!variant.value?.id || settingsBusy.value) return;
+  settingsBusy.value = true;
+  try {
+    const { data } = await api.patch(`/shopify/inventory/${variant.value.id}/settings`, payload);
+    toast.success(data?.message || "Product settings saved.");
+    settingsOpen.value = false;
+    if (data?.variant) {
+      variant.value = data.variant;
+    } else {
+      await load();
+    }
+  } catch (e) {
+    toast.errorFrom(e, "Could not save settings.");
+  } finally {
+    settingsBusy.value = false;
+  }
+}
+
+async function onSaveBundleItems(items) {
+  if (!variant.value?.id || bundleBusy.value) return;
+  bundleBusy.value = true;
+  try {
+    const { data } = await api.put(`/shopify/inventory/${variant.value.id}/bundle-components`, {
+      items,
+    });
+    toast.success(data?.message || "Bundle components saved.");
+    bundleItemsOpen.value = false;
+    if (Array.isArray(data?.components) && variant.value) {
+      variant.value = { ...variant.value, bundle_components: data.components };
+    } else {
+      await load();
+    }
+  } catch (e) {
+    toast.errorFrom(e, "Could not save bundle items.");
+  } finally {
+    bundleBusy.value = false;
+  }
+}
+
+function pickImage() {
+  if (imageBusy.value) return;
+  imageInput.value?.click?.();
+}
+
+async function onImageSelected(event) {
+  const file = event?.target?.files?.[0];
+  if (event?.target) event.target.value = "";
+  if (!file || !variant.value?.id || imageBusy.value) return;
+  imageBusy.value = true;
+  try {
+    const form = new FormData();
+    form.append("image", file);
+    const { data } = await api.post(`/shopify/inventory/${variant.value.id}/image`, form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    toast.success(data?.message || "Image updated.");
+    if (data?.variant) {
+      variant.value = data.variant;
+    } else if (data?.image_url && variant.value) {
+      variant.value = { ...variant.value, image_url: data.image_url };
+    } else {
+      await load();
+    }
+  } catch (e) {
+    toast.errorFrom(e, "Could not upload image.");
+  } finally {
+    imageBusy.value = false;
+  }
+}
+
+async function printBarcode() {
+  if (!variant.value?.id || printBusy.value) return;
+  printBusy.value = true;
+  try {
+    const { data } = await api.get(`/shopify/inventory/${variant.value.id}/barcode-label`, {
+      responseType: "blob",
+    });
+    const blob = data instanceof Blob ? data : new Blob([data], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const win = window.open("", "_blank");
+    if (!win) {
+      URL.revokeObjectURL(url);
+      toast.error("Allow pop-ups to print the barcode label.");
+      return;
+    }
+    win.document.write(
+      `<!DOCTYPE html><html><head><title>Barcode Label</title>` +
+        `<style>html,body{margin:0;height:100%;display:flex;align-items:center;justify-content:center;background:#fff}` +
+        `img{max-width:100%;height:auto}</style></head><body>` +
+        `<img src="${url}" alt="Barcode Label" onload="window.focus();window.print();" />` +
+        `</body></html>`,
+    );
+    win.document.close();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) {
+    toast.errorFrom(e, "Could not print barcode label.");
+  } finally {
+    printBusy.value = false;
+  }
+}
+
+function toggleRowMenu(id) {
+  rowMenuOpenId.value = rowMenuOpenId.value === id ? null : id;
+}
+
+function openQtyEdit(component) {
+  rowMenuOpenId.value = null;
+  qtyEditComponent.value = component;
+  qtyEditValue.value = Math.max(1, Number(component.quantity) || 1);
+  qtyEditOpen.value = true;
+}
+
+async function saveQtyEdit() {
+  if (!variant.value?.id || !qtyEditComponent.value?.id || qtyEditBusy.value) return;
+  qtyEditBusy.value = true;
+  try {
+    const { data } = await api.patch(
+      `/shopify/inventory/${variant.value.id}/bundle-components/${qtyEditComponent.value.id}`,
+      { quantity: Math.max(1, Number(qtyEditValue.value) || 1) },
+    );
+    toast.success(data?.message || "Quantity updated.");
+    qtyEditOpen.value = false;
+    if (Array.isArray(data?.components) && variant.value) {
+      variant.value = { ...variant.value, bundle_components: data.components };
+    } else {
+      await load();
+    }
+  } catch (e) {
+    toast.errorFrom(e, "Could not update quantity.");
+  } finally {
+    qtyEditBusy.value = false;
+  }
+}
+
+async function deleteBundleComponent(component) {
+  rowMenuOpenId.value = null;
+  if (!variant.value?.id || !component?.id || bundleBusy.value) return;
+  bundleBusy.value = true;
+  try {
+    const { data } = await api.delete(
+      `/shopify/inventory/${variant.value.id}/bundle-components/${component.id}`,
+    );
+    toast.success(data?.message || "Component removed.");
+    if (Array.isArray(data?.components) && variant.value) {
+      variant.value = { ...variant.value, bundle_components: data.components };
+    } else {
+      await load();
+    }
+  } catch (e) {
+    toast.errorFrom(e, "Could not remove component.");
+  } finally {
+    bundleBusy.value = false;
   }
 }
 
@@ -165,6 +358,10 @@ function onDocClick(event) {
   if (!actionsRoot.value?.contains?.(event.target)) {
     actionsOpen.value = false;
   }
+  const menuEl = event.target?.closest?.("[data-sid-row-menu]");
+  if (!menuEl) {
+    rowMenuOpenId.value = null;
+  }
 }
 
 onMounted(() => {
@@ -206,11 +403,16 @@ onUnmounted(() => {
           Back to Products
         </button>
         <div class="sid-header__actions">
-          <button type="button" class="sid-btn" @click="openEdit">
+          <button
+            type="button"
+            class="sid-btn"
+            :disabled="printBusy"
+            @click="printBarcode"
+          >
             <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V6.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v.852m10.5 0V9.75m0 0a48.063 48.063 0 01-10.5 0" />
             </svg>
-            Edit Product
+            {{ printBusy ? "Preparing…" : "Print Barcode" }}
           </button>
           <div ref="actionsRoot" class="sid-actions-wrap">
             <button
@@ -226,6 +428,12 @@ onUnmounted(() => {
               </svg>
             </button>
             <div v-if="actionsOpen" class="sid-menu" role="menu">
+              <button type="button" class="sid-menu__item" role="menuitem" @click="openSettings">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
+                </svg>
+                Edit Product
+              </button>
               <button type="button" class="sid-menu__item" role="menuitem" @click="syncProductInfo">
                 <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
@@ -248,7 +456,13 @@ onUnmounted(() => {
           <!-- Product + dimensions (one card, divider before specs) -->
           <section class="sid-card">
             <div class="sid-product">
-              <div class="sid-product__img">
+              <button
+                type="button"
+                class="sid-product__img sid-product__img--clickable"
+                :disabled="imageBusy"
+                :title="imageBusy ? 'Uploading…' : 'Click to upload image'"
+                @click="pickImage"
+              >
                 <img
                   v-if="variant.image_url"
                   :src="variant.image_url"
@@ -259,7 +473,15 @@ onUnmounted(() => {
                     <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
                   </svg>
                 </span>
-              </div>
+                <span class="sid-product__img-hint">{{ imageBusy ? "Uploading…" : "Click to Upload" }}</span>
+              </button>
+              <input
+                ref="imageInput"
+                type="file"
+                accept="image/*"
+                class="d-none"
+                @change="onImageSelected"
+              />
 
               <div class="sid-product__info">
                 <div class="sid-product__title-row">
@@ -310,7 +532,7 @@ onUnmounted(() => {
                     </span>
                     <div>
                       <div class="sid-field__label">Type</div>
-                      <div class="sid-meta__value">Product</div>
+                      <div class="sid-meta__value">{{ productTypeLabel }}</div>
                     </div>
                   </div>
                 </div>
@@ -374,30 +596,85 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <!-- Bundle -->
-          <section class="sid-card">
+          <!-- Bundle Components (CRM type = Bundle only) -->
+          <section v-if="isBundle" class="sid-card">
             <div class="sid-card__head">
-              <div class="sid-card__head-title">
-                <span class="sid-card__head-icon sid-card__head-icon--bundle" aria-hidden="true">
-                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.55">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007z" />
-                  </svg>
-                </span>
-                <h2>Bundle</h2>
+              <div>
+                <div class="sid-card__head-title">
+                  <span class="sid-card__head-icon sid-card__head-icon--bundle" aria-hidden="true">
+                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.55">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007z" />
+                    </svg>
+                  </span>
+                  <h2>Bundle Components</h2>
+                </div>
+                <p class="sid-card__sub">Items included in this bundle</p>
               </div>
-              <button type="button" class="sid-btn sid-btn--sm" @click="comingSoon('Add Items')">
+              <button type="button" class="sid-btn sid-btn--sm" :disabled="bundleBusy" @click="openBundleItems">
                 <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
                 Add Items
               </button>
             </div>
-            <div class="sid-field__label sid-bundle-label">Items in this bundle</div>
-            <div class="sid-bundle-empty">
+
+            <div v-if="!bundleComponents.length" class="sid-bundle-empty">
               <svg width="42" height="42" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
               </svg>
-              <p>This item is not a bundle.</p>
+              <p>No items in this bundle yet.</p>
+            </div>
+
+            <div v-else class="sid-bundle-table-wrap">
+              <table class="sid-bundle-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>SKU</th>
+                    <th>QTY</th>
+                    <th class="sid-bundle-table__actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in bundleComponents" :key="row.id">
+                    <td>
+                      <div class="sid-bundle-name">
+                        <span class="sid-bundle-name__thumb">
+                          <img v-if="row.image_url" :src="row.image_url" alt="" />
+                          <span v-else class="sid-bundle-name__thumb-empty" />
+                        </span>
+                        <span class="sid-bundle-name__text">{{ row.title || "Product" }}</span>
+                      </div>
+                    </td>
+                    <td>{{ row.sku || "—" }}</td>
+                    <td>{{ row.quantity }}</td>
+                    <td class="sid-bundle-table__actions">
+                      <div class="sid-row-menu" data-sid-row-menu>
+                        <button
+                          type="button"
+                          class="sid-row-menu__btn"
+                          aria-label="Row Actions"
+                          @click.stop="toggleRowMenu(row.id)"
+                        >
+                          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="12" cy="5" r="1.6" />
+                            <circle cx="12" cy="12" r="1.6" />
+                            <circle cx="12" cy="19" r="1.6" />
+                          </svg>
+                        </button>
+                        <div v-if="rowMenuOpenId === row.id" class="sid-row-menu__panel" role="menu">
+                          <button type="button" class="sid-menu__item" role="menuitem" @click="openQtyEdit(row)">
+                            Edit Qty
+                          </button>
+                          <button type="button" class="sid-menu__item" role="menuitem" @click="deleteBundleComponent(row)">
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </section>
         </div>
@@ -536,6 +813,60 @@ onUnmounted(() => {
       :variant="variant"
       @save="onSaveProduct"
     />
+    <ShopifyInventoryProductSettingsModal
+      v-model:open="settingsOpen"
+      :busy="settingsBusy"
+      :variant="variant"
+      @save="onSaveSettings"
+    />
+    <ShopifyInventoryBundleItemsModal
+      v-model:open="bundleItemsOpen"
+      :busy="bundleBusy"
+      :variant-id="variant?.id"
+      :existing-components="bundleComponents"
+      @save="onSaveBundleItems"
+    />
+
+    <Teleport to="body">
+      <div
+        v-if="qtyEditOpen"
+        class="sid-qty-overlay"
+        role="dialog"
+        aria-modal="true"
+        @click.self="qtyEditOpen = false"
+      >
+        <div class="sid-qty-modal" @click.stop>
+          <h3 class="sid-qty-modal__title">Edit Qty</h3>
+          <label class="form-label" for="sid-qty-input">Quantity</label>
+          <input
+            id="sid-qty-input"
+            v-model.number="qtyEditValue"
+            type="number"
+            min="1"
+            class="form-control mb-3"
+            :disabled="qtyEditBusy"
+          />
+          <div class="sid-qty-modal__foot">
+            <button
+              type="button"
+              class="btn btn-outline-primary"
+              :disabled="qtyEditBusy"
+              @click="qtyEditOpen = false"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary staff-page-primary fw-semibold"
+              :disabled="qtyEditBusy"
+              @click="saveQtyEdit"
+            >
+              {{ qtyEditBusy ? "Saving…" : "Save" }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -719,6 +1050,33 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  padding: 0;
+}
+.sid-product__img--clickable {
+  cursor: pointer;
+}
+.sid-product__img--clickable:hover .sid-product__img-hint,
+.sid-product__img--clickable:focus-visible .sid-product__img-hint {
+  opacity: 1;
+}
+.sid-product__img--clickable:disabled {
+  cursor: wait;
+  opacity: 0.85;
+}
+.sid-product__img-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0.35rem 0.4rem;
+  background: rgba(15, 23, 42, 0.55);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
 }
 .sid-product__img img {
   width: 100%;
@@ -836,6 +1194,128 @@ onUnmounted(() => {
 }
 .sid-bundle-empty p {
   margin: 0;
+}
+.sid-bundle-table-wrap {
+  overflow-x: auto;
+}
+.sid-bundle-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.sid-bundle-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #9ca3af;
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+.sid-bundle-table td {
+  padding: 0.7rem 0.5rem;
+  border-bottom: 1px solid #f3f4f6;
+  color: #374151;
+  vertical-align: middle;
+}
+.sid-bundle-table__actions {
+  width: 3rem;
+  text-align: right;
+}
+.sid-bundle-name {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+.sid-bundle-name__thumb {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.4rem;
+  overflow: hidden;
+  background: #f3f4f6;
+  border: 1px solid #eceff3;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sid-bundle-name__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.sid-bundle-name__thumb-empty {
+  width: 100%;
+  height: 100%;
+  background: #e5e7eb;
+}
+.sid-bundle-name__text {
+  font-weight: 600;
+  color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sid-row-menu {
+  position: relative;
+  display: inline-flex;
+  justify-content: flex-end;
+}
+.sid-row-menu__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid #3b82f6;
+  border-radius: 0.4rem;
+  background: #fff;
+  color: #3b82f6;
+  cursor: pointer;
+}
+.sid-row-menu__btn:hover {
+  background: #eff6ff;
+}
+.sid-row-menu__panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 8.5rem;
+  padding: 0.3rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+}
+.sid-qty-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.45);
+}
+.sid-qty-modal {
+  width: 100%;
+  max-width: 20rem;
+  background: #fff;
+  border-radius: 0.75rem;
+  padding: 1.15rem 1.25rem;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+}
+.sid-qty-modal__title {
+  margin: 0 0 0.85rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #111827;
+}
+.sid-qty-modal__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
 }
 .sid-onhand {
   display: flex;

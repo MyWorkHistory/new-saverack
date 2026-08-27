@@ -869,9 +869,18 @@ class ShopifyIntegrationController extends Controller
             });
         }
 
-        // Bundle data is not wired yet; Bundle=Yes returns an empty set.
+        // CRM bundle kind filter (Standard Product vs Bundle).
         if ($bundle === 'yes') {
-            $query->whereRaw('1 = 0');
+            $query->whereHas('product', function ($builder) {
+                $builder->where('crm_product_kind', \App\Models\ShopifyProduct::KIND_BUNDLE);
+            });
+        } elseif ($bundle === 'no') {
+            $query->whereHas('product', function ($builder) {
+                $builder->where(function ($p) {
+                    $p->whereNull('crm_product_kind')
+                        ->orWhere('crm_product_kind', '!=', \App\Models\ShopifyProduct::KIND_BUNDLE);
+                });
+            });
         }
 
         // Allocated / backorder are 0 until CRM inventory is connected.
@@ -924,15 +933,13 @@ class ShopifyIntegrationController extends Controller
                 $levelRows = $levels->get($key, collect());
                 $locMap = ($locations->get($variant->connection_id) ?? collect())->keyBy('shopify_location_id');
 
-                $variantRaw = is_array($variant->raw_json) ? $variant->raw_json : null;
-                $productRaw = ($variant->product && is_array($variant->product->raw_json))
-                    ? $variant->product->raw_json
-                    : null;
                 $onHand = (int) $levelRows->sum('available');
-                $productStatus = $variant->product ? (string) ($variant->product->status ?? 'active') : 'active';
-                if ($productStatus === '') {
-                    $productStatus = 'active';
-                }
+                $productStatus = $this->normalizeCrmProductStatus(
+                    $variant->product ? (string) ($variant->product->status ?? 'active') : 'active'
+                );
+                $kind = \App\Models\ShopifyProduct::normalizeCrmProductKind(
+                    $variant->product->crm_product_kind ?? null
+                );
 
                 return [
                     'id' => $variant->id,
@@ -940,13 +947,15 @@ class ShopifyIntegrationController extends Controller
                     'title' => $variant->title,
                     'product_title' => $variant->product->title ?? null,
                     'barcode' => $variant->barcode,
-                    'image_url' => \App\Support\ShopifyProductImage::url($variantRaw, $productRaw),
+                    'image_url' => $variant->displayImageUrl(),
                     'shopify_variant_id' => $variant->shopify_variant_id,
                     'shopify_product_id' => $variant->product->shopify_product_id ?? null,
                     'weight' => $variant->weight,
                     'weight_unit' => $variant->weight_unit,
                     'status' => $productStatus,
-                    'bundle' => false,
+                    'product_type' => $kind,
+                    'product_type_label' => \App\Models\ShopifyProduct::crmProductKindLabel($kind),
+                    'bundle' => $kind === \App\Models\ShopifyProduct::KIND_BUNDLE,
                     'on_hand' => $onHand,
                     'allocated' => 0,
                     'backorder' => 0,
@@ -1001,10 +1010,29 @@ class ShopifyIntegrationController extends Controller
             ];
         })->values();
 
-        $variantRaw = is_array($shopifyVariant->raw_json) ? $shopifyVariant->raw_json : null;
-        $productRaw = ($shopifyVariant->product && is_array($shopifyVariant->product->raw_json))
-            ? $shopifyVariant->product->raw_json
-            : null;
+        $kind = \App\Models\ShopifyProduct::normalizeCrmProductKind(
+            $shopifyVariant->product->crm_product_kind ?? null
+        );
+        $productStatus = $this->normalizeCrmProductStatus(
+            $shopifyVariant->product ? (string) ($shopifyVariant->product->status ?? 'active') : 'active'
+        );
+
+        $components = [];
+        if ($kind === \App\Models\ShopifyProduct::KIND_BUNDLE) {
+            $components = $this->serializeBundleComponents($shopifyVariant);
+        }
+
+        // Pre-generate barcode label in the background when missing so Print is fast.
+        $labelPath = trim((string) ($shopifyVariant->barcode_label_path ?? ''));
+        if ($labelPath === '' || ! \Illuminate\Support\Facades\Storage::disk('public')->exists($labelPath)) {
+            $payload = trim((string) ($shopifyVariant->barcode ?? ''));
+            if ($payload === '') {
+                $payload = trim((string) ($shopifyVariant->sku ?? ''));
+            }
+            if ($payload !== '') {
+                \App\Jobs\GenerateShopifyVariantBarcodeLabelJob::dispatch((int) $shopifyVariant->id);
+            }
+        }
 
         return response()->json([
             'variant' => [
@@ -1012,7 +1040,7 @@ class ShopifyIntegrationController extends Controller
                 'sku' => $shopifyVariant->sku,
                 'title' => $shopifyVariant->title,
                 'product_title' => $shopifyVariant->product->title ?? null,
-                'image_url' => \App\Support\ShopifyProductImage::url($variantRaw, $productRaw),
+                'image_url' => $shopifyVariant->displayImageUrl(),
                 'weight' => $shopifyVariant->weight,
                 'weight_unit' => $shopifyVariant->weight_unit,
                 'barcode' => $shopifyVariant->barcode,
@@ -1028,6 +1056,11 @@ class ShopifyIntegrationController extends Controller
                     : null,
                 'crm_locked_at' => optional($shopifyVariant->crm_locked_at)->toIso8601String(),
                 'account_name' => optional(optional($shopifyVariant->connection)->clientAccount)->company_name,
+                'status' => $productStatus,
+                'product_type' => $kind,
+                'product_type_label' => \App\Models\ShopifyProduct::crmProductKindLabel($kind),
+                'bundle' => $kind === \App\Models\ShopifyProduct::KIND_BUNDLE,
+                'bundle_components' => $components,
                 'inventory' => $inventory,
             ],
         ]);
@@ -1057,8 +1090,13 @@ class ShopifyIntegrationController extends Controller
 
         // Persist CRM copy immediately so the request finishes under Cloudflare.
         $shopifyVariant->loadMissing('product');
+        $labelFieldsChanged = false;
         if (array_key_exists('sku', $validated) && $validated['sku'] !== null) {
-            $shopifyVariant->sku = trim((string) $validated['sku']);
+            $newSku = trim((string) $validated['sku']);
+            if ($newSku !== trim((string) ($shopifyVariant->sku ?? ''))) {
+                $labelFieldsChanged = true;
+            }
+            $shopifyVariant->sku = $newSku;
         }
         if (array_key_exists('title', $validated) && $validated['title'] !== null) {
             $shopifyVariant->title = trim((string) $validated['title']);
@@ -1070,7 +1108,11 @@ class ShopifyIntegrationController extends Controller
             $shopifyVariant->weight_unit = (string) $validated['weight_unit'];
         }
         if (array_key_exists('barcode', $validated) && $validated['barcode'] !== null) {
-            $shopifyVariant->barcode = trim((string) $validated['barcode']);
+            $newBarcode = trim((string) $validated['barcode']);
+            if ($newBarcode !== trim((string) ($shopifyVariant->barcode ?? ''))) {
+                $labelFieldsChanged = true;
+            }
+            $shopifyVariant->barcode = $newBarcode;
         }
         foreach (['length', 'width', 'height'] as $dimKey) {
             if (array_key_exists($dimKey, $validated) && $validated[$dimKey] !== null) {
@@ -1110,11 +1152,28 @@ class ShopifyIntegrationController extends Controller
             && $validated['product_title'] !== null
             && $shopifyVariant->product
         ) {
-            $shopifyVariant->product->title = trim((string) $validated['product_title']);
+            $newTitle = trim((string) $validated['product_title']);
+            if ($newTitle !== trim((string) ($shopifyVariant->product->title ?? ''))) {
+                $labelFieldsChanged = true;
+            }
+            $shopifyVariant->product->title = $newTitle;
             $shopifyVariant->product->save();
         }
 
         \App\Jobs\PushShopifyVariantJob::dispatch((int) $shopifyVariant->id, $validated);
+
+        if ($labelFieldsChanged) {
+            \App\Jobs\GenerateShopifyVariantBarcodeLabelJob::dispatch((int) $shopifyVariant->id);
+            $labelVariantId = (int) $shopifyVariant->id;
+            app()->terminating(static function () use ($labelVariantId) {
+                try {
+                    (new \App\Jobs\GenerateShopifyVariantBarcodeLabelJob($labelVariantId))
+                        ->handle(app(\App\Services\ShopifyVariantBarcodeLabelService::class));
+                } catch (Throwable $e) {
+                    report($e);
+                }
+            });
+        }
 
         // Also try once after the response (helps when queue workers are down).
         $variantId = (int) $shopifyVariant->id;
@@ -1133,25 +1192,339 @@ class ShopifyIntegrationController extends Controller
             }
         });
 
-        $shopifyVariant->refresh()->load('product');
+        $shopifyVariant->refresh()->load(['product', 'connection.clientAccount']);
 
         return response()->json([
             'message' => 'Saved. Syncing To Shopify…',
             'queued' => true,
-            'variant' => [
-                'id' => $shopifyVariant->id,
-                'sku' => $shopifyVariant->sku,
-                'title' => $shopifyVariant->title,
-                'product_title' => $shopifyVariant->product->title ?? null,
-                'barcode' => $shopifyVariant->barcode,
-                'weight' => $shopifyVariant->weight,
-                'weight_unit' => $shopifyVariant->weight_unit,
-                'length' => $shopifyVariant->length,
-                'width' => $shopifyVariant->width,
-                'height' => $shopifyVariant->height,
-                'dimension_unit' => $shopifyVariant->dimension_unit,
-            ],
+            'variant' => $this->serializeInventoryVariantDetail($shopifyVariant),
         ]);
+    }
+
+    public function updateProductSettings(Request $request, ShopifyProductVariant $shopifyVariant): JsonResponse
+    {
+        $this->assertAdmin($request);
+        $shopifyVariant->loadMissing(['product', 'connection']);
+
+        $validated = $request->validate([
+            'status' => ['required', 'string', 'in:active,inactive'],
+            'product_type' => ['required', 'string', 'in:standard,bundle'],
+        ]);
+
+        $product = $shopifyVariant->product;
+        if ($product === null) {
+            return response()->json(['message' => 'Product missing for this variant.'], 422);
+        }
+
+        $status = strtolower(trim((string) $validated['status'])) === 'inactive' ? 'inactive' : 'active';
+        $kind = \App\Models\ShopifyProduct::normalizeCrmProductKind($validated['product_type']);
+
+        $product->status = $status;
+        $product->crm_product_kind = $kind;
+        $product->save();
+
+        // Push Active/Inactive to Shopify when connected (CRM type stays local).
+        try {
+            app(ShopifyProductSyncService::class)->pushProductStatusToShopify($product, $status);
+        } catch (Throwable $e) {
+            report($e);
+        }
+
+        $shopifyVariant->refresh()->load(['product', 'connection.clientAccount']);
+
+        return response()->json([
+            'message' => 'Product settings saved.',
+            'variant' => $this->serializeInventoryVariantDetail($shopifyVariant),
+        ]);
+    }
+
+    public function uploadVariantImage(Request $request, ShopifyProductVariant $shopifyVariant): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        $validated = $request->validate([
+            'image' => ['required', 'file', 'image', 'max:5120'],
+        ]);
+
+        /** @var \Illuminate\Http\UploadedFile $file */
+        $file = $validated['image'];
+        $ext = strtolower($file->getClientOriginalExtension() ?: 'jpg');
+        if (! in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true)) {
+            $ext = 'jpg';
+        }
+        $dir = 'shopify/crm-images/'.$shopifyVariant->connection_id;
+        $path = $file->storeAs($dir, 'variant-'.$shopifyVariant->id.'.'.$ext, 'public');
+
+        $old = trim((string) ($shopifyVariant->crm_image_path ?? ''));
+        if ($old !== '' && $old !== $path && \Illuminate\Support\Facades\Storage::disk('public')->exists($old)) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($old);
+        }
+
+        $shopifyVariant->crm_image_path = $path;
+        $shopifyVariant->save();
+
+        return response()->json([
+            'message' => 'Image updated.',
+            'image_url' => $shopifyVariant->displayImageUrl(),
+            'variant' => $this->serializeInventoryVariantDetail(
+                $shopifyVariant->fresh(['product', 'connection.clientAccount'])
+            ),
+        ]);
+    }
+
+    public function barcodeLabel(Request $request, ShopifyProductVariant $shopifyVariant)
+    {
+        $this->assertAdmin($request);
+        $shopifyVariant->loadMissing('product');
+
+        $labels = app(\App\Services\ShopifyVariantBarcodeLabelService::class);
+        $path = $labels->ensureLabel($shopifyVariant, false);
+        if ($path === null || $path === '') {
+            return response()->json([
+                'message' => 'Add a barcode or SKU before printing a label.',
+            ], 422);
+        }
+
+        $absolute = \Illuminate\Support\Facades\Storage::disk('public')->path($path);
+        if (! is_file($absolute)) {
+            $path = $labels->ensureLabel($shopifyVariant, true);
+            $absolute = \Illuminate\Support\Facades\Storage::disk('public')->path((string) $path);
+        }
+
+        return response()->file($absolute, [
+            'Content-Type' => 'image/svg+xml',
+            'Content-Disposition' => 'inline; filename="barcode-label-'.$shopifyVariant->id.'.svg"',
+        ]);
+    }
+
+    public function bundleComponents(Request $request, ShopifyProductVariant $shopifyVariant): JsonResponse
+    {
+        $this->assertAdmin($request);
+        $shopifyVariant->loadMissing('product');
+
+        return response()->json([
+            'components' => $this->serializeBundleComponents($shopifyVariant),
+        ]);
+    }
+
+    public function syncBundleComponents(Request $request, ShopifyProductVariant $shopifyVariant): JsonResponse
+    {
+        $this->assertAdmin($request);
+        $shopifyVariant->loadMissing(['product', 'connection']);
+
+        $kind = \App\Models\ShopifyProduct::normalizeCrmProductKind(
+            $shopifyVariant->product->crm_product_kind ?? null
+        );
+        if ($kind !== \App\Models\ShopifyProduct::KIND_BUNDLE) {
+            return response()->json([
+                'message' => 'Set product type to Bundle before adding components.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'items' => ['required', 'array'],
+            'items.*.component_variant_id' => ['required', 'integer', 'min:1'],
+            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:999999'],
+        ]);
+
+        $connectionId = (int) $shopifyVariant->connection_id;
+        $parentId = (int) $shopifyVariant->id;
+        $seen = [];
+        $rows = [];
+        foreach ($validated['items'] as $item) {
+            $componentId = (int) $item['component_variant_id'];
+            if ($componentId === $parentId || isset($seen[$componentId])) {
+                continue;
+            }
+            $exists = ShopifyProductVariant::query()
+                ->where('id', $componentId)
+                ->where('connection_id', $connectionId)
+                ->exists();
+            if (! $exists) {
+                continue;
+            }
+            $seen[$componentId] = true;
+            $rows[] = [
+                'parent_variant_id' => $parentId,
+                'component_variant_id' => $componentId,
+                'quantity' => (int) $item['quantity'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        }
+
+        \App\Models\ShopifyVariantBundleComponent::query()
+            ->where('parent_variant_id', $parentId)
+            ->delete();
+
+        if ($rows !== []) {
+            \App\Models\ShopifyVariantBundleComponent::query()->insert($rows);
+        }
+
+        return response()->json([
+            'message' => 'Bundle components saved.',
+            'components' => $this->serializeBundleComponents($shopifyVariant->fresh()),
+        ]);
+    }
+
+    public function updateBundleComponent(
+        Request $request,
+        ShopifyProductVariant $shopifyVariant,
+        \App\Models\ShopifyVariantBundleComponent $component
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        if ((int) $component->parent_variant_id !== (int) $shopifyVariant->id) {
+            abort(404);
+        }
+        $validated = $request->validate([
+            'quantity' => ['required', 'integer', 'min:1', 'max:999999'],
+        ]);
+        $component->quantity = (int) $validated['quantity'];
+        $component->save();
+
+        return response()->json([
+            'message' => 'Quantity updated.',
+            'components' => $this->serializeBundleComponents($shopifyVariant),
+        ]);
+    }
+
+    public function destroyBundleComponent(
+        Request $request,
+        ShopifyProductVariant $shopifyVariant,
+        \App\Models\ShopifyVariantBundleComponent $component
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        if ((int) $component->parent_variant_id !== (int) $shopifyVariant->id) {
+            abort(404);
+        }
+        $component->delete();
+
+        return response()->json([
+            'message' => 'Component removed.',
+            'components' => $this->serializeBundleComponents($shopifyVariant),
+        ]);
+    }
+
+    public function searchBundleCandidates(Request $request, ShopifyProductVariant $shopifyVariant): JsonResponse
+    {
+        $this->assertAdmin($request);
+        $q = trim((string) $request->query('q', ''));
+        $exclude = \App\Models\ShopifyVariantBundleComponent::query()
+            ->where('parent_variant_id', $shopifyVariant->id)
+            ->pluck('component_variant_id')
+            ->map(static function ($id) {
+                return (int) $id;
+            })
+            ->all();
+        $exclude[] = (int) $shopifyVariant->id;
+
+        $query = ShopifyProductVariant::query()
+            ->with(['product'])
+            ->where('connection_id', $shopifyVariant->connection_id)
+            ->whereNotIn('id', $exclude)
+            ->orderByDesc('id')
+            ->limit(40);
+
+        if ($q !== '') {
+            $like = '%'.$q.'%';
+            $query->where(function ($builder) use ($like) {
+                $builder->where('sku', 'like', $like)
+                    ->orWhere('title', 'like', $like)
+                    ->orWhereHas('product', function ($p) use ($like) {
+                        $p->where('title', 'like', $like);
+                    });
+            });
+        }
+
+        $rows = $query->get()->map(function (ShopifyProductVariant $v) {
+            return [
+                'id' => (int) $v->id,
+                'sku' => (string) ($v->sku ?? ''),
+                'title' => (string) ($v->product->title ?? $v->title ?? ''),
+                'image_url' => $v->displayImageUrl(),
+            ];
+        })->values();
+
+        return response()->json(['products' => $rows]);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function serializeBundleComponents(ShopifyProductVariant $parent): array
+    {
+        $rows = \App\Models\ShopifyVariantBundleComponent::query()
+            ->with(['componentVariant.product'])
+            ->where('parent_variant_id', $parent->id)
+            ->orderBy('id')
+            ->get();
+
+        return $rows->map(function (\App\Models\ShopifyVariantBundleComponent $row) {
+            $v = $row->componentVariant;
+
+            return [
+                'id' => (int) $row->id,
+                'component_variant_id' => (int) $row->component_variant_id,
+                'quantity' => (int) $row->quantity,
+                'sku' => $v ? (string) ($v->sku ?? '') : '',
+                'title' => $v ? (string) ($v->product->title ?? $v->title ?? '') : '',
+                'image_url' => $v ? $v->displayImageUrl() : null,
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeInventoryVariantDetail(ShopifyProductVariant $shopifyVariant): array
+    {
+        $shopifyVariant->loadMissing(['product', 'connection.clientAccount']);
+        $kind = \App\Models\ShopifyProduct::normalizeCrmProductKind(
+            $shopifyVariant->product->crm_product_kind ?? null
+        );
+        $productStatus = $this->normalizeCrmProductStatus(
+            $shopifyVariant->product ? (string) ($shopifyVariant->product->status ?? 'active') : 'active'
+        );
+
+        return [
+            'id' => $shopifyVariant->id,
+            'sku' => $shopifyVariant->sku,
+            'title' => $shopifyVariant->title,
+            'product_title' => $shopifyVariant->product->title ?? null,
+            'image_url' => $shopifyVariant->displayImageUrl(),
+            'weight' => $shopifyVariant->weight,
+            'weight_unit' => $shopifyVariant->weight_unit,
+            'barcode' => $shopifyVariant->barcode,
+            'length' => $shopifyVariant->length,
+            'width' => $shopifyVariant->width,
+            'height' => $shopifyVariant->height,
+            'dimension_unit' => $shopifyVariant->dimension_unit,
+            'shopify_variant_id' => $shopifyVariant->shopify_variant_id,
+            'shopify_product_id' => $shopifyVariant->product->shopify_product_id ?? null,
+            'connection_id' => (int) $shopifyVariant->connection_id,
+            'client_account_id' => $shopifyVariant->connection && $shopifyVariant->connection->client_account_id
+                ? (int) $shopifyVariant->connection->client_account_id
+                : null,
+            'crm_locked_at' => optional($shopifyVariant->crm_locked_at)->toIso8601String(),
+            'account_name' => optional(optional($shopifyVariant->connection)->clientAccount)->company_name,
+            'status' => $productStatus,
+            'product_type' => $kind,
+            'product_type_label' => \App\Models\ShopifyProduct::crmProductKindLabel($kind),
+            'bundle' => $kind === \App\Models\ShopifyProduct::KIND_BUNDLE,
+            'bundle_components' => $kind === \App\Models\ShopifyProduct::KIND_BUNDLE
+                ? $this->serializeBundleComponents($shopifyVariant)
+                : [],
+        ];
+    }
+
+    private function normalizeCrmProductStatus(?string $status): string
+    {
+        $v = strtolower(trim((string) ($status ?? '')));
+        if (in_array($v, ['inactive', 'draft', 'archived'], true)) {
+            return 'inactive';
+        }
+
+        return 'active';
     }
 
     private function oauthCrmRedirect(?int $accountId, ?int $connectionId, bool $success, string $message = ''): RedirectResponse

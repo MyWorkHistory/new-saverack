@@ -163,6 +163,36 @@ class WholesaleOrderBoxFeeMatcherTest extends TestCase
         $this->assertSame(0.85, $row['unit_price']);
     }
 
+    public function test_match_row_uses_fulfillment_sized_box_fee(): void
+    {
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Fulfillment Box Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'email' => 'fulfillment-box@example.test',
+        ]);
+        ClientAccountFee::query()->create([
+            'client_account_id' => $account->id,
+            'fee_group' => PricingFeeTemplate::CATEGORY_FULFILLMENT,
+            'line_code' => 'box_12x9x6',
+            'label' => 'BOX 12x9x6',
+            'amount' => '0.8500',
+            'currency' => 'USD',
+            'sort_order' => 1,
+        ]);
+
+        $row = WholesaleOrderBoxFeeMatcher::matchRow([
+            'length' => 12,
+            'width' => 9,
+            'height' => 6,
+            'quantity' => 1,
+        ], $account->fresh());
+
+        $this->assertTrue($row['matched']);
+        $this->assertSame('BOX 12x9x6', $row['display_name']);
+        $this->assertSame(0.85, $row['unit_price']);
+        $this->assertNotNull($row['client_account_fee_id']);
+    }
+
     public function test_aggregate_line_boxes_sums_quantities_by_size(): void
     {
         $lines = [

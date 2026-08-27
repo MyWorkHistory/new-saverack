@@ -275,8 +275,11 @@ class WholesaleOrderFeeChargeCatalog
     }
 
     /**
-     * Account Fees-tab options used for box billing (packaging + wholesale only).
+     * Account Fees-tab options used for box billing.
      * Uses the account fee row amount/label — not Settings template defaults.
+     *
+     * Includes packaging + wholesale, and fulfillment rows that look like box sizes
+     * (e.g. label "BOX 12x9x6" at $0.85 under Fulfillment).
      *
      * @return list<array<string, mixed>>
      */
@@ -292,16 +295,20 @@ class WholesaleOrderFeeChargeCatalog
                 continue;
             }
             $group = strtolower(trim((string) ($fee->fee_group ?? '')));
-            if ($group !== PricingFeeTemplate::CATEGORY_PACKAGING
-                && $group !== PricingFeeTemplate::CATEGORY_WHOLESALE) {
-                continue;
-            }
-            $feeId = (int) $fee->id;
-            if ($feeId <= 0 || isset($seen[$feeId])) {
-                continue;
-            }
             $label = trim((string) ($fee->label ?? ''));
             if ($label === '') {
+                continue;
+            }
+
+            $isPackagingOrWholesale = $group === PricingFeeTemplate::CATEGORY_PACKAGING
+                || $group === PricingFeeTemplate::CATEGORY_WHOLESALE;
+            $looksLikeBoxFee = self::labelLooksLikeBoxBillingFee($label);
+            if (! $isPackagingOrWholesale && ! $looksLikeBoxFee) {
+                continue;
+            }
+
+            $feeId = (int) $fee->id;
+            if ($feeId <= 0 || isset($seen[$feeId])) {
                 continue;
             }
             $seen[$feeId] = true;
@@ -317,6 +324,18 @@ class WholesaleOrderFeeChargeCatalog
         }
 
         return $out;
+    }
+
+    /**
+     * True when an account fee label is a sized box / generic box price row.
+     */
+    public static function labelLooksLikeBoxBillingFee(string $label): bool
+    {
+        if (\App\Support\Billing\WholesaleOrderBoxFeeMatcher::parseDimensionsFromLabel($label) !== null) {
+            return true;
+        }
+
+        return \App\Support\Billing\WholesaleOrderBoxFeeMatcher::genericBoxLabelScore($label) >= 0;
     }
 
     /**

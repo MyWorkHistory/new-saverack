@@ -2087,6 +2087,274 @@ GQL;
     }
 
     /**
+     * Resolve many SKUs for ASN CSV import using the local catalog index (same account
+     * scope as ASN product search), then a lightweight ShipHero product(sku) lookup for
+     * any remaining misses — without the heavy getProductDetailBySku path.
+     *
+     * @param  list<string>  $skus
+     * @return array<string, array{shiphero_product_id: ?string, shiphero_legacy_id: ?int, sku: string, name: string, image_url: ?string}>
+     *         Map keyed by lowercased trimmed input SKU
+     */
+    public function resolveProductsForAsnCsvImport(
+        int $clientAccountId,
+        ?string $customerAccountId,
+        array $skus
+    ): array {
+        $out = [];
+        if ($clientAccountId < 1 || $skus === []) {
+            return $out;
+        }
+
+        $customerAccountId = is_string($customerAccountId) ? trim($customerAccountId) : '';
+        if ($customerAccountId === '') {
+            $customerAccountId = null;
+        }
+
+        /** @var array<string, string> $inputByKey lowercased key => original sku */
+        $inputByKey = [];
+        foreach ($skus as $raw) {
+            $cleaned = $this->cleanAsnCsvSkuValue((string) $raw);
+            if ($cleaned === '') {
+                continue;
+            }
+            $key = $this->normalizeInventoryIndexSearchValue($cleaned);
+            if ($key === '') {
+                continue;
+            }
+            if (! isset($inputByKey[$key])) {
+                $inputByKey[$key] = $cleaned;
+            }
+        }
+        if ($inputByKey === []) {
+            return $out;
+        }
+
+        $keys = array_keys($inputByKey);
+        $this->hydrateAsnCsvProductsFromIndex($clientAccountId, $customerAccountId, $keys, $out);
+
+        $missing = [];
+        foreach ($keys as $key) {
+            if (! isset($out[$key])) {
+                $missing[] = $key;
+            }
+        }
+
+        if ($missing !== []) {
+            $this->hydrateAsnCsvProductsFromDetailCache($clientAccountId, $missing, $inputByKey, $out);
+        }
+
+        $missing = [];
+        foreach ($keys as $key) {
+            if (! isset($out[$key])) {
+                $missing[] = $key;
+            }
+        }
+
+        if ($missing !== [] && $customerAccountId !== null) {
+            $started = microtime(true);
+            $remoteBudgetSeconds = 75.0;
+            foreach ($missing as $key) {
+                if ((microtime(true) - $started) >= $remoteBudgetSeconds) {
+                    break;
+                }
+                $sku = $inputByKey[$key] ?? $key;
+                $node = null;
+                try {
+                    $node = $this->fetchProductBySku($sku, $customerAccountId);
+                } catch (\Throwable $e) {
+                    $node = null;
+                }
+                if ($node === null) {
+                    try {
+                        $node = $this->fetchProductByBarcode($sku, $customerAccountId);
+                    } catch (\Throwable $e) {
+                        $node = null;
+                    }
+                }
+                if (! is_array($node) || empty($node['id'])) {
+                    continue;
+                }
+
+                $productId = trim((string) ($node['id'] ?? ''));
+                $resolvedSku = trim((string) ($node['sku'] ?? ''));
+                if ($resolvedSku === '') {
+                    $resolvedSku = $sku;
+                }
+                $name = trim((string) ($node['name'] ?? ''));
+                $imageUrl = null;
+                $images = $node['images'] ?? null;
+                if (is_array($images) && isset($images[0]) && is_array($images[0])) {
+                    $src = trim((string) ($images[0]['src'] ?? ''));
+                    if ($src !== '') {
+                        $imageUrl = $src;
+                    }
+                }
+
+                $legacyRaw = $node['legacy_id'] ?? null;
+                $legacyId = null;
+                if (is_int($legacyRaw) && $legacyRaw > 0) {
+                    $legacyId = $legacyRaw;
+                } elseif (is_numeric($legacyRaw) && (int) $legacyRaw > 0) {
+                    $legacyId = (int) $legacyRaw;
+                }
+
+                $out[$key] = [
+                    'shiphero_product_id' => $productId !== '' ? $productId : null,
+                    'shiphero_legacy_id' => $legacyId,
+                    'sku' => $resolvedSku,
+                    'name' => $name,
+                    'image_url' => $imageUrl,
+                ];
+
+                try {
+                    $this->upsertCreatedProductIndex($clientAccountId, (string) $customerAccountId, [
+                        'id' => $productId,
+                        'sku' => $resolvedSku,
+                        'name' => $name !== '' ? $name : $resolvedSku,
+                        'image_url' => $imageUrl,
+                    ]);
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    public function cleanAsnCsvSkuValue(string $raw): string
+    {
+        $sku = (string) preg_replace('/[\x{200B}-\x{200D}\x{FEFF}\x{00A0}]/u', '', $raw);
+        $sku = trim($sku, " \t\n\r\0\x0B\"'");
+        if (preg_match('/^=\s*\"(.*)\"\s*$/', $sku, $m) === 1) {
+            $sku = (string) $m[1];
+        } elseif (preg_match('/^=\s*(.+)$/', $sku, $m) === 1) {
+            $sku = trim((string) $m[1], " \t\"'");
+        }
+        $sku = str_replace(
+            ["\u{2010}", "\u{2011}", "\u{2012}", "\u{2013}", "\u{2014}", "\u{2212}"],
+            '-',
+            $sku
+        );
+
+        return trim($sku);
+    }
+
+    /**
+     * @param  list<string>  $keys
+     * @param  array<string, array{shiphero_product_id: ?string, shiphero_legacy_id: ?int, sku: string, name: string, image_url: ?string}>  $out
+     */
+    private function hydrateAsnCsvProductsFromIndex(
+        int $clientAccountId,
+        ?string $customerAccountId,
+        array $keys,
+        array &$out
+    ): void {
+        foreach (array_chunk($keys, 400) as $chunk) {
+            $query = ShipHeroInventoryProductIndex::query()
+                ->where(function ($q) use ($clientAccountId, $customerAccountId) {
+                    $q->where('client_account_id', $clientAccountId);
+                    if (is_string($customerAccountId) && $customerAccountId !== '') {
+                        $q->orWhere('shiphero_customer_account_id', $customerAccountId);
+                    }
+                })
+                ->where(function ($q) use ($chunk) {
+                    $q->whereIn('sku_search', $chunk)
+                        ->orWhereIn('barcode_search', $chunk);
+                    $placeholders = implode(',', array_fill(0, count($chunk), '?'));
+                    $q->orWhereRaw('LOWER(TRIM(sku)) IN ('.$placeholders.')', $chunk);
+                })
+                ->orderByDesc('synced_at')
+                ->get([
+                    'sku',
+                    'sku_search',
+                    'barcode_search',
+                    'name',
+                    'image_url',
+                    'shiphero_product_id',
+                    'synced_at',
+                ]);
+
+            foreach ($query as $row) {
+                $product = [
+                    'shiphero_product_id' => trim((string) ($row->shiphero_product_id ?? '')) !== ''
+                        ? trim((string) $row->shiphero_product_id)
+                        : null,
+                    'shiphero_legacy_id' => null,
+                    'sku' => trim((string) ($row->sku ?? '')) !== ''
+                        ? trim((string) $row->sku)
+                        : (string) ($row->sku_search ?? ''),
+                    'name' => trim((string) ($row->name ?? '')),
+                    'image_url' => $row->image_url !== null ? trim((string) $row->image_url) : null,
+                ];
+
+                $candidateKeys = [
+                    $this->normalizeInventoryIndexSearchValue((string) ($row->sku_search ?? '')),
+                    $this->normalizeInventoryIndexSearchValue((string) ($row->sku ?? '')),
+                    $this->normalizeInventoryIndexSearchValue((string) ($row->barcode_search ?? '')),
+                ];
+                foreach ($candidateKeys as $candidate) {
+                    if ($candidate === '' || ! in_array($candidate, $chunk, true)) {
+                        continue;
+                    }
+                    if (! isset($out[$candidate])) {
+                        $out[$candidate] = $product;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * @param  list<string>  $missing
+     * @param  array<string, string>  $inputByKey
+     * @param  array<string, array{shiphero_product_id: ?string, shiphero_legacy_id: ?int, sku: string, name: string, image_url: ?string}>  $out
+     */
+    private function hydrateAsnCsvProductsFromDetailCache(
+        int $clientAccountId,
+        array $missing,
+        array $inputByKey,
+        array &$out
+    ): void {
+        try {
+            foreach (array_chunk($missing, 400) as $chunk) {
+                $rows = ShipHeroInventoryProductDetailCache::query()
+                    ->where('client_account_id', $clientAccountId)
+                    ->whereIn('sku_search', $chunk)
+                    ->get(['sku', 'sku_search', 'product_json']);
+
+                foreach ($rows as $row) {
+                    $key = $this->normalizeInventoryIndexSearchValue((string) ($row->sku_search ?? ''));
+                    if ($key === '' || isset($out[$key])) {
+                        continue;
+                    }
+                    $json = is_array($row->product_json) ? $row->product_json : [];
+                    $productId = trim((string) ($json['id'] ?? ''));
+                    $sku = trim((string) ($row->sku ?? ''));
+                    if ($sku === '') {
+                        $sku = $inputByKey[$key] ?? $key;
+                    }
+                    $name = trim((string) ($json['name'] ?? ''));
+                    $imageUrl = null;
+                    if (isset($json['image_url'])) {
+                        $imageUrl = trim((string) $json['image_url']) ?: null;
+                    }
+
+                    $out[$key] = [
+                        'shiphero_product_id' => $productId !== '' ? $productId : null,
+                        'shiphero_legacy_id' => null,
+                        'sku' => $sku,
+                        'name' => $name,
+                        'image_url' => $imageUrl,
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
      * Upsert a single product row into the local inventory index after ShipHero product_create.
      *
      * @param  array{id?: string, sku?: string, name?: string, image_url?: string|null}  $created

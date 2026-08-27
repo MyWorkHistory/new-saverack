@@ -28,6 +28,12 @@ watch(
   },
 );
 
+function normalizeUnitPrice(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.round(n * 100) / 100;
+}
+
 async function loadSuggestions() {
   if (!props.orderId) return;
   loading.value = true;
@@ -38,6 +44,7 @@ async function loadSuggestions() {
     );
     rows.value = (Array.isArray(data?.rows) ? data.rows : []).map((row) => ({
       ...row,
+      unit_price: normalizeUnitPrice(row?.unit_price),
       checked: true,
     }));
     if (!rows.value.length) {
@@ -49,12 +56,6 @@ async function loadSuggestions() {
   } finally {
     loading.value = false;
   }
-}
-
-function formatPrice(row) {
-  const n = Number(row?.unit_price);
-  if (!Number.isFinite(n)) return "$0.00";
-  return `$${n.toFixed(2)}`;
 }
 
 function submit() {
@@ -69,7 +70,7 @@ function submit() {
       client_account_fee_id: row.client_account_fee_id,
       name: row.display_name,
       quantity: row.quantity,
-      unit_price: row.unit_price,
+      unit_price: normalizeUnitPrice(row.unit_price),
     })),
   );
 }
@@ -95,8 +96,8 @@ function submit() {
                     <span class="visually-hidden">Include</span>
                   </th>
                   <th scope="col">Box</th>
-                  <th scope="col" class="text-end">QTY</th>
-                  <th scope="col" class="text-end">Price</th>
+                  <th scope="col" class="text-end" style="width: 4.5rem">QTY</th>
+                  <th scope="col" class="text-end" style="width: 8rem">Price</th>
                 </tr>
               </thead>
               <tbody>
@@ -104,9 +105,25 @@ function submit() {
                   <td class="text-center">
                     <input v-model="row.checked" type="checkbox" class="form-check-input m-0" :disabled="busy" />
                   </td>
-                  <td>{{ row.display_name }}</td>
+                  <td>
+                    <div>{{ row.display_name }}</div>
+                    <div v-if="!row.matched" class="small text-secondary">No CRM packaging match — enter a price</div>
+                  </td>
                   <td class="text-end">{{ row.quantity }}</td>
-                  <td class="text-end">{{ formatPrice(row) }}</td>
+                  <td class="text-end">
+                    <div class="input-group input-group-sm flex-nowrap justify-content-end wholesale-add-boxes__price-group">
+                      <span class="input-group-text">$</span>
+                      <input
+                        v-model.number="row.unit_price"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="form-control form-control-sm text-end wholesale-add-boxes__price-input"
+                        :disabled="busy"
+                        :aria-label="`${row.display_name} price`"
+                      />
+                    </div>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -136,3 +153,13 @@ function submit() {
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+.wholesale-add-boxes__price-group {
+  max-width: 7.5rem;
+  margin-left: auto;
+}
+.wholesale-add-boxes__price-input {
+  min-width: 4.25rem;
+}
+</style>

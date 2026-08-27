@@ -2,11 +2,17 @@
 
 namespace Tests\Unit;
 
+use App\Models\ClientAccount;
+use App\Models\ClientAccountFee;
+use App\Models\PricingFeeTemplate;
 use App\Support\Billing\WholesaleOrderBoxFeeMatcher;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class WholesaleOrderBoxFeeMatcherTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_matches_packaging_fee_by_normalized_dimensions(): void
     {
         $options = [[
@@ -36,6 +42,71 @@ class WholesaleOrderBoxFeeMatcherTest extends TestCase
         $this->assertSame('11 × 9 × 7 in', $row['display_name']);
         $this->assertSame(0, $row['default_unit_price_cents']);
         $this->assertSame(3, $row['quantity']);
+    }
+
+    public function test_falls_back_to_generic_box_fee_price_when_label_has_no_dimensions(): void
+    {
+        $options = [
+            [
+                'line_type' => 'fee_9',
+                'client_account_fee_id' => 9,
+                'display_name' => 'Box',
+                'default_unit_price_cents' => 85,
+            ],
+            [
+                'line_type' => 'fee_10',
+                'client_account_fee_id' => 10,
+                'display_name' => 'Mailer',
+                'default_unit_price_cents' => 40,
+            ],
+        ];
+
+        $generic = WholesaleOrderBoxFeeMatcher::findGenericBoxOption($options);
+        $this->assertNotNull($generic);
+        $this->assertSame(9, $generic['client_account_fee_id']);
+        $this->assertSame(85, $generic['default_unit_price_cents']);
+
+        // Dimension-specific labels still win over generic Box.
+        $optionsWithSized = array_merge($options, [[
+            'line_type' => 'fee_11',
+            'client_account_fee_id' => 11,
+            'display_name' => 'Box (12 X 9 X 6)',
+            'default_unit_price_cents' => 125,
+        ]]);
+        $sized = WholesaleOrderBoxFeeMatcher::findMatchingOption($optionsWithSized, 12, 9, 6);
+        $this->assertNotNull($sized);
+        $this->assertSame(11, $sized['client_account_fee_id']);
+    }
+
+    public function test_match_row_uses_generic_box_price_and_keeps_size_label(): void
+    {
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Box Fee Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'email' => 'box-fee@example.test',
+        ]);
+        ClientAccountFee::query()->create([
+            'client_account_id' => $account->id,
+            'fee_group' => PricingFeeTemplate::CATEGORY_PACKAGING,
+            'line_code' => 'box_price',
+            'label' => 'Box',
+            'amount' => '0.8500',
+            'currency' => 'USD',
+            'sort_order' => 1,
+        ]);
+
+        $row = WholesaleOrderBoxFeeMatcher::matchRow([
+            'length' => 12,
+            'width' => 9,
+            'height' => 6,
+            'quantity' => 2,
+        ], $account->fresh());
+
+        $this->assertTrue($row['matched']);
+        $this->assertSame('12 × 9 × 6 in', $row['display_name']);
+        $this->assertSame(85, $row['default_unit_price_cents']);
+        $this->assertSame(0.85, $row['unit_price']);
+        $this->assertNotNull($row['client_account_fee_id']);
     }
 
     public function test_aggregate_line_boxes_sums_quantities_by_size(): void

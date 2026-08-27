@@ -74,9 +74,16 @@ class WholesaleOrderBoxFeeMatcher
             ? WholesaleOrderFeeChargeCatalog::packagingOptionsForAccount($account)
             : [];
 
-        $matched = self::findMatchingOption($options, $length, $width, $height);
-        $displayName = $matched !== null
-            ? (string) ($matched['display_name'] ?? self::formatSizeLabel($length, $width, $height))
+        $dimMatched = self::findMatchingOption($options, $length, $width, $height);
+        $matched = $dimMatched;
+        if ($matched === null) {
+            // CRM often stores a single "Box" fee (e.g. $0.85) without dimensions in the label.
+            $matched = self::findGenericBoxOption($options);
+        }
+
+        // Prefer sized fee labels when matched by dims; otherwise keep the measured size visible.
+        $displayName = $dimMatched !== null
+            ? (string) ($dimMatched['display_name'] ?? self::formatSizeLabel($length, $width, $height))
             : self::formatSizeLabel($length, $width, $height);
         $unitCents = (int) ($matched['default_unit_price_cents'] ?? 0);
 
@@ -116,6 +123,70 @@ class WholesaleOrderBoxFeeMatcher
         }
 
         return null;
+    }
+
+    /**
+     * Fallback when no packaging fee label includes matching L×W×H (e.g. fee named "Box" at $0.85).
+     *
+     * @param  list<array<string, mixed>>  $options
+     * @return array<string, mixed>|null
+     */
+    public static function findGenericBoxOption(array $options): ?array
+    {
+        $best = null;
+        $bestScore = -1;
+
+        foreach ($options as $option) {
+            if (! is_array($option)) {
+                continue;
+            }
+            $label = trim((string) ($option['display_name'] ?? ''));
+            if ($label === '') {
+                continue;
+            }
+            // Skip sized SKUs — those are handled by findMatchingOption.
+            if (self::parseDimensionsFromLabel($label) !== null) {
+                continue;
+            }
+
+            $score = self::genericBoxLabelScore($label);
+            if ($score < 0) {
+                continue;
+            }
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $best = $option;
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * Higher score = better generic box match. Negative = not a box fee.
+     */
+    public static function genericBoxLabelScore(string $label): int
+    {
+        $key = strtolower(preg_replace('/[^a-z0-9]+/i', '', $label) ?? '');
+        if ($key === '') {
+            return -1;
+        }
+
+        if ($key === 'box' || $key === 'boxes' || $key === 'boxprice') {
+            return 100;
+        }
+        if (strpos($key, 'boxprice') !== false) {
+            return 80;
+        }
+        // "Box Fee", "Shipping Box", etc. — avoid mailer/poly/bubble unless they say box.
+        if ($key === 'shippingbox' || $key === 'cartonbox') {
+            return 60;
+        }
+        if (preg_match('/^box/', $key) === 1 && strpos($key, 'mailbox') === false) {
+            return 40;
+        }
+
+        return -1;
     }
 
     /**

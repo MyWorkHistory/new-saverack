@@ -287,10 +287,12 @@ async function submitAddBoxesFees(rows) {
   try {
     let latest = order.value;
     for (const row of rows) {
+      const feeId = row.client_account_fee_id != null ? Number(row.client_account_fee_id) : null;
+      const hasFee = Number.isFinite(feeId) && feeId > 0;
       const { data } = await api.post(`/admin/wholesale-orders/${order.value.id}/fee-lines`, {
-        line_type: row.line_type,
-        source: "packaging",
-        client_account_fee_id: row.client_account_fee_id,
+        line_type: hasFee ? row.line_type : "custom_new",
+        source: hasFee ? "packaging" : "custom",
+        client_account_fee_id: hasFee ? feeId : null,
         name: row.name,
         quantity: row.quantity,
         unit_price: row.unit_price,

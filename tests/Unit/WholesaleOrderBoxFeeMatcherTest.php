@@ -29,6 +29,32 @@ class WholesaleOrderBoxFeeMatcherTest extends TestCase
         $this->assertSame(450, $matched['default_unit_price_cents']);
     }
 
+    public function test_parses_x_and_multiplication_sign_labels(): void
+    {
+        $this->assertSame(
+            [6.0, 9.0, 12.0],
+            WholesaleOrderBoxFeeMatcher::parseDimensionsFromLabel('12 x 9 x 6')
+        );
+        $this->assertSame(
+            [6.0, 9.0, 12.0],
+            WholesaleOrderBoxFeeMatcher::parseDimensionsFromLabel('12×9×6')
+        );
+        $this->assertSame(
+            [6.0, 9.0, 12.0],
+            WholesaleOrderBoxFeeMatcher::parseDimensionsFromLabel('Box (12 X 9 X 6)')
+        );
+
+        $matched = WholesaleOrderBoxFeeMatcher::findMatchingOption([[
+            'line_type' => 'fee_1',
+            'client_account_fee_id' => 1,
+            'display_name' => '12 x 9 x 6',
+            'default_unit_price_cents' => 85,
+        ]], 12, 9, 6);
+
+        $this->assertNotNull($matched);
+        $this->assertSame(85, $matched['default_unit_price_cents']);
+    }
+
     public function test_unmatched_dimensions_fallback_to_zero_price_label(): void
     {
         $row = WholesaleOrderBoxFeeMatcher::matchRow([
@@ -66,7 +92,6 @@ class WholesaleOrderBoxFeeMatcherTest extends TestCase
         $this->assertSame(9, $generic['client_account_fee_id']);
         $this->assertSame(85, $generic['default_unit_price_cents']);
 
-        // Dimension-specific labels still win over generic Box.
         $optionsWithSized = array_merge($options, [[
             'line_type' => 'fee_11',
             'client_account_fee_id' => 11,
@@ -78,7 +103,7 @@ class WholesaleOrderBoxFeeMatcherTest extends TestCase
         $this->assertSame(11, $sized['client_account_fee_id']);
     }
 
-    public function test_match_row_uses_generic_box_price_and_keeps_size_label(): void
+    public function test_match_row_uses_account_fees_tab_box_amount(): void
     {
         $account = ClientAccount::query()->create([
             'company_name' => 'Box Fee Co',
@@ -109,6 +134,35 @@ class WholesaleOrderBoxFeeMatcherTest extends TestCase
         $this->assertNotNull($row['client_account_fee_id']);
     }
 
+    public function test_match_row_uses_sized_account_fee_label(): void
+    {
+        $account = ClientAccount::query()->create([
+            'company_name' => 'Sized Box Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'email' => 'sized-box@example.test',
+        ]);
+        ClientAccountFee::query()->create([
+            'client_account_id' => $account->id,
+            'fee_group' => PricingFeeTemplate::CATEGORY_PACKAGING,
+            'line_code' => 'legacy_packaging_12x9x6',
+            'label' => '12 x 9 x 6',
+            'amount' => '0.8500',
+            'currency' => 'USD',
+            'sort_order' => 1,
+        ]);
+
+        $row = WholesaleOrderBoxFeeMatcher::matchRow([
+            'length' => 12,
+            'width' => 9,
+            'height' => 6,
+            'quantity' => 1,
+        ], $account->fresh());
+
+        $this->assertTrue($row['matched']);
+        $this->assertSame('12 x 9 x 6', $row['display_name']);
+        $this->assertSame(0.85, $row['unit_price']);
+    }
+
     public function test_aggregate_line_boxes_sums_quantities_by_size(): void
     {
         $lines = [
@@ -128,7 +182,6 @@ class WholesaleOrderBoxFeeMatcherTest extends TestCase
         $rows = WholesaleOrderBoxFeeMatcher::aggregateLineBoxes($lines, null);
 
         $this->assertCount(1, $rows);
-        // Three physical box rows of the same size (unit qty is ignored for carton billing).
         $this->assertSame(3, $rows[0]['quantity']);
     }
 }

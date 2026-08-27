@@ -124,7 +124,7 @@ class WholesaleOrderFeeChargeCatalog
                 continue;
             }
             if (self::feeMatchesLineType($fee, $def)) {
-                return (int) round(((float) ($fee->amount ?? 0)) * 100);
+                return self::feeAmountCents($fee);
             }
         }
 
@@ -220,7 +220,7 @@ class WholesaleOrderFeeChargeCatalog
                 'display_name' => $label,
                 'qty_label' => $qtyLabel,
                 'source' => WholesaleOrderFeeLine::SOURCE_WHOLESALE,
-                'default_unit_price_cents' => (int) round(((float) ($fee->amount ?? 0)) * 100),
+                'default_unit_price_cents' => self::feeAmountCents($fee),
             ];
         }
 
@@ -267,11 +267,72 @@ class WholesaleOrderFeeChargeCatalog
                 'display_name' => $label,
                 'qty_label' => self::qtyLabelForFee($fee, 'fee_'.$fee->id),
                 'source' => WholesaleOrderFeeLine::SOURCE_PACKAGING,
-                'default_unit_price_cents' => (int) round(((float) ($fee->amount ?? 0)) * 100),
+                'default_unit_price_cents' => self::feeAmountCents($fee),
             ];
         }
 
         return $out;
+    }
+
+    /**
+     * Account Fees-tab options used for box billing (packaging + wholesale only).
+     * Uses the account fee row amount/label — not Settings template defaults.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function accountBoxBillingFeeOptions(ClientAccount $account): array
+    {
+        $account->unsetRelation('feeItems');
+        $account->load(['feeItems']);
+        $out = [];
+        $seen = [];
+
+        foreach ($account->feeItems as $fee) {
+            if (! $fee instanceof ClientAccountFee) {
+                continue;
+            }
+            $group = strtolower(trim((string) ($fee->fee_group ?? '')));
+            if ($group !== PricingFeeTemplate::CATEGORY_PACKAGING
+                && $group !== PricingFeeTemplate::CATEGORY_WHOLESALE) {
+                continue;
+            }
+            $feeId = (int) $fee->id;
+            if ($feeId <= 0 || isset($seen[$feeId])) {
+                continue;
+            }
+            $label = trim((string) ($fee->label ?? ''));
+            if ($label === '') {
+                continue;
+            }
+            $seen[$feeId] = true;
+            $out[] = [
+                'line_type' => 'fee_'.$feeId,
+                'client_account_fee_id' => $feeId,
+                'display_name' => $label,
+                'qty_label' => 'Boxes',
+                'source' => WholesaleOrderFeeLine::SOURCE_PACKAGING,
+                'default_unit_price_cents' => self::feeAmountCents($fee),
+                'fee_group' => $group,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Account fee amount from the Fees tab only (ignores Settings template defaults).
+     */
+    public static function feeAmountCents(ClientAccountFee $fee): int
+    {
+        $amount = $fee->amount;
+        if ($amount === null || $amount === '') {
+            return 0;
+        }
+        if (! is_numeric($amount)) {
+            return 0;
+        }
+
+        return (int) round(max(0, (float) $amount) * 100);
     }
 
     /**

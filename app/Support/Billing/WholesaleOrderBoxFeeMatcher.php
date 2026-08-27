@@ -71,13 +71,13 @@ class WholesaleOrderBoxFeeMatcher
         $quantity = (int) $group['quantity'];
 
         $options = $account !== null
-            ? WholesaleOrderFeeChargeCatalog::packagingOptionsForAccount($account)
+            ? WholesaleOrderFeeChargeCatalog::accountBoxBillingFeeOptions($account)
             : [];
 
         $dimMatched = self::findMatchingOption($options, $length, $width, $height);
         $matched = $dimMatched;
         if ($matched === null) {
-            // CRM often stores a single "Box" fee (e.g. $0.85) without dimensions in the label.
+            // Account Fees often have a single "Box" row (e.g. $0.85) without size in the name.
             $matched = self::findGenericBoxOption($options);
         }
 
@@ -97,7 +97,7 @@ class WholesaleOrderBoxFeeMatcher
             'client_account_fee_id' => $matched['client_account_fee_id'] ?? null,
             'default_unit_price_cents' => $unitCents,
             'unit_price' => round($unitCents / 100, 2),
-            'matched' => $matched !== null,
+            'matched' => $matched !== null && $unitCents > 0,
         ];
     }
 
@@ -185,6 +185,10 @@ class WholesaleOrderBoxFeeMatcher
         if (preg_match('/^box/', $key) === 1 && strpos($key, 'mailbox') === false) {
             return 40;
         }
+        // Plain "carton" packaging fees are often used as the default box price.
+        if ($key === 'carton' || $key === 'cartons') {
+            return 30;
+        }
 
         return -1;
     }
@@ -199,19 +203,13 @@ class WholesaleOrderBoxFeeMatcher
             return null;
         }
 
-        $patterns = [
-            '/^\(?\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*\)?$/i',
-            '/^box\s*\(?\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*\)?$/i',
-            '/^\(?\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*\)?\s*in\b/i',
-        ];
+        // Account Fees labels use x or × (e.g. "12 x 9 x 6", "12×9×6", "Box (12 X 9 X 6)").
+        $normalized = str_replace(['×', "\xC3\x97"], 'x', $compact);
+        $normalized = preg_replace('/\bin\b\.?/i', ' ', $normalized) ?? $normalized;
+        $normalized = trim(preg_replace('/\s+/', ' ', $normalized) ?? $normalized);
+        $normalized = preg_replace('/\s*[xX]\s*/', 'x', $normalized) ?? $normalized;
 
-        foreach ($patterns as $pattern) {
-            if (preg_match($pattern, $compact, $m) === 1) {
-                return self::normalizeTriple((float) $m[1], (float) $m[2], (float) $m[3]);
-            }
-        }
-
-        if (preg_match('/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i', $compact, $m) === 1) {
+        if (preg_match('/(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)/', $normalized, $m) === 1) {
             return self::normalizeTriple((float) $m[1], (float) $m[2], (float) $m[3]);
         }
 

@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\ClientAccount;
+use App\Models\ClientAccountAsn;
+use App\Models\ClientAccountAsnLine;
 use App\Models\PutAwayReceivingSnapshot;
 use App\Models\PutAwayReceivingSnapshotRow;
 use App\Models\PutAwaySnapshot;
@@ -125,17 +127,18 @@ class PutAwayInventoryService
         $warehouseId = $this->resolveWarehouseId();
         $snapshot = $this->ensureLocalReceivingSnapshot($warehouseId);
 
-        if ($refresh || ! $this->isReceivingListSyncFresh($warehouseId)) {
+        if ($refresh) {
             try {
                 $snapshot = $this->syncReceivingSnapshotFromItemLocations($warehouseId);
             } catch (Throwable $e) {
                 report($e);
-                // Keep serving last local index if sync fails mid-request.
                 if (! $snapshot->exists) {
                     throw $e;
                 }
             }
         }
+
+        $this->supplementReceivingSnapshotFromAsn($snapshot);
 
         return $this->paginateReceivingSnapshotRows($snapshot, $clientAccountId, $query, $first, $after, $receivingOnly);
     }
@@ -312,14 +315,22 @@ class PutAwayInventoryService
         ?string $barcode = null,
         ?string $imageUrl = null
     ): void {
-        $qty = $this->quantityAtLocationNameFromSlice($warehouseSlice, 'Receiving');
+        $sliceQty = $this->quantityAtLocationNameFromSlice($warehouseSlice, 'Receiving');
         $warehouseId = isset($warehouseSlice['warehouse_id']) && is_string($warehouseSlice['warehouse_id'])
             ? trim($warehouseSlice['warehouse_id'])
             : null;
+        $snapshot = $this->ensureLocalReceivingSnapshot($warehouseId !== '' ? $warehouseId : null);
+        $row = PutAwayReceivingSnapshotRow::query()
+            ->where('put_away_receiving_snapshot_id', $snapshot->id)
+            ->where('client_account_id', $clientAccountId)
+            ->where('sku', trim($sku))
+            ->first();
+        $current = $row !== null ? (int) $row->receiving_qty : 0;
+        $nextQty = max($current, $sliceQty);
         $this->upsertLocalReceivingRow(
             $clientAccountId,
             $sku,
-            $qty,
+            $nextQty,
             $name,
             $barcode,
             $imageUrl,
@@ -424,13 +435,17 @@ class PutAwayInventoryService
         $snapshot = $this->ensureLocalReceivingSnapshot($warehouseId);
 
         if ($receivingQty <= 0) {
-            PutAwayReceivingSnapshotRow::query()
+            $row = PutAwayReceivingSnapshotRow::query()
                 ->where('put_away_receiving_snapshot_id', $snapshot->id)
                 ->where('client_account_id', $clientAccountId)
                 ->where('sku', $sku)
-                ->delete();
+                ->first();
+            if ($row !== null) {
+                $row->receiving_qty = 0;
+                $row->save();
+            }
             $this->refreshLocalReceivingRowCount($snapshot);
-            $this->forgetReceivingListSyncFresh($snapshot->warehouse_id);
+            $this->markReceivingListSyncFresh($snapshot->warehouse_id);
 
             return;
         }
@@ -501,6 +516,78 @@ class PutAwayInventoryService
         $snapshot->computed_at = now();
         $snapshot->status = PutAwayReceivingSnapshot::STATUS_OK;
         $snapshot->save();
+    }
+
+    /**
+     * Re-seed snapshot rows from ASN accepted qty when ShipHero sync has not yet populated Receiving.
+     */
+    private function supplementReceivingSnapshotFromAsn(PutAwayReceivingSnapshot $snapshot): void
+    {
+        $lines = ClientAccountAsnLine::query()
+            ->select([
+                'client_account_asn_lines.sku',
+                'client_account_asn_lines.name',
+                'client_account_asn_lines.barcode',
+                'client_account_asn_lines.image_url',
+                'client_account_asn_lines.accepted_qty',
+                'client_account_asns.client_account_id',
+            ])
+            ->join('client_account_asns', 'client_account_asns.id', '=', 'client_account_asn_lines.client_account_asn_id')
+            ->where('client_account_asn_lines.accepted_qty', '>', 0)
+            ->whereIn('client_account_asns.status', [
+                ClientAccountAsn::STATUS_PENDING,
+                ClientAccountAsn::STATUS_IN_PROGRESS,
+                ClientAccountAsn::STATUS_COMPLETED,
+            ])
+            ->orderByDesc('client_account_asn_lines.updated_at')
+            ->get();
+
+        if ($lines->isEmpty()) {
+            return;
+        }
+
+        $aggregated = [];
+        foreach ($lines as $line) {
+            $accountId = (int) $line->client_account_id;
+            $sku = trim((string) $line->sku);
+            if ($accountId <= 0 || $sku === '') {
+                continue;
+            }
+            $key = $accountId.'|'.mb_strtolower($sku);
+            if (! isset($aggregated[$key])) {
+                $aggregated[$key] = [
+                    'client_account_id' => $accountId,
+                    'sku' => $sku,
+                    'accepted_qty' => 0,
+                    'name' => $line->name,
+                    'barcode' => $line->barcode,
+                    'image_url' => $line->image_url,
+                ];
+            }
+            $aggregated[$key]['accepted_qty'] += (int) $line->accepted_qty;
+        }
+
+        foreach ($aggregated as $entry) {
+            $existsWithQty = PutAwayReceivingSnapshotRow::query()
+                ->where('put_away_receiving_snapshot_id', $snapshot->id)
+                ->where('client_account_id', $entry['client_account_id'])
+                ->where('sku', $entry['sku'])
+                ->where('receiving_qty', '>', 0)
+                ->exists();
+            if ($existsWithQty) {
+                continue;
+            }
+
+            $this->upsertLocalReceivingRow(
+                $entry['client_account_id'],
+                $entry['sku'],
+                (int) $entry['accepted_qty'],
+                $entry['name'] !== null ? (string) $entry['name'] : null,
+                $entry['barcode'] !== null ? (string) $entry['barcode'] : null,
+                $entry['image_url'] !== null ? (string) $entry['image_url'] : null,
+                $snapshot->warehouse_id
+            );
+        }
     }
 
     /**
@@ -1902,7 +1989,7 @@ class PutAwayInventoryService
 
     /**
      * Fast list enrichment: local product cache only (never ShipHero).
-     * Snapshot already filters receiving_qty > 0. If cache proves Receiving is 0, prune.
+     * Snapshot already filters receiving_qty > 0. Prefer live cache qty when ShipHero reports Receiving stock.
      *
      * @param  list<array<string, mixed>>  $rows
      * @return list<array<string, mixed>>
@@ -1926,7 +2013,6 @@ class PutAwayInventoryService
             ? $this->detailCache->getCachedProductsForPairs($pairs)
             : [];
 
-        $staleDeletes = [];
         $out = [];
 
         foreach ($rows as $row) {
@@ -1946,11 +2032,6 @@ class PutAwayInventoryService
                 if (is_array($product)) {
                     $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
                     $liveReceiving = PutAwayRowBuilder::receivingQtyFromLocations($locations);
-                    $hasReceivingEntry = PutAwayRowBuilder::hasReceivingLocationEntry($locations);
-                    if ($hasReceivingEntry && $liveReceiving <= 0) {
-                        $staleDeletes[] = [$clientAccountId, $sku];
-                        continue;
-                    }
                     if ($liveReceiving > 0) {
                         $row['receiving_qty'] = $liveReceiving;
                     }
@@ -1961,18 +2042,6 @@ class PutAwayInventoryService
             }
 
             $out[] = $row;
-        }
-
-        if ($staleDeletes !== []) {
-            $snapshot = $this->ensureLocalReceivingSnapshot();
-            foreach ($staleDeletes as [$accountId, $sku]) {
-                PutAwayReceivingSnapshotRow::query()
-                    ->where('put_away_receiving_snapshot_id', $snapshot->id)
-                    ->where('client_account_id', $accountId)
-                    ->where('sku', $sku)
-                    ->delete();
-            }
-            $this->refreshLocalReceivingRowCount($snapshot);
         }
 
         return $out;

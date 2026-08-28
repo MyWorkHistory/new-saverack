@@ -353,7 +353,7 @@ class PutAwayApiTest extends TestCase
             ->assertJsonPath('rows.0.receiving_location.location_id', 'recv-1');
     }
 
-    public function test_list_hides_and_prunes_rows_with_zero_receiving_in_product_cache(): void
+    public function test_list_keeps_local_row_when_product_cache_shows_zero_receiving(): void
     {
         $account = $this->account('stale');
         Sanctum::actingAs($this->staffUser());
@@ -402,12 +402,43 @@ class PutAwayApiTest extends TestCase
 
         $this->getJson('/api/admin/put-away')
             ->assertOk()
-            ->assertJsonCount(0, 'rows');
+            ->assertJsonCount(1, 'rows')
+            ->assertJsonPath('rows.0.sku', 'STALE-RECV')
+            ->assertJsonPath('rows.0.receiving_qty', 8);
+    }
 
-        $this->assertDatabaseMissing('put_away_receiving_snapshot_rows', [
-            'sku' => 'STALE-RECV',
+    public function test_list_supplements_missing_row_from_asn_accepted_qty(): void
+    {
+        $account = $this->account('asn-supplement');
+        Sanctum::actingAs($this->staffUser());
+
+        $this->receivingSnapshot();
+
+        $asn = \App\Models\ClientAccountAsn::create([
             'client_account_id' => $account->id,
+            'asn_number' => '0089',
+            'status' => \App\Models\ClientAccountAsn::STATUS_IN_PROGRESS,
+            'total_boxes' => 1,
+            'expected_qty' => 577,
+            'accepted_qty' => 577,
+            'rejected_qty' => 0,
         ]);
+        \App\Models\ClientAccountAsnLine::create([
+            'client_account_asn_id' => $asn->id,
+            'sku' => 'ASN-89-SKU',
+            'name' => 'ASN 89 Product',
+            'expected_qty' => 577,
+            'accepted_qty' => 577,
+            'rejected_qty' => 0,
+            'line_status' => \App\Models\ClientAccountAsnLine::LINE_STATUS_PENDING,
+            'sort_order' => 0,
+        ]);
+
+        $this->getJson('/api/admin/put-away?client_account_id='.$account->id)
+            ->assertOk()
+            ->assertJsonCount(1, 'rows')
+            ->assertJsonPath('rows.0.sku', 'ASN-89-SKU')
+            ->assertJsonPath('rows.0.receiving_qty', 577);
     }
 
     public function test_list_keeps_row_when_product_cache_lacks_receiving_location(): void

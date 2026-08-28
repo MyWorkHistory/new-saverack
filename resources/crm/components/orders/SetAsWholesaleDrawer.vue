@@ -41,20 +41,15 @@ function close() {
     @submit="emit('submit')"
   >
     <p class="small text-secondary mb-3">
-      Create a wholesale order from this ShipHero order. Line items, order number, and client-provides shipping labels
-      will be copied automatically.
+      <template v-if="accountName && accountName !== '—'">
+        Create a wholesale order for <strong>{{ accountName }}</strong> from this ShipHero order.
+      </template>
+      <template v-else>
+        Create a wholesale order from this ShipHero order.
+      </template>
+      Line items, order number, and client-provides shipping labels will be copied automatically.
     </p>
     <div class="row g-3">
-      <div class="col-12">
-        <label class="form-label">Account</label>
-        <input
-          type="text"
-          class="form-control"
-          :value="accountName || '—'"
-          readonly
-          aria-readonly="true"
-        />
-      </div>
       <div class="col-md-6">
         <label class="form-label">Type</label>
         <select

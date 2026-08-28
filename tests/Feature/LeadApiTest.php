@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\EmailTemplate;
 use App\Models\Lead;
+use App\Models\LeadStatusEvent;
 use App\Models\Permission;
 use App\Models\PricingFeeTemplate;
 use App\Models\Role;
@@ -406,5 +408,113 @@ TEXT;
         $this->assertSame(Lead::STATUS_FOLLOW_UP, $leadB->status);
         $this->assertSame(5, (int) $leadA->follow_up_days);
         $this->assertSame(5, (int) $leadB->follow_up_days);
+    }
+
+    public function test_index_includes_last_sent_template_name(): void
+    {
+        $this->staffWithLeads();
+
+        $lead = Lead::query()->create([
+            'status' => Lead::STATUS_CONTACTED,
+            'referral' => Lead::REFERRAL_BIZY,
+            'company_name' => 'Acme Co',
+            'email' => 'lead@example.com',
+            'follow_up_days' => 3,
+            'follow_up_at' => now()->addDays(3)->toDateString(),
+        ]);
+        $template = EmailTemplate::query()->create([
+            'category' => 'contacted',
+            'name' => 'Intro Email',
+            'subject' => 'Hello',
+            'body' => '<p>Hi</p>',
+        ]);
+        LeadStatusEvent::query()->create([
+            'lead_id' => $lead->id,
+            'status' => Lead::STATUS_CONTACTED,
+            'follow_up_days' => 3,
+            'email_template_id' => $template->id,
+            'template_name' => $template->name,
+            'note' => 'Email template sent',
+        ]);
+
+        $this->getJson('/api/leads')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $lead->id)
+            ->assertJsonPath('data.0.last_sent_template_id', $template->id)
+            ->assertJsonPath('data.0.last_sent_template_name', 'Intro Email');
+    }
+
+    public function test_index_filters_by_follow_up_days_and_last_sent_template(): void
+    {
+        $this->staffWithLeads();
+
+        $template = EmailTemplate::query()->create([
+            'category' => 'contacted',
+            'name' => 'Intro Email',
+            'subject' => 'Hello',
+            'body' => '<p>Hi</p>',
+        ]);
+        $otherTemplate = EmailTemplate::query()->create([
+            'category' => 'follow_up',
+            'name' => 'Follow Up Ping',
+            'subject' => 'Ping',
+            'body' => '<p>Ping</p>',
+        ]);
+
+        $matched = Lead::query()->create([
+            'status' => Lead::STATUS_CONTACTED,
+            'referral' => Lead::REFERRAL_BIZY,
+            'company_name' => 'Matched Co',
+            'email' => 'matched@example.com',
+            'follow_up_days' => 5,
+            'follow_up_at' => now()->addDays(5)->toDateString(),
+        ]);
+        $wrongDays = Lead::query()->create([
+            'status' => Lead::STATUS_CONTACTED,
+            'referral' => Lead::REFERRAL_BIZY,
+            'company_name' => 'Wrong Days',
+            'email' => 'wrong-days@example.com',
+            'follow_up_days' => 1,
+            'follow_up_at' => now()->addDay()->toDateString(),
+        ]);
+        $wrongTemplate = Lead::query()->create([
+            'status' => Lead::STATUS_FOLLOW_UP,
+            'referral' => Lead::REFERRAL_BIZY,
+            'company_name' => 'Wrong Template',
+            'email' => 'wrong-template@example.com',
+            'follow_up_days' => 5,
+            'follow_up_at' => now()->addDays(5)->toDateString(),
+        ]);
+
+        LeadStatusEvent::query()->create([
+            'lead_id' => $matched->id,
+            'status' => Lead::STATUS_CONTACTED,
+            'follow_up_days' => 5,
+            'email_template_id' => $template->id,
+            'template_name' => $template->name,
+            'note' => 'Email template sent',
+        ]);
+        LeadStatusEvent::query()->create([
+            'lead_id' => $wrongTemplate->id,
+            'status' => Lead::STATUS_FOLLOW_UP,
+            'follow_up_days' => 5,
+            'email_template_id' => $otherTemplate->id,
+            'template_name' => $otherTemplate->name,
+            'note' => 'Email template sent',
+        ]);
+
+        $this->getJson('/api/leads?follow_up_days=5')
+            ->assertOk()
+            ->assertJsonCount(2, 'data');
+
+        $this->getJson('/api/leads?email_template_id='.$template->id)
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $matched->id);
+
+        $this->getJson('/api/leads?email_template_id=none')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $wrongDays->id);
     }
 }

@@ -54,6 +54,9 @@ class LeadController extends Controller
         return response()->json($this->leads->paginate($request->only([
             'status',
             'referral',
+            'follow_up_days',
+            'email_template_id',
+            'last_sent_template_id',
             'search',
             'q',
             'per_page',
@@ -186,6 +189,7 @@ class LeadController extends Controller
         return response()->json([
             'ok' => true,
             'queued' => $summary['queued'],
+            'sent' => $summary['sent'] ?? $summary['queued'],
             'skipped' => $summary['skipped'],
             'skipped_ids' => $summary['skipped_ids'],
             'failed_ids' => $summary['failed_ids'] ?? [],

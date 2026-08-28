@@ -81,7 +81,8 @@ class LeadService
             $perPage = 100;
         }
 
-        $query = $this->filteredQuery($filters);
+        $query = $this->filteredQuery($filters)
+            ->with('latestTemplateSendEvent');
 
         $sortBy = strtolower(trim((string) ($filters['sort_by'] ?? 'follow_up_at')));
         $allowedSort = [
@@ -145,6 +146,32 @@ class LeadService
             && in_array($referral, Lead::REFERRALS, true)
         ) {
             $query->where('referral', $referral);
+        }
+
+        if ($search === '') {
+            $followUpDays = $filters['follow_up_days'] ?? 'all';
+            if (is_string($followUpDays) && strtolower(trim($followUpDays)) === 'off') {
+                $query->whereNull('follow_up_days');
+            } elseif ($followUpDays !== '' && $followUpDays !== 'all' && $followUpDays !== null) {
+                $days = (int) $followUpDays;
+                if (in_array($days, Lead::FOLLOW_UP_DAY_OPTIONS, true)) {
+                    $query->where('follow_up_days', $days);
+                }
+            }
+
+            $templateFilter = $filters['email_template_id'] ?? $filters['last_sent_template_id'] ?? 'all';
+            if (is_string($templateFilter) && strtolower(trim($templateFilter)) === 'none') {
+                $query->whereDoesntHave('statusEvents', function (Builder $q) {
+                    $q->whereNotNull('email_template_id');
+                });
+            } elseif ($templateFilter !== '' && $templateFilter !== 'all' && $templateFilter !== null) {
+                $templateId = (int) $templateFilter;
+                if ($templateId > 0) {
+                    $query->whereHas('latestTemplateSendEvent', function (Builder $q) use ($templateId) {
+                        $q->where('email_template_id', $templateId);
+                    });
+                }
+            }
         }
 
         if ($search !== '') {
@@ -1034,6 +1061,10 @@ class LeadService
             $followUpDays = (int) $followUpDays;
         }
 
+        $lastTemplateEvent = $lead->relationLoaded('latestTemplateSendEvent')
+            ? $lead->latestTemplateSendEvent
+            : null;
+
         return [
             'id' => $lead->id,
             'status' => $lead->status,
@@ -1042,6 +1073,10 @@ class LeadService
             'referral_label' => Lead::referralLabel((string) ($lead->referral ?? Lead::REFERRAL_BIZY)),
             'company_name' => $lead->company_name,
             'email' => $lead->email,
+            'last_sent_template_id' => $lastTemplateEvent !== null ? (int) $lastTemplateEvent->email_template_id : null,
+            'last_sent_template_name' => $lastTemplateEvent !== null
+                ? trim((string) ($lastTemplateEvent->template_name ?? ''))
+                : null,
             'website' => $lead->website,
             'name' => $lead->name,
             'comment' => $lead->comment,

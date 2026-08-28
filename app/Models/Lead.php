@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Lead extends Model
 {
@@ -93,6 +94,13 @@ class Lead extends Model
     public function statusEvents(): HasMany
     {
         return $this->hasMany(LeadStatusEvent::class)->orderByDesc('id');
+    }
+
+    public function latestTemplateSendEvent(): HasOne
+    {
+        return $this->hasOne(LeadStatusEvent::class)
+            ->whereNotNull('email_template_id')
+            ->latestOfMany('id');
     }
 
     public static function statusLabel(string $status): string

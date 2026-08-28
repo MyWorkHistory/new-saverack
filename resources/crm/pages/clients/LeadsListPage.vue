@@ -62,6 +62,8 @@ const query = ref({
   search: "",
   status: "all",
   referral: "all",
+  follow_up_days: "all",
+  email_template_id: "all",
   page: 1,
   per_page: 25,
   sort_by: "follow_up_at",
@@ -108,7 +110,6 @@ const LEAD_SORT_KEYS = [
   "status",
   "company_name",
   "referral",
-  "email",
   "website",
   "follow_up_at",
   "created_at",
@@ -130,8 +131,34 @@ const searchActive = computed(() => String(query.value.search || "").trim() !== 
 let searchTimer = null;
 
 function clearFilters() {
-  query.value = { ...query.value, status: "all", referral: "all", page: 1 };
+  query.value = {
+    ...query.value,
+    status: "all",
+    referral: "all",
+    follow_up_days: "all",
+    email_template_id: "all",
+    page: 1,
+  };
 }
+
+function followUpDaysFilterLabel(days) {
+  if (days === "off") return "Off";
+  const n = Number(days);
+  if (!Number.isFinite(n) || n <= 0) return "Off";
+  return n === 1 ? "1 day" : `${n} days`;
+}
+
+function lastSentTemplateLabel(row) {
+  const name = String(row?.last_sent_template_name || "").trim();
+  return name || "—";
+}
+
+const emailTemplateFilterOptions = computed(() => {
+  const items = Array.isArray(emailTemplatesFlat.value) ? emailTemplatesFlat.value : [];
+  return [...items].sort((a, b) =>
+    String(a?.name || "").localeCompare(String(b?.name || ""), undefined, { sensitivity: "base" }),
+  );
+});
 
 function toggleSelectAll(event) {
   const checked = !!event?.target?.checked;
@@ -205,18 +232,18 @@ async function submitBulkEmail({ email_template_id }) {
       lead_ids: Array.from(selectedIds.value),
       email_template_id,
     });
-    const queued = Number(data?.queued || 0);
+    const sent = Number(data?.sent ?? data?.queued ?? 0);
     const skipped = Number(data?.skipped || 0);
     const updated = Number(data?.updated || 0);
     const categoryLabel = data?.category ? leadStatusLabel(data.category) : "";
     let msg = "";
     if (updated && categoryLabel) {
       msg = `${updated} lead${updated === 1 ? "" : "s"} set to ${categoryLabel}`;
-      if (queued) {
-        msg += `; ${queued} email${queued === 1 ? "" : "s"} queued`;
+      if (sent) {
+        msg += `; ${sent} email${sent === 1 ? "" : "s"} sent`;
       }
     } else {
-      msg = `Queued ${queued} email${queued === 1 ? "" : "s"}`;
+      msg = `Sent ${sent} email${sent === 1 ? "" : "s"}`;
     }
     if (skipped) msg += ` (${skipped} skipped)`;
     const failed = Number(data?.failed_ids?.length || 0);
@@ -230,7 +257,7 @@ async function submitBulkEmail({ email_template_id }) {
     await fetchRows();
     await loadMeta();
   } catch (e) {
-    toast.errorFrom(e, "Could not queue bulk email.");
+    toast.errorFrom(e, "Could not send bulk email.");
   } finally {
     bulkEmailBusy.value = false;
   }
@@ -301,6 +328,12 @@ async function fetchRows() {
       }
       if (query.value.referral && query.value.referral !== "all") {
         params.referral = query.value.referral;
+      }
+      if (query.value.follow_up_days && query.value.follow_up_days !== "all") {
+        params.follow_up_days = query.value.follow_up_days;
+      }
+      if (query.value.email_template_id && query.value.email_template_id !== "all") {
+        params.email_template_id = query.value.email_template_id;
       }
     }
 
@@ -556,12 +589,16 @@ watch(
       filtersBeforeSearch.value = {
         status: query.value.status,
         referral: query.value.referral,
+        follow_up_days: query.value.follow_up_days,
+        email_template_id: query.value.email_template_id,
       };
     } else if (!trimmed && wasTrimmed && filtersBeforeSearch.value) {
       query.value = {
         ...query.value,
         status: filtersBeforeSearch.value.status,
         referral: filtersBeforeSearch.value.referral,
+        follow_up_days: filtersBeforeSearch.value.follow_up_days,
+        email_template_id: filtersBeforeSearch.value.email_template_id,
       };
       filtersBeforeSearch.value = null;
     }
@@ -574,7 +611,15 @@ watch(
 );
 
 watch(
-  () => [query.value.status, query.value.referral, query.value.page, query.value.sort_by, query.value.sort_dir],
+  () => [
+    query.value.status,
+    query.value.referral,
+    query.value.follow_up_days,
+    query.value.email_template_id,
+    query.value.page,
+    query.value.sort_by,
+    query.value.sort_dir,
+  ],
   () => {
     fetchRows();
   },
@@ -586,7 +631,7 @@ onMounted(async () => {
   if (LEAD_STATUSES.includes(statusFromQuery)) {
     query.value.status = statusFromQuery;
   }
-  await loadMeta();
+  await Promise.all([loadMeta(), loadEmailTemplatesFlat()]);
   await fetchRows();
 });
 
@@ -699,18 +744,13 @@ onUnmounted(() => {
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row">
-          <div class="flex-grow-1 min-w-0">
-            <input
-              v-model="query.search"
-              type="search"
-              class="form-control staff-toolbar-search staff-toolbar-search--inline"
-              placeholder="Search leads"
-              autocomplete="off"
-            />
-            <p v-if="searchActive" class="form-text text-secondary small mb-0 mt-1">
-              Searching all statuses and referrals.
-            </p>
-          </div>
+          <input
+            v-model="query.search"
+            type="search"
+            class="form-control staff-toolbar-search staff-toolbar-search--inline"
+            placeholder="Search leads"
+            autocomplete="off"
+          />
           <div class="position-relative flex-shrink-0" data-toolbar-filter>
             <button
               type="button"
@@ -766,7 +806,7 @@ onUnmounted(() => {
                   id="leads-filter-status"
                   v-model="query.status"
                   class="form-select staff-datatable-filters__select mb-3"
-                  :disabled="loading"
+                  :disabled="loading || searchActive"
                   @change="query.page = 1"
                 >
                   <option value="all">All Statuses</option>
@@ -774,12 +814,44 @@ onUnmounted(() => {
                     {{ leadStatusLabel(st) }}
                   </option>
                 </select>
+                <label class="form-label" for="leads-filter-template">Last Sent Template</label>
+                <select
+                  id="leads-filter-template"
+                  v-model="query.email_template_id"
+                  class="form-select staff-datatable-filters__select mb-3"
+                  :disabled="loading || searchActive"
+                  @change="query.page = 1"
+                >
+                  <option value="all">All Templates</option>
+                  <option value="none">Never Sent</option>
+                  <option
+                    v-for="tpl in emailTemplateFilterOptions"
+                    :key="tpl.id"
+                    :value="String(tpl.id)"
+                  >
+                    {{ tpl.name }}
+                  </option>
+                </select>
+                <label class="form-label" for="leads-filter-follow-up">Follow Up Days</label>
+                <select
+                  id="leads-filter-follow-up"
+                  v-model="query.follow_up_days"
+                  class="form-select staff-datatable-filters__select mb-3"
+                  :disabled="loading || searchActive"
+                  @change="query.page = 1"
+                >
+                  <option value="all">All Follow Up Days</option>
+                  <option value="off">Off</option>
+                  <option v-for="days in followUpDayOptions" :key="days" :value="String(days)">
+                    {{ followUpDaysFilterLabel(days) }}
+                  </option>
+                </select>
                 <label class="form-label" for="leads-filter-referral">Referral</label>
                 <select
                   id="leads-filter-referral"
                   v-model="query.referral"
                   class="form-select staff-datatable-filters__select"
-                  :disabled="loading"
+                  :disabled="loading || searchActive"
                   @change="query.page = 1"
                 >
                   <option value="all">All Referrals</option>
@@ -791,6 +863,9 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+        <p v-if="searchActive" class="form-text text-secondary small mb-0 mt-2 px-1">
+          Searching all statuses, referrals, templates, and follow-up days.
+        </p>
       </div>
 
       <div v-if="loading" class="p-5 d-flex justify-content-center d-none d-lg-flex">
@@ -858,19 +933,10 @@ onUnmounted(() => {
                 </button>
               </th>
               <th
-                class="staff-table-head__th staff-table-head__th--sort"
+                class="staff-table-head__th"
                 scope="col"
-                :aria-sort="thAriaSort('email')"
               >
-                <button
-                  type="button"
-                  class="staff-sort-btn"
-                  :disabled="loading"
-                  @click="toggleSort('email')"
-                >
-                  Email
-                  <span v-if="sortIndicator('email')" class="staff-sort-ind">{{ sortIndicator("email") }}</span>
-                </button>
+                Last Sent Template
               </th>
               <th
                 class="staff-table-head__th staff-table-head__th--sort"
@@ -978,14 +1044,28 @@ onUnmounted(() => {
                 >{{ leadInitials(row.company_name) }}</span>
               </td>
               <td>
-                <RouterLink
-                  :to="{ name: 'lead-detail', params: { id: row.id } }"
-                  class="fw-semibold text-decoration-none text-body"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {{ row.company_name }}
-                </RouterLink>
+                <div class="lead-list-company min-w-0">
+                  <RouterLink
+                    :to="{ name: 'lead-detail', params: { id: row.id } }"
+                    class="lead-list-company__name fw-semibold text-decoration-none text-body"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {{ row.company_name }}
+                  </RouterLink>
+                  <div class="lead-list-company__email text-secondary small">
+                    <a
+                      v-if="row.email"
+                      :href="gmailSearchHref(row.email)"
+                      class="text-decoration-none text-secondary"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {{ row.email }}
+                    </a>
+                    <span v-else>—</span>
+                  </div>
+                </div>
               </td>
               <td class="text-body staff-table-cell__meta">
                 {{ row.referral_label || leadReferralLabel(row.referral) || "—" }}
@@ -993,17 +1073,9 @@ onUnmounted(() => {
               <td
                 class="text-body staff-table-cell__meta text-truncate"
                 style="max-width: 14rem"
+                :title="lastSentTemplateLabel(row)"
               >
-                <a
-                  v-if="row.email"
-                  :href="gmailSearchHref(row.email)"
-                  class="text-decoration-none text-body"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {{ row.email }}
-                </a>
-                <span v-else class="text-secondary">—</span>
+                {{ lastSentTemplateLabel(row) }}
               </td>
               <td
                 class="text-body staff-table-cell__meta text-truncate"
@@ -1109,7 +1181,7 @@ onUnmounted(() => {
                   {{ leadInitials(row.company_name) }}
                 </span>
               </span>
-              <div class="crm-mobile-item-card__copy">
+              <div class="crm-mobile-item-card__copy min-w-0">
                 <RouterLink
                   :to="{ name: 'lead-detail', params: { id: row.id } }"
                   class="crm-mobile-item-card__sku text-decoration-none"
@@ -1118,6 +1190,18 @@ onUnmounted(() => {
                 >
                   {{ row.company_name }}
                 </RouterLink>
+                <div class="lead-list-company__email text-secondary small">
+                  <a
+                    v-if="row.email"
+                    :href="gmailSearchHref(row.email)"
+                    class="text-decoration-none text-secondary"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {{ row.email }}
+                  </a>
+                  <span v-else>—</span>
+                </div>
               </div>
             </div>
 
@@ -1129,17 +1213,8 @@ onUnmounted(() => {
                 </span>
               </div>
               <div class="crm-mobile-item-card__meta-row">
-                <span class="crm-mobile-item-card__meta-label">Email</span>
-                <span class="crm-mobile-item-card__meta-value">
-                  <a
-                    v-if="row.email"
-                    :href="gmailSearchHref(row.email)"
-                    class="text-decoration-none"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >{{ row.email }}</a>
-                  <template v-else>—</template>
-                </span>
+                <span class="crm-mobile-item-card__meta-label">Last Sent Template</span>
+                <span class="crm-mobile-item-card__meta-value">{{ lastSentTemplateLabel(row) }}</span>
               </div>
               <div class="crm-mobile-item-card__meta-row">
                 <span class="crm-mobile-item-card__meta-label">Website</span>
@@ -1256,3 +1331,18 @@ onUnmounted(() => {
     </Teleport>
   </div>
 </template>
+
+<style scoped>
+.lead-list-company__name {
+  display: block;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.lead-list-company__email {
+  display: block;
+  line-height: 1.35;
+  margin-top: 0.15rem;
+  word-break: break-word;
+}
+</style>

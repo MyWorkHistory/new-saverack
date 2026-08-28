@@ -69,7 +69,7 @@ class LeadController extends Controller
 
         $validated = $request->validate([
             'company_name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', Rule::unique('leads', 'email')],
+            'email' => ['required', 'email', 'max:255', $this->uniqueLeadEmailRule()],
             'website' => ['nullable', 'string', 'max:255'],
             'name' => ['nullable', 'string', 'max:255'],
             'comment' => ['nullable', 'string', 'max:20000'],
@@ -125,7 +125,7 @@ class LeadController extends Controller
             'referral' => ['sometimes', 'string', Rule::in(Lead::REFERRALS)],
             'follow_up_days' => ['sometimes', 'nullable', 'integer', Rule::in(Lead::FOLLOW_UP_DAY_OPTIONS)],
             'company_name' => ['sometimes', 'string', 'max:255'],
-            'email' => ['sometimes', 'email', 'max:255', Rule::unique('leads', 'email')->ignore($lead->id)],
+            'email' => ['sometimes', 'email', 'max:255', $this->uniqueLeadEmailRule($lead->id)],
             'website' => ['nullable', 'string', 'max:255'],
             'name' => ['nullable', 'string', 'max:255'],
             'comment' => ['nullable', 'string', 'max:20000'],
@@ -188,9 +188,51 @@ class LeadController extends Controller
             'queued' => $summary['queued'],
             'skipped' => $summary['skipped'],
             'skipped_ids' => $summary['skipped_ids'],
+            'failed_ids' => $summary['failed_ids'] ?? [],
+            'updated' => $summary['updated'] ?? 0,
             'template_id' => (int) $template->id,
             'template_name' => (string) $template->name,
             'category' => (string) $template->category,
+        ]);
+    }
+
+    public function bulkStatus(Request $request): JsonResponse
+    {
+        Gate::authorize('viewAny', Lead::class);
+        $user = $request->user();
+        if (
+            $user === null
+            || (! $user->isAdministrator() && ! $user->isCrmOwner() && ! $user->hasPermission('leads.update'))
+        ) {
+            abort(403);
+        }
+
+        if ($request->has('follow_up_days')) {
+            $rawFollowUp = $request->input('follow_up_days');
+            if ($rawFollowUp === '' || $rawFollowUp === 'off' || $rawFollowUp === 'Off') {
+                $request->merge(['follow_up_days' => null]);
+            }
+        }
+
+        $validated = $request->validate([
+            'lead_ids' => ['required', 'array', 'min:1'],
+            'lead_ids.*' => ['integer', 'distinct', 'exists:leads,id'],
+            'status' => ['required', 'string', Rule::in(Lead::STATUSES)],
+            'follow_up_days' => ['sometimes', 'nullable', 'integer', Rule::in(Lead::FOLLOW_UP_DAY_OPTIONS)],
+        ]);
+
+        $payload = ['status' => $validated['status']];
+        if (array_key_exists('follow_up_days', $validated)) {
+            $payload['follow_up_days'] = $validated['follow_up_days'];
+        }
+
+        $summary = $this->leads->bulkUpdateStatus($validated['lead_ids'], $payload, $user);
+
+        return response()->json([
+            'ok' => true,
+            'updated' => $summary['updated'],
+            'skipped' => $summary['skipped'],
+            'skipped_ids' => $summary['skipped_ids'],
         ]);
     }
 
@@ -364,5 +406,29 @@ class LeadController extends Controller
             ->all();
 
         return response()->json(['items' => $items]);
+    }
+
+    /**
+     * Case-insensitive unique email rule for leads.
+     *
+     * @return \Closure(string, mixed, \Closure): void
+     */
+    private function uniqueLeadEmailRule(?int $ignoreLeadId = null): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($ignoreLeadId): void {
+            $normalized = strtolower(trim((string) $value));
+            if ($normalized === '') {
+                return;
+            }
+
+            $query = Lead::query()->whereRaw('LOWER(email) = ?', [$normalized]);
+            if ($ignoreLeadId !== null && $ignoreLeadId > 0) {
+                $query->where('id', '!=', $ignoreLeadId);
+            }
+
+            if ($query->exists()) {
+                $fail('Email already exist');
+            }
+        };
     }
 }

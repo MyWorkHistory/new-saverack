@@ -10,6 +10,7 @@ import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import LeadBulkEmailDrawer from "../../components/leads/LeadBulkEmailDrawer.vue";
+import LeadBulkStatusDrawer from "../../components/leads/LeadBulkStatusDrawer.vue";
 import LeadCreateDrawer from "../../components/leads/LeadCreateDrawer.vue";
 import LeadQuickAddDrawer from "../../components/leads/LeadQuickAddDrawer.vue";
 import LeadStatusUpdateModal from "../../components/leads/LeadStatusUpdateModal.vue";
@@ -24,6 +25,7 @@ import {
   leadReferralLabel,
   leadStatusLabel,
 } from "../../constants/leads.js";
+import { gmailSearchHref } from "../../utils/gmailLinks.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -98,6 +100,19 @@ const filterMenuOpen = ref(false);
 const selectedIds = ref(new Set());
 const bulkEmailOpen = ref(false);
 const bulkEmailBusy = ref(false);
+const bulkStatusOpen = ref(false);
+const bulkStatusBusy = ref(false);
+const filtersBeforeSearch = ref(null);
+
+const LEAD_SORT_KEYS = [
+  "status",
+  "company_name",
+  "referral",
+  "email",
+  "website",
+  "follow_up_at",
+  "created_at",
+];
 
 const selectedCount = computed(() => selectedIds.value.size);
 const allPageSelected = computed(() => {
@@ -109,6 +124,8 @@ const somePageSelected = computed(() => {
   const n = rows.value.filter((r) => selectedIds.value.has(r.id)).length;
   return n > 0 && n < rows.value.length;
 });
+
+const searchActive = computed(() => String(query.value.search || "").trim() !== "");
 
 let searchTimer = null;
 
@@ -144,6 +161,42 @@ async function openBulkEmail() {
   bulkEmailOpen.value = true;
 }
 
+async function openBulkStatus() {
+  if (!canUpdate.value || !selectedCount.value) return;
+  bulkStatusOpen.value = true;
+}
+
+async function submitBulkStatus({ status, follow_up_days }) {
+  if (!status || !selectedCount.value) return;
+  bulkStatusBusy.value = true;
+  try {
+    const payload = {
+      lead_ids: Array.from(selectedIds.value),
+      status,
+    };
+    if (follow_up_days !== undefined) {
+      payload.follow_up_days = follow_up_days;
+    }
+    const { data } = await api.post("/leads/bulk-status", payload);
+    const updated = Number(data?.updated || 0);
+    const skipped = Number(data?.skipped || 0);
+    let msg = `Updated ${updated} lead${updated === 1 ? "" : "s"}.`;
+    if (skipped) msg += ` ${skipped} skipped.`;
+    toast.success(msg);
+    bulkStatusOpen.value = false;
+    selectedIds.value = new Set();
+    if (updated > 0 && status) {
+      query.value = { ...query.value, status, page: 1 };
+    }
+    await fetchRows();
+    await loadMeta();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update lead status.");
+  } finally {
+    bulkStatusBusy.value = false;
+  }
+}
+
 async function submitBulkEmail({ email_template_id }) {
   if (!email_template_id || !selectedCount.value) return;
   bulkEmailBusy.value = true;
@@ -154,13 +207,26 @@ async function submitBulkEmail({ email_template_id }) {
     });
     const queued = Number(data?.queued || 0);
     const skipped = Number(data?.skipped || 0);
-    toast.success(
-      skipped
-        ? `Queued ${queued} email${queued === 1 ? "" : "s"} (${skipped} skipped).`
-        : `Queued ${queued} email${queued === 1 ? "" : "s"}.`,
-    );
+    const updated = Number(data?.updated || 0);
+    const categoryLabel = data?.category ? leadStatusLabel(data.category) : "";
+    let msg = "";
+    if (updated && categoryLabel) {
+      msg = `${updated} lead${updated === 1 ? "" : "s"} set to ${categoryLabel}`;
+      if (queued) {
+        msg += `; ${queued} email${queued === 1 ? "" : "s"} queued`;
+      }
+    } else {
+      msg = `Queued ${queued} email${queued === 1 ? "" : "s"}`;
+    }
+    if (skipped) msg += ` (${skipped} skipped)`;
+    const failed = Number(data?.failed_ids?.length || 0);
+    if (failed) msg += ` (${failed} failed)`;
+    toast.success(`${msg}.`);
     bulkEmailOpen.value = false;
     selectedIds.value = new Set();
+    if (updated > 0 && data?.category) {
+      query.value = { ...query.value, status: data.category, page: 1 };
+    }
     await fetchRows();
     await loadMeta();
   } catch (e) {
@@ -168,6 +234,30 @@ async function submitBulkEmail({ email_template_id }) {
   } finally {
     bulkEmailBusy.value = false;
   }
+}
+
+function toggleSort(column) {
+  if (!LEAD_SORT_KEYS.includes(column)) return;
+  if (query.value.sort_by === column) {
+    query.value.sort_dir = query.value.sort_dir === "asc" ? "desc" : "asc";
+  } else {
+    query.value.sort_by = column;
+    query.value.sort_dir = "asc";
+  }
+  query.value.page = 1;
+}
+
+function sortIndicator(column) {
+  if (query.value.sort_by !== column) return "";
+  return query.value.sort_dir === "asc" ? "↑" : "↓";
+}
+
+function thAriaSort(column) {
+  return query.value.sort_by === column
+    ? query.value.sort_dir === "asc"
+      ? "ascending"
+      : "descending"
+    : "none";
 }
 
 async function loadMeta() {
@@ -202,14 +292,17 @@ async function fetchRows() {
       sort_by: query.value.sort_by,
       sort_dir: query.value.sort_dir,
     };
-    if (query.value.status && query.value.status !== "all") {
-      params.status = query.value.status;
-    }
-    if (query.value.referral && query.value.referral !== "all") {
-      params.referral = query.value.referral;
-    }
     const search = String(query.value.search || "").trim();
-    if (search) params.search = search;
+    if (search) {
+      params.search = search;
+    } else {
+      if (query.value.status && query.value.status !== "all") {
+        params.status = query.value.status;
+      }
+      if (query.value.referral && query.value.referral !== "all") {
+        params.referral = query.value.referral;
+      }
+    }
 
     const { data } = await api.get("/leads", { params });
     rows.value = Array.isArray(data?.data) ? data.data : [];
@@ -456,7 +549,22 @@ function websiteHref(website) {
 
 watch(
   () => query.value.search,
-  () => {
+  (next, prev) => {
+    const trimmed = String(next || "").trim();
+    const wasTrimmed = String(prev || "").trim();
+    if (trimmed && !wasTrimmed) {
+      filtersBeforeSearch.value = {
+        status: query.value.status,
+        referral: query.value.referral,
+      };
+    } else if (!trimmed && wasTrimmed && filtersBeforeSearch.value) {
+      query.value = {
+        ...query.value,
+        status: filtersBeforeSearch.value.status,
+        referral: filtersBeforeSearch.value.referral,
+      };
+      filtersBeforeSearch.value = null;
+    }
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
       query.value = { ...query.value, page: 1 };
@@ -499,6 +607,14 @@ onUnmounted(() => {
       :templates="emailTemplatesFlat"
       @submit="submitBulkEmail"
     />
+    <LeadBulkStatusDrawer
+      v-model:open="bulkStatusOpen"
+      :busy="bulkStatusBusy"
+      :selected-count="selectedCount"
+      :statuses="statuses"
+      :follow-up-day-options="followUpDayOptions"
+      @submit="submitBulkStatus"
+    />
     <LeadStatusUpdateModal
       v-model:open="statusModalOpen"
       v-model:status="statusModalStatus"
@@ -538,10 +654,19 @@ onUnmounted(() => {
           v-if="canUpdate"
           type="button"
           class="btn btn-outline-secondary fw-semibold"
+          :disabled="!selectedCount || bulkStatusBusy"
+          @click="openBulkStatus"
+        >
+          Bulk Update Status{{ selectedCount ? ` (${selectedCount})` : "" }}
+        </button>
+        <button
+          v-if="canUpdate"
+          type="button"
+          class="btn btn-outline-secondary fw-semibold"
           :disabled="!selectedCount || bulkEmailBusy"
           @click="openBulkEmail"
         >
-          Bulk Sent{{ selectedCount ? ` (${selectedCount})` : "" }}
+          Bulk Send{{ selectedCount ? ` (${selectedCount})` : "" }}
         </button>
         <button
           v-if="canCreate"
@@ -574,13 +699,18 @@ onUnmounted(() => {
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row">
-          <input
-            v-model="query.search"
-            type="search"
-            class="form-control staff-toolbar-search staff-toolbar-search--inline"
-            placeholder="Search leads"
-            autocomplete="off"
-          />
+          <div class="flex-grow-1 min-w-0">
+            <input
+              v-model="query.search"
+              type="search"
+              class="form-control staff-toolbar-search staff-toolbar-search--inline"
+              placeholder="Search leads"
+              autocomplete="off"
+            />
+            <p v-if="searchActive" class="form-text text-secondary small mb-0 mt-1">
+              Searching all statuses and referrals.
+            </p>
+          </div>
           <div class="position-relative flex-shrink-0" data-toolbar-filter>
             <button
               type="button"
@@ -681,14 +811,118 @@ onUnmounted(() => {
                   @change="toggleSelectAll"
                 />
               </th>
-              <th class="staff-table-head__th" scope="col">Status</th>
+              <th class="staff-table-head__th staff-table-head__th--sort" scope="col" :aria-sort="thAriaSort('status')">
+                <button
+                  type="button"
+                  class="staff-sort-btn"
+                  :disabled="loading"
+                  @click="toggleSort('status')"
+                >
+                  Status
+                  <span v-if="sortIndicator('status')" class="staff-sort-ind">{{ sortIndicator("status") }}</span>
+                </button>
+              </th>
               <th class="staff-table-head__th" scope="col" style="width: 3rem"></th>
-              <th class="staff-table-head__th" scope="col">Company Name</th>
-              <th class="staff-table-head__th" scope="col">Referral</th>
-              <th class="staff-table-head__th" scope="col">Email</th>
-              <th class="staff-table-head__th" scope="col">Website</th>
-              <th class="staff-table-head__th text-center" scope="col">Follow Up</th>
-              <th class="staff-table-head__th text-center" scope="col">Date Created</th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('company_name')"
+              >
+                <button
+                  type="button"
+                  class="staff-sort-btn"
+                  :disabled="loading"
+                  @click="toggleSort('company_name')"
+                >
+                  Company Name
+                  <span v-if="sortIndicator('company_name')" class="staff-sort-ind">{{
+                    sortIndicator("company_name")
+                  }}</span>
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('referral')"
+              >
+                <button
+                  type="button"
+                  class="staff-sort-btn"
+                  :disabled="loading"
+                  @click="toggleSort('referral')"
+                >
+                  Referral
+                  <span v-if="sortIndicator('referral')" class="staff-sort-ind">{{
+                    sortIndicator("referral")
+                  }}</span>
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('email')"
+              >
+                <button
+                  type="button"
+                  class="staff-sort-btn"
+                  :disabled="loading"
+                  @click="toggleSort('email')"
+                >
+                  Email
+                  <span v-if="sortIndicator('email')" class="staff-sort-ind">{{ sortIndicator("email") }}</span>
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('website')"
+              >
+                <button
+                  type="button"
+                  class="staff-sort-btn"
+                  :disabled="loading"
+                  @click="toggleSort('website')"
+                >
+                  Website
+                  <span v-if="sortIndicator('website')" class="staff-sort-ind">{{
+                    sortIndicator("website")
+                  }}</span>
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort text-center"
+                scope="col"
+                :aria-sort="thAriaSort('follow_up_at')"
+              >
+                <button
+                  type="button"
+                  class="staff-sort-btn"
+                  :disabled="loading"
+                  @click="toggleSort('follow_up_at')"
+                >
+                  Follow Up
+                  <span v-if="sortIndicator('follow_up_at')" class="staff-sort-ind">{{
+                    sortIndicator("follow_up_at")
+                  }}</span>
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort text-center"
+                scope="col"
+                :aria-sort="thAriaSort('created_at')"
+              >
+                <button
+                  type="button"
+                  class="staff-sort-btn"
+                  :disabled="loading"
+                  @click="toggleSort('created_at')"
+                >
+                  Date Created
+                  <span v-if="sortIndicator('created_at')" class="staff-sort-ind">{{
+                    sortIndicator("created_at")
+                  }}</span>
+                </button>
+              </th>
               <th class="staff-table-head__th staff-actions-col text-center" scope="col">Action</th>
             </tr>
           </thead>
@@ -762,8 +996,10 @@ onUnmounted(() => {
               >
                 <a
                   v-if="row.email"
-                  :href="`mailto:${row.email}`"
+                  :href="gmailSearchHref(row.email)"
                   class="text-decoration-none text-body"
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
                   {{ row.email }}
                 </a>
@@ -895,7 +1131,13 @@ onUnmounted(() => {
               <div class="crm-mobile-item-card__meta-row">
                 <span class="crm-mobile-item-card__meta-label">Email</span>
                 <span class="crm-mobile-item-card__meta-value">
-                  <a v-if="row.email" :href="`mailto:${row.email}`" class="text-decoration-none">{{ row.email }}</a>
+                  <a
+                    v-if="row.email"
+                    :href="gmailSearchHref(row.email)"
+                    class="text-decoration-none"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >{{ row.email }}</a>
                   <template v-else>—</template>
                 </span>
               </div>

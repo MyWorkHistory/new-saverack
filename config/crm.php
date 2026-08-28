@@ -60,6 +60,9 @@ return [
      */
     'lead_template_from_address' => 'audi@saverack.com',
 
+    /** Seconds between each lead in a bulk template send (reduces SES throttling risk). */
+    'lead_bulk_email_delay_seconds' => (int) env('CRM_LEAD_BULK_EMAIL_DELAY_SECONDS', 3),
+
     /** Notified when a new 3PL self-serve account is created. */
     'registration_notify_email' => env('REGISTRATION_NOTIFY_EMAIL') ?: env('ADMIN_EMAIL'),
 

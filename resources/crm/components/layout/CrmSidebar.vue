@@ -513,7 +513,7 @@ function collapseNav() {
               </button>
               <ul v-show="ordersGroupOpen" class="list-unstyled mb-0 mt-1">
                 <li v-if="canViewOrdersSearch">
-                  <RouterLink
+          <RouterLink
                     to="/admin/orders/search"
                     class="vx-nav-link vx-nav-sublink"
                     :class="{ 'vx-nav-link--active': navActive('orders-index') }"

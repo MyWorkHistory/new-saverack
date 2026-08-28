@@ -89,6 +89,7 @@ class LeadService
             'email',
             'website',
             'status',
+            'referral',
             'follow_up_days',
             'follow_up_at',
             'created_at',
@@ -123,24 +124,37 @@ class LeadService
     {
         $query = Lead::query();
 
+        $search = trim((string) ($filters['search'] ?? $filters['q'] ?? ''));
+
         $status = strtolower(trim((string) ($filters['status'] ?? 'all')));
-        if ($status !== '' && $status !== 'all' && in_array($status, Lead::STATUSES, true)) {
+        // When searching, include all statuses so archived/terminal leads are findable.
+        if (
+            $search === ''
+            && $status !== ''
+            && $status !== 'all'
+            && in_array($status, Lead::STATUSES, true)
+        ) {
             $query->where('status', $status);
         }
 
         $referral = strtolower(trim((string) ($filters['referral'] ?? 'all')));
-        if ($referral !== '' && $referral !== 'all' && in_array($referral, Lead::REFERRALS, true)) {
+        if (
+            $search === ''
+            && $referral !== ''
+            && $referral !== 'all'
+            && in_array($referral, Lead::REFERRALS, true)
+        ) {
             $query->where('referral', $referral);
         }
 
-        $search = trim((string) ($filters['search'] ?? $filters['q'] ?? ''));
         if ($search !== '') {
             $like = '%'.$search.'%';
             $query->where(function (Builder $q) use ($like) {
                 $q->where('company_name', 'like', $like)
                     ->orWhere('email', 'like', $like)
                     ->orWhere('website', 'like', $like)
-                    ->orWhere('name', 'like', $like);
+                    ->orWhere('name', 'like', $like)
+                    ->orWhere('comment', 'like', $like);
             });
         }
 
@@ -562,6 +576,61 @@ class LeadService
      * After a real template email send: set status to template category, apply
      * follow-up defaults, and record a status event (Last Sent).
      */
+    /**
+     * @param  list<int>  $leadIds
+     * @param  array{status: string, follow_up_days?: int|null}  $data
+     * @return array{updated: int, skipped: int, skipped_ids: list<int>}
+     */
+    public function bulkUpdateStatus(array $leadIds, array $data, ?User $actor = null): array
+    {
+        $ids = [];
+        foreach ($leadIds as $id) {
+            $n = (int) $id;
+            if ($n > 0) {
+                $ids[$n] = $n;
+            }
+        }
+        $ids = array_values($ids);
+        if ($ids === []) {
+            throw ValidationException::withMessages([
+                'lead_ids' => ['Select at least one lead.'],
+            ]);
+        }
+
+        $status = strtolower(trim((string) ($data['status'] ?? '')));
+        if (! in_array($status, Lead::STATUSES, true)) {
+            throw ValidationException::withMessages([
+                'status' => ['Invalid lead status.'],
+            ]);
+        }
+
+        $payload = [
+            'status' => $status,
+            'record_status_event' => true,
+        ];
+        if (array_key_exists('follow_up_days', $data)) {
+            $payload['follow_up_days'] = Lead::normalizeFollowUpDays($data['follow_up_days']);
+        }
+
+        $updated = 0;
+        $skipped = [];
+        foreach ($ids as $leadId) {
+            $lead = Lead::query()->find($leadId);
+            if ($lead === null) {
+                $skipped[] = $leadId;
+                continue;
+            }
+            $this->update($lead, $payload, $actor);
+            $updated++;
+        }
+
+        return [
+            'updated' => $updated,
+            'skipped' => count($skipped),
+            'skipped_ids' => $skipped,
+        ];
+    }
+
     public function applyTemplateEmailSend(Lead $lead, EmailTemplate $template, ?User $actor = null): Lead
     {
         $category = strtolower(trim((string) $template->category));

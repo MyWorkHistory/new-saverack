@@ -149,7 +149,7 @@ class LeadTemplateEmailApiTest extends TestCase
             ->assertJsonPath('follow_up_days', null);
     }
 
-    public function test_bulk_email_queues_job_and_does_not_mail_inline(): void
+    public function test_bulk_email_queues_job_and_updates_status_before_job_runs(): void
     {
         $this->staffWithLeads();
         Mail::fake();
@@ -179,7 +179,14 @@ class LeadTemplateEmailApiTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('queued', 2)
-            ->assertJsonPath('skipped', 0);
+            ->assertJsonPath('skipped', 0)
+            ->assertJsonPath('updated', 2)
+            ->assertJsonPath('category', 'contacted');
+
+        $leadA->refresh();
+        $leadB->refresh();
+        $this->assertSame(Lead::STATUS_CONTACTED, $leadA->status);
+        $this->assertSame(Lead::STATUS_CONTACTED, $leadB->status);
 
         Queue::assertPushed(SendLeadBulkTemplateEmailJob::class, function ($job) use ($template) {
             return (int) $job->templateId === (int) $template->id

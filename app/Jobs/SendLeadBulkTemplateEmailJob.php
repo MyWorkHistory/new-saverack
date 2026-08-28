@@ -59,8 +59,15 @@ class SendLeadBulkTemplateEmailJob implements ShouldQueue
 
         $sent = 0;
         $failed = 0;
+        $delaySeconds = max(0, (int) config('crm.lead_bulk_email_delay_seconds', 3));
+        $isFirst = true;
 
         foreach ($this->leadIds as $leadId) {
+            if (! $isFirst && $delaySeconds > 0) {
+                sleep($delaySeconds);
+            }
+            $isFirst = false;
+
             $lead = Lead::query()->find($leadId);
             if ($lead === null) {
                 $failed++;

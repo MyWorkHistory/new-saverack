@@ -282,4 +282,129 @@ TEXT;
 
         $this->getJson('/api/leads/meta')->assertOk();
     }
+
+    public function test_email_unique_is_case_insensitive(): void
+    {
+        $this->staffWithLeads();
+
+        $this->postJson('/api/leads', [
+            'company_name' => 'First Co',
+            'email' => 'same@example.com',
+        ])->assertCreated();
+
+        $this->postJson('/api/leads', [
+            'company_name' => 'Second Co',
+            'email' => 'Same@Example.com',
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['email']);
+    }
+
+    public function test_can_recreate_lead_with_same_email_after_delete(): void
+    {
+        $this->staffWithLeads();
+
+        $response = $this->postJson('/api/leads', [
+            'company_name' => 'Temp Co',
+            'email' => 'Duplicate@Example.com',
+        ]);
+        $response->assertCreated();
+        $id = (int) $response->json('id');
+
+        $this->deleteJson('/api/leads/'.$id)->assertOk();
+        $this->assertDatabaseMissing('leads', ['id' => $id]);
+
+        $this->postJson('/api/leads', [
+            'company_name' => 'New Co',
+            'email' => 'duplicate@example.com',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('company_name', 'New Co')
+            ->assertJsonPath('email', 'duplicate@example.com');
+    }
+
+    public function test_search_finds_terminal_status_lead_when_status_filter_is_open(): void
+    {
+        $this->staffWithLeads(['view']);
+
+        Lead::query()->create([
+            'status' => Lead::STATUS_OPEN,
+            'referral' => Lead::REFERRAL_BIZY,
+            'company_name' => 'Visible Open Co',
+            'email' => 'open-visible@test.com',
+            'follow_up_days' => 1,
+            'follow_up_at' => now()->addDay()->toDateString(),
+        ]);
+        Lead::query()->create([
+            'status' => Lead::STATUS_NOT_INTERESTED,
+            'referral' => Lead::REFERRAL_GOOGLE,
+            'company_name' => 'Closed Unique Co',
+            'email' => 'closed-unique@test.com',
+            'follow_up_days' => null,
+            'follow_up_at' => null,
+        ]);
+
+        $this->getJson('/api/leads?status=open&search=Closed+Unique')
+            ->assertOk()
+            ->assertJsonPath('total', 1)
+            ->assertJsonPath('data.0.company_name', 'Closed Unique Co')
+            ->assertJsonPath('data.0.status', Lead::STATUS_NOT_INTERESTED);
+    }
+
+    public function test_search_ignores_referral_filter(): void
+    {
+        $this->staffWithLeads(['view']);
+
+        Lead::query()->create([
+            'status' => Lead::STATUS_NOT_QUALIFIED,
+            'referral' => Lead::REFERRAL_GOOGLE,
+            'company_name' => 'Google Only Co',
+            'email' => 'google-only@test.com',
+            'follow_up_days' => null,
+            'follow_up_at' => null,
+        ]);
+
+        $this->getJson('/api/leads?referral=bizy&search=Google+Only')
+            ->assertOk()
+            ->assertJsonPath('total', 1)
+            ->assertJsonPath('data.0.referral', Lead::REFERRAL_GOOGLE);
+    }
+
+    public function test_bulk_status_updates_leads_without_sending_email(): void
+    {
+        $this->staffWithLeads(['view', 'update']);
+
+        $leadA = Lead::query()->create([
+            'status' => Lead::STATUS_OPEN,
+            'referral' => Lead::REFERRAL_BIZY,
+            'company_name' => 'Bulk A',
+            'email' => 'bulk-a@test.com',
+            'follow_up_days' => 1,
+            'follow_up_at' => now()->addDay()->toDateString(),
+        ]);
+        $leadB = Lead::query()->create([
+            'status' => Lead::STATUS_CONTACTED,
+            'referral' => Lead::REFERRAL_BIZY,
+            'company_name' => 'Bulk B',
+            'email' => 'bulk-b@test.com',
+            'follow_up_days' => 3,
+            'follow_up_at' => now()->addDays(3)->toDateString(),
+        ]);
+
+        $this->postJson('/api/leads/bulk-status', [
+            'lead_ids' => [$leadA->id, $leadB->id],
+            'status' => Lead::STATUS_FOLLOW_UP,
+            'follow_up_days' => 5,
+        ])
+            ->assertOk()
+            ->assertJsonPath('updated', 2)
+            ->assertJsonPath('skipped', 0);
+
+        $leadA->refresh();
+        $leadB->refresh();
+        $this->assertSame(Lead::STATUS_FOLLOW_UP, $leadA->status);
+        $this->assertSame(Lead::STATUS_FOLLOW_UP, $leadB->status);
+        $this->assertSame(5, (int) $leadA->follow_up_days);
+        $this->assertSame(5, (int) $leadB->follow_up_days);
+    }
 }

@@ -250,6 +250,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/', [LeadController::class, 'store']);
             Route::post('/quick-add', [LeadController::class, 'quickAdd']);
             Route::post('/bulk-email', [LeadController::class, 'bulkEmail']);
+            Route::post('/bulk-status', [LeadController::class, 'bulkStatus']);
             Route::get('/{lead}', [LeadController::class, 'show']);
             Route::patch('/{lead}', [LeadController::class, 'update']);
             Route::post('/{lead}/email-templates/{emailTemplate}/send', [LeadController::class, 'sendTemplateEmail']);

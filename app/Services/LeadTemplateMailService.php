@@ -34,6 +34,20 @@ class LeadTemplateMailService
      */
     public function sendToLead(Lead $lead, EmailTemplate $template, ?User $actor = null): array
     {
+        $to = $this->sendMailOnly($lead, $template);
+        $lead = $this->leads->applyTemplateEmailSend($lead, $template, $actor);
+
+        return [
+            'lead' => $lead,
+            'sent_to' => $to,
+        ];
+    }
+
+    /**
+     * Mail only — no status update (bulk job after status was applied at queue time).
+     */
+    public function sendMailOnly(Lead $lead, EmailTemplate $template): string
+    {
         $to = strtolower(trim((string) $lead->email));
         if ($to === '' || ! filter_var($to, FILTER_VALIDATE_EMAIL)) {
             throw ValidationException::withMessages([
@@ -71,17 +85,12 @@ class LeadTemplateMailService
             $fromName
         ));
 
-        $lead = $this->leads->applyTemplateEmailSend($lead, $template, $actor);
-
-        return [
-            'lead' => $lead,
-            'sent_to' => $to,
-        ];
+        return $to;
     }
 
     /**
      * @param  list<int>  $leadIds
-     * @return array{queued: int, skipped: int, skipped_ids: list<int>}
+     * @return array{queued: int, skipped: int, skipped_ids: list<int>, failed_ids: list<int>, updated: int}
      */
     public function queueBulk(array $leadIds, EmailTemplate $template, ?User $actor = null): array
     {
@@ -99,16 +108,29 @@ class LeadTemplateMailService
             ]);
         }
 
-        $leads = Lead::query()->whereIn('id', $ids)->get(['id', 'email']);
+        $leads = Lead::query()->whereIn('id', $ids)->get();
         $queued = [];
         $skipped = [];
+        $failed = [];
+        $updated = 0;
         foreach ($leads as $lead) {
             $email = strtolower(trim((string) $lead->email));
             if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $skipped[] = (int) $lead->id;
                 continue;
             }
-            $queued[] = (int) $lead->id;
+            try {
+                $this->leads->applyTemplateEmailSend($lead, $template, $actor);
+                $queued[] = (int) $lead->id;
+                $updated++;
+            } catch (Throwable $e) {
+                $failed[] = (int) $lead->id;
+                Log::warning('lead_template_email.bulk_status_failed', [
+                    'lead_id' => $lead->id,
+                    'template_id' => $template->id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
         }
 
         if ($queued !== []) {
@@ -123,6 +145,8 @@ class LeadTemplateMailService
             'queued' => count($queued),
             'skipped' => count($skipped),
             'skipped_ids' => $skipped,
+            'failed_ids' => $failed,
+            'updated' => $updated,
         ];
     }
 
@@ -132,7 +156,7 @@ class LeadTemplateMailService
     public function sendToLeadSafe(Lead $lead, EmailTemplate $template, ?User $actor = null): bool
     {
         try {
-            $this->sendToLead($lead, $template, $actor);
+            $this->sendMailOnly($lead, $template);
 
             return true;
         } catch (Throwable $e) {

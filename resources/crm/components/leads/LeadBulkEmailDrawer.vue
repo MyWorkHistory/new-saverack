@@ -56,7 +56,7 @@ function submit() {
 <template>
   <CrmRightDrawer
     v-model:open="open"
-    title="Bulk Sent"
+    title="Bulk Send"
     :subtitle="`Send a template email to ${selectedCount} selected lead${
       selectedCount === 1 ? '' : 's'
     }.`"

@@ -184,23 +184,4 @@ class PutAwayRowBuilder
 
         return $total;
     }
-
-    /**
-     * @param  list<array<string, mixed>>  $locations
-     */
-    public static function hasReceivingLocationEntry(array $locations): bool
-    {
-        $receivingName = strtolower(AsnReceivingService::RECEIVING_LOCATION_NAME);
-        foreach ($locations as $loc) {
-            if (! is_array($loc)) {
-                continue;
-            }
-            $locName = strtolower(trim((string) ($loc['location_name'] ?? '')));
-            if ($locName === $receivingName) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }

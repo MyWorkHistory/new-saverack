@@ -7,6 +7,7 @@ import CrmSyncToolbar from "../../components/common/CrmSyncToolbar.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import ShopifyBrandIcon from "../../components/common/ShopifyBrandIcon.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import SetAsWholesaleDrawer from "../../components/orders/SetAsWholesaleDrawer.vue";
 import OrdersRemoveHoldsModal from "../../components/orders/OrdersRemoveHoldsModal.vue";
 import OrdersPlaceHoldModal from "../../components/orders/OrdersPlaceHoldModal.vue";
 import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
@@ -14,7 +15,7 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { usePortalLastRefreshed } from "../../composables/usePortalLastRefreshed.js";
 import { useToast } from "../../composables/useToast.js";
 import { crmIsAdmin, crmIsPortalUser } from "../../utils/crmUser";
-import { canWriteShipHeroOrders } from "../../utils/crmShipHeroOrders";
+import { canWriteShipHeroOrders, canCreateOrders } from "../../utils/crmShipHeroOrders";
 import {
   carrierForApi,
   formatCarrierLabel,
@@ -106,6 +107,13 @@ const moreActionsBtnRef = ref(null);
 const moreActionsMenuRef = ref(null);
 const moreActionsMenuStyle = ref({ visibility: "hidden" });
 const moreActionsLayoutBound = ref(false);
+const setAsWholesaleOpen = ref(false);
+const setAsWholesaleBusy = ref(false);
+const setAsWholesaleForm = ref({
+  orderType: "",
+  orderNumber: "",
+  instructions: "",
+});
 const requireSignatureLocal = ref(false);
 const giftNoteLocal = ref("");
 const optionsSaveBusy = ref(false);
@@ -756,7 +764,13 @@ const itemsSummary = computed(() => {
 });
 
 const showStaffMoreActions = computed(() => {
-  if (!canUseStaffOrderHeaderActions.value || isPortalUser.value || !canRunShipHeroActions.value) {
+  if (!canUseStaffOrderHeaderActions.value || isPortalUser.value || isReturnPreviewMode.value) {
+    return false;
+  }
+  if (showSetAsWholesaleAction.value) {
+    return true;
+  }
+  if (!canRunShipHeroActions.value) {
     return false;
   }
   if (isDraftOrder.value) {
@@ -769,6 +783,22 @@ const showStaffMoreActions = computed(() => {
     || showCancelOrderAction.value
   );
 });
+
+const showSetAsWholesaleAction = computed(() => {
+  if (!canUseStaffOrderHeaderActions.value || isPortalUser.value || isReturnPreviewMode.value) {
+    return false;
+  }
+  if (loading.value || !order.value || isDraftOrder.value) {
+    return false;
+  }
+  if (!canCreateOrders(crmUser.value)) {
+    return false;
+  }
+  const rows = Array.isArray(order.value?.items) ? order.value.items : [];
+  return rows.some((row) => String(row?.sku || "").trim() !== "");
+});
+
+const setAsWholesaleAccountName = computed(() => String(order.value?.account || "—"));
 
 const showPlaceHoldAction = computed(
   () => !isDraftOrder.value && orderIsReadyToShip.value && canPlaceHold.value,
@@ -1700,6 +1730,60 @@ function unbindMoreActionsLayoutListeners() {
 
 function closeMoreActionsMenu() {
   moreActionsOpen.value = false;
+}
+
+function stripOrderNumberForWholesale(raw) {
+  return String(raw || "")
+    .replace(/^#\s*/, "")
+    .replace(/^Order[#\s-]*/i, "")
+    .trim();
+}
+
+function openSetAsWholesale() {
+  closeMoreActionsMenu();
+  setAsWholesaleForm.value = {
+    orderType: "",
+    orderNumber: stripOrderNumberForWholesale(order.value?.order_number),
+    instructions: "",
+  };
+  setAsWholesaleOpen.value = true;
+}
+
+async function submitSetAsWholesale() {
+  if (setAsWholesaleBusy.value || !order.value) return;
+  const accountId = resolveClientAccountIdForOrderContext();
+  if (accountId <= 0 || !orderId.value) {
+    toast.error("Client account context is required.");
+    return;
+  }
+  if (!setAsWholesaleForm.value.orderType) {
+    toast.error("Select a wholesale type.");
+    return;
+  }
+  const orderNumber = stripOrderNumberForWholesale(setAsWholesaleForm.value.orderNumber);
+  if (!orderNumber) {
+    toast.error("Order number is required.");
+    return;
+  }
+  setAsWholesaleBusy.value = true;
+  try {
+    const { data } = await api.post("/admin/wholesale-orders/from-shiphero-order", {
+      client_account_id: accountId,
+      shiphero_order_id: orderId.value,
+      order_type: setAsWholesaleForm.value.orderType,
+      order_number: orderNumber,
+      instructions: setAsWholesaleForm.value.instructions.trim() || null,
+    });
+    toast.success("Wholesale order created.");
+    setAsWholesaleOpen.value = false;
+    if (data?.id) {
+      await router.push({ name: "wholesale-order-detail", params: { id: String(data.id) } });
+    }
+  } catch (e) {
+    toast.errorFrom(e, "Could not create wholesale order.");
+  } finally {
+    setAsWholesaleBusy.value = false;
+  }
 }
 
 async function toggleMoreActionsMenu(ev) {
@@ -2841,6 +2925,17 @@ function goToOrdersList() {
             {{ placeHoldBusy ? "Placing Hold…" : "Place Hold" }}
           </button>
         </li>
+        <li v-if="showSetAsWholesaleAction">
+          <button
+            type="button"
+            class="dropdown-item"
+            role="menuitem"
+            :disabled="setAsWholesaleBusy"
+            @click="openSetAsWholesale"
+          >
+            Set as Wholesale
+          </button>
+        </li>
         <li v-if="showMarkFulfilledAction">
           <button
             type="button"
@@ -3110,6 +3205,20 @@ function goToOrdersList() {
       :busy="lineDeleteBusy"
       @close="confirmDeleteLineOpen = false"
       @confirm="runRemoveLineItem"
+    />
+
+    <SetAsWholesaleDrawer
+      :open="setAsWholesaleOpen"
+      :account-name="setAsWholesaleAccountName"
+      :order-type="setAsWholesaleForm.orderType"
+      :order-number="setAsWholesaleForm.orderNumber"
+      :instructions="setAsWholesaleForm.instructions"
+      :busy="setAsWholesaleBusy"
+      @update:open="setAsWholesaleOpen = $event"
+      @update:order-type="setAsWholesaleForm.orderType = $event"
+      @update:order-number="setAsWholesaleForm.orderNumber = $event"
+      @update:instructions="setAsWholesaleForm.instructions = $event"
+      @submit="submitSetAsWholesale"
     />
   </div>
 </template>

@@ -353,7 +353,7 @@ class PutAwayApiTest extends TestCase
             ->assertJsonPath('rows.0.receiving_location.location_id', 'recv-1');
     }
 
-    public function test_list_keeps_local_row_when_product_cache_shows_zero_receiving(): void
+    public function test_list_hides_and_prunes_rows_with_zero_receiving_in_product_cache(): void
     {
         $account = $this->account('stale');
         Sanctum::actingAs($this->staffUser());
@@ -382,12 +382,6 @@ class PutAwayApiTest extends TestCase
                         'warehouse_id' => 'wh-1',
                         'locations' => [
                             [
-                                'location_id' => 'recv-1',
-                                'location_name' => 'Receiving',
-                                'quantity' => 0,
-                                'pickable' => false,
-                            ],
-                            [
                                 'location_id' => 'pick-1',
                                 'location_name' => 'A-01',
                                 'quantity' => 5,
@@ -402,91 +396,12 @@ class PutAwayApiTest extends TestCase
 
         $this->getJson('/api/admin/put-away')
             ->assertOk()
-            ->assertJsonCount(1, 'rows')
-            ->assertJsonPath('rows.0.sku', 'STALE-RECV')
-            ->assertJsonPath('rows.0.receiving_qty', 8);
-    }
+            ->assertJsonCount(0, 'rows');
 
-    public function test_list_supplements_missing_row_from_asn_accepted_qty(): void
-    {
-        $account = $this->account('asn-supplement');
-        Sanctum::actingAs($this->staffUser());
-
-        $this->receivingSnapshot();
-
-        $asn = \App\Models\ClientAccountAsn::create([
+        $this->assertDatabaseMissing('put_away_receiving_snapshot_rows', [
+            'sku' => 'STALE-RECV',
             'client_account_id' => $account->id,
-            'asn_number' => '0089',
-            'status' => \App\Models\ClientAccountAsn::STATUS_IN_PROGRESS,
-            'total_boxes' => 1,
-            'expected_qty' => 577,
-            'accepted_qty' => 577,
-            'rejected_qty' => 0,
         ]);
-        \App\Models\ClientAccountAsnLine::create([
-            'client_account_asn_id' => $asn->id,
-            'sku' => 'ASN-89-SKU',
-            'name' => 'ASN 89 Product',
-            'expected_qty' => 577,
-            'accepted_qty' => 577,
-            'rejected_qty' => 0,
-            'line_status' => \App\Models\ClientAccountAsnLine::LINE_STATUS_PENDING,
-            'sort_order' => 0,
-        ]);
-
-        $this->getJson('/api/admin/put-away?client_account_id='.$account->id)
-            ->assertOk()
-            ->assertJsonCount(1, 'rows')
-            ->assertJsonPath('rows.0.sku', 'ASN-89-SKU')
-            ->assertJsonPath('rows.0.receiving_qty', 577);
-    }
-
-    public function test_list_keeps_row_when_product_cache_lacks_receiving_location(): void
-    {
-        $account = $this->account('no-recv-cache');
-        Sanctum::actingAs($this->staffUser());
-
-        $snapshot = $this->receivingSnapshot();
-        PutAwayReceivingSnapshotRow::create([
-            'put_away_receiving_snapshot_id' => $snapshot->id,
-            'client_account_id' => $account->id,
-            'sku' => 'ASN-ONLY',
-            'name' => 'ASN Only',
-            'receiving_qty' => 577,
-            'pickable_qty' => 0,
-            'non_pickable_qty' => 0,
-            'on_hand' => 0,
-            'backorder' => 0,
-        ]);
-
-        ShipHeroInventoryProductDetailCache::query()->create([
-            'client_account_id' => $account->id,
-            'sku' => 'ASN-ONLY',
-            'sku_search' => 'asn-only',
-            'product_json' => [
-                'sku' => 'ASN-ONLY',
-                'warehouses' => [
-                    [
-                        'warehouse_id' => 'wh-1',
-                        'locations' => [
-                            [
-                                'location_id' => 'pick-1',
-                                'location_name' => 'A-01',
-                                'quantity' => 5,
-                                'pickable' => true,
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-            'product_synced_at' => now(),
-        ]);
-
-        $this->getJson('/api/admin/put-away?client_account_id='.$account->id)
-            ->assertOk()
-            ->assertJsonCount(1, 'rows')
-            ->assertJsonPath('rows.0.sku', 'ASN-ONLY')
-            ->assertJsonPath('rows.0.receiving_qty', 577);
     }
 
     public function test_list_uses_live_receiving_qty_from_product_cache(): void

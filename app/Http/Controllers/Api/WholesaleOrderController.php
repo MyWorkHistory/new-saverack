@@ -20,6 +20,7 @@ use App\Models\WholesaleOrderPackage;
 use App\Models\WholesaleOrderShippingLabel;
 use App\Services\InventoryProductDetailCacheService;
 use App\Services\ShipHeroInventoryService;
+use App\Services\ShipHeroOrderDetailCacheService;
 use App\Services\ShipHeroOrderService;
 use App\Services\SlackDeliveryService;
 use App\Services\WholesaleOrderShipHeroService;
@@ -28,6 +29,7 @@ use App\Support\CrmUrls;
 use App\Support\PutAwayRowBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -46,14 +48,24 @@ class WholesaleOrderController extends Controller
     /** @var WholesaleBillService */
     private $wholesaleBills;
 
+    /** @var ShipHeroOrderService */
+    private $shipHeroOrders;
+
+    /** @var ShipHeroOrderDetailCacheService */
+    private $orderDetailCache;
+
     public function __construct(
         InventoryProductDetailCacheService $detailCache,
         ShipHeroInventoryService $inventory,
-        WholesaleBillService $wholesaleBills
+        WholesaleBillService $wholesaleBills,
+        ShipHeroOrderService $shipHeroOrders,
+        ShipHeroOrderDetailCacheService $orderDetailCache
     ) {
         $this->detailCache = $detailCache;
         $this->inventory = $inventory;
         $this->wholesaleBills = $wholesaleBills;
+        $this->shipHeroOrders = $shipHeroOrders;
+        $this->orderDetailCache = $orderDetailCache;
     }
 
     private function assertStaff(Request $request): void
@@ -807,6 +819,187 @@ class WholesaleOrderController extends Controller
         ]);
 
         return response()->json($this->serializeDetail($order->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user.profile'])), 201);
+    }
+
+    public function storeFromShipHeroOrder(Request $request): JsonResponse
+    {
+        Gate::authorize('create', WholesaleOrder::class);
+        $this->assertStaff($request);
+
+        $user = $request->user();
+        if (! $user instanceof User) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'shiphero_order_id' => ['required', 'string', 'max:128'],
+            'order_type' => ['required', 'string', Rule::in(WholesaleOrder::ORDER_TYPES)],
+            'order_number' => ['required', 'string', 'max:128'],
+            'instructions' => ['nullable', 'string', 'max:20000'],
+        ]);
+
+        $accountId = (int) $validated['client_account_id'];
+        $shipheroOrderId = trim((string) $validated['shiphero_order_id']);
+        $account = ClientAccount::query()->findOrFail($accountId);
+        Gate::authorize('view', $account);
+
+        $customerId = trim((string) ($account->shiphero_customer_account_id ?? ''));
+        if ($customerId === '') {
+            throw ValidationException::withMessages([
+                'client_account_id' => [
+                    'This client account has no ShipHero customer account ID. Set it on the account profile, then try again.',
+                ],
+            ]);
+        }
+
+        $rawNumber = trim((string) $validated['order_number']);
+        $stripped = preg_replace('/^Order[#\s-]*/i', '', $rawNumber);
+        $orderNumber = trim((string) $stripped);
+        if ($orderNumber === '') {
+            throw ValidationException::withMessages([
+                'order_number' => ['Order number is required.'],
+            ]);
+        }
+        $this->assertWholesaleOrderNumberAvailable($accountId, $orderNumber);
+
+        $shipheroOrder = $this->orderDetailCache->getCachedOrder($accountId, $shipheroOrderId, true);
+        if ($shipheroOrder === null) {
+            try {
+                $shipheroOrder = $this->shipHeroOrders->getOrder($shipheroOrderId, $customerId);
+            } catch (ValidationException $e) {
+                throw $e;
+            } catch (RuntimeException $e) {
+                throw ValidationException::withMessages([
+                    'shiphero_order_id' => [ShipHeroOrderService::humanizeHoldErrorMessage($e->getMessage())],
+                ]);
+            } catch (Throwable $e) {
+                throw ValidationException::withMessages([
+                    'shiphero_order_id' => ['Could not load the ShipHero order.'],
+                ]);
+            }
+        }
+
+        $lineRows = $this->mapShipHeroItemsToWholesaleLines(is_array($shipheroOrder['items'] ?? null) ? $shipheroOrder['items'] : []);
+        if ($lineRows === []) {
+            throw ValidationException::withMessages([
+                'shiphero_order_id' => ['This order has no line items with SKUs to copy.'],
+            ]);
+        }
+
+        $sourceOrderNumber = trim((string) ($shipheroOrder['order_number'] ?? ''));
+        $trace = sprintf(
+            'Created from ShipHero order %s (%s).',
+            $sourceOrderNumber !== '' ? $sourceOrderNumber : $orderNumber,
+            $shipheroOrderId
+        );
+        $instructions = isset($validated['instructions']) ? trim((string) $validated['instructions']) : '';
+        if ($instructions !== '') {
+            $instructions .= "\n\n".$trace;
+        } else {
+            $instructions = $trace;
+        }
+
+        $warehouseAddress = $this->clientProvidesWarehouseAddress();
+
+        $wholesaleOrder = DB::transaction(function () use (
+            $account,
+            $user,
+            $validated,
+            $orderNumber,
+            $instructions,
+            $warehouseAddress,
+            $lineRows,
+            $customerId
+        ) {
+            $order = WholesaleOrder::query()->create([
+                'client_account_id' => $account->id,
+                'order_number' => $orderNumber,
+                'order_type' => $validated['order_type'],
+                'status' => WholesaleOrder::STATUS_DRAFT,
+                'instructions' => $instructions,
+                'items_count' => 0,
+                'created_by_user_id' => $user->id,
+                'shipping_labels_provider' => WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES,
+                'shipping_address' => $warehouseAddress,
+                'shipping_carrier' => 'generic',
+                'shipping_method' => 'generic',
+            ]);
+
+            $sort = 0;
+            foreach ($lineRows as $row) {
+                $sort++;
+                $line = new WholesaleOrderLine;
+                $line->wholesale_order_id = $order->id;
+                $line->sku = $row['sku'];
+                $line->name = $row['name'];
+                $line->image_url = $row['image_url'];
+                $line->quantity = $row['quantity'];
+                $line->barcode_mode = WholesaleOrderLine::BARCODE_SHIP_AS_IS;
+                $line->syncStatusFromBarcodeMode();
+                $line->sort_order = $sort;
+                $line->weight = $this->resolveSkuWeight(
+                    (int) $account->id,
+                    $customerId,
+                    $line->sku
+                );
+                $line->save();
+            }
+
+            $this->recalculateItemsCount($order);
+
+            return $order->fresh(['clientAccount', 'createdBy', 'lines', 'comments.user.profile', 'shippingLabels', 'packages']);
+        });
+
+        return response()->json($this->serializeDetail($wholesaleOrder), 201);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $items
+     * @return list<array{sku: string, name: string, quantity: int, image_url: string|null}>
+     */
+    private function mapShipHeroItemsToWholesaleLines(array $items): array
+    {
+        $lines = [];
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $sku = trim((string) ($item['sku'] ?? ''));
+            if ($sku === '') {
+                continue;
+            }
+            $pending = (float) ($item['quantity_pending_fulfillment'] ?? 0);
+            $quantity = $pending > 0
+                ? (int) max(1, (int) round($pending))
+                : (int) max(1, (int) round((float) ($item['quantity'] ?? 1)));
+            $name = trim((string) ($item['name'] ?? $item['product_name'] ?? ''));
+            if ($name === '') {
+                $name = $sku;
+            }
+            $imageUrl = isset($item['image_url']) ? trim((string) $item['image_url']) : '';
+            $lines[] = [
+                'sku' => $sku,
+                'name' => $name,
+                'quantity' => $quantity,
+                'image_url' => $imageUrl !== '' ? $imageUrl : null,
+            ];
+        }
+
+        return $lines;
+    }
+
+    private function assertWholesaleOrderNumberAvailable(int $accountId, string $orderNumber): void
+    {
+        $taken = WholesaleOrder::query()
+            ->where('client_account_id', $accountId)
+            ->where('order_number', $orderNumber)
+            ->exists();
+        if ($taken) {
+            throw ValidationException::withMessages([
+                'order_number' => ['This order number is already in use for this account.'],
+            ]);
+        }
     }
 
     private function resolveWholesaleOrderNumber(int $accountId, ?string $requested): string

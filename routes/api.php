@@ -437,6 +437,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [WholesaleOrderController::class, 'index'])->middleware('can:orders.view');
         Route::get('/pick-list', [WholesaleOrderController::class, 'pickList'])->middleware('can:orders.view');
         Route::post('/', [WholesaleOrderController::class, 'store'])->middleware('can:orders.create');
+        Route::post('/from-shiphero-order', [WholesaleOrderController::class, 'storeFromShipHeroOrder'])->middleware('can:orders.create');
         Route::get('/{wholesaleOrder}/product-catalog', [WholesaleOrderController::class, 'productCatalog'])->middleware('can:orders.view');
         Route::get('/{wholesaleOrder}', [WholesaleOrderController::class, 'show'])->middleware('can:orders.view');
         Route::delete('/{wholesaleOrder}', [WholesaleOrderController::class, 'destroy'])->middleware('can:orders.delete');

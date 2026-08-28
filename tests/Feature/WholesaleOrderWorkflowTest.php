@@ -1327,4 +1327,129 @@ class WholesaleOrderWorkflowTest extends TestCase
             'unit_price_cents' => 100,
         ]);
     }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function sampleShipHeroOrderDetail(): array
+    {
+        return [
+            'id' => 'T3JkZXI6ODgxNDM3NDY3',
+            'order_number' => '#881437467',
+            'items' => [
+                [
+                    'sku' => 'SKU-A',
+                    'name' => 'Product A',
+                    'quantity' => 5,
+                    'quantity_pending_fulfillment' => 3,
+                    'image_url' => 'https://example.com/a.jpg',
+                ],
+                [
+                    'sku' => 'SKU-B',
+                    'name' => 'Product B',
+                    'quantity' => 2,
+                    'quantity_pending_fulfillment' => 0,
+                    'image_url' => null,
+                ],
+            ],
+        ];
+    }
+
+    public function test_create_wholesale_from_shiphero_order_copies_lines_and_shipping(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser(['orders.create']));
+
+        $this->mock(ShipHeroOrderService::class, function ($mock) {
+            $mock->shouldReceive('getOrder')
+                ->once()
+                ->andReturn($this->sampleShipHeroOrderDetail());
+        });
+
+        $response = $this->postJson('/api/admin/wholesale-orders/from-shiphero-order', [
+            'client_account_id' => $account->id,
+            'shiphero_order_id' => 'T3JkZXI6ODgxNDM3NDY3',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'order_number' => '881437467',
+            'instructions' => 'Rush.',
+        ])->assertCreated()
+            ->assertJsonPath('order_number', '881437467')
+            ->assertJsonPath('order_type', WholesaleOrder::TYPE_B2B)
+            ->assertJsonPath('status', WholesaleOrder::STATUS_DRAFT)
+            ->assertJsonPath('shipping_labels_provider', WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES)
+            ->assertJsonPath('shipping_address.address1', '3135 Drane Field Rd')
+            ->assertJsonPath('shipping_address.city', 'Lakeland')
+            ->assertJsonCount(2, 'lines');
+
+        $this->assertSame('SKU-A', $response->json('lines.0.sku'));
+        $this->assertSame(3, $response->json('lines.0.quantity'));
+        $this->assertSame('SKU-B', $response->json('lines.1.sku'));
+        $this->assertSame(2, $response->json('lines.1.quantity'));
+        $this->assertStringContainsString('Created from ShipHero order', (string) $response->json('instructions'));
+    }
+
+    public function test_create_wholesale_from_shiphero_order_rejects_duplicate_order_number(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser(['orders.create']));
+
+        WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => '881437467',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_DRAFT,
+            'items_count' => 0,
+        ]);
+
+        $this->mock(ShipHeroOrderService::class, function ($mock) {
+            $mock->shouldReceive('getOrder')->never();
+        });
+
+        $this->postJson('/api/admin/wholesale-orders/from-shiphero-order', [
+            'client_account_id' => $account->id,
+            'shiphero_order_id' => 'T3JkZXI6ODgxNDM3NDY3',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'order_number' => '881437467',
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['order_number']);
+    }
+
+    public function test_create_wholesale_from_shiphero_order_rejects_empty_items(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser(['orders.create']));
+
+        $this->mock(ShipHeroOrderService::class, function ($mock) {
+            $mock->shouldReceive('getOrder')
+                ->once()
+                ->andReturn([
+                    'id' => 'T3JkZXI6ODgxNDM3NDY3',
+                    'order_number' => '#881437467',
+                    'items' => [
+                        ['sku' => '', 'name' => 'No SKU', 'quantity' => 1],
+                    ],
+                ]);
+        });
+
+        $this->postJson('/api/admin/wholesale-orders/from-shiphero-order', [
+            'client_account_id' => $account->id,
+            'shiphero_order_id' => 'T3JkZXI6ODgxNDM3NDY3',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'order_number' => '881437467',
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['shiphero_order_id']);
+    }
+
+    public function test_create_wholesale_from_shiphero_order_requires_create_permission(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser());
+
+        $this->postJson('/api/admin/wholesale-orders/from-shiphero-order', [
+            'client_account_id' => $account->id,
+            'shiphero_order_id' => 'T3JkZXI6ODgxNDM3NDY3',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'order_number' => '881437467',
+        ])->assertForbidden();
+    }
 }

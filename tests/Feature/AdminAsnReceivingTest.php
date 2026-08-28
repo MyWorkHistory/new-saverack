@@ -16,6 +16,7 @@ use App\Services\AsnReceivingService;
 use App\Services\ShipHeroInventoryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
 use Laravel\Sanctum\Sanctum;
 use Mockery;
 use Tests\TestCase;
@@ -633,6 +634,67 @@ class AdminAsnReceivingTest extends TestCase
             ->assertJsonPath('rows.0.sku', 'PUT-SKU')
             ->assertJsonPath('rows.0.receiving_qty', 4)
             ->assertJsonPath('meta.source', 'local');
+    }
+
+    public function test_receive_increment_keeps_put_away_row_when_shiphero_sync_is_still_empty(): void
+    {
+        Bus::fake([SyncAsnReceivingInventoryJob::class]);
+
+        $account = $this->account('put-away-race');
+        $staff = $this->staffUser(['receiving_put_away.view']);
+        Sanctum::actingAs($staff);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0061',
+            'status' => ClientAccountAsn::STATUS_PENDING,
+            'total_boxes' => 1,
+            'expected_qty' => 577,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+        $line = ClientAccountAsnLine::create([
+            'client_account_asn_id' => $asn->id,
+            'sku' => 'RACE-SKU',
+            'name' => 'Race SKU',
+            'expected_qty' => 577,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+            'line_status' => ClientAccountAsnLine::LINE_STATUS_PENDING,
+            'sort_order' => 0,
+        ]);
+
+        $mock = $this->mockInventoryForReceiving('sh-asn-admin-put-away-race', [
+            'warehouses' => [
+                [
+                    'warehouse_id' => 'wh-1',
+                    'locations' => [
+                        [
+                            'location_name' => 'Receiving',
+                            'location_id' => 'whloc-recv-race',
+                            'quantity' => 0,
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+        $mock->shouldReceive('paginateItemLocationsAtLocationName')->andReturn([
+            'edges' => [],
+            'page_info' => ['has_next_page' => false, 'end_cursor' => null],
+        ]);
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+        $this->app->forgetInstance(AsnReceivingService::class);
+
+        $this->postJson("/api/admin/asns/{$asn->id}/lines/{$line->id}/receive", ['delta' => 577])
+            ->assertOk();
+
+        Cache::forget('put-away-receiving-item-sync-fresh:wh-1');
+
+        $this->getJson('/api/admin/put-away?client_account_id='.$account->id)
+            ->assertOk()
+            ->assertJsonCount(1, 'rows')
+            ->assertJsonPath('rows.0.sku', 'RACE-SKU')
+            ->assertJsonPath('rows.0.receiving_qty', 577);
     }
 
     public function test_update_line_specs_syncs_to_shiphero(): void

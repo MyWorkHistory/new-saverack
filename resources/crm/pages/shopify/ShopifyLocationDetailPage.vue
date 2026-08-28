@@ -73,8 +73,6 @@ const deleteItemOpen = ref(false);
 const deleteItemBusy = ref(false);
 const deleteItemTarget = ref(null);
 
-let searchTimer = null;
-
 const locationId = computed(() => String(props.id || route.params.id || ""));
 const manageMenuItem = computed(() => items.value.find((r) => r.id === manageOpenId.value) ?? null);
 const canDeleteItems = computed(() => {
@@ -96,10 +94,6 @@ const somePageSelected = computed(() => {
 });
 
 function yesNoBadge(on) {
-  return on ? "shopify-loc-badge shopify-loc-badge--yes" : "shopify-loc-badge shopify-loc-badge--no";
-}
-
-function activeBadge(on) {
   return on ? "shopify-loc-badge shopify-loc-badge--yes" : "shopify-loc-badge shopify-loc-badge--no";
 }
 
@@ -533,20 +527,9 @@ watch(filterAccountId, () => {
   applyFilters();
 });
 
-watch(
-  () => searchQuery.value,
-  () => {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => {
-      applyFilters();
-    }, 280);
-  },
-);
-
 onUnmounted(() => {
   document.removeEventListener("click", onDocClick);
   if (skuSearchTimer) clearTimeout(skuSearchTimer);
-  clearTimeout(searchTimer);
 });
 </script>
 
@@ -565,6 +548,32 @@ onUnmounted(() => {
     </div>
 
     <template v-else-if="location">
+      <div class="d-flex justify-content-end mb-3">
+        <div class="position-relative flex-shrink-0" data-shopify-loc-header-actions>
+          <button
+            type="button"
+            class="btn btn-outline-secondary orders-toolbar-outline-btn dropdown-toggle"
+            :aria-expanded="headerActionsOpen"
+            @click.stop="headerActionsOpen = !headerActionsOpen"
+          >
+            Actions
+          </button>
+          <div
+            v-if="headerActionsOpen"
+            class="dropdown-menu dropdown-menu-end show shadow border py-1"
+            style="position: absolute; top: calc(100% + 0.25rem); right: 0; z-index: 1090; min-width: 12.5rem"
+            @click.stop
+          >
+            <button type="button" class="dropdown-item small" @click="openEdit(); headerActionsOpen = false">
+              Edit Location
+            </button>
+            <button type="button" class="dropdown-item small text-danger" @click="openDeleteLocation">
+              Delete Location
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div class="shopify-loc-summary mb-4">
         <div class="shopify-loc-summary__main">
           <div class="shopify-loc-hero-icon" aria-hidden="true">
@@ -596,37 +605,10 @@ onUnmounted(() => {
                 <div class="shopify-loc-meta__label">Sellable</div>
                 <span :class="yesNoBadge(location.sellable)">{{ location.sellable ? "Yes" : "No" }}</span>
               </div>
-              <div class="shopify-loc-meta__col">
-                <div class="shopify-loc-meta__label">Active</div>
-                <span :class="activeBadge(location.active)">{{ location.active ? "Active" : "Inactive" }}</span>
-              </div>
             </div>
           </div>
         </div>
         <div class="shopify-loc-summary__aside">
-          <div class="position-relative flex-shrink-0" data-shopify-loc-header-actions>
-            <button
-              type="button"
-              class="btn btn-outline-secondary orders-toolbar-outline-btn dropdown-toggle"
-              :aria-expanded="headerActionsOpen"
-              @click.stop="headerActionsOpen = !headerActionsOpen"
-            >
-              Actions
-            </button>
-            <div
-              v-if="headerActionsOpen"
-              class="dropdown-menu dropdown-menu-end show shadow border py-1"
-              style="position: absolute; top: calc(100% + 0.25rem); right: 0; z-index: 1090; min-width: 12.5rem"
-              @click.stop
-            >
-              <button type="button" class="dropdown-item small" @click="openEdit(); headerActionsOpen = false">
-                Edit Location
-              </button>
-              <button type="button" class="dropdown-item small text-danger" @click="openDeleteLocation">
-                Delete Location
-              </button>
-            </div>
-          </div>
           <div class="shopify-loc-qty-card">
             <div class="shopify-loc-qty-card__label">Total QTY at Location</div>
             <div class="shopify-loc-qty-card__value">{{ totalQty }}</div>
@@ -647,24 +629,6 @@ onUnmounted(() => {
 
         <div class="staff-table-toolbar px-3 px-md-4">
           <div class="staff-table-toolbar--row shopify-loc-toolbar-row">
-            <div class="shopify-loc-toolbar-search flex-grow-1">
-              <div class="input-group orders-toolbar-search-group">
-                <span class="input-group-text bg-white">
-                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 100-15 7.5 7.5 0 000 15z" />
-                  </svg>
-                </span>
-                <input
-                  v-model="searchQuery"
-                  type="search"
-                  class="form-control"
-                  placeholder="Search by name or SKU…"
-                  autocomplete="off"
-                  aria-label="Search products at this location"
-                  :disabled="loading"
-                />
-              </div>
-            </div>
             <div class="shopify-loc-toolbar-account">
               <CrmSearchableSelect
                 v-model="filterAccountId"
@@ -677,6 +641,29 @@ onUnmounted(() => {
                 empty-label="All Accounts"
                 search-placeholder="Search accounts…"
               />
+            </div>
+            <div class="shopify-loc-toolbar-search flex-grow-1">
+              <div class="input-group orders-toolbar-search-group">
+                <input
+                  v-model="searchQuery"
+                  type="search"
+                  class="form-control"
+                  placeholder="Search by name or SKU…"
+                  autocomplete="off"
+                  enterkeyhint="search"
+                  aria-label="Search products at this location"
+                  :disabled="loading"
+                  @keydown.enter.prevent="applyFilters"
+                />
+                <button
+                  type="button"
+                  class="btn btn-primary staff-page-primary orders-toolbar-search-btn fw-semibold"
+                  :disabled="loading"
+                  @click="applyFilters"
+                >
+                  Search
+                </button>
+              </div>
             </div>
             <div class="position-relative flex-shrink-0" data-shopify-loc-filters>
               <button
@@ -1178,7 +1165,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.75rem;
   flex-shrink: 0;
 }
 .shopify-loc-qty-card {
@@ -1267,17 +1253,21 @@ onUnmounted(() => {
   line-height: 1.4;
 }
 .shopify-loc-toolbar-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  align-items: stretch;
-  width: 100%;
+  gap: 0.5rem;
 }
 .shopify-loc-toolbar-account {
+  flex: 0 0 auto;
   width: min(100%, 16rem);
-  flex-shrink: 0;
+}
+.shopify-loc-toolbar-account :deep(.crm-searchable-select--staff .crm-searchable-select__trigger) {
+  height: auto;
+  min-height: 2.375rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  box-shadow: none;
 }
 .shopify-loc-toolbar-search {
+  flex: 1 1 16rem;
   min-width: min(100%, 16rem);
 }
 .shopify-loc-item-thumb {

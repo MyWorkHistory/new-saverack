@@ -454,7 +454,8 @@ class PutAwayInventoryService
         }
         $row->save();
         $this->refreshLocalReceivingRowCount($snapshot);
-        $this->forgetReceivingListSyncFresh($snapshot->warehouse_id);
+        // Local ASN receive updates are authoritative until the next ShipHero sync catches up.
+        $this->markReceivingListSyncFresh($snapshot->warehouse_id);
     }
 
     /**
@@ -1436,6 +1437,41 @@ class PutAwayInventoryService
                     : null;
             } while ($hasNext && $after !== null);
 
+            $existingRows = PutAwayReceivingSnapshotRow::query()
+                ->where('put_away_receiving_snapshot_id', $snapshot->id)
+                ->where('receiving_qty', '>', 0)
+                ->get(['client_account_id', 'sku', 'name', 'barcode', 'image_url', 'receiving_qty']);
+
+            foreach ($existingRows as $row) {
+                $accountId = (int) ($row->client_account_id ?? 0);
+                $sku = trim((string) ($row->sku ?? ''));
+                if ($accountId <= 0 || $sku === '') {
+                    continue;
+                }
+                $key = $accountId.'|'.mb_strtolower($sku);
+                if (! isset($built[$key])) {
+                    $built[$key] = [
+                        'client_account_id' => $accountId,
+                        'sku' => $sku,
+                        'name' => trim((string) ($row->name ?? '')) !== '' ? trim((string) $row->name) : $sku,
+                        'barcode' => $row->barcode !== null ? (string) $row->barcode : null,
+                        'image_url' => $row->image_url !== null ? (string) $row->image_url : null,
+                        'receiving_qty' => max(0, (int) $row->receiving_qty),
+                        'pickable_qty' => 0,
+                        'non_pickable_qty' => 0,
+                        'on_hand' => 0,
+                        'backorder' => 0,
+                    ];
+
+                    continue;
+                }
+
+                $built[$key]['receiving_qty'] = max(
+                    (int) $built[$key]['receiving_qty'],
+                    max(0, (int) $row->receiving_qty)
+                );
+            }
+
             $now = now();
             DB::transaction(function () use ($snapshot, $built, $now, $skippedUnresolved, $started) {
                 PutAwayReceivingSnapshotRow::query()
@@ -1910,11 +1946,14 @@ class PutAwayInventoryService
                 if (is_array($product)) {
                     $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
                     $liveReceiving = PutAwayRowBuilder::receivingQtyFromLocations($locations);
-                    if ($liveReceiving <= 0) {
+                    $hasReceivingEntry = PutAwayRowBuilder::hasReceivingLocationEntry($locations);
+                    if ($hasReceivingEntry && $liveReceiving <= 0) {
                         $staleDeletes[] = [$clientAccountId, $sku];
                         continue;
                     }
-                    $row['receiving_qty'] = $liveReceiving;
+                    if ($liveReceiving > 0) {
+                        $row['receiving_qty'] = $liveReceiving;
+                    }
                     $row['pick_location'] = PutAwayRowBuilder::pickLocationLabel($locations);
                     $row['backstock_location'] = PutAwayRowBuilder::backstockLocationLabel($locations);
                     $row['receiving_location'] = $this->receivingLocationFromProduct($product);

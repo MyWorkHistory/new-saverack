@@ -402,6 +402,56 @@ class WholesaleOrderController extends Controller
     }
 
     /**
+     * @param  array<string, mixed>  $shipheroOrder
+     * @return array{first_name: string, last_name: string, company: string, address1: string, address2: string, city: string, state: string, zip: string, country: string, email: string, phone: string}|null
+     */
+    private function mapShipHeroShippingAddressToWholesale(array $shipheroOrder): ?array
+    {
+        $ship = is_array($shipheroOrder['shipping_address'] ?? null) ? $shipheroOrder['shipping_address'] : [];
+        $mapped = [
+            'first_name' => trim((string) ($ship['first_name'] ?? '')),
+            'last_name' => trim((string) ($ship['last_name'] ?? '')),
+            'company' => trim((string) ($ship['company'] ?? '')),
+            'address1' => trim((string) ($ship['address1'] ?? '')),
+            'address2' => trim((string) ($ship['address2'] ?? '')),
+            'city' => trim((string) ($ship['city'] ?? '')),
+            'state' => trim((string) ($ship['state'] ?? $ship['state_code'] ?? '')),
+            'zip' => trim((string) ($ship['zip'] ?? '')),
+            'country' => trim((string) ($ship['country'] ?? $ship['country_code'] ?? '')),
+            'email' => trim((string) ($ship['email'] ?? $shipheroOrder['email'] ?? '')),
+            'phone' => trim((string) ($ship['phone'] ?? '')),
+        ];
+
+        foreach (['first_name', 'last_name', 'address1', 'city', 'state', 'zip', 'country'] as $field) {
+            if ($mapped[$field] === '') {
+                return null;
+            }
+        }
+
+        return $mapped;
+    }
+
+    /**
+     * @param  array<string, mixed>  $shipheroOrder
+     */
+    private function resolveShipHeroShippingCarrier(array $shipheroOrder): string
+    {
+        $carrier = trim((string) ($shipheroOrder['shipping_carrier'] ?? ''));
+
+        return $carrier !== '' ? $carrier : 'generic';
+    }
+
+    /**
+     * @param  array<string, mixed>  $shipheroOrder
+     */
+    private function resolveShipHeroShippingMethod(array $shipheroOrder): string
+    {
+        $method = trim((string) ($shipheroOrder['method'] ?? ''));
+
+        return $method !== '' ? $method : 'generic';
+    }
+
+    /**
      * @return array<string, string|null>
      */
     private function resolveLineImageUrls(WholesaleOrder $order): array
@@ -900,7 +950,18 @@ class WholesaleOrderController extends Controller
             $instructions = $trace;
         }
 
-        $warehouseAddress = $this->clientProvidesWarehouseAddress();
+        $mappedShippingAddress = $this->mapShipHeroShippingAddressToWholesale($shipheroOrder);
+        if ($mappedShippingAddress !== null) {
+            $shippingLabelsProvider = WholesaleOrder::SHIPPING_LABELS_SAVE_RACK_PROVIDES;
+            $shippingAddress = $mappedShippingAddress;
+            $shippingCarrier = $this->resolveShipHeroShippingCarrier($shipheroOrder);
+            $shippingMethod = $this->resolveShipHeroShippingMethod($shipheroOrder);
+        } else {
+            $shippingLabelsProvider = WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES;
+            $shippingAddress = $this->clientProvidesWarehouseAddress();
+            $shippingCarrier = 'generic';
+            $shippingMethod = 'generic';
+        }
 
         $wholesaleOrder = DB::transaction(function () use (
             $account,
@@ -908,9 +969,13 @@ class WholesaleOrderController extends Controller
             $validated,
             $orderNumber,
             $instructions,
-            $warehouseAddress,
+            $shippingLabelsProvider,
+            $shippingAddress,
+            $shippingCarrier,
+            $shippingMethod,
             $lineRows,
-            $customerId
+            $customerId,
+            $shipheroOrderId
         ) {
             $order = WholesaleOrder::query()->create([
                 'client_account_id' => $account->id,
@@ -920,10 +985,11 @@ class WholesaleOrderController extends Controller
                 'instructions' => $instructions,
                 'items_count' => 0,
                 'created_by_user_id' => $user->id,
-                'shipping_labels_provider' => WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES,
-                'shipping_address' => $warehouseAddress,
-                'shipping_carrier' => 'generic',
-                'shipping_method' => 'generic',
+                'shiphero_order_id' => $shipheroOrderId,
+                'shipping_labels_provider' => $shippingLabelsProvider,
+                'shipping_address' => $shippingAddress,
+                'shipping_carrier' => $shippingCarrier,
+                'shipping_method' => $shippingMethod,
             ]);
 
             $sort = 0;

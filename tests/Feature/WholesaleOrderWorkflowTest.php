@@ -1336,6 +1336,22 @@ class WholesaleOrderWorkflowTest extends TestCase
         return [
             'id' => 'T3JkZXI6ODgxNDM3NDY3',
             'order_number' => '#881437467',
+            'email' => 'buyer@example.com',
+            'shipping_carrier' => 'ups',
+            'method' => 'Ground',
+            'shipping_address' => [
+                'first_name' => 'Jane',
+                'last_name' => 'Buyer',
+                'company' => 'Acme Co',
+                'address1' => '123 Main St',
+                'address2' => 'Suite 4',
+                'city' => 'Tampa',
+                'state' => 'FL',
+                'zip' => '33602',
+                'country' => 'US',
+                'email' => 'buyer@example.com',
+                'phone' => '555-0100',
+            ],
             'items' => [
                 [
                     'sku' => 'SKU-A',
@@ -1376,9 +1392,12 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonPath('order_number', '881437467')
             ->assertJsonPath('order_type', WholesaleOrder::TYPE_B2B)
             ->assertJsonPath('status', WholesaleOrder::STATUS_DRAFT)
-            ->assertJsonPath('shipping_labels_provider', WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES)
-            ->assertJsonPath('shipping_address.address1', '3135 Drane Field Rd')
-            ->assertJsonPath('shipping_address.city', 'Lakeland')
+            ->assertJsonPath('shiphero_order_id', 'T3JkZXI6ODgxNDM3NDY3')
+            ->assertJsonPath('shipping_labels_provider', WholesaleOrder::SHIPPING_LABELS_SAVE_RACK_PROVIDES)
+            ->assertJsonPath('shipping_address.address1', '123 Main St')
+            ->assertJsonPath('shipping_address.city', 'Tampa')
+            ->assertJsonPath('shipping_carrier', 'ups')
+            ->assertJsonPath('shipping_method', 'Ground')
             ->assertJsonCount(2, 'lines');
 
         $this->assertSame('SKU-A', $response->json('lines.0.sku'));
@@ -1386,6 +1405,44 @@ class WholesaleOrderWorkflowTest extends TestCase
         $this->assertSame('SKU-B', $response->json('lines.1.sku'));
         $this->assertSame(2, $response->json('lines.1.quantity'));
         $this->assertStringContainsString('Created from ShipHero order', (string) $response->json('instructions'));
+    }
+
+    public function test_create_wholesale_from_shiphero_order_without_address_uses_client_provides(): void
+    {
+        $account = $this->account();
+        Sanctum::actingAs($this->staffUser(['orders.create']));
+
+        $this->mock(ShipHeroOrderService::class, function ($mock) {
+            $mock->shouldReceive('getOrder')
+                ->once()
+                ->andReturn([
+                    'id' => 'T3JkZXI6ODgxNDM3NDY3',
+                    'order_number' => '#881437467',
+                    'shipping_address' => [
+                        'first_name' => '',
+                        'last_name' => '',
+                        'address1' => '',
+                        'city' => '',
+                        'state' => '',
+                        'zip' => '',
+                        'country' => '',
+                    ],
+                    'items' => [
+                        ['sku' => 'SKU-A', 'name' => 'Product A', 'quantity' => 1],
+                    ],
+                ]);
+        });
+
+        $this->postJson('/api/admin/wholesale-orders/from-shiphero-order', [
+            'client_account_id' => $account->id,
+            'shiphero_order_id' => 'T3JkZXI6ODgxNDM3NDY3',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'order_number' => '881437468',
+        ])->assertCreated()
+            ->assertJsonPath('shiphero_order_id', 'T3JkZXI6ODgxNDM3NDY3')
+            ->assertJsonPath('shipping_labels_provider', WholesaleOrder::SHIPPING_LABELS_CLIENT_PROVIDES)
+            ->assertJsonPath('shipping_address.address1', '3135 Drane Field Rd')
+            ->assertJsonPath('shipping_address.city', 'Lakeland');
     }
 
     public function test_create_wholesale_from_shiphero_order_rejects_duplicate_order_number(): void

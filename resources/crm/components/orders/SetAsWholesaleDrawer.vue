@@ -47,7 +47,7 @@ function close() {
       <template v-else>
         Create a wholesale order from this ShipHero order.
       </template>
-      Line items, order number, and client-provides shipping labels will be copied automatically.
+      Line items, order number, and shipping details will be copied automatically when available.
     </p>
     <div class="row g-3">
       <div class="col-md-6">

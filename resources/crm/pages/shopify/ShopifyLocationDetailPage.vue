@@ -1,13 +1,16 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
+import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
+import ShopifyLocationBulkTransferModal from "../../components/shopify/ShopifyLocationBulkTransferModal.vue";
 import ShopifyLocationTransferModal from "../../components/shopify/ShopifyLocationTransferModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
+import { crmIsAdmin } from "../../utils/crmUser.js";
 
 const MENU_W = 168;
 const MENU_H = 148;
@@ -19,6 +22,7 @@ const props = defineProps({
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
+const crmUser = inject("crmUser", ref(null));
 const loading = ref(true);
 const busy = ref(false);
 const location = ref(null);
@@ -58,8 +62,38 @@ const activeItem = ref(null);
 const transferToId = ref("");
 const transferQty = ref("0");
 
+const headerActionsOpen = ref(false);
+const filterMenuOpen = ref(false);
+const selectedIds = ref([]);
+const bulkTransferOpen = ref(false);
+const bulkTransferToId = ref("");
+const deleteLocationOpen = ref(false);
+const deleteLocationBusy = ref(false);
+const deleteItemOpen = ref(false);
+const deleteItemBusy = ref(false);
+const deleteItemTarget = ref(null);
+
+let searchTimer = null;
+
 const locationId = computed(() => String(props.id || route.params.id || ""));
 const manageMenuItem = computed(() => items.value.find((r) => r.id === manageOpenId.value) ?? null);
+const canDeleteItems = computed(() => {
+  const u = crmUser.value;
+  if (!u) return false;
+  return crmIsAdmin(u) || u.is_crm_owner;
+});
+const selectedItems = computed(() =>
+  items.value.filter((row) => selectedIds.value.includes(row.id)),
+);
+const allPageSelected = computed(() => {
+  if (!items.value.length) return false;
+  return items.value.every((row) => selectedIds.value.includes(row.id));
+});
+const somePageSelected = computed(() => {
+  if (!items.value.length) return false;
+  const n = items.value.filter((row) => selectedIds.value.includes(row.id)).length;
+  return n > 0 && n < items.value.length;
+});
 
 function yesNoBadge(on) {
   return on ? "shopify-loc-badge shopify-loc-badge--yes" : "shopify-loc-badge shopify-loc-badge--no";
@@ -110,6 +144,8 @@ async function load() {
       total: data?.meta?.total || 0,
       per_page: data?.meta?.per_page || pagination.value.per_page,
     };
+    const visible = new Set(items.value.map((r) => r.id));
+    selectedIds.value = selectedIds.value.filter((id) => visible.has(id));
     if (location.value?.name) {
       setCrmPageMeta({
         title: `Save Rack | ${location.value.name}`,
@@ -187,6 +223,115 @@ async function toggleManageMenu(row, e) {
 function onDocClick(e) {
   if (!e.target?.closest?.("[data-shopify-loc-item-actions]")) manageOpenId.value = null;
   if (!e.target?.closest?.("[data-shopify-loc-sku-search]")) skuSearchOpen.value = false;
+  if (!e.target?.closest?.("[data-shopify-loc-header-actions]")) headerActionsOpen.value = false;
+  if (!e.target?.closest?.("[data-shopify-loc-filters]")) filterMenuOpen.value = false;
+}
+
+function resetFilters() {
+  filterAccountId.value = "";
+  searchQuery.value = "";
+  applyFilters();
+  filterMenuOpen.value = false;
+}
+
+function toggleSelect(id) {
+  const next = selectedIds.value.includes(id)
+    ? selectedIds.value.filter((v) => v !== id)
+    : [...selectedIds.value, id];
+  selectedIds.value = next;
+}
+
+function toggleSelectAll(event) {
+  const checked = !!event?.target?.checked;
+  selectedIds.value = checked ? items.value.map((row) => row.id) : [];
+}
+
+function clearSelection() {
+  selectedIds.value = [];
+}
+
+function openDeleteLocation() {
+  headerActionsOpen.value = false;
+  deleteLocationOpen.value = true;
+}
+
+async function confirmDeleteLocation() {
+  deleteLocationBusy.value = true;
+  try {
+    await api.delete(`/shopify/locations/${locationId.value}`);
+    toast.success("Location deleted.");
+    deleteLocationOpen.value = false;
+    router.push({ name: "shopify-locations" });
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete location.");
+  } finally {
+    deleteLocationBusy.value = false;
+  }
+}
+
+function promptDeleteItem(row) {
+  deleteItemTarget.value = row;
+  deleteItemOpen.value = true;
+  manageOpenId.value = null;
+}
+
+async function confirmDeleteItem() {
+  const row = deleteItemTarget.value;
+  if (!row?.id) return;
+  deleteItemBusy.value = true;
+  try {
+    await api.delete(`/shopify/locations/${locationId.value}/items/${row.id}`);
+    toast.success("Item removed.");
+    deleteItemOpen.value = false;
+    deleteItemTarget.value = null;
+    selectedIds.value = selectedIds.value.filter((id) => id !== row.id);
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not remove item.");
+  } finally {
+    deleteItemBusy.value = false;
+  }
+}
+
+async function openBulkTransfer() {
+  if (!selectedIds.value.length) return;
+  bulkTransferToId.value = "";
+  try {
+    const { data } = await api.get("/shopify/locations/options", { params: { exclude: locationId.value } });
+    destLocations.value = Array.isArray(data?.data) ? data.data : [];
+  } catch (e) {
+    destLocations.value = [];
+    toast.errorFrom(e, "Could not load destination locations.");
+    return;
+  }
+  bulkTransferOpen.value = true;
+}
+
+async function submitBulkTransfer() {
+  if (!selectedIds.value.length) return;
+  if (!bulkTransferToId.value) {
+    toast.error("Select a destination location.");
+    return;
+  }
+  busy.value = true;
+  try {
+    const { data } = await api.post(`/shopify/locations/${locationId.value}/bulk-transfer`, {
+      item_ids: selectedIds.value,
+      to_location_id: Number(bulkTransferToId.value),
+    });
+    const transferred = Number(data?.transferred || 0);
+    const skipped = Number(data?.skipped || 0);
+    let msg = `Transferred ${transferred} item${transferred === 1 ? "" : "s"}.`;
+    if (skipped) msg += ` ${skipped} skipped.`;
+    toast.success(msg);
+    bulkTransferOpen.value = false;
+    selectedIds.value = [];
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not transfer inventory.");
+  } finally {
+    busy.value = false;
+  }
 }
 
 function openQty(row) {
@@ -357,16 +502,8 @@ async function addItem() {
   }
 }
 
-async function deleteItem(row) {
-  if (!window.confirm(`Remove ${row.sku || "this item"} from this location?`)) return;
-  manageOpenId.value = null;
-  try {
-    await api.delete(`/shopify/locations/${locationId.value}/items/${row.id}`);
-    toast.success("Item removed.");
-    await load();
-  } catch (e) {
-    toast.errorFrom(e, "Could not remove item.");
-  }
+function deleteItem(row) {
+  promptDeleteItem(row);
 }
 
 onMounted(async () => {
@@ -396,9 +533,20 @@ watch(filterAccountId, () => {
   applyFilters();
 });
 
+watch(
+  () => searchQuery.value,
+  () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      applyFilters();
+    }, 280);
+  },
+);
+
 onUnmounted(() => {
   document.removeEventListener("click", onDocClick);
   if (skuSearchTimer) clearTimeout(skuSearchTimer);
+  clearTimeout(searchTimer);
 });
 </script>
 
@@ -455,17 +603,34 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-        <div class="shopify-loc-qty-card">
-          <div class="shopify-loc-qty-card__top">
-            <div class="shopify-loc-qty-card__label">Total QTY at Location</div>
-            <button type="button" class="shopify-loc-qty-card__edit" @click="openEdit">
-              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897z" />
-              </svg>
-              Edit
+        <div class="shopify-loc-summary__aside">
+          <div class="position-relative flex-shrink-0" data-shopify-loc-header-actions>
+            <button
+              type="button"
+              class="btn btn-outline-secondary orders-toolbar-outline-btn dropdown-toggle"
+              :aria-expanded="headerActionsOpen"
+              @click.stop="headerActionsOpen = !headerActionsOpen"
+            >
+              Actions
             </button>
+            <div
+              v-if="headerActionsOpen"
+              class="dropdown-menu dropdown-menu-end show shadow border py-1"
+              style="position: absolute; top: calc(100% + 0.25rem); right: 0; z-index: 1090; min-width: 12.5rem"
+              @click.stop
+            >
+              <button type="button" class="dropdown-item small" @click="openEdit(); headerActionsOpen = false">
+                Edit Location
+              </button>
+              <button type="button" class="dropdown-item small text-danger" @click="openDeleteLocation">
+                Delete Location
+              </button>
+            </div>
           </div>
-          <div class="shopify-loc-qty-card__value">{{ totalQty }}</div>
+          <div class="shopify-loc-qty-card">
+            <div class="shopify-loc-qty-card__label">Total QTY at Location</div>
+            <div class="shopify-loc-qty-card__value">{{ totalQty }}</div>
+          </div>
         </div>
       </div>
 
@@ -482,6 +647,24 @@ onUnmounted(() => {
 
         <div class="staff-table-toolbar px-3 px-md-4">
           <div class="staff-table-toolbar--row shopify-loc-toolbar-row">
+            <div class="shopify-loc-toolbar-search flex-grow-1">
+              <div class="input-group orders-toolbar-search-group">
+                <span class="input-group-text bg-white">
+                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 100-15 7.5 7.5 0 000 15z" />
+                  </svg>
+                </span>
+                <input
+                  v-model="searchQuery"
+                  type="search"
+                  class="form-control"
+                  placeholder="Search by name or SKU…"
+                  autocomplete="off"
+                  aria-label="Search products at this location"
+                  :disabled="loading"
+                />
+              </div>
+            </div>
             <div class="shopify-loc-toolbar-account">
               <CrmSearchableSelect
                 v-model="filterAccountId"
@@ -495,38 +678,72 @@ onUnmounted(() => {
                 search-placeholder="Search accounts…"
               />
             </div>
-            <div class="shopify-loc-toolbar-search flex-grow-1">
-              <div class="input-group orders-toolbar-search-group">
-                <input
-                  v-model="searchQuery"
-                  type="search"
-                  class="form-control"
-                  placeholder="Search by name or SKU…"
-                  autocomplete="off"
-                  enterkeyhint="search"
-                  aria-label="Search products at this location"
-                  :disabled="loading"
-                  @keydown.enter.prevent="applyFilters"
-                />
-                <button
-                  type="button"
-                  class="btn btn-primary staff-page-primary orders-toolbar-search-btn fw-semibold"
-                  :disabled="loading"
-                  @click="applyFilters"
-                >
-                  Search
-                </button>
+            <div class="position-relative flex-shrink-0" data-shopify-loc-filters>
+              <button
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+                :aria-expanded="filterMenuOpen"
+                :disabled="loading"
+                @click.stop="filterMenuOpen = !filterMenuOpen"
+              >
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 5h18M6 12h12M10 19h4" />
+                </svg>
+                Filters
+              </button>
+              <div
+                v-if="filterMenuOpen"
+                class="dropdown-menu show shadow border p-0 staff-toolbar-filter-dropdown"
+                style="position: absolute; top: calc(100% + 0.25rem); right: 0; z-index: 1090"
+                @click.stop
+              >
+                <div class="staff-toolbar-filter-dropdown__head">
+                  <span>Filters</span>
+                  <button
+                    type="button"
+                    class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
+                    @click="resetFilters"
+                  >
+                    Reset
+                  </button>
+                </div>
               </div>
             </div>
           </div>
+        </div>
+
+        <div
+          v-if="selectedIds.length"
+          class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
+        >
+          <span class="small staff-bulk-selection-bar__count">
+            {{ selectedIds.length }} item{{ selectedIds.length === 1 ? "" : "s" }} selected
+          </span>
+          <button type="button" class="btn btn-sm staff-page-primary" @click="openBulkTransfer">Bulk Edit</button>
+          <button
+            type="button"
+            class="btn btn-link btn-sm staff-bulk-clear-link ms-auto text-decoration-none"
+            @click="clearSelection"
+          >
+            Clear Selection
+          </button>
         </div>
 
         <div class="table-responsive staff-table-wrap">
           <table class="table table-hover align-middle mb-0 staff-data-table">
             <thead class="table-light staff-table-head">
               <tr>
+                <th class="staff-table-head__th" style="width: 2.5rem">
+                  <input
+                    type="checkbox"
+                    class="form-check-input"
+                    :checked="allPageSelected"
+                    :indeterminate.prop="somePageSelected"
+                    aria-label="Select all on page"
+                    @change="toggleSelectAll"
+                  />
+                </th>
                 <th class="staff-table-head__th">Product</th>
-                <th class="staff-table-head__th">SKU</th>
                 <th class="staff-table-head__th">Account</th>
                 <th class="staff-table-head__th">QTY</th>
                 <th class="staff-table-head__th staff-actions-col text-center">Action</th>
@@ -542,16 +759,63 @@ onUnmounted(() => {
                 <td colspan="5" class="px-4 py-5 text-center text-secondary">No inventory at this location yet.</td>
               </tr>
               <tr v-for="row in items" v-else :key="row.id">
+                <td @click.stop>
+                  <input
+                    type="checkbox"
+                    class="form-check-input"
+                    :checked="selectedIds.includes(row.id)"
+                    :aria-label="`Select ${row.sku || row.product_title}`"
+                    @change="toggleSelect(row.id)"
+                  />
+                </td>
                 <td>
-                  <div class="d-flex align-items-center gap-2">
-                    <div class="shopify-loc-item-thumb">
-                      <img v-if="row.image_url" :src="row.image_url" alt="" />
+                  <RouterLink
+                    v-if="row.variant_id"
+                    :to="{ name: 'shopify-inventory-detail', params: { id: String(row.variant_id) } }"
+                    class="text-decoration-none text-body"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    @click.stop
+                  >
+                    <div class="sip-product-cell">
+                      <div class="sip-product-cell__img">
+                        <img v-if="row.image_url" :src="row.image_url" :alt="row.product_title || row.sku || 'Product'" />
+                        <span v-else class="sip-product-cell__img-empty" aria-hidden="true">
+                          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.4">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
+                          </svg>
+                        </span>
+                      </div>
+                      <div class="min-w-0">
+                        <div class="sip-product-cell__name text-truncate">{{ row.product_title || "—" }}</div>
+                        <div class="sip-product-cell__sku">{{ row.sku || "—" }}</div>
+                      </div>
                     </div>
-                    <span class="fw-semibold">{{ row.product_title || "—" }}</span>
+                  </RouterLink>
+                  <div v-else class="sip-product-cell">
+                    <div class="sip-product-cell__img">
+                      <img v-if="row.image_url" :src="row.image_url" :alt="row.product_title || row.sku || 'Product'" />
+                      <span v-else class="sip-product-cell__img-empty" aria-hidden="true" />
+                    </div>
+                    <div class="min-w-0">
+                      <div class="sip-product-cell__name text-truncate">{{ row.product_title || "—" }}</div>
+                      <div class="sip-product-cell__sku">{{ row.sku || "—" }}</div>
+                    </div>
                   </div>
                 </td>
-                <td>{{ row.sku || "—" }}</td>
-                <td>{{ row.account_name || "—" }}</td>
+                <td>
+                  <RouterLink
+                    v-if="row.client_account_id"
+                    :to="{ name: 'client-account-detail', params: { id: String(row.client_account_id) } }"
+                    class="text-decoration-none text-body"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    @click.stop
+                  >
+                    {{ row.account_name || "—" }}
+                  </RouterLink>
+                  <span v-else>{{ row.account_name || "—" }}</span>
+                </td>
                 <td class="fw-semibold">{{ row.available }}</td>
                 <td class="staff-actions-cell text-center">
                   <div data-shopify-loc-item-actions class="staff-actions-inner staff-actions-inner--single justify-content-center">
@@ -597,7 +861,13 @@ onUnmounted(() => {
           </svg>
           Transfer
         </button>
-        <button type="button" class="staff-row-menu__item shopify-loc-menu-item text-danger" role="menuitem" @click="deleteItem(manageMenuItem)">
+        <button
+          v-if="canDeleteItems"
+          type="button"
+          class="staff-row-menu__item shopify-loc-menu-item text-danger"
+          role="menuitem"
+          @click="deleteItem(manageMenuItem)"
+        >
           <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
           </svg>
@@ -777,6 +1047,48 @@ onUnmounted(() => {
       @update:to-location-id="transferToId = $event"
       @update:quantity="transferQty = $event"
     />
+
+    <ShopifyLocationBulkTransferModal
+      :open="bulkTransferOpen"
+      :busy="busy"
+      :items="selectedItems"
+      :from-name="location?.name || ''"
+      :to-location-id="bulkTransferToId"
+      :locations="destLocations"
+      @close="bulkTransferOpen = false"
+      @submit="submitBulkTransfer"
+      @update:to-location-id="bulkTransferToId = $event"
+    />
+
+    <ConfirmModal
+      :open="deleteLocationOpen"
+      title="Delete Location?"
+      :message="
+        location
+          ? `Delete location “${location.name}”? Remove all inventory first. This cannot be undone.`
+          : 'Delete this location?'
+      "
+      confirm-label="Delete"
+      :busy="deleteLocationBusy"
+      danger
+      @close="deleteLocationOpen = false"
+      @confirm="confirmDeleteLocation"
+    />
+
+    <ConfirmModal
+      :open="deleteItemOpen"
+      title="Delete Item?"
+      :message="
+        deleteItemTarget
+          ? `Remove ${deleteItemTarget.sku || deleteItemTarget.product_title || 'this item'} from ${location?.name || 'this location'}? This cannot be undone.`
+          : 'Remove this item from the location?'
+      "
+      confirm-label="Delete"
+      :busy="deleteItemBusy"
+      danger
+      @close="deleteItemOpen = false"
+      @confirm="confirmDeleteItem"
+    />
   </div>
 </template>
 
@@ -862,8 +1174,14 @@ onUnmounted(() => {
   background: #fee2e2;
   color: #b91c1c;
 }
+.shopify-loc-summary__aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
 .shopify-loc-qty-card {
-  flex: 0 0 auto;
   min-width: 15rem;
   padding: 0.95rem 1.1rem 0.85rem;
   border: 1px solid rgba(15, 23, 42, 0.12);
@@ -890,18 +1208,42 @@ onUnmounted(() => {
   line-height: 1.1;
   letter-spacing: -0.02em;
 }
-.shopify-loc-qty-card__edit {
-  display: inline-flex;
+.sip-product-cell {
+  display: flex;
   align-items: center;
-  gap: 0.3rem;
-  border: 1px solid rgba(37, 99, 235, 0.45);
-  color: #2563eb;
-  background: #fff;
-  border-radius: 0.45rem;
-  font-size: 0.8rem;
-  font-weight: 700;
-  padding: 0.22rem 0.55rem;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.sip-product-cell__img {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.4rem;
+  overflow: hidden;
+  background: #f3f4f6;
+  border: 1px solid #eceff3;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sip-product-cell__img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.sip-product-cell__img-empty {
+  color: #c0c4cc;
+}
+.sip-product-cell__name {
+  font-size: 0.8rem;
+  color: #6b7280;
+  line-height: 1.25;
+}
+.sip-product-cell__sku {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.25;
 }
 .shopify-loc-menu-item {
   display: flex;

@@ -136,6 +136,11 @@ class ShopifyWarehouseLocationController extends Controller
     public function destroy(Request $request, ShopifyWarehouseLocation $shopifyWarehouseLocation): JsonResponse
     {
         $this->assertAdmin($request);
+        if ($shopifyWarehouseLocation->items()->exists()) {
+            throw ValidationException::withMessages([
+                'location' => ['Remove all inventory from this location before deleting it.'],
+            ]);
+        }
         $shopifyWarehouseLocation->delete();
 
         return response()->json(['message' => 'Location deleted.']);
@@ -352,53 +357,19 @@ class ShopifyWarehouseLocationController extends Controller
             'to_location_id' => ['required', 'integer'],
             'quantity' => ['required', 'integer', 'min:1'],
         ]);
-        $toId = (int) $validated['to_location_id'];
-        if ($toId === (int) $shopifyWarehouseLocation->id) {
-            throw ValidationException::withMessages([
-                'to_location_id' => ['Choose a different destination location.'],
-            ]);
-        }
-
-        $to = ShopifyWarehouseLocation::query()->find($toId);
-        if ($to === null) {
-            throw ValidationException::withMessages([
-                'to_location_id' => ['Destination location was not found.'],
-            ]);
-        }
+        $to = $this->resolveTransferDestination(
+            $shopifyWarehouseLocation,
+            (int) $validated['to_location_id']
+        );
 
         try {
             DB::transaction(function () use ($validated, $shopifyWarehouseLocation, $to) {
-                /** @var ShopifyWarehouseLocationItem|null $fromItem */
-                $fromItem = ShopifyWarehouseLocationItem::query()
-                    ->where('id', (int) $validated['item_id'])
-                    ->where('location_id', $shopifyWarehouseLocation->id)
-                    ->lockForUpdate()
-                    ->first();
-                if ($fromItem === null) {
-                    throw ValidationException::withMessages([
-                        'item_id' => ['Item was not found at this location.'],
-                    ]);
-                }
-                $qty = (int) $validated['quantity'];
-                if ($fromItem->available < $qty) {
-                    throw ValidationException::withMessages([
-                        'quantity' => ['Quantity exceeds available stock at this location.'],
-                    ]);
-                }
-                $fromItem->available -= $qty;
-                if ($fromItem->available <= 0) {
-                    $fromItem->delete();
-                } else {
-                    $fromItem->save();
-                }
-
-                /** @var ShopifyWarehouseLocationItem $toItem */
-                $toItem = ShopifyWarehouseLocationItem::query()->firstOrNew([
-                    'location_id' => $to->id,
-                    'shopify_variant_id' => $fromItem->shopify_variant_id,
-                ]);
-                $toItem->available = (int) $toItem->available + $qty;
-                $toItem->save();
+                $this->performTransfer(
+                    $shopifyWarehouseLocation,
+                    $to,
+                    (int) $validated['item_id'],
+                    (int) $validated['quantity']
+                );
             });
         } catch (ValidationException $e) {
             throw $e;
@@ -409,6 +380,55 @@ class ShopifyWarehouseLocationController extends Controller
         }
 
         return response()->json(['message' => 'Inventory transferred.']);
+    }
+
+    public function bulkTransfer(Request $request, ShopifyWarehouseLocation $shopifyWarehouseLocation): JsonResponse
+    {
+        $this->assertAdmin($request);
+        $validated = $request->validate([
+            'item_ids' => ['required', 'array', 'min:1'],
+            'item_ids.*' => ['integer', 'distinct'],
+            'to_location_id' => ['required', 'integer'],
+        ]);
+        $to = $this->resolveTransferDestination(
+            $shopifyWarehouseLocation,
+            (int) $validated['to_location_id']
+        );
+
+        $transferred = 0;
+        $skipped = [];
+        try {
+            DB::transaction(function () use ($validated, $shopifyWarehouseLocation, $to, &$transferred, &$skipped) {
+                foreach ($validated['item_ids'] as $itemId) {
+                    $itemId = (int) $itemId;
+                    try {
+                        $this->performTransfer($shopifyWarehouseLocation, $to, $itemId, null);
+                        $transferred++;
+                    } catch (ValidationException $e) {
+                        $skipped[] = $itemId;
+                    }
+                }
+            });
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            throw ValidationException::withMessages([
+                'item_ids' => ['Could not transfer inventory.'],
+            ]);
+        }
+
+        if ($transferred === 0) {
+            throw ValidationException::withMessages([
+                'item_ids' => ['No items could be transferred.'],
+            ]);
+        }
+
+        return response()->json([
+            'message' => 'Inventory transferred.',
+            'transferred' => $transferred,
+            'skipped' => count($skipped),
+            'skipped_ids' => $skipped,
+        ]);
     }
 
     public function options(Request $request): JsonResponse
@@ -425,6 +445,75 @@ class ShopifyWarehouseLocationController extends Controller
                 return ['id' => $row->id, 'name' => $row->name];
             })->values(),
         ]);
+    }
+
+    private function resolveTransferDestination(
+        ShopifyWarehouseLocation $from,
+        int $toId
+    ): ShopifyWarehouseLocation {
+        if ($toId === (int) $from->id) {
+            throw ValidationException::withMessages([
+                'to_location_id' => ['Choose a different destination location.'],
+            ]);
+        }
+
+        $to = ShopifyWarehouseLocation::query()->find($toId);
+        if ($to === null) {
+            throw ValidationException::withMessages([
+                'to_location_id' => ['Destination location was not found.'],
+            ]);
+        }
+
+        return $to;
+    }
+
+    /**
+     * @param  int|null  $quantity  Null transfers full available qty.
+     */
+    private function performTransfer(
+        ShopifyWarehouseLocation $from,
+        ShopifyWarehouseLocation $to,
+        int $itemId,
+        ?int $quantity
+    ): void {
+        /** @var ShopifyWarehouseLocationItem|null $fromItem */
+        $fromItem = ShopifyWarehouseLocationItem::query()
+            ->where('id', $itemId)
+            ->where('location_id', $from->id)
+            ->lockForUpdate()
+            ->first();
+        if ($fromItem === null) {
+            throw ValidationException::withMessages([
+                'item_id' => ['Item was not found at this location.'],
+            ]);
+        }
+
+        $qty = $quantity ?? (int) $fromItem->available;
+        if ($qty < 1) {
+            throw ValidationException::withMessages([
+                'quantity' => ['Nothing available to transfer for this item.'],
+            ]);
+        }
+        if ($fromItem->available < $qty) {
+            throw ValidationException::withMessages([
+                'quantity' => ['Quantity exceeds available stock at this location.'],
+            ]);
+        }
+
+        $fromItem->available -= $qty;
+        if ($fromItem->available <= 0) {
+            $fromItem->delete();
+        } else {
+            $fromItem->save();
+        }
+
+        /** @var ShopifyWarehouseLocationItem $toItem */
+        $toItem = ShopifyWarehouseLocationItem::query()->firstOrNew([
+            'location_id' => $to->id,
+            'shopify_variant_id' => $fromItem->shopify_variant_id,
+        ]);
+        $toItem->available = (int) $toItem->available + $qty;
+        $toItem->save();
     }
 
     /**

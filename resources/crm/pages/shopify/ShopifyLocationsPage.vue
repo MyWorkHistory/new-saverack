@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
+import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -35,6 +36,9 @@ const bulkOpen = ref(false);
 const form = reactive({ name: "", type: "Large Bin", pickable: true, sellable: true });
 const editingId = ref(null);
 const bulkForm = reactive({ field: "type", type: "Large Bin", pickable: true, sellable: true });
+const deleteOpen = ref(false);
+const deleteTarget = ref(null);
+const deleteBusy = ref(false);
 
 const manageMenuRow = computed(() => rows.value.find((r) => r.id === manageOpenId.value) ?? null);
 const allSelected = computed(
@@ -238,15 +242,25 @@ async function toggleFlag(row, field) {
   }
 }
 
-async function deleteRow(row) {
-  if (!window.confirm(`Delete location ${row.name}?`)) return;
+function promptDeleteRow(row) {
+  deleteTarget.value = row;
+  deleteOpen.value = true;
   manageOpenId.value = null;
+}
+
+async function confirmDeleteRow() {
+  if (!deleteTarget.value) return;
+  deleteBusy.value = true;
   try {
-    await api.delete(`/shopify/locations/${row.id}`);
+    await api.delete(`/shopify/locations/${deleteTarget.value.id}`);
     toast.success("Location deleted.");
+    deleteOpen.value = false;
+    deleteTarget.value = null;
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not delete location.");
+  } finally {
+    deleteBusy.value = false;
   }
 }
 
@@ -592,7 +606,7 @@ onUnmounted(() => {
       >
         <button type="button" class="staff-row-menu__item" role="menuitem" @click="openRow(manageMenuRow)">View</button>
         <button type="button" class="staff-row-menu__item" role="menuitem" @click="openEdit(manageMenuRow)">Edit</button>
-        <button type="button" class="staff-row-menu__item text-danger" role="menuitem" @click="deleteRow(manageMenuRow)">Delete</button>
+        <button type="button" class="staff-row-menu__item text-danger" role="menuitem" @click="promptDeleteRow(manageMenuRow)">Delete</button>
       </div>
     </Teleport>
 
@@ -678,6 +692,21 @@ onUnmounted(() => {
         </div>
       </div>
     </Teleport>
+
+    <ConfirmModal
+      :open="deleteOpen"
+      title="Delete Location?"
+      :message="
+        deleteTarget
+          ? `Delete location “${deleteTarget.name}”? Remove all inventory first. This cannot be undone.`
+          : 'Delete this location?'
+      "
+      confirm-label="Delete"
+      :busy="deleteBusy"
+      danger
+      @close="deleteOpen = false"
+      @confirm="confirmDeleteRow"
+    />
   </div>
 </template>
 

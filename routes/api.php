@@ -733,6 +733,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/locations/{shopify_warehouse_location}', [ShopifyWarehouseLocationController::class, 'update']);
         Route::delete('/locations/{shopify_warehouse_location}', [ShopifyWarehouseLocationController::class, 'destroy']);
         Route::post('/locations/{shopify_warehouse_location}/transfer', [ShopifyWarehouseLocationController::class, 'transfer']);
+        Route::post('/locations/{shopify_warehouse_location}/bulk-transfer', [ShopifyWarehouseLocationController::class, 'bulkTransfer']);
         Route::post('/locations/{shopify_warehouse_location}/items', [ShopifyWarehouseLocationController::class, 'storeItem']);
         Route::patch('/locations/{shopify_warehouse_location}/items/{shopify_warehouse_location_item}', [ShopifyWarehouseLocationController::class, 'updateItemQty']);
         Route::delete('/locations/{shopify_warehouse_location}/items/{shopify_warehouse_location_item}', [ShopifyWarehouseLocationController::class, 'destroyItem']);

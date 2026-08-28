@@ -112,21 +112,138 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
             ->value('available'));
     }
 
-    private function makeVariant(): ShopifyProductVariant
+    public function test_cannot_delete_location_with_inventory(): void
     {
+        $this->actingAsAdmin();
+
+        $location = ShopifyWarehouseLocation::query()->create([
+            'name' => 'A-01-042',
+            'type' => 'Large Bin',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        $variant = $this->makeVariant();
+        ShopifyWarehouseLocationItem::query()->create([
+            'location_id' => $location->id,
+            'shopify_variant_id' => $variant->id,
+            'available' => 10,
+        ]);
+
+        $this->deleteJson("/api/shopify/locations/{$location->id}")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['location']);
+
+        $this->assertDatabaseHas('shopify_warehouse_locations', ['id' => $location->id]);
+    }
+
+    public function test_can_delete_empty_location(): void
+    {
+        $this->actingAsAdmin();
+
+        $location = ShopifyWarehouseLocation::query()->create([
+            'name' => 'A-01-043',
+            'type' => 'Large Bin',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+
+        $this->deleteJson("/api/shopify/locations/{$location->id}")
+            ->assertOk()
+            ->assertJsonPath('message', 'Location deleted.');
+
+        $this->assertDatabaseMissing('shopify_warehouse_locations', ['id' => $location->id]);
+    }
+
+    public function test_bulk_transfer_moves_full_qty_for_multiple_items(): void
+    {
+        $this->actingAsAdmin();
+
+        $from = ShopifyWarehouseLocation::query()->create([
+            'name' => 'A-04-044',
+            'type' => 'Large Pallet',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        $to = ShopifyWarehouseLocation::query()->create([
+            'name' => 'C-03-256',
+            'type' => 'Small Pallet',
+            'pickable' => false,
+            'sellable' => true,
+        ]);
+        $variantA = $this->makeVariant('SKU-A');
+        $variantB = $this->makeVariant('SKU-B');
+        $itemA = ShopifyWarehouseLocationItem::query()->create([
+            'location_id' => $from->id,
+            'shopify_variant_id' => $variantA->id,
+            'available' => 50,
+        ]);
+        $itemB = ShopifyWarehouseLocationItem::query()->create([
+            'location_id' => $from->id,
+            'shopify_variant_id' => $variantB->id,
+            'available' => 30,
+        ]);
+
+        $this->postJson("/api/shopify/locations/{$from->id}/bulk-transfer", [
+            'item_ids' => [$itemA->id, $itemB->id],
+            'to_location_id' => $to->id,
+        ])->assertOk()
+            ->assertJsonPath('transferred', 2)
+            ->assertJsonPath('skipped', 0);
+
+        $this->assertDatabaseMissing('shopify_warehouse_location_items', ['id' => $itemA->id]);
+        $this->assertDatabaseMissing('shopify_warehouse_location_items', ['id' => $itemB->id]);
+        $this->assertSame(50, (int) ShopifyWarehouseLocationItem::query()
+            ->where('location_id', $to->id)
+            ->where('shopify_variant_id', $variantA->id)
+            ->value('available'));
+        $this->assertSame(30, (int) ShopifyWarehouseLocationItem::query()
+            ->where('location_id', $to->id)
+            ->where('shopify_variant_id', $variantB->id)
+            ->value('available'));
+    }
+
+    public function test_bulk_transfer_rejects_same_source_and_destination(): void
+    {
+        $this->actingAsAdmin();
+
+        $from = ShopifyWarehouseLocation::query()->create([
+            'name' => 'A-04-045',
+            'type' => 'Large Pallet',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        $variant = $this->makeVariant();
+        $item = ShopifyWarehouseLocationItem::query()->create([
+            'location_id' => $from->id,
+            'shopify_variant_id' => $variant->id,
+            'available' => 20,
+        ]);
+
+        $this->postJson("/api/shopify/locations/{$from->id}/bulk-transfer", [
+            'item_ids' => [$item->id],
+            'to_location_id' => $from->id,
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['to_location_id']);
+    }
+
+    private function makeVariant(string $sku = 'TIN'): ShopifyProductVariant
+    {
+        static $variantCounter = 0;
+        $variantCounter++;
+
         $account = ClientAccount::query()->create([
-            'company_name' => 'ADGO Media, LLC',
+            'company_name' => 'ADGO Media, LLC '.$variantCounter,
             'status' => ClientAccount::STATUS_ACTIVE,
         ]);
         $connection = ClientAccountShopifyConnection::query()->create([
             'client_account_id' => $account->id,
-            'shop_domain' => 'loc-test.myshopify.com',
+            'shop_domain' => "loc-test-{$variantCounter}.myshopify.com",
             'admin_api_access_token' => 'shpat_test',
             'status' => ClientAccountShopifyConnection::STATUS_CONNECTED,
         ]);
         $product = ShopifyProduct::query()->create([
             'connection_id' => $connection->id,
-            'shopify_product_id' => '10',
+            'shopify_product_id' => (string) (10 + $variantCounter),
             'title' => 'Vunella Travel Case',
             'status' => 'active',
         ]);
@@ -134,10 +251,10 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
         return ShopifyProductVariant::query()->create([
             'connection_id' => $connection->id,
             'shopify_product_id' => $product->id,
-            'shopify_variant_id' => '20',
-            'shopify_inventory_item_id' => '30',
+            'shopify_variant_id' => (string) (20 + $variantCounter),
+            'shopify_inventory_item_id' => (string) (30 + $variantCounter),
             'title' => 'Default',
-            'sku' => 'TIN',
+            'sku' => $sku,
         ]);
     }
 }

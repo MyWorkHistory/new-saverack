@@ -182,6 +182,10 @@ function isSelected(id) {
   return selectedIds.value.has(id);
 }
 
+function clearSelection() {
+  selectedIds.value = new Set();
+}
+
 async function openBulkEmail() {
   if (!canUpdate.value || !selectedCount.value) return;
   await loadEmailTemplatesFlat();
@@ -696,24 +700,6 @@ onUnmounted(() => {
       </div>
       <div class="d-flex flex-wrap align-items-center gap-2 ms-md-auto flex-shrink-0">
         <button
-          v-if="canUpdate"
-          type="button"
-          class="btn btn-outline-secondary fw-semibold"
-          :disabled="!selectedCount || bulkStatusBusy"
-          @click="openBulkStatus"
-        >
-          Bulk Update Status{{ selectedCount ? ` (${selectedCount})` : "" }}
-        </button>
-        <button
-          v-if="canUpdate"
-          type="button"
-          class="btn btn-outline-secondary fw-semibold"
-          :disabled="!selectedCount || bulkEmailBusy"
-          @click="openBulkEmail"
-        >
-          Bulk Send{{ selectedCount ? ` (${selectedCount})` : "" }}
-        </button>
-        <button
           v-if="canCreate"
           type="button"
           class="btn btn-outline-primary staff-page-primary fw-semibold"
@@ -866,6 +852,39 @@ onUnmounted(() => {
         <p v-if="searchActive" class="form-text text-secondary small mb-0 mt-2 px-1">
           Searching all statuses, referrals, templates, and follow-up days.
         </p>
+      </div>
+
+      <div
+        v-if="canUpdate && selectedCount"
+        class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
+      >
+        <span class="small staff-bulk-selection-bar__count">
+          {{ selectedCount }} lead{{ selectedCount === 1 ? "" : "s" }} selected
+        </span>
+        <button
+          type="button"
+          class="btn btn-sm staff-page-primary"
+          :disabled="bulkStatusBusy"
+          @click="openBulkStatus"
+        >
+          Bulk Update Status
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm staff-page-primary"
+          :disabled="bulkEmailBusy"
+          @click="openBulkEmail"
+        >
+          Bulk Send
+        </button>
+        <button
+          type="button"
+          class="btn btn-link btn-sm staff-bulk-clear-link ms-auto text-decoration-none"
+          :disabled="bulkStatusBusy || bulkEmailBusy"
+          @click="clearSelection"
+        >
+          Clear Selection
+        </button>
       </div>
 
       <div v-if="loading" class="p-5 d-flex justify-content-center d-none d-lg-flex">

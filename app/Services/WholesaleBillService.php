@@ -199,8 +199,19 @@ class WholesaleBillService
             throw ValidationException::withMessages(['invoice_id' => ['Invoice must belong to the same account as this bill.']]);
         }
 
+        if (
+            (int) $bill->invoice_id === (int) $invoice->id
+            && $bill->status === WholesaleBill::STATUS_INVOICED
+        ) {
+            return $bill->fresh($this->detailRelations());
+        }
+
         $orderNumber = $bill->wholesaleOrder ? (string) $bill->wholesaleOrder->order_number : '';
-        $displayName = 'Wholesale Order #'.$orderNumber;
+        $displayName = trim((string) ($bill->display_name ?: ('Wholesale Order #'.$orderNumber)));
+        if ($displayName === '') {
+            $displayName = 'Wholesale Order #'.$orderNumber;
+        }
+        $groupKey = 'wholesale_bill:'.(int) $bill->id;
         $breakdown = $bill->items->map(function (WholesaleBillItem $item) use ($orderNumber) {
             return [
                 'wholesale_bill_item_id' => (int) $item->id,
@@ -214,24 +225,28 @@ class WholesaleBillService
             ];
         })->values()->all();
 
-        return DB::transaction(function () use ($bill, $invoice, $actor, $displayName, $orderNumber, $breakdown) {
-            $this->invoices->addInvoiceItem($invoice, [
-                'description' => $displayName,
-                'display_name' => $displayName,
-                'category' => InvoiceLineCategory::WHOLESALE,
-                'subtype' => 'wholesale_order',
-                'quantity' => 1,
-                'unit_price_cents' => (int) $bill->total_cents,
-                'line_total_cents' => (int) $bill->total_cents,
-                'group_key' => 'wholesale_bill:'.(int) $bill->id,
-                'metadata' => [
-                    'source' => 'wholesale_bill',
-                    'wholesale_bill_id' => (int) $bill->id,
-                    'wholesale_order_id' => (int) $bill->wholesale_order_id,
-                    'order_number' => $orderNumber,
-                    'breakdown' => $breakdown,
-                ],
-            ], $actor);
+        return DB::transaction(function () use ($bill, $invoice, $actor, $displayName, $orderNumber, $breakdown, $groupKey) {
+            try {
+                $this->invoices->addOrMergeWholesaleLine($invoice, [
+                    'description' => $displayName,
+                    'display_name' => $displayName,
+                    'category' => InvoiceLineCategory::WHOLESALE,
+                    'subtype' => 'wholesale_order',
+                    'quantity' => 1,
+                    'unit_price_cents' => (int) $bill->total_cents,
+                    'line_total_cents' => (int) $bill->total_cents,
+                    'group_key' => $groupKey,
+                    'metadata' => [
+                        'source' => 'wholesale_bill',
+                        'wholesale_bill_id' => (int) $bill->id,
+                        'wholesale_order_id' => (int) $bill->wholesale_order_id,
+                        'order_number' => $orderNumber,
+                        'breakdown' => $breakdown,
+                    ],
+                ], $actor);
+            } catch (\RuntimeException $e) {
+                throw ValidationException::withMessages(['invoice_id' => [$e->getMessage()]]);
+            }
 
             $bill->status = WholesaleBill::STATUS_INVOICED;
             $bill->invoice_id = $invoice->id;

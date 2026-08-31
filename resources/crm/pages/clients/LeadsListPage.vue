@@ -6,6 +6,7 @@ import { formatDateUs } from "../../utils/formatUserDates.js";
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
+import { allValidationMessages } from "../../utils/apiError.js";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -81,8 +82,10 @@ const directorySummaryActiveStatus = computed(() => {
 
 const createOpen = ref(false);
 const createBusy = ref(false);
+const createDrawerRef = ref(null);
 const quickAddOpen = ref(false);
 const quickAddBusy = ref(false);
+const quickAddDrawerRef = ref(null);
 
 const statusModalOpen = ref(false);
 const statusModalRow = ref(null);
@@ -464,6 +467,7 @@ async function saveStatusFromModal() {
 
 async function onCreate(payload) {
   createBusy.value = true;
+  createDrawerRef.value?.clearError?.();
   try {
     const { data } = await api.post("/leads", payload);
     createOpen.value = false;
@@ -474,7 +478,9 @@ async function onCreate(payload) {
       router.push({ name: "lead-detail", params: { id: data.id } });
     }
   } catch (e) {
-    toast.errorFrom(e, "Could not create lead.");
+    const message = allValidationMessages(e, "Could not create lead.");
+    createDrawerRef.value?.setError?.(message);
+    toast.error(message);
   } finally {
     createBusy.value = false;
   }
@@ -482,6 +488,7 @@ async function onCreate(payload) {
 
 async function onQuickAdd(payload) {
   quickAddBusy.value = true;
+  quickAddDrawerRef.value?.clearError?.();
   try {
     const { data } = await api.post("/leads/quick-add", payload);
     quickAddOpen.value = false;
@@ -492,7 +499,9 @@ async function onQuickAdd(payload) {
       router.push({ name: "lead-detail", params: { id: data.id } });
     }
   } catch (e) {
-    toast.errorFrom(e, "Could not create lead from pasted text.");
+    const message = allValidationMessages(e, "Could not create lead from pasted text.");
+    quickAddDrawerRef.value?.setError?.(message);
+    toast.error(message);
   } finally {
     quickAddBusy.value = false;
   }
@@ -647,8 +656,18 @@ onUnmounted(() => {
 
 <template>
   <div class="staff-page">
-    <LeadCreateDrawer v-model:open="createOpen" :busy="createBusy" @submit="onCreate" />
-    <LeadQuickAddDrawer v-model:open="quickAddOpen" :busy="quickAddBusy" @submit="onQuickAdd" />
+    <LeadCreateDrawer
+      ref="createDrawerRef"
+      v-model:open="createOpen"
+      :busy="createBusy"
+      @submit="onCreate"
+    />
+    <LeadQuickAddDrawer
+      ref="quickAddDrawerRef"
+      v-model:open="quickAddOpen"
+      :busy="quickAddBusy"
+      @submit="onQuickAdd"
+    />
     <LeadBulkEmailDrawer
       v-model:open="bulkEmailOpen"
       :busy="bulkEmailBusy"

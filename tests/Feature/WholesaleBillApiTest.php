@@ -133,6 +133,10 @@ class WholesaleBillApiTest extends TestCase
         $billId = (int) $created->json('id');
         $this->assertSame($billId, (int) $order->fresh()->wholesale_bill_id);
 
+        $this->getJson('/api/billing/wholesale-bills/'.$billId.'/draft-invoices?ensure=1')
+            ->assertOk()
+            ->assertJsonStructure(['invoices' => [['id', 'invoice_number', 'total_cents', 'balance_due_cents']]]);
+
         $invoice = Invoice::query()->create([
             'invoice_number' => 'INV-WHOLESALE-1',
             'client_account_id' => $account->id,
@@ -151,6 +155,7 @@ class WholesaleBillApiTest extends TestCase
 
         $line = InvoiceItem::query()->where('invoice_id', $invoice->id)->firstOrFail();
         $this->assertSame('Wholesale Order #WO-BILL-100', $line->display_name);
+        $this->assertSame('wholesale_bill:'.$billId, $line->group_key);
         $this->assertSame('WO-BILL-100', $line->metadata['order_number']);
         $this->assertCount(2, $line->metadata['breakdown']);
         $this->assertSame('Master Carton', $line->metadata['breakdown'][0]['name']);
@@ -162,6 +167,71 @@ class WholesaleBillApiTest extends TestCase
         $this->assertSame('WO-BILL-100', $wholesaleRow['details'][0]['order_number']);
         $this->assertSame('Master Carton', $wholesaleRow['details'][0]['name']);
         $this->assertSame('Special Handling', $wholesaleRow['details'][1]['name']);
+    }
+
+    public function test_cannot_add_wholesale_bill_without_line_items(): void
+    {
+        $account = $this->account();
+        $bill = WholesaleBill::query()->create([
+            'bill_number' => WholesaleBill::FIRST_BILL_NUMBER,
+            'status' => WholesaleBill::STATUS_OPEN,
+            'client_account_id' => $account->id,
+            'wholesale_order_id' => $this->order($account)->id,
+            'display_name' => 'Wholesale Order #EMPTY',
+            'bill_date' => now()->toDateString(),
+            'total_cents' => 0,
+        ]);
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-WHOLESALE-EMPTY',
+            'client_account_id' => $account->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+        ]);
+        $this->actingAsAdministrator();
+
+        $this->postJson('/api/billing/wholesale-bills/'.$bill->id.'/add-to-invoice', [
+            'invoice_id' => $invoice->id,
+        ])->assertStatus(422)->assertJsonValidationErrors(['items']);
+    }
+
+    public function test_cannot_add_wholesale_bill_to_sent_invoice(): void
+    {
+        $account = $this->account();
+        $order = $this->order($account);
+        WholesaleOrderFeeLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'line_type' => WholesaleOrderFeeLine::TYPE_MASTER_CARTON,
+            'source' => WholesaleOrderFeeLine::SOURCE_WHOLESALE,
+            'name' => 'Master Carton',
+            'quantity' => 1,
+            'unit_price_cents' => 500,
+        ]);
+        $this->actingAsAdministrator();
+
+        $billId = (int) $this->postJson('/api/admin/wholesale-orders/'.$order->id.'/create-bill')
+            ->assertCreated()
+            ->json('id');
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-WHOLESALE-SENT',
+            'client_account_id' => $account->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 0,
+            'tax_cents' => 0,
+            'total_cents' => 0,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 0,
+        ]);
+
+        $this->postJson('/api/billing/wholesale-bills/'.$billId.'/add-to-invoice', [
+            'invoice_id' => $invoice->id,
+        ])->assertStatus(422)->assertJsonValidationErrors(['invoice_id']);
     }
 
     public function test_update_bill_date_and_delete_open_bill(): void

@@ -33,11 +33,17 @@ class WholesaleBillPolicy
 
     public function update(User $user, WholesaleBill $bill): bool
     {
-        return $bill->isOpen() && (
-            $this->canManage($user)
+        return $this->canManage($user)
+            || $user->hasPermission('billing_wholesale_bills.update')
+            || $user->hasPermission('billing.update');
+    }
+
+    public function addToInvoice(User $user, WholesaleBill $bill): bool
+    {
+        return $this->canManage($user)
             || $user->hasPermission('billing_wholesale_bills.update')
             || $user->hasPermission('billing.update')
-        );
+            || $user->hasPermission('billing_invoices.update');
     }
 
     public function delete(User $user, WholesaleBill $bill): bool

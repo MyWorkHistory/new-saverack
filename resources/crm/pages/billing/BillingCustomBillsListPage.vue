@@ -26,8 +26,23 @@ function userHasPerm(key) {
 }
 
 const canCreate = computed(() => userHasPerm("billing_custom_bills.create") || userHasPerm("billing.create"));
-const canUpdate = computed(() => userHasPerm("billing_custom_bills.update") || userHasPerm("billing.update"));
-const canDelete = computed(() => userHasPerm("billing_custom_bills.delete") || userHasPerm("billing.delete"));
+const canUpdate = computed(
+  () =>
+    userHasPerm("billing_custom_bills.update") ||
+    userHasPerm("billing_asn_bills.update") ||
+    userHasPerm("billing_return_bills.update") ||
+    userHasPerm("billing_wholesale_bills.update") ||
+    userHasPerm("billing.update") ||
+    userHasPerm("billing_invoices.update"),
+);
+const canDelete = computed(
+  () =>
+    userHasPerm("billing_custom_bills.delete") ||
+    userHasPerm("billing_asn_bills.delete") ||
+    userHasPerm("billing_return_bills.delete") ||
+    userHasPerm("billing_wholesale_bills.delete") ||
+    userHasPerm("billing.delete"),
+);
 const showCheckboxColumn = computed(() => canDelete.value || canUpdate.value);
 
 const loading = ref(true);

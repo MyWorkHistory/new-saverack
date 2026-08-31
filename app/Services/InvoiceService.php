@@ -382,6 +382,57 @@ class InvoiceService
     }
 
     /**
+     * Add a wholesale-bill line on a draft invoice (one grouped line with item breakdown metadata).
+     *
+     * @param  array<string, mixed>  $item
+     */
+    public function addOrMergeWholesaleLine(Invoice $invoice, array $item, ?User $actor): Invoice
+    {
+        if ($invoice->isVoid()) {
+            throw new \RuntimeException('Cannot add items to a void invoice.');
+        }
+        if ($invoice->status !== Invoice::STATUS_DRAFT) {
+            throw new \RuntimeException('Wholesale bill lines can only be added to draft invoices.');
+        }
+
+        return DB::transaction(function () use ($invoice, $item, $actor) {
+            $invoice->refresh();
+            $item = $this->normalizeCreditItemMoney($item);
+            $groupKey = trim((string) ($item['group_key'] ?? ''));
+            if ($groupKey === '') {
+                $seed = (string) ($item['display_name'] ?? $item['description'] ?? 'wholesale');
+                $groupKey = 'wholesale:'.Str::slug($seed !== '' ? $seed : 'line');
+                $item['group_key'] = $groupKey;
+            }
+
+            if ($invoice->items()->where('group_key', $groupKey)->exists()) {
+                throw new \RuntimeException('This wholesale bill is already on the selected invoice.');
+            }
+
+            $displayName = trim((string) ($item['display_name'] ?? $item['description'] ?? ''));
+            if ($displayName === '') {
+                $displayName = 'Wholesale';
+            }
+            $item['display_name'] = $displayName;
+            $item['description'] = (string) ($item['description'] ?? $displayName);
+            $item['category'] = InvoiceLineCategory::WHOLESALE;
+
+            $order = (int) $invoice->items()->max('sort_order') + 1;
+            $this->insertInvoiceItemRow($invoice, $order, $item);
+
+            $from = $invoice->status;
+            $this->recalculateTotals($invoice->refresh());
+            $invoice->save();
+            $this->logHistory($invoice, $actor, 'item_added', $from, $invoice->status, [
+                'event_type' => InvoiceHistoryEventType::LINE_ADD,
+                'history_message' => 'Added wholesale bill to invoice.',
+            ]);
+
+            return $invoice->fresh(['items', 'clientAccount']);
+        });
+    }
+
+    /**
      * Add or merge a returns-category line on a draft invoice (combines by display name).
      *
      * @param  array<string, mixed>  $item

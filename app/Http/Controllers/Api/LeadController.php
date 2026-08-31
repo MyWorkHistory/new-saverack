@@ -419,7 +419,7 @@ class LeadController extends Controller
      */
     private function uniqueLeadEmailRule(?int $ignoreLeadId = null): \Closure
     {
-        return function (string $attribute, mixed $value, \Closure $fail) use ($ignoreLeadId): void {
+        return function (string $attribute, $value, \Closure $fail) use ($ignoreLeadId): void {
             $normalized = strtolower(trim((string) $value));
             if ($normalized === '') {
                 return;

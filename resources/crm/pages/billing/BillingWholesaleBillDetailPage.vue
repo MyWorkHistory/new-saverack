@@ -31,7 +31,10 @@ function userHasPerm(key) {
 }
 
 const canUpdate = computed(
-  () => userHasPerm("billing_wholesale_bills.update") || userHasPerm("billing.update"),
+  () =>
+    userHasPerm("billing_wholesale_bills.update") ||
+    userHasPerm("billing.update") ||
+    userHasPerm("billing_invoices.update"),
 );
 const canDelete = computed(
   () => userHasPerm("billing_wholesale_bills.delete") || userHasPerm("billing.delete"),
@@ -66,6 +69,7 @@ const lineDeleteTarget = ref(null);
 
 const addToInvoiceModalOpen = ref(false);
 const addToInvoiceBusy = ref(false);
+const draftInvoicesLoading = ref(false);
 const draftInvoices = ref([]);
 const selectedInvoiceId = ref("");
 
@@ -79,6 +83,13 @@ const lineEditForm = reactive(emptyLineForm());
 const chargeOptions = computed(() => bill.value?.charge_options || []);
 
 const isOpen = computed(() => bill.value?.status === "open");
+
+const canAddToInvoice = computed(() => {
+  if (!isOpen.value || !canUpdate.value || !bill.value) return false;
+  const items = bill.value.items;
+  if (Array.isArray(items)) return items.length > 0;
+  return Number(bill.value.items_count ?? 0) > 0;
+});
 
 const billTotalSubtext = computed(() => {
   if (!bill.value) return "";
@@ -402,9 +413,14 @@ async function confirmDeleteBill() {
 }
 
 async function openAddToInvoiceModal() {
+  if (!canAddToInvoice.value) {
+    toast.error("Add at least one line item before adding this bill to an invoice.");
+    return;
+  }
   selectedInvoiceId.value = "";
   draftInvoices.value = [];
   addToInvoiceModalOpen.value = true;
+  draftInvoicesLoading.value = true;
   try {
     const { data } = await api.get(`/billing/wholesale-bills/${props.id}/draft-invoices`, {
       params: { ensure: 1 },
@@ -413,13 +429,22 @@ async function openAddToInvoiceModal() {
     if (draftInvoices.value.length && !selectedInvoiceId.value) {
       selectedInvoiceId.value = String(draftInvoices.value[0].id);
     }
+    if (!draftInvoices.value.length) {
+      toast.error("No draft invoice is available for this account.");
+    }
   } catch (e) {
     toast.errorFrom(e, "Could not load draft invoices.");
     addToInvoiceModalOpen.value = false;
+  } finally {
+    draftInvoicesLoading.value = false;
   }
 }
 
 async function submitAddToInvoice() {
+  if (!canAddToInvoice.value) {
+    toast.error("Add at least one line item before adding this bill to an invoice.");
+    return;
+  }
   if (!selectedInvoiceId.value) {
     toast.error("Select a draft invoice.");
     return;
@@ -490,7 +515,7 @@ onUnmounted(() => {
         </div>
         <div class="ms-md-auto d-flex flex-wrap align-items-center gap-2">
           <button
-            v-if="isOpen && canUpdate"
+            v-if="canAddToInvoice"
             type="button"
             class="btn btn-primary btn-sm staff-page-primary fw-semibold"
             @click="openAddToInvoiceModal"
@@ -827,7 +852,7 @@ onUnmounted(() => {
       v-model:selected-invoice-id="selectedInvoiceId"
       :draft-invoices="draftInvoices"
       :client-account-name="bill?.client_account_name || ''"
-      :busy="addToInvoiceBusy"
+      :busy="addToInvoiceBusy || draftInvoicesLoading"
       @submit="submitAddToInvoice"
     />
   </div>

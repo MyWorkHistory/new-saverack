@@ -15,6 +15,15 @@ const props = defineProps({
 
 const emit = defineEmits(["update:open", "submit"]);
 
+defineExpose({
+  setError(message) {
+    errorMsg.value = String(message || "").trim();
+  },
+  clearError() {
+    errorMsg.value = "";
+  },
+});
+
 const companyName = ref("");
 const email = ref("");
 const website = ref("");

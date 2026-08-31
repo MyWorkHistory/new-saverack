@@ -62,6 +62,9 @@ class WholesaleBillController extends Controller
     public function draftInvoices(Request $request, WholesaleBill $wholesaleBill): JsonResponse
     {
         $this->authorize('view', $wholesaleBill);
+        if ($request->boolean('ensure')) {
+            $this->authorize('addToInvoice', $wholesaleBill);
+        }
 
         return response()->json([
             'invoices' => $this->bills->draftInvoices(
@@ -74,7 +77,7 @@ class WholesaleBillController extends Controller
 
     public function addToInvoice(Request $request, WholesaleBill $wholesaleBill): JsonResponse
     {
-        $this->authorize('update', $wholesaleBill);
+        $this->authorize('addToInvoice', $wholesaleBill);
         $validated = $request->validate([
             'invoice_id' => ['required', 'integer', 'exists:invoices,id'],
         ]);

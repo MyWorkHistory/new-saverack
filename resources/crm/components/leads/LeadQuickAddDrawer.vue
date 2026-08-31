@@ -16,6 +16,15 @@ const props = defineProps({
 
 const emit = defineEmits(["update:open", "submit"]);
 
+defineExpose({
+  setError(message) {
+    errorMsg.value = String(message || "").trim();
+  },
+  clearError() {
+    errorMsg.value = "";
+  },
+});
+
 const text = ref("");
 const referral = ref("bizy");
 const errorMsg = ref("");

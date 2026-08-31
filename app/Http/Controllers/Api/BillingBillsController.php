@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AsnBill;
 use App\Models\CustomBill;
 use App\Models\ReturnBill;
+use App\Models\WholesaleBill;
 use App\Services\BillingBillsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,8 +27,9 @@ class BillingBillsController extends Controller
         $canCustom = $user->can('viewAny', CustomBill::class);
         $canAsn = $user->can('viewAny', AsnBill::class);
         $canReturn = $user->can('viewAny', ReturnBill::class);
+        $canWholesale = $user->can('viewAny', WholesaleBill::class);
 
-        if (! $canCustom && ! $canAsn && ! $canReturn) {
+        if (! $canCustom && ! $canAsn && ! $canReturn && ! $canWholesale) {
             abort(403);
         }
 

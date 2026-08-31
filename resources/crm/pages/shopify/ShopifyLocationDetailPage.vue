@@ -29,6 +29,7 @@ const location = ref(null);
 const items = ref([]);
 const totalQty = ref(0);
 const types = ref([]);
+const addItemReasons = ref([]);
 const destLocations = ref([]);
 const pagination = ref({ current_page: 1, last_page: 1, total: 0, per_page: 25 });
 
@@ -49,6 +50,7 @@ const addItemForm = reactive({
   sku: "",
   product_label: "",
   available: 1,
+  reason: "Account Setup",
 });
 const skuSearchOpen = ref(false);
 const skuSearchQ = ref("");
@@ -56,7 +58,7 @@ const skuSearchLoading = ref(false);
 const skuSearchResults = ref([]);
 let skuSearchTimer = null;
 
-const form = reactive({ name: "", type: "", pickable: true, sellable: true, active: true });
+const form = reactive({ name: "", type: "", pickable: true, sellable: true });
 const qtyForm = reactive({ available: 0 });
 const activeItem = ref(null);
 const transferToId = ref("");
@@ -165,7 +167,6 @@ function openEdit() {
   form.type = loc.type || types.value[0] || "";
   form.pickable = Boolean(loc.pickable);
   form.sellable = Boolean(loc.sellable);
-  form.active = Boolean(loc.active);
   editOpen.value = true;
 }
 
@@ -177,7 +178,12 @@ async function saveLocation() {
   }
   busy.value = true;
   try {
-    const { data } = await api.patch(`/shopify/locations/${locationId.value}`, { ...form, name });
+    const { data } = await api.patch(`/shopify/locations/${locationId.value}`, {
+      name,
+      type: form.type,
+      pickable: form.pickable,
+      sellable: form.sellable,
+    });
     location.value = data?.location || location.value;
     toast.success("Location updated.");
     editOpen.value = false;
@@ -401,6 +407,7 @@ function openAddItem() {
   addItemForm.sku = "";
   addItemForm.product_label = "";
   addItemForm.available = 1;
+  addItemForm.reason = addItemReasons.value[0] || "Account Setup";
   skuSearchQ.value = "";
   skuSearchResults.value = [];
   skuSearchOpen.value = false;
@@ -478,6 +485,10 @@ async function addItem() {
     toast.error("Select a product SKU.");
     return;
   }
+  if (!String(addItemForm.reason || "").trim()) {
+    toast.error("Select a reason for add.");
+    return;
+  }
   busy.value = true;
   try {
     await api.post(`/shopify/locations/${locationId.value}/items`, {
@@ -485,6 +496,7 @@ async function addItem() {
       shopify_variant_id: variantId > 0 ? variantId : undefined,
       sku: sku || undefined,
       available: Number(addItemForm.available || 0),
+      reason: addItemForm.reason,
     });
     toast.success("Item added.");
     addItemOpen.value = false;
@@ -509,8 +521,32 @@ onMounted(async () => {
   try {
     const { data } = await api.get("/shopify/locations/meta");
     types.value = Array.isArray(data?.types) ? data.types : [];
+    addItemReasons.value = Array.isArray(data?.add_item_reasons) ? data.add_item_reasons : [];
   } catch (_) {
-    types.value = ["Large Bin", "Medium Bin", "Small Bin", "Large Pallet", "Medium Pallet", "Small Pallet"];
+    types.value = [
+      "Large Bin",
+      "Large Pallet",
+      "Large Shelf",
+      "Medium Bin",
+      "Medium Pallet",
+      "Medium Shelf",
+      "Small Bin",
+      "Small Pallet",
+      "Small Shelf",
+    ];
+    addItemReasons.value = [
+      "Account Setup",
+      "Client Request",
+      "Cycle Count",
+      "Expired",
+      "Kitting / Bundling",
+      "Order Fulfillment",
+      "Picking Error",
+      "Putaway Error",
+      "Receiving Discrepancy",
+      "Restock",
+      "Return",
+    ];
   }
   void loadAccounts();
   void load();
@@ -535,20 +571,19 @@ onUnmounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide">
-    <button
-      type="button"
-      class="btn btn-link text-decoration-none px-0 mb-3 shopify-loc-back"
-      @click="router.push({ name: 'shopify-locations' })"
-    >
-      ← Back to Locations
-    </button>
-
     <div v-if="loading && !location" class="py-5">
       <CrmLoadingSpinner message="Loading Location…" />
     </div>
 
     <template v-else-if="location">
-      <div class="d-flex justify-content-end mb-3">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <button
+          type="button"
+          class="btn btn-link text-decoration-none px-0 shopify-loc-back"
+          @click="router.push({ name: 'shopify-locations' })"
+        >
+          ← Back to Locations
+        </button>
         <div class="position-relative flex-shrink-0" data-shopify-loc-header-actions>
           <button
             type="button"
@@ -574,10 +609,10 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="shopify-loc-summary mb-4">
+      <div class="shopify-loc-summary mb-3">
         <div class="shopify-loc-summary__main">
           <div class="shopify-loc-hero-icon" aria-hidden="true">
-            <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="#2563eb" stroke-width="1.7">
+            <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="#2563eb" stroke-width="1.7">
               <path
                 stroke-linecap="round"
                 stroke-linejoin="round"
@@ -642,8 +677,13 @@ onUnmounted(() => {
                 search-placeholder="Search accounts…"
               />
             </div>
-            <div class="shopify-loc-toolbar-search flex-grow-1">
+            <div class="shopify-loc-toolbar-search shopify-loc-search">
               <div class="input-group orders-toolbar-search-group">
+                <span class="input-group-text bg-white">
+                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 100-15 7.5 7.5 0 000 15z" />
+                  </svg>
+                </span>
                 <input
                   v-model="searchQuery"
                   type="search"
@@ -655,14 +695,6 @@ onUnmounted(() => {
                   :disabled="loading"
                   @keydown.enter.prevent="applyFilters"
                 />
-                <button
-                  type="button"
-                  class="btn btn-primary staff-page-primary orders-toolbar-search-btn fw-semibold"
-                  :disabled="loading"
-                  @click="applyFilters"
-                >
-                  Search
-                </button>
               </div>
             </div>
             <div class="position-relative flex-shrink-0" data-shopify-loc-filters>
@@ -885,13 +917,9 @@ onUnmounted(() => {
               Pickable
               <input v-model="form.pickable" type="checkbox" class="form-check-input" />
             </label>
-            <label class="form-label d-flex align-items-center justify-content-between">
+            <label class="form-label d-flex align-items-center justify-content-between mb-0">
               Sellable
               <input v-model="form.sellable" type="checkbox" class="form-check-input" />
-            </label>
-            <label class="form-label d-flex align-items-center justify-content-between mb-0">
-              Active
-              <input v-model="form.active" type="checkbox" class="form-check-input" />
             </label>
           </div>
           <footer class="crm-vx-modal__footer justify-content-end">
@@ -1004,6 +1032,11 @@ onUnmounted(() => {
               </p>
             </div>
 
+            <label class="form-label" for="add-item-reason">Reason for Add</label>
+            <select id="add-item-reason" v-model="addItemForm.reason" class="form-select mb-3">
+              <option v-for="reason in addItemReasons" :key="reason" :value="reason">{{ reason }}</option>
+            </select>
+
             <label class="form-label" for="add-item-qty">QTY</label>
             <input id="add-item-qty" v-model="addItemForm.available" type="number" min="1" class="form-control" />
           </div>
@@ -1089,24 +1122,24 @@ onUnmounted(() => {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1.25rem 1.5rem;
-  padding: 1.25rem 1.35rem;
+  gap: 0.85rem 1.25rem;
+  padding: 0.85rem 1rem;
   background: #fff;
   border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 0.9rem;
+  border-radius: 0.75rem;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 .shopify-loc-summary__main {
   display: flex;
   align-items: flex-start;
-  gap: 1rem;
+  gap: 0.75rem;
   min-width: 0;
-  flex: 1 1 18rem;
+  flex: 1 1 16rem;
 }
 .shopify-loc-hero-icon {
-  width: 64px;
-  height: 64px;
-  border-radius: 0.9rem;
+  width: 44px;
+  height: 44px;
+  border-radius: 0.65rem;
   background: #dbeafe;
   display: inline-flex;
   align-items: center;
@@ -1114,16 +1147,16 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 .shopify-loc-summary__title {
-  margin: 0 0 0.85rem;
-  font-size: 1.45rem;
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.25;
   color: #0f172a;
 }
 .shopify-loc-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.25rem 2rem;
+  gap: 0.85rem 1.5rem;
 }
 .shopify-loc-meta__col {
   display: flex;
@@ -1168,10 +1201,10 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 .shopify-loc-qty-card {
-  min-width: 15rem;
-  padding: 0.95rem 1.1rem 0.85rem;
+  min-width: 10rem;
+  padding: 0.65rem 0.85rem 0.6rem;
   border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 0.85rem;
+  border-radius: 0.65rem;
   background: #fff;
 }
 .shopify-loc-qty-card__top {
@@ -1188,7 +1221,7 @@ onUnmounted(() => {
   padding-top: 0.15rem;
 }
 .shopify-loc-qty-card__value {
-  font-size: 2.15rem;
+  font-size: 1.5rem;
   font-weight: 800;
   color: #2563eb;
   line-height: 1.1;
@@ -1253,7 +1286,13 @@ onUnmounted(() => {
   line-height: 1.4;
 }
 .shopify-loc-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.5rem;
+}
+.shopify-loc-search {
+  width: min(22rem, 100%);
 }
 .shopify-loc-toolbar-account {
   flex: 0 0 auto;
@@ -1265,10 +1304,6 @@ onUnmounted(() => {
   padding: 0.375rem 0.75rem;
   border-radius: 0.375rem;
   box-shadow: none;
-}
-.shopify-loc-toolbar-search {
-  flex: 1 1 16rem;
-  min-width: min(100%, 16rem);
 }
 .shopify-loc-item-thumb {
   width: 36px;

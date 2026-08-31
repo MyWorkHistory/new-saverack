@@ -31,6 +31,7 @@ class ShopifyWarehouseLocationController extends Controller
 
         return response()->json([
             'types' => ShopifyWarehouseLocation::TYPES,
+            'add_item_reasons' => ShopifyWarehouseLocation::ADD_ITEM_REASONS,
         ]);
     }
 
@@ -257,6 +258,7 @@ class ShopifyWarehouseLocationController extends Controller
             'shopify_variant_id' => ['nullable', 'integer', 'exists:shopify_product_variants,id'],
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
             'available' => ['required', 'integer', 'min:1'],
+            'reason' => ['required', 'string', Rule::in(ShopifyWarehouseLocation::ADD_ITEM_REASONS)],
         ]);
 
         $variantId = isset($validated['shopify_variant_id']) ? (int) $validated['shopify_variant_id'] : 0;

@@ -40,6 +40,44 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
         $this->getJson('/api/shopify/locations')->assertForbidden();
     }
 
+    public function test_meta_returns_types_and_add_item_reasons(): void
+    {
+        $this->actingAsAdmin();
+
+        $this->getJson('/api/shopify/locations/meta')
+            ->assertOk()
+            ->assertJsonFragment(['Large Shelf', 'Medium Shelf', 'Small Shelf'])
+            ->assertJsonFragment(['Cycle Count', 'Receiving Discrepancy', 'Return']);
+    }
+
+    public function test_can_add_item_to_location_with_reason(): void
+    {
+        $this->actingAsAdmin();
+
+        $location = ShopifyWarehouseLocation::query()->create([
+            'name' => 'A-01-100',
+            'type' => 'Large Shelf',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        $variant = $this->makeVariant();
+
+        $this->postJson("/api/shopify/locations/{$location->id}/items", [
+            'client_account_id' => $variant->connection->client_account_id,
+            'shopify_variant_id' => $variant->id,
+            'available' => 5,
+            'reason' => 'Restock',
+        ])->assertCreated()
+            ->assertJsonPath('item.available', 5);
+
+        $this->postJson("/api/shopify/locations/{$location->id}/items", [
+            'client_account_id' => $variant->connection->client_account_id,
+            'shopify_variant_id' => $variant->id,
+            'available' => 3,
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['reason']);
+    }
+
     public function test_can_create_search_filter_and_bulk_edit_locations(): void
     {
         $this->actingAsAdmin();

@@ -336,7 +336,17 @@ onMounted(async () => {
     const { data } = await api.get("/shopify/locations/meta");
     types.value = Array.isArray(data?.types) ? data.types : [];
   } catch (_) {
-    types.value = ["Large Bin", "Medium Bin", "Small Bin", "Large Pallet", "Medium Pallet", "Small Pallet"];
+    types.value = [
+      "Large Bin",
+      "Large Pallet",
+      "Large Shelf",
+      "Medium Bin",
+      "Medium Pallet",
+      "Medium Shelf",
+      "Small Bin",
+      "Small Pallet",
+      "Small Shelf",
+    ];
   }
   void load();
 });

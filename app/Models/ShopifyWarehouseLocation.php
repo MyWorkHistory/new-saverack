@@ -9,11 +9,28 @@ class ShopifyWarehouseLocation extends Model
 {
     public const TYPES = [
         'Large Bin',
-        'Medium Bin',
-        'Small Bin',
         'Large Pallet',
+        'Large Shelf',
+        'Medium Bin',
         'Medium Pallet',
+        'Medium Shelf',
+        'Small Bin',
         'Small Pallet',
+        'Small Shelf',
+    ];
+
+    public const ADD_ITEM_REASONS = [
+        'Account Setup',
+        'Client Request',
+        'Cycle Count',
+        'Expired',
+        'Kitting / Bundling',
+        'Order Fulfillment',
+        'Picking Error',
+        'Putaway Error',
+        'Receiving Discrepancy',
+        'Restock',
+        'Return',
     ];
 
     protected $table = 'shopify_warehouse_locations';

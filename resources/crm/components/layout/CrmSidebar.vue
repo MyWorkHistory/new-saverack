@@ -13,6 +13,10 @@ const route = useRoute();
 const router = useRouter();
 const isPortal = computed(() => crmIsPortalUser(props.user));
 
+const isCrmStaffUser = computed(
+  () => !isPortal.value && props.user?.client_account_id == null,
+);
+
 const isCrmAdmin = computed(
   () => crmIsAdmin(props.user) || !!props.user?.is_crm_owner,
 );
@@ -97,6 +101,7 @@ const canViewBillingCustomBills = computed(
 
 const canViewResources = computed(() => {
   if (isPortal.value) return false;
+  if (isCrmStaffUser.value) return true;
   return hasAnyView([
     "resources_tutorials",
     "resources_photos",
@@ -119,9 +124,10 @@ const canViewResourcesCalendar = computed(() =>
 const canViewResourcesEvents = computed(() =>
   hasPerm("resources_events.view", "resources.view"),
 );
-const canViewResourcesSupplies = computed(() =>
-  hasPerm("resources_supplies.view", "resources.view"),
-);
+const canViewResourcesSupplies = computed(() => {
+  if (isCrmStaffUser.value) return true;
+  return hasPerm("resources_supplies.view", "resources.view");
+});
 
 const canViewReturns = computed(() => {
   if (isPortal.value) return true;

@@ -29,7 +29,12 @@ class SupplyPolicy
 
     public function viewAny(User $user): bool
     {
-        if ($this->canManageSettings($user)) {
+        if ($user->isAdministrator() || $user->isCrmOwner()) {
+            return true;
+        }
+
+        // Shared team catalog — all CRM staff can browse supplies.
+        if ($user->isCrmStaffUser()) {
             return true;
         }
 

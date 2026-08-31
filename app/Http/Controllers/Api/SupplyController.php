@@ -17,7 +17,7 @@ class SupplyController extends Controller
         $q = trim((string) $request->query('q', ''));
         $type = trim((string) $request->query('type', ''));
 
-        // Shared catalog for all staff — no per-user or per-account scoping.
+        // Team catalog — never filter by user; all rows are shared across staff.
         $query = Supply::query()->orderBy('sort_order')->orderBy('name');
         if ($type !== '' && in_array($type, Supply::TYPES, true)) {
             $query->where('type', $type);

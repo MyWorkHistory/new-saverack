@@ -1452,8 +1452,10 @@ export function setResourcesNavFromUser(user) {
   }
   const k = Array.isArray(user.permission_keys) ? user.permission_keys : [];
   const page = (key) => k.includes(key) || k.includes("resources.view");
+  const isCrmStaff = user.client_account_id == null && !crmIsPortalUser(user);
   resourcesNavCache = {
     view:
+      isCrmStaff ||
       page("resources_tutorials.view") ||
       page("resources_photos.view") ||
       page("resources_calendar.view") ||
@@ -1484,7 +1486,7 @@ export function setResourcesNavFromUser(user) {
       photos: page("resources_photos.view"),
       calendar: page("resources_calendar.view"),
       events: page("resources_events.view"),
-      supplies: page("resources_supplies.view"),
+      supplies: isCrmStaff || page("resources_supplies.view"),
     },
   };
 }

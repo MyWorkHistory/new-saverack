@@ -11,7 +11,7 @@ import {
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { userHasPerm as crmUserHasPerm } from "../../utils/crmPerms.js";
-import { crmIsAdmin } from "../../utils/crmUser.js";
+import { crmIsAdmin, crmIsPortalUser } from "../../utils/crmUser.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
@@ -90,12 +90,9 @@ const canSubmitOrder = computed(() => {
 
 const canViewSupplies = computed(() => {
   const u = crmUser.value;
-  if (!u) return false;
-  if (isStaffAdminUser(u)) return true;
-  return crmUserHasPerm(u, "resources_supplies.view", "resources.view");
+  if (!u || crmIsPortalUser(u)) return false;
+  return true;
 });
-
-const catalogCount = computed(() => catalog.value.length);
 
 setCrmPageMeta({
   title: "Save Rack | Supplies",
@@ -177,7 +174,9 @@ watch([searchQ, typeFilter], () => {
 async function loadCatalog() {
   catalogLoading.value = true;
   try {
-    const { data } = await api.get("/admin/supplies");
+    const { data } = await api.get("/admin/supplies", {
+      params: { _t: Date.now() },
+    });
     catalog.value = Array.isArray(data?.data) ? data.data : [];
   } catch (e) {
     toast.errorFrom(e, "Could not load supplies catalog.");
@@ -193,8 +192,21 @@ async function loadHistory() {
     const params = { per_page: 500 };
     const q = historyQDebounced.value.trim();
     if (q) params.q = q;
-    const { data } = await api.get("/admin/supply-orders", { params });
-    history.value = Array.isArray(data?.data) ? data.data : [];
+
+    const all = [];
+    let page = 1;
+    let lastPage = 1;
+    do {
+      const { data } = await api.get("/admin/supply-orders", {
+        params: { ...params, page },
+      });
+      const rows = Array.isArray(data?.data) ? data.data : [];
+      all.push(...rows);
+      lastPage = Math.max(1, Number(data?.meta?.last_page) || 1);
+      page += 1;
+    } while (page <= lastPage);
+
+    history.value = all;
   } catch (e) {
     toast.errorFrom(e, "Could not load order history.");
     history.value = [];
@@ -368,7 +380,7 @@ onUnmounted(() => {
         <div class="min-w-0">
           <h1 class="resources-supplies__title mb-1">Supplies needed</h1>
           <p class="resources-supplies__subtitle mb-0">
-            Shared team catalog — every staff member sees the same supplies. Search, add to your order, and submit.
+            Search the same supplies catalog everyone uses (including items added in Settings). Build your order below, then submit — submitted orders appear in team history for all staff.
           </p>
         </div>
         <button
@@ -471,52 +483,6 @@ onUnmounted(() => {
         >
           + Add to Order
         </button>
-      </div>
-
-      <div v-if="canViewSupplies && !catalogLoading" class="resources-supplies__catalog-meta mb-3">
-        <span class="resources-supplies__catalog-count">
-          {{ catalogCount }} {{ catalogCount === 1 ? "item" : "items" }} in team catalog
-        </span>
-      </div>
-
-      <div v-if="canViewSupplies && !catalogLoading && catalog.length" class="resources-supplies__catalog-wrap mb-4">
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0 resources-supplies__catalog-table">
-            <thead>
-              <tr>
-                <th scope="col">Item Name</th>
-                <th scope="col">Type</th>
-                <th scope="col" class="text-end">Add</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in filteredCatalog" :key="`cat-${item.id}`">
-                <td>
-                  <button
-                    v-if="item.link"
-                    type="button"
-                    class="btn btn-link p-0 resources-supplies__name"
-                    @click="openItemLink(item.link)"
-                  >
-                    {{ item.name }}
-                  </button>
-                  <span v-else>{{ item.name }}</span>
-                </td>
-                <td>{{ item.type_label || supplyTypeLabel(item.type) }}</td>
-                <td class="text-end">
-                  <button
-                    type="button"
-                    class="btn btn-sm resources-supplies__add-inline fw-semibold"
-                    :disabled="!canSubmitOrder"
-                    @click="pickSupply(item); addToOrder()"
-                  >
-                    Add
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
       </div>
 
       <div v-if="catalogLoading" class="py-4">
@@ -679,55 +645,6 @@ onUnmounted(() => {
 .resources-supplies__subtitle {
   font-size: 0.875rem;
   color: #6b7280;
-}
-.resources-supplies__catalog-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-.resources-supplies__catalog-count {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: #4b5563;
-}
-.resources-supplies__catalog-wrap {
-  border: 1px solid #e5e7eb;
-  border-radius: 0.65rem;
-  overflow: hidden;
-  max-height: 16rem;
-  overflow-y: auto;
-}
-.resources-supplies__catalog-table {
-  font-size: 0.875rem;
-}
-.resources-supplies__catalog-table > thead > tr > th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: #f9fafb;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: #6b7280;
-  border-bottom: 1px solid #e5e7eb;
-}
-.resources-supplies__catalog-table > tbody > tr > td {
-  border-bottom: 1px solid #f3f4f6;
-  vertical-align: middle;
-}
-.resources-supplies__add-inline {
-  border: 1px solid #7367f0;
-  color: #7367f0;
-  background: #fff;
-  padding: 0.2rem 0.65rem;
-  border-radius: 0.4rem;
-}
-.resources-supplies__add-inline:hover:not(:disabled) {
-  background: rgba(115, 103, 240, 0.06);
-}
-.resources-supplies__add-inline:disabled {
-  opacity: 0.5;
 }
 .resources-supplies__submit {
   display: inline-flex;

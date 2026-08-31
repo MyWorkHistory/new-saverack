@@ -89,6 +89,17 @@ class SuppliesApiTest extends TestCase
             ->assertJsonPath('name', 'Shared Box');
     }
 
+    public function test_crm_staff_without_explicit_supplies_perms_can_view_shared_catalog(): void
+    {
+        $this->makeSupply(['name' => 'Audi Box']);
+        $staff = User::factory()->create(['client_account_id' => null, 'status' => 'active']);
+        Sanctum::actingAs($staff);
+
+        $this->getJson('/api/admin/supplies')
+            ->assertOk()
+            ->assertJsonFragment(['name' => 'Audi Box']);
+    }
+
     public function test_two_staff_users_see_identical_shared_catalog(): void
     {
         $this->makeSupply(['name' => 'Box A']);

@@ -13,6 +13,11 @@ class SupplyOrderPolicy
             return true;
         }
 
+        // Team order history — all CRM staff see every submitted order.
+        if ($user->isCrmStaffUser()) {
+            return true;
+        }
+
         return $user->hasPermission('resources_supplies.view')
             || $user->hasPermission('resources.view');
     }

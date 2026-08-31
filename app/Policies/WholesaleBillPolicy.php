@@ -33,6 +33,10 @@ class WholesaleBillPolicy
 
     public function update(User $user, WholesaleBill $bill): bool
     {
+        if (! $bill->isOpen()) {
+            return false;
+        }
+
         return $this->canManage($user)
             || $user->hasPermission('billing_wholesale_bills.update')
             || $user->hasPermission('billing.update');

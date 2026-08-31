@@ -30,15 +30,25 @@ function userHasPerm(key) {
   return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
 }
 
-const canUpdate = computed(
-  () =>
-    userHasPerm("billing_wholesale_bills.update") ||
-    userHasPerm("billing.update") ||
-    userHasPerm("billing_invoices.update"),
+const canEditBill = computed(
+  () => userHasPerm("billing_wholesale_bills.update") || userHasPerm("billing.update"),
+);
+const canAddToInvoicePerm = computed(
+  () => canEditBill.value || userHasPerm("billing_invoices.update"),
 );
 const canDelete = computed(
   () => userHasPerm("billing_wholesale_bills.delete") || userHasPerm("billing.delete"),
 );
+
+const DEFAULT_CHARGE_OPTIONS = [
+  { line_type: "wholesale_fulfillment", display_name: "Wholesale Fulfillment", default_unit_price_cents: 0, source: "wholesale" },
+  { line_type: "master_carton", display_name: "Master Carton", default_unit_price_cents: 0, source: "wholesale" },
+  { line_type: "per_item", display_name: "Per Item (if Master Carton not used)", default_unit_price_cents: 0, source: "wholesale" },
+  { line_type: "pallet_prep", display_name: "Pallet Prep", default_unit_price_cents: 0, source: "wholesale" },
+  { line_type: "ltl_pickup", display_name: "LTL Pickup", default_unit_price_cents: 0, source: "wholesale" },
+  { line_type: "barcode_labeling", display_name: "Barcode Labeling", default_unit_price_cents: 0, source: "wholesale" },
+  { line_type: "box", display_name: "Box", default_unit_price_cents: 0, source: "wholesale" },
+];
 
 const loading = ref(true);
 const bill = ref(null);
@@ -80,12 +90,16 @@ function emptyLineForm() {
 const addLineForm = reactive(emptyLineForm());
 const lineEditForm = reactive(emptyLineForm());
 
-const chargeOptions = computed(() => bill.value?.charge_options || []);
+const chargeOptions = computed(() => {
+  const fromApi = bill.value?.charge_options;
+  if (Array.isArray(fromApi) && fromApi.length) return fromApi;
+  return DEFAULT_CHARGE_OPTIONS;
+});
 
 const isOpen = computed(() => bill.value?.status === "open");
 
 const canAddToInvoice = computed(() => {
-  if (!isOpen.value || !canUpdate.value || !bill.value) return false;
+  if (!isOpen.value || !canAddToInvoicePerm.value || !bill.value) return false;
   const items = bill.value.items;
   if (Array.isArray(items)) return items.length > 0;
   return Number(bill.value.items_count ?? 0) > 0;
@@ -523,7 +537,7 @@ onUnmounted(() => {
             Add To Invoice
           </button>
           <div
-            v-if="canUpdate || canDelete || bill.invoice_id"
+            v-if="canEditBill || canAddToInvoicePerm || canDelete || bill.invoice_id"
             data-wb-action
             class="position-relative"
           >
@@ -586,7 +600,7 @@ onUnmounted(() => {
             <div class="px-4 py-3 border-bottom d-flex align-items-center justify-content-between gap-2">
               <h2 class="h6 mb-0 fw-semibold">Line Items</h2>
               <button
-                v-if="isOpen && canUpdate"
+                v-if="isOpen && canEditBill"
                 type="button"
                 class="btn btn-sm btn-primary staff-page-primary"
                 @click="openAddLineModal"
@@ -603,7 +617,7 @@ onUnmounted(() => {
                     <th class="staff-table-head__th text-end">Price</th>
                     <th class="staff-table-head__th text-end">Total</th>
                     <th
-                      v-if="isOpen && canUpdate"
+                      v-if="isOpen && canEditBill"
                       class="staff-table-head__th text-center billing-wholesale-bill-lines-actions-col"
                     >
                       Action
@@ -612,7 +626,7 @@ onUnmounted(() => {
                 </thead>
                 <tbody>
                   <tr v-if="!bill.items?.length">
-                    <td :colspan="isOpen && canUpdate ? 5 : 4" class="text-center text-secondary py-4">
+                    <td :colspan="isOpen && canEditBill ? 5 : 4" class="text-center text-secondary py-4">
                       No line items.
                     </td>
                   </tr>
@@ -622,7 +636,7 @@ onUnmounted(() => {
                     <td class="text-end">{{ formatCents(item.unit_price_cents) }}</td>
                     <td class="text-end fw-semibold">{{ formatCents(item.line_total_cents) }}</td>
                     <td
-                      v-if="isOpen && canUpdate"
+                      v-if="isOpen && canEditBill"
                       class="text-center align-middle billing-wholesale-bill-lines-actions-cell"
                       @click.stop
                     >
@@ -721,7 +735,7 @@ onUnmounted(() => {
         @click.stop
       >
         <button
-          v-if="isOpen && canUpdate"
+          v-if="isOpen && canEditBill"
           type="button"
           class="staff-row-menu__item"
           role="menuitem"

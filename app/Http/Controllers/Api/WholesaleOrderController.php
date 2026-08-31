@@ -650,7 +650,7 @@ class WholesaleOrderController extends Controller
             'fee_lines' => $order->feeLines->map(fn (WholesaleOrderFeeLine $line) => $this->serializeFeeLine($line))->values()->all(),
             'fee_charge_options' => $order->clientAccount
                 ? WholesaleOrderFeeChargeCatalog::optionsForAccount($order->clientAccount)
-                : [],
+                : WholesaleOrderFeeChargeCatalog::defaultOptions(),
             'packaging_fee_options' => $order->clientAccount
                 ? WholesaleOrderFeeChargeCatalog::packagingOptionsForAccount($order->clientAccount)
                 : [],

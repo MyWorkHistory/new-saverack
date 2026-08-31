@@ -81,4 +81,13 @@ class WholesaleOrderFeeChargeCatalogTest extends TestCase
         $this->assertTrue(WholesaleOrderFeeChargeCatalog::isValidLineType('custom_abc123'));
         $this->assertFalse(WholesaleOrderFeeChargeCatalog::isValidLineType('invalid line'));
     }
+
+    public function test_default_options_includes_standard_wholesale_fees(): void
+    {
+        $options = WholesaleOrderFeeChargeCatalog::defaultOptions();
+        $this->assertNotEmpty($options);
+        $types = array_column($options, 'line_type');
+        $this->assertContains('wholesale_fulfillment', $types);
+        $this->assertContains('master_carton', $types);
+    }
 }

@@ -445,7 +445,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/{wholesaleOrder}/number', [WholesaleOrderController::class, 'updateNumber'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/ready-to-ship', [WholesaleOrderController::class, 'readyToShip'])->middleware('can:orders.update');
         Route::post('/{wholesaleOrder}/mark-picked', [WholesaleOrderController::class, 'markPicked'])->middleware('can:orders.update');
-        Route::post('/{wholesaleOrder}/lines', [WholesaleOrderController::class, 'storeLine'])->middleware('can:orders.create');
+        Route::post('/{wholesaleOrder}/lines', [WholesaleOrderController::class, 'storeLine'])->middleware('can:orders.update');
         Route::patch('/{wholesaleOrder}/lines/{line}', [WholesaleOrderController::class, 'updateLine'])->middleware('can:orders.update');
         Route::patch('/{wholesaleOrder}/lines/{line}/pick', [WholesaleOrderController::class, 'updateLinePick'])->middleware('can:orders.update');
         Route::delete('/{wholesaleOrder}/lines/{line}', [WholesaleOrderController::class, 'destroyLine'])->middleware('can:orders.update');

@@ -182,9 +182,21 @@ const feeLines = computed(() =>
   Array.isArray(order.value?.fee_lines) ? order.value.fee_lines : [],
 );
 
-const feeChargeOptions = computed(() =>
-  Array.isArray(order.value?.fee_charge_options) ? order.value.fee_charge_options : [],
-);
+const DEFAULT_FEE_CHARGE_OPTIONS = [
+  { line_type: "wholesale_fulfillment", display_name: "Wholesale Fulfillment", qty_label: "Units", source: "wholesale", default_unit_price_cents: 0 },
+  { line_type: "master_carton", display_name: "Master Carton", qty_label: "Cartons", source: "wholesale", default_unit_price_cents: 0 },
+  { line_type: "per_item", display_name: "Per Item (if Master Carton not used)", qty_label: "Items", source: "wholesale", default_unit_price_cents: 0 },
+  { line_type: "pallet_prep", display_name: "Pallet Prep", qty_label: "Pallets", source: "wholesale", default_unit_price_cents: 0 },
+  { line_type: "ltl_pickup", display_name: "LTL Pickup", qty_label: "Shipments", source: "wholesale", default_unit_price_cents: 0 },
+  { line_type: "barcode_labeling", display_name: "Barcode Labeling", qty_label: "Labels", source: "wholesale", default_unit_price_cents: 0 },
+  { line_type: "box", display_name: "Box", qty_label: "Boxes", source: "packaging", default_unit_price_cents: 0 },
+];
+
+const feeChargeOptions = computed(() => {
+  const fromApi = order.value?.fee_charge_options;
+  if (Array.isArray(fromApi) && fromApi.length) return fromApi;
+  return DEFAULT_FEE_CHARGE_OPTIONS;
+});
 
 const barcodeLabelingDefaultQty = computed(() =>
   lines.value.reduce((sum, line) => {

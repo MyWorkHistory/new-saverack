@@ -314,7 +314,10 @@ class WholesaleBillService
         $bill->loadMissing($this->detailRelations());
         $chargeOptions = $bill->clientAccount
             ? $this->chargeOptionsForAccount($bill->clientAccount)
-            : [];
+            : WholesaleOrderFeeChargeCatalog::defaultOptions();
+        if ($chargeOptions === []) {
+            $chargeOptions = WholesaleOrderFeeChargeCatalog::defaultOptions();
+        }
 
         return array_merge($this->toListArray($bill), [
             'invoice_number' => $bill->invoice ? $bill->invoice->invoice_number : null,

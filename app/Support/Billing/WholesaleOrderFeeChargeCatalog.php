@@ -64,6 +64,16 @@ class WholesaleOrderFeeChargeCatalog
         return array_keys(self::DEFINITIONS);
     }
 
+    /**
+     * Standard wholesale fee rows when account fees are unavailable.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function defaultOptions(): array
+    {
+        return self::fallbackStandardOptions(new ClientAccount());
+    }
+
     public static function isValidLineType(string $lineType): bool
     {
         if (isset(self::DEFINITIONS[$lineType])) {

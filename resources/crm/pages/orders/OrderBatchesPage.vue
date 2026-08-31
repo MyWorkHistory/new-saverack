@@ -42,6 +42,9 @@ const rows = ref([]);
 const users = ref([]);
 const q = ref("");
 const userId = ref("");
+const statusFilter = ref("");
+const sortBy = ref("id");
+const sortDir = ref("desc");
 const filterMenuOpen = ref(false);
 const pagination = ref({ current_page: 1, last_page: 1, total: 0, per_page: DEFAULT_PER_PAGE });
 
@@ -68,6 +71,33 @@ const STATUS_OPTIONS = [
   { value: "pending", label: "Pending" },
   { value: "completed", label: "Completed" },
 ];
+
+const SORT_KEYS = ["status", "batch_number", "user"];
+
+function sortIndicator(column) {
+  if (sortBy.value !== column) return "";
+  return sortDir.value === "asc" ? "↑" : "↓";
+}
+
+function thAriaSort(column) {
+  return sortBy.value === column
+    ? sortDir.value === "asc"
+      ? "ascending"
+      : "descending"
+    : "none";
+}
+
+function toggleSort(column) {
+  if (!SORT_KEYS.includes(column)) return;
+  if (sortBy.value === column) {
+    sortDir.value = sortDir.value === "asc" ? "desc" : "asc";
+  } else {
+    sortBy.value = column;
+    sortDir.value = column === "batch_number" ? "desc" : "asc";
+  }
+  pagination.value.current_page = 1;
+  void load();
+}
 
 const manageMenuRow = computed(() => rows.value.find((r) => r.id === manageOpenId.value) ?? null);
 
@@ -114,6 +144,9 @@ async function load() {
       params: {
         q: q.value || undefined,
         user_id: userId.value || undefined,
+        status: statusFilter.value || undefined,
+        sort_by: sortBy.value,
+        sort_dir: sortDir.value,
         per_page: pagination.value.per_page,
         page: pagination.value.current_page,
       },
@@ -142,8 +175,14 @@ function onUserFilterChange() {
   void load();
 }
 
+function onStatusFilterChange() {
+  pagination.value.current_page = 1;
+  void load();
+}
+
 function resetToolbarFilters() {
   userId.value = "";
+  statusFilter.value = "";
   filterMenuOpen.value = false;
   pagination.value.current_page = 1;
   void load();
@@ -434,6 +473,19 @@ onUnmounted(() => {
                 </button>
               </div>
               <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="order-batch-filter-status">Status</label>
+                <select
+                  id="order-batch-filter-status"
+                  v-model="statusFilter"
+                  class="form-select staff-datatable-filters__select mb-3"
+                  :disabled="loading"
+                  @change="onStatusFilterChange"
+                >
+                  <option value="">All Statuses</option>
+                  <option v-for="opt in STATUS_OPTIONS" :key="opt.value" :value="opt.value">
+                    {{ opt.label }}
+                  </option>
+                </select>
                 <label class="form-label" for="order-batch-filter-user">User</label>
                 <select
                   id="order-batch-filter-user"
@@ -457,9 +509,57 @@ onUnmounted(() => {
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
-              <th class="staff-table-head__th" scope="col">Status</th>
-              <th class="staff-table-head__th" scope="col">Batch #</th>
-              <th class="staff-table-head__th" scope="col">User</th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('status')"
+              >
+                <button
+                  type="button"
+                  class="staff-sort-btn"
+                  :disabled="loading"
+                  @click="toggleSort('status')"
+                >
+                  Status
+                  <span v-if="sortIndicator('status')" class="staff-sort-ind">{{
+                    sortIndicator("status")
+                  }}</span>
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('batch_number')"
+              >
+                <button
+                  type="button"
+                  class="staff-sort-btn"
+                  :disabled="loading"
+                  @click="toggleSort('batch_number')"
+                >
+                  Batch #
+                  <span v-if="sortIndicator('batch_number')" class="staff-sort-ind">{{
+                    sortIndicator("batch_number")
+                  }}</span>
+                </button>
+              </th>
+              <th
+                class="staff-table-head__th staff-table-head__th--sort"
+                scope="col"
+                :aria-sort="thAriaSort('user')"
+              >
+                <button
+                  type="button"
+                  class="staff-sort-btn"
+                  :disabled="loading"
+                  @click="toggleSort('user')"
+                >
+                  User
+                  <span v-if="sortIndicator('user')" class="staff-sort-ind">{{
+                    sortIndicator("user")
+                  }}</span>
+                </button>
+              </th>
               <th class="staff-table-head__th staff-actions-col text-center" scope="col">Action</th>
             </tr>
           </thead>

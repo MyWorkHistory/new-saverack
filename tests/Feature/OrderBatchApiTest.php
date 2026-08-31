@@ -163,4 +163,48 @@ class OrderBatchApiTest extends TestCase
         $this->getJson('/api/order-batches?user_id='.$admin->id)->assertOk()
             ->assertJsonPath('meta.total', 2);
     }
+
+    public function test_index_filters_by_status(): void
+    {
+        $admin = $this->actingAsAdmin();
+        OrderBatch::query()->create([
+            'batch_number' => '100',
+            'status' => OrderBatch::STATUS_PENDING,
+            'created_by_user_id' => $admin->id,
+        ]);
+        OrderBatch::query()->create([
+            'batch_number' => '200',
+            'status' => OrderBatch::STATUS_COMPLETED,
+            'created_by_user_id' => $admin->id,
+            'completed_by_user_id' => $admin->id,
+            'completed_at' => now(),
+        ]);
+
+        $this->getJson('/api/order-batches?status=pending')->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.batch_number', '100');
+
+        $this->getJson('/api/order-batches?status=completed')->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.batch_number', '200');
+    }
+
+    public function test_index_sorts_by_batch_number(): void
+    {
+        $admin = $this->actingAsAdmin();
+        OrderBatch::query()->create([
+            'batch_number' => '300',
+            'status' => OrderBatch::STATUS_PENDING,
+            'created_by_user_id' => $admin->id,
+        ]);
+        OrderBatch::query()->create([
+            'batch_number' => '100',
+            'status' => OrderBatch::STATUS_PENDING,
+            'created_by_user_id' => $admin->id,
+        ]);
+
+        $asc = $this->getJson('/api/order-batches?sort_by=batch_number&sort_dir=asc')->assertOk();
+        $numbers = collect($asc->json('data'))->pluck('batch_number')->values()->all();
+        $this->assertSame(['100', '300'], $numbers);
+    }
 }

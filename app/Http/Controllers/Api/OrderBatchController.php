@@ -105,24 +105,35 @@ class OrderBatchController extends Controller
         $q = trim((string) $request->query('q', ''));
         $status = trim((string) $request->query('status', ''));
         $userId = (int) $request->query('user_id', 0);
+        $sortBy = trim((string) $request->query('sort_by', 'id'));
+        $sortDir = strtolower(trim((string) $request->query('sort_dir', 'desc'))) === 'asc' ? 'asc' : 'desc';
+
+        $needsUserJoin = $sortBy === 'user' || $userId > 0;
 
         $query = OrderBatch::query()
             ->with(['createdBy:id,name,email', 'completedBy:id,name,email']);
 
+        if ($needsUserJoin) {
+            $query
+                ->leftJoin('users as ob_created_user', 'order_batches.created_by_user_id', '=', 'ob_created_user.id')
+                ->leftJoin('users as ob_completed_user', 'order_batches.completed_by_user_id', '=', 'ob_completed_user.id')
+                ->select('order_batches.*');
+        }
+
         if ($q !== '') {
-            $query->where('batch_number', 'like', '%'.$q.'%');
+            $query->where('order_batches.batch_number', 'like', '%'.$q.'%');
         }
         if ($status !== '' && $status !== 'all' && in_array($status, OrderBatch::STATUSES, true)) {
-            $query->where('status', $status);
+            $query->where('order_batches.status', $status);
         }
         if ($userId > 0) {
             $query->where(function ($builder) use ($userId) {
-                $builder->where('created_by_user_id', $userId)
-                    ->orWhere('completed_by_user_id', $userId);
+                $builder->where('order_batches.created_by_user_id', $userId)
+                    ->orWhere('order_batches.completed_by_user_id', $userId);
             });
         }
 
-        $query->orderByDesc('id');
+        $this->applySort($query, $sortBy, $sortDir, $needsUserJoin);
         $page = $query->paginate($perPage);
 
         return response()->json([
@@ -313,6 +324,39 @@ class OrderBatchController extends Controller
         $orderBatch->delete();
 
         return response()->json(['message' => 'Batch deleted.']);
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<OrderBatch>  $query
+     */
+    private function applySort($query, string $sortBy, string $sortDir, bool $hasUserJoin): void
+    {
+        $allowed = ['status', 'batch_number', 'user', 'created_at', 'id'];
+        if (! in_array($sortBy, $allowed, true)) {
+            $sortBy = 'id';
+        }
+
+        if ($sortBy === 'user') {
+            if (! $hasUserJoin) {
+                $query
+                    ->leftJoin('users as ob_created_user', 'order_batches.created_by_user_id', '=', 'ob_created_user.id')
+                    ->leftJoin('users as ob_completed_user', 'order_batches.completed_by_user_id', '=', 'ob_completed_user.id')
+                    ->select('order_batches.*');
+            }
+            $query->orderByRaw(
+                "CASE WHEN order_batches.status = '".OrderBatch::STATUS_COMPLETED."' "
+                ."THEN COALESCE(ob_completed_user.name, '') "
+                ."ELSE COALESCE(ob_created_user.name, '') END ".$sortDir
+            );
+        } elseif ($sortBy === 'batch_number') {
+            $query->orderByRaw('CAST(order_batches.batch_number AS UNSIGNED) '.$sortDir);
+        } else {
+            $query->orderBy('order_batches.'.$sortBy, $sortDir);
+        }
+
+        if ($sortBy !== 'id') {
+            $query->orderByDesc('order_batches.id');
+        }
     }
 
     private function applyStatus(OrderBatch $batch, string $status, User $actor): void

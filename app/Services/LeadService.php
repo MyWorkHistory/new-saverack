@@ -234,10 +234,10 @@ class LeadService
             ]);
 
             $seedComment = $this->nullableTrim($data['comment'] ?? null);
-            if ($seedComment !== null && $actor !== null) {
+            if ($seedComment !== null) {
                 LeadComment::query()->create([
                     'lead_id' => $lead->id,
-                    'user_id' => $actor->id,
+                    'user_id' => $actor !== null ? $actor->id : null,
                     'body' => $seedComment,
                 ]);
             }
@@ -401,11 +401,11 @@ class LeadService
             'contactperson',
         ]);
         $comment = $this->firstMappedString($map, [
+            'response',
             'comment',
             'comments',
             'notes',
             'note',
-            'response',
             'emailthread',
             'message',
             'tellusaboutanyspecialrequirements',

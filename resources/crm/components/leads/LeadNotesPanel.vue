@@ -109,7 +109,7 @@ defineExpose({ clearFileInput });
         >{{ initials(c.user?.name) }}</span>
         <div class="min-w-0 flex-grow-1">
           <div class="d-flex flex-wrap align-items-baseline justify-content-between gap-2">
-            <div class="fw-semibold small">{{ c.user?.name || "User" }}</div>
+            <div class="fw-semibold small">{{ c.user?.name || (c.user_id ? "User" : "Google Sheets") }}</div>
             <div class="d-flex align-items-center gap-2">
               <time class="small text-secondary" :datetime="c.created_at">
                 {{ formatDateTimeUs(c.created_at) }}

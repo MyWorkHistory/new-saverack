@@ -22,6 +22,25 @@ export function canWriteShipHeroOrders(user) {
 }
 
 /**
+ * Wholesale order line items / draft edits: staff with orders (or orders_wholesale) write, or portal account users.
+ *
+ * @param {object|null|undefined} user
+ */
+export function canWriteWholesaleOrders(user) {
+  if (!user || typeof user !== "object") {
+    return false;
+  }
+  if (userHasModuleAction(user, "orders", ["create", "update", "delete"])) {
+    return true;
+  }
+  if (crmIsPortalUser(user) && Number(user.client_account_id || 0) > 0) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Create Order page / drawer.
  */
 export function canCreateOrders(user) {

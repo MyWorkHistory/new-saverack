@@ -75,6 +75,26 @@ class LeadBizyWebhookApiTest extends TestCase
         $this->assertSame('sales@blueridgeexotics.com', $lead->email);
         $this->assertSame('blueridgeexotics.com', $lead->website);
         $this->assertSame("Interested in fulfillment\n\nSheet status: New", $lead->comment);
+        $note = $lead->comments()->first();
+        $this->assertNotNull($note);
+        $this->assertSame("Interested in fulfillment\n\nSheet status: New", $note->body);
+        $this->assertNull($note->user_id);
+    }
+
+    public function test_accepts_note_as_alias_for_response_column(): void
+    {
+        $response = $this->withHeaders(['X-Leads-Webhook-Secret' => self::SECRET])
+            ->postJson('/api/leads/webhooks/bizy', [
+                'Company' => 'Note Alias Co',
+                'Email' => 'note-alias@example.com',
+                'Note' => 'Sheet note text',
+            ]);
+
+        $response->assertCreated();
+        $lead = Lead::query()->where('email', 'note-alias@example.com')->first();
+        $this->assertNotNull($lead);
+        $this->assertSame('Sheet note text', $lead->comment);
+        $this->assertSame('Sheet note text', $lead->comments()->value('body'));
     }
 
     public function test_duplicate_email_is_idempotent(): void

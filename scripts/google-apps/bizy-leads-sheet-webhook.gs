@@ -15,7 +15,7 @@
  * - Row 1 headers: Company | Website | Email | Response | Status
  * - Script adds a "CRM Sync" column if missing; writes imported / duplicate / error there
  * - Existing CRM leads are skipped by email (duplicate) — safe if rows already exist
- * - Response → lead comment; Status is appended as "Sheet status: …" (CRM status stays Open)
+ * - Response → lead Notes; Status is appended as "Sheet status: …" (CRM status stays Open)
  */
 
 var CRM_SYNC_HEADER = 'CRM Sync';

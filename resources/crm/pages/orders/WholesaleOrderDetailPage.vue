@@ -23,6 +23,7 @@ import { useToast } from "../../composables/useToast.js";
 import { formatDateUs, formatDateTimeUs } from "../../utils/formatUserDates.js";
 import { noteAuthorFromRecord } from "../../utils/noteAuthor.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
+import { canWriteWholesaleOrders } from "../../utils/crmShipHeroOrders.js";
 import { errorMessage } from "../../utils/apiError.js";
 import {
   wholesaleLineStatusBadgeClass,
@@ -111,11 +112,16 @@ const canEditPackages = computed(() => {
   const status = String(order.value?.status || "").toLowerCase();
   return status !== "shipped";
 });
+const canWriteWholesaleOrder = computed(() => canWriteWholesaleOrders(crmUser.value));
 /**
- * Line SKU add / edit / delete: staff only (portal is view-only).
- * Still limited by order status (draft / pending / in_progress).
+ * Line SKU add / edit / delete.
+ * Portal: draft / pending only. Staff: draft / pending / in_progress.
  */
-const canManageLineItems = computed(() => !isPortalView.value && canEditLines.value);
+const canManageLineItems = computed(() => {
+  if (!canWriteWholesaleOrder.value) return false;
+  if (isPortalView.value) return isEditable.value;
+  return canEditLines.value;
+});
 /**
  * Per-SKU box breakdown: staff until shipped (same window as order Box Info).
  */

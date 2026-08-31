@@ -210,7 +210,8 @@ class AuthServiceProvider extends ServiceProvider
                 return true;
             }
 
-            return $user->hasPermission('orders.update');
+            return $user->hasPermission('orders.update')
+                || $user->hasPermission('orders_wholesale.update');
         });
 
         Gate::define('receiving.view', function ($user) {
@@ -400,7 +401,8 @@ class AuthServiceProvider extends ServiceProvider
                 return true;
             }
 
-            return $user->hasPermission('orders.create');
+            return $user->hasPermission('orders.create')
+                || $user->hasPermission('orders_wholesale.create');
         });
 
         Gate::define('orders.delete', function ($user) {

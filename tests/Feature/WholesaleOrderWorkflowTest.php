@@ -499,6 +499,32 @@ class WholesaleOrderWorkflowTest extends TestCase
         $this->deleteJson('/api/admin/wholesale-orders/'.$pending->id)->assertForbidden();
     }
 
+    public function test_portal_user_can_add_line_to_draft_order(): void
+    {
+        $account = $this->account('portal-add-line');
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        Sanctum::actingAs($user);
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'WO-PORTAL-ADD',
+            'order_type' => WholesaleOrder::TYPE_AMAZON,
+            'status' => WholesaleOrder::STATUS_DRAFT,
+            'items_count' => 0,
+        ]);
+
+        $this->postJson('/api/admin/wholesale-orders/'.$order->id.'/lines', [
+            'sku' => 'PORTAL-SKU-1',
+            'name' => 'Portal Product',
+            'quantity' => 2,
+        ])
+            ->assertOk()
+            ->assertJsonPath('is_editable', true)
+            ->assertJsonPath('is_lines_editable', true)
+            ->assertJsonPath('lines.0.sku', 'PORTAL-SKU-1')
+            ->assertJsonPath('lines.0.quantity', 2);
+    }
+
     public function test_wholesale_product_catalog_uses_orders_view_not_inventory_view(): void
     {
         $account = $this->account();

@@ -129,15 +129,10 @@ const selectedSupply = computed(() => {
   return catalog.value.find((s) => Number(s.id) === Number(id)) || null;
 });
 
-const filteredHistory = computed(() => {
-  const q = historyQDebounced.value.trim().toLowerCase();
-  if (!q) return history.value;
-  return history.value.filter((row) => {
-    const name = String(row.name || "").toLowerCase();
-    const type = String(row.type || "").toLowerCase();
-    const label = String(row.type_label || supplyTypeLabel(row.type)).toLowerCase();
-    return name.includes(q) || type.includes(q) || label.includes(q);
-  });
+const filteredHistory = computed(() => history.value);
+
+watch(historyQDebounced, () => {
+  loadHistory();
 });
 
 watch(historyQ, (v) => {
@@ -172,9 +167,10 @@ async function loadCatalog() {
 async function loadHistory() {
   historyLoading.value = true;
   try {
-    const { data } = await api.get("/admin/supply-orders", {
-      params: { per_page: 100 },
-    });
+    const params = { per_page: 500 };
+    const q = historyQDebounced.value.trim();
+    if (q) params.q = q;
+    const { data } = await api.get("/admin/supply-orders", { params });
     history.value = Array.isArray(data?.data) ? data.data : [];
   } catch (e) {
     toast.errorFrom(e, "Could not load order history.");
@@ -528,7 +524,7 @@ onUnmounted(() => {
             Order history
           </h2>
           <p class="resources-supplies__subtitle mb-0">
-            View your previous supply orders.
+            All supply orders submitted by staff.
           </p>
         </div>
         <div class="resources-supplies__history-search">
@@ -556,18 +552,20 @@ onUnmounted(() => {
           <thead>
             <tr>
               <th scope="col">Date</th>
+              <th scope="col">Ordered By</th>
               <th scope="col">Item Name</th>
               <th scope="col">QTY</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!filteredHistory.length">
-              <td colspan="3" class="text-center text-secondary py-4">
+              <td colspan="4" class="text-center text-secondary py-4">
                 No orders yet.
               </td>
             </tr>
             <tr v-for="row in filteredHistory" :key="row.id">
               <td class="text-nowrap">{{ formatHistoryDate(row.submitted_at) }}</td>
+              <td class="text-nowrap">{{ row.submitted_by_name || "—" }}</td>
               <td>
                 <button
                   v-if="row.link"

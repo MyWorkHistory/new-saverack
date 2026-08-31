@@ -16,7 +16,16 @@ const toast = useToast();
 const canManage = computed(() => {
   const u = crmUser.value;
   if (!u) return false;
-  return crmIsAdmin(u) || !!u.is_crm_owner;
+  if (crmIsAdmin(u) || u.is_crm_owner) return true;
+  const keys = Array.isArray(u.permission_keys) ? u.permission_keys : [];
+  return (
+    keys.includes("resources_supplies.update") ||
+    keys.includes("resources_supplies.create") ||
+    keys.includes("resources_supplies.delete") ||
+    keys.includes("resources.update") ||
+    keys.includes("resources.create") ||
+    keys.includes("resources.delete")
+  );
 });
 
 const loading = ref(true);

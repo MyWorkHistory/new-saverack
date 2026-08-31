@@ -77,6 +77,67 @@ class SuppliesApiTest extends TestCase
         ])->assertForbidden();
     }
 
+    public function test_non_admin_cannot_create_settings_supply(): void
+    {
+        $this->staffWith(['resources_supplies.view']);
+
+        $this->postJson('/api/settings/supplies', [
+            'type' => Supply::TYPE_BOX,
+            'name' => '9x9x4',
+        ])->assertForbidden();
+    }
+
+    public function test_staff_with_update_can_create_shared_catalog_supply(): void
+    {
+        $this->staffWith(['resources_supplies.view', 'resources_supplies.update']);
+
+        $this->postJson('/api/settings/supplies', [
+            'type' => Supply::TYPE_BOX,
+            'name' => 'Shared Box',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('name', 'Shared Box');
+    }
+
+    public function test_all_staff_see_shared_catalog_and_team_order_history(): void
+    {
+        $rikki = $this->staffWith(['resources_supplies.view', 'resources_supplies.create']);
+        $this->makeSupply(['name' => 'Rikki Box']);
+
+        $nelson = User::factory()->create(['client_account_id' => null, 'name' => 'Nelson']);
+        $nelson->permissions()->sync([
+            $this->permission('resources_supplies.view')->id,
+            $this->permission('resources_supplies.create')->id,
+        ]);
+        Sanctum::actingAs($nelson);
+
+        $catalog = $this->getJson('/api/admin/supplies');
+        $catalog->assertOk();
+        $names = collect($catalog->json('data'))->pluck('name')->all();
+        $this->assertContains('Rikki Box', $names);
+
+        $box = Supply::query()->where('name', 'Rikki Box')->first();
+        $this->assertNotNull($box);
+
+        $slack = Mockery::mock(\App\Services\SuppliesOrderedSlackService::class);
+        $slack->shouldReceive('send')->once()->andReturn(null);
+        $this->app->instance(\App\Services\SuppliesOrderedSlackService::class, $slack);
+
+        $this->postJson('/api/admin/supply-orders', [
+            'lines' => [
+                ['supply_id' => $box->id, 'quantity' => 3],
+            ],
+        ])->assertCreated();
+
+        Sanctum::actingAs($rikki);
+
+        $history = $this->getJson('/api/admin/supply-orders');
+        $history->assertOk();
+        $this->assertGreaterThanOrEqual(1, count($history->json('data')));
+        $this->assertSame('Nelson', $history->json('data.0.submitted_by_name'));
+        $this->assertSame('Rikki Box', $history->json('data.0.name'));
+    }
+
     public function test_admin_can_crud_settings_supplies(): void
     {
         $this->actingAsAdmin();

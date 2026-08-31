@@ -20,10 +20,11 @@ class SupplyOrderController extends Controller
         $this->authorize('viewAny', SupplyOrder::class);
 
         $q = trim((string) $request->query('q', ''));
-        $perPage = min(100, max(1, (int) $request->query('per_page', 50)));
+        $perPage = min(500, max(1, (int) $request->query('per_page', 100)));
 
+        // Team-wide history: never scope to the current user.
         $query = SupplyOrderLine::query()
-            ->with('order')
+            ->with(['order.user:id,name'])
             ->whereHas('order')
             ->orderByDesc('id');
 
@@ -58,6 +59,8 @@ class SupplyOrderController extends Controller
                 'link' => $line->link,
                 'quantity' => (int) $line->quantity,
                 'submitted_at' => optional(optional($line->order)->submitted_at)->toIso8601String(),
+                'submitted_by_user_id' => optional($line->order)->user_id,
+                'submitted_by_name' => optional(optional($line->order)->user)->name,
                 'created_at' => optional($line->created_at)->toIso8601String(),
             ];
         })->values()->all();

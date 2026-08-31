@@ -154,7 +154,7 @@ onUnmounted(() => {
       <div class="min-w-0">
         <h1 class="h4 mb-1 fw-semibold text-body">Supplies</h1>
         <p class="text-secondary small mb-0">
-          Catalog items staff can order from Resources → Supplies.
+          Shared team catalog — items here are visible to all staff on Resources → Supplies.
         </p>
       </div>
       <button

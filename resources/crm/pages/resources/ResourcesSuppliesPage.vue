@@ -10,6 +10,7 @@ import {
 } from "../../constants/supplies.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
+import { userHasPerm as crmUserHasPerm } from "../../utils/crmPerms.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
 
 const crmUser = inject("crmUser", ref(null));
@@ -59,20 +60,42 @@ function clearCartStorage() {
   }
 }
 
-function userHasPerm(key) {
-  const u = crmUser.value;
-  if (!u) return false;
-  if (crmIsAdmin(u) || u.is_crm_owner) return true;
-  return Array.isArray(u.permission_keys) && u.permission_keys.includes(key);
+function isStaffAdminUser(user) {
+  if (!user || typeof user !== "object") return false;
+  if (
+    user.is_admin === true ||
+    user.is_admin === 1 ||
+    user.is_admin === "1" ||
+    user.is_crm_owner === true ||
+    user.is_crm_owner === 1 ||
+    user.is_crm_owner === "1"
+  ) {
+    return true;
+  }
+  return crmIsAdmin(user);
 }
 
-const canCreate = computed(
-  () =>
-    userHasPerm("resources_supplies.create") ||
-    userHasPerm("resources.create") ||
-    userHasPerm("resources_supplies.update") ||
-    userHasPerm("resources.update"),
-);
+const canSubmitOrder = computed(() => {
+  const u = crmUser.value;
+  if (!u) return false;
+  if (isStaffAdminUser(u)) return true;
+  return crmUserHasPerm(
+    u,
+    "resources_supplies.create",
+    "resources.create",
+    "resources_supplies.update",
+    "resources.update",
+  );
+});
+
+const canViewSupplies = computed(() => {
+  const u = crmUser.value;
+  if (!u) return false;
+  if (isStaffAdminUser(u)) return true;
+  return crmUserHasPerm(u, "resources_supplies.view", "resources.view");
+});
+
+const catalogCount = computed(() => catalog.value.length);
 
 setCrmPageMeta({
   title: "Save Rack | Supplies",
@@ -181,7 +204,7 @@ async function loadHistory() {
 }
 
 function openPicker() {
-  if (!canCreate.value || catalogLoading.value) return;
+  if (!canViewSupplies.value || catalogLoading.value) return;
   pickerOpen.value = true;
 }
 
@@ -196,7 +219,7 @@ function pickSupply(supply) {
 }
 
 function addToOrder() {
-  if (!canCreate.value) return;
+  if (!canSubmitOrder.value) return;
   let supply = selectedSupply.value;
   if (!supply) {
     const matches = filteredCatalog.value;
@@ -286,7 +309,7 @@ function formatHistoryDate(val) {
 }
 
 async function submitOrder() {
-  if (!canCreate.value || submitting.value) return;
+  if (!canSubmitOrder.value || submitting.value) return;
   if (!cart.value.length) {
     toast.error("Add at least one supply to the order.");
     return;
@@ -345,11 +368,11 @@ onUnmounted(() => {
         <div class="min-w-0">
           <h1 class="resources-supplies__title mb-1">Supplies needed</h1>
           <p class="resources-supplies__subtitle mb-0">
-            Search and add the packaging supplies you need for this order.
+            Shared team catalog — every staff member sees the same supplies. Search, add to your order, and submit.
           </p>
         </div>
         <button
-          v-if="canCreate"
+          v-if="canSubmitOrder"
           type="button"
           class="btn btn-primary staff-page-primary resources-supplies__submit fw-semibold"
           :disabled="submitting"
@@ -375,7 +398,7 @@ onUnmounted(() => {
       </div>
 
       <div
-        v-if="canCreate"
+        v-if="canViewSupplies"
         class="resources-supplies__toolbar mb-3"
       >
         <div ref="searchRoot" class="resources-supplies__search">
@@ -402,7 +425,7 @@ onUnmounted(() => {
             role="listbox"
           >
             <button
-              v-for="s in filteredCatalog.slice(0, 40)"
+              v-for="s in filteredCatalog"
               :key="s.id"
               type="button"
               class="resources-supplies__picker-item"
@@ -442,11 +465,58 @@ onUnmounted(() => {
         <button
           type="button"
           class="btn resources-supplies__add fw-semibold"
-          :disabled="catalogLoading"
+          :disabled="catalogLoading || !canSubmitOrder"
+          :title="!canSubmitOrder ? 'Order permission required to add items' : undefined"
           @click="addToOrder"
         >
           + Add to Order
         </button>
+      </div>
+
+      <div v-if="canViewSupplies && !catalogLoading" class="resources-supplies__catalog-meta mb-3">
+        <span class="resources-supplies__catalog-count">
+          {{ catalogCount }} {{ catalogCount === 1 ? "item" : "items" }} in team catalog
+        </span>
+      </div>
+
+      <div v-if="canViewSupplies && !catalogLoading && catalog.length" class="resources-supplies__catalog-wrap mb-4">
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0 resources-supplies__catalog-table">
+            <thead>
+              <tr>
+                <th scope="col">Item Name</th>
+                <th scope="col">Type</th>
+                <th scope="col" class="text-end">Add</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in filteredCatalog" :key="`cat-${item.id}`">
+                <td>
+                  <button
+                    v-if="item.link"
+                    type="button"
+                    class="btn btn-link p-0 resources-supplies__name"
+                    @click="openItemLink(item.link)"
+                  >
+                    {{ item.name }}
+                  </button>
+                  <span v-else>{{ item.name }}</span>
+                </td>
+                <td>{{ item.type_label || supplyTypeLabel(item.type) }}</td>
+                <td class="text-end">
+                  <button
+                    type="button"
+                    class="btn btn-sm resources-supplies__add-inline fw-semibold"
+                    :disabled="!canSubmitOrder"
+                    @click="pickSupply(item); addToOrder()"
+                  >
+                    Add
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div v-if="catalogLoading" class="py-4">
@@ -609,6 +679,55 @@ onUnmounted(() => {
 .resources-supplies__subtitle {
   font-size: 0.875rem;
   color: #6b7280;
+}
+.resources-supplies__catalog-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.resources-supplies__catalog-count {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #4b5563;
+}
+.resources-supplies__catalog-wrap {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.65rem;
+  overflow: hidden;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+.resources-supplies__catalog-table {
+  font-size: 0.875rem;
+}
+.resources-supplies__catalog-table > thead > tr > th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f9fafb;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #6b7280;
+  border-bottom: 1px solid #e5e7eb;
+}
+.resources-supplies__catalog-table > tbody > tr > td {
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+.resources-supplies__add-inline {
+  border: 1px solid #7367f0;
+  color: #7367f0;
+  background: #fff;
+  padding: 0.2rem 0.65rem;
+  border-radius: 0.4rem;
+}
+.resources-supplies__add-inline:hover:not(:disabled) {
+  background: rgba(115, 103, 240, 0.06);
+}
+.resources-supplies__add-inline:disabled {
+  opacity: 0.5;
 }
 .resources-supplies__submit {
   display: inline-flex;

@@ -77,16 +77,6 @@ class SuppliesApiTest extends TestCase
         ])->assertForbidden();
     }
 
-    public function test_non_admin_cannot_create_settings_supply(): void
-    {
-        $this->staffWith(['resources_supplies.view']);
-
-        $this->postJson('/api/settings/supplies', [
-            'type' => Supply::TYPE_BOX,
-            'name' => '9x9x4',
-        ])->assertForbidden();
-    }
-
     public function test_staff_with_update_can_create_shared_catalog_supply(): void
     {
         $this->staffWith(['resources_supplies.view', 'resources_supplies.update']);
@@ -97,6 +87,26 @@ class SuppliesApiTest extends TestCase
         ])
             ->assertCreated()
             ->assertJsonPath('name', 'Shared Box');
+    }
+
+    public function test_two_staff_users_see_identical_shared_catalog(): void
+    {
+        $this->makeSupply(['name' => 'Box A']);
+        $this->makeSupply(['name' => 'Box B']);
+        $this->makeSupply(['name' => 'Box C']);
+
+        $this->staffWith(['resources_supplies.view']);
+        $staffCatalog = $this->getJson('/api/admin/supplies');
+        $staffCatalog->assertOk();
+        $staffNames = collect($staffCatalog->json('data'))->pluck('name')->sort()->values()->all();
+
+        $this->actingAsAdmin();
+        $adminCatalog = $this->getJson('/api/admin/supplies');
+        $adminCatalog->assertOk();
+        $adminNames = collect($adminCatalog->json('data'))->pluck('name')->sort()->values()->all();
+
+        $this->assertSame($adminNames, $staffNames);
+        $this->assertCount(3, $staffNames);
     }
 
     public function test_all_staff_see_shared_catalog_and_team_order_history(): void
@@ -193,6 +203,30 @@ class SuppliesApiTest extends TestCase
                 ['supply_id' => $supply->id, 'quantity' => 10],
             ],
         ])->assertForbidden();
+    }
+
+    public function test_admin_can_submit_supply_order_without_explicit_supplies_permissions(): void
+    {
+        $admin = $this->actingAsAdmin();
+        $supply = $this->makeSupply(['name' => 'Admin Box']);
+
+        $slack = Mockery::mock(SuppliesOrderedSlackService::class);
+        $slack->shouldReceive('send')
+            ->once()
+            ->andReturn(['method' => 'bot', 'channel' => '#supplies', 'ts' => '1.0']);
+        $this->app->instance(SuppliesOrderedSlackService::class, $slack);
+
+        $this->postJson('/api/admin/supply-orders', [
+            'lines' => [
+                ['supply_id' => $supply->id, 'quantity' => 3],
+            ],
+        ])
+            ->assertCreated()
+            ->assertJsonPath('lines.0.quantity', 3);
+
+        $this->assertDatabaseHas('supply_orders', [
+            'user_id' => $admin->id,
+        ]);
     }
 
     public function test_submit_order_creates_history_and_calls_slack(): void

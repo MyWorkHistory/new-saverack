@@ -14,9 +14,12 @@ export function crmIsAdmin(user) {
   }
   const roles = user.roles;
   if (Array.isArray(roles)) {
-    return roles.some((r) =>
-      ADMIN_ROLE_NAMES.has(String(r?.name || "").toLowerCase()),
-    );
+    return roles.some((r) => {
+      if (typeof r === "string") {
+        return ADMIN_ROLE_NAMES.has(r.toLowerCase());
+      }
+      return ADMIN_ROLE_NAMES.has(String(r?.name || "").toLowerCase());
+    });
   }
   return false;
 }

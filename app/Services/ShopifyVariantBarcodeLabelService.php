@@ -5,14 +5,24 @@ namespace App\Services;
 use App\Models\ShopifyProductVariant;
 use App\Support\Barcode\QrCodeSvg;
 use Illuminate\Support\Facades\Storage;
-use Throwable;
 
 class ShopifyVariantBarcodeLabelService
 {
+    /** Label print size (inches). */
+    public const LABEL_WIDTH_IN = 4.0;
+
+    public const LABEL_HEIGHT_IN = 1.5;
+
+    /** @var int ViewBox width at 96 dpi */
+    public const LABEL_WIDTH_PX = 384;
+
+    /** @var int ViewBox height at 96 dpi */
+    public const LABEL_HEIGHT_PX = 144;
+
     /**
-     * QR / bold text payload: barcode if present, otherwise SKU.
+     * QR payload: barcode if present, otherwise SKU.
      */
-    public function payloadForVariant(ShopifyProductVariant $variant): string
+    public function qrPayloadForVariant(ShopifyProductVariant $variant): string
     {
         $barcode = trim((string) ($variant->barcode ?? ''));
         if ($barcode !== '') {
@@ -20,6 +30,27 @@ class ShopifyVariantBarcodeLabelService
         }
 
         return trim((string) ($variant->sku ?? ''));
+    }
+
+    /**
+     * Bold line on the label: SKU when set, otherwise barcode.
+     */
+    public function displayCodeForVariant(ShopifyProductVariant $variant): string
+    {
+        $sku = trim((string) ($variant->sku ?? ''));
+        if ($sku !== '') {
+            return $sku;
+        }
+
+        return trim((string) ($variant->barcode ?? ''));
+    }
+
+    /**
+     * @deprecated Use qrPayloadForVariant() or displayCodeForVariant().
+     */
+    public function payloadForVariant(ShopifyProductVariant $variant): string
+    {
+        return $this->qrPayloadForVariant($variant);
     }
 
     public function productNameForVariant(ShopifyProductVariant $variant): string
@@ -34,32 +65,47 @@ class ShopifyVariantBarcodeLabelService
     }
 
     /**
-     * Ensure a stored label exists for the current payload/name. Returns relative storage path.
+     * Cache key covering SKU, barcode, and product name so label text updates when any change.
+     */
+    public function labelFingerprint(ShopifyProductVariant $variant): string
+    {
+        return implode("\0", [
+            $this->displayCodeForVariant($variant),
+            $this->qrPayloadForVariant($variant),
+            $this->productNameForVariant($variant),
+        ]);
+    }
+
+    /**
+     * Ensure a stored label exists for the current variant data. Returns relative storage path.
      */
     public function ensureLabel(ShopifyProductVariant $variant, bool $force = false): ?string
     {
-        $payload = $this->payloadForVariant($variant);
-        if ($payload === '') {
+        $qrPayload = $this->qrPayloadForVariant($variant);
+        $displayCode = $this->displayCodeForVariant($variant);
+        if ($qrPayload === '' && $displayCode === '') {
             return null;
         }
 
+        if ($qrPayload === '') {
+            $qrPayload = $displayCode;
+        }
+
         $name = $this->productNameForVariant($variant);
+        $fingerprint = $this->labelFingerprint($variant);
         $existingPath = trim((string) ($variant->barcode_label_path ?? ''));
         $existingPayload = trim((string) ($variant->barcode_label_payload ?? ''));
 
         if (
             ! $force
             && $existingPath !== ''
-            && $existingPayload === $payload
+            && $existingPayload === $fingerprint
             && Storage::disk('public')->exists($existingPath)
         ) {
-            // Also regenerate if product title changed (payload same but name differs) —
-            // compare by regenerating hash in filename is heavy; force when name in path meta missing.
-            // Simpler: store payload only; force regenerate from callers when name/sku/barcode change.
             return $existingPath;
         }
 
-        $svg = $this->buildLabelSvg($payload, $name);
+        $svg = $this->buildLabelSvg($qrPayload, $displayCode, $name);
         $dir = 'shopify/barcode-labels/'.$variant->connection_id;
         $filename = 'variant-'.$variant->id.'.svg';
         $path = $dir.'/'.$filename;
@@ -67,7 +113,7 @@ class ShopifyVariantBarcodeLabelService
         Storage::disk('public')->put($path, $svg);
 
         $variant->barcode_label_path = $path;
-        $variant->barcode_label_payload = $payload;
+        $variant->barcode_label_payload = $fingerprint;
         $variant->barcode_label_generated_at = now();
         $variant->save();
 
@@ -94,35 +140,29 @@ class ShopifyVariantBarcodeLabelService
         return Storage::disk('public')->path($path);
     }
 
-    private function buildLabelSvg(string $payload, string $productName): string
+    private function buildLabelSvg(string $qrPayload, string $displayCode, string $productName): string
     {
-        $qrDataUri = QrCodeSvg::dataUri($payload, 220);
-        $qrB64 = '';
-        if (strpos($qrDataUri, 'base64,') !== false) {
-            $parts = explode('base64,', $qrDataUri, 2);
-            $qrB64 = $parts[1] ?? '';
-        }
-        $qrInner = $qrB64 !== '' ? base64_decode($qrB64) : '';
-        // Strip xml declaration from nested SVG
-        $qrInner = preg_replace('/<\?xml[^>]*\?>/', '', $qrInner) ?? $qrInner;
-        $qrInner = trim($qrInner);
+        $w = self::LABEL_WIDTH_PX;
+        $h = self::LABEL_HEIGHT_PX;
+        $widthIn = self::LABEL_WIDTH_IN;
+        $heightIn = self::LABEL_HEIGHT_IN;
 
-        $safePayload = htmlspecialchars($payload, ENT_QUOTES | ENT_XML1, 'UTF-8');
-        $safeName = htmlspecialchars($productName, ENT_QUOTES | ENT_XML1, 'UTF-8');
-        if (mb_strlen($safeName) > 48) {
-            $safeName = htmlspecialchars(mb_substr($productName, 0, 45).'…', ENT_QUOTES | ENT_XML1, 'UTF-8');
-        }
-
-        // Embed QR as image via data URI to avoid nested SVG namespace issues in some browsers.
+        $qrDataUri = QrCodeSvg::dataUri($qrPayload, 108);
         $qrHref = htmlspecialchars($qrDataUri, ENT_QUOTES | ENT_XML1, 'UTF-8');
+
+        $safeDisplay = htmlspecialchars($displayCode, ENT_QUOTES | ENT_XML1, 'UTF-8');
+        $safeName = htmlspecialchars($productName, ENT_QUOTES | ENT_XML1, 'UTF-8');
+        if (mb_strlen($safeName) > 52) {
+            $safeName = htmlspecialchars(mb_substr($productName, 0, 49).'…', ENT_QUOTES | ENT_XML1, 'UTF-8');
+        }
 
         return <<<SVG
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="520" height="220" viewBox="0 0 520 220">
-  <rect width="520" height="220" fill="#ffffff"/>
-  <image href="{$qrHref}" x="24" y="30" width="160" height="160"/>
-  <text x="210" y="95" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#1e293b">{$safePayload}</text>
-  <text x="210" y="130" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#64748b">{$safeName}</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="{$widthIn}in" height="{$heightIn}in" viewBox="0 0 {$w} {$h}">
+  <rect width="{$w}" height="{$h}" fill="#ffffff"/>
+  <image href="{$qrHref}" x="10" y="18" width="108" height="108"/>
+  <text x="132" y="58" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#1e293b">{$safeDisplay}</text>
+  <text x="132" y="84" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#64748b">{$safeName}</text>
 </svg>
 SVG;
     }

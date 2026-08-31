@@ -227,25 +227,29 @@ async function printBarcode() {
   printBusy.value = true;
   try {
     const { data } = await api.get(`/shopify/inventory/${variant.value.id}/barcode-label`, {
-      responseType: "blob",
+      responseType: "text",
+      params: { t: Date.now() },
     });
-    const blob = data instanceof Blob ? data : new Blob([data], { type: "image/svg+xml" });
-    const url = URL.createObjectURL(blob);
+    const svg = typeof data === "string" ? data : String(data ?? "");
     const win = window.open("", "_blank");
     if (!win) {
-      URL.revokeObjectURL(url);
       toast.error("Allow pop-ups to print the barcode label.");
       return;
     }
+    const widthIn = 4;
+    const heightIn = 1.5;
     win.document.write(
       `<!DOCTYPE html><html><head><title>Barcode Label</title>` +
-        `<style>html,body{margin:0;height:100%;display:flex;align-items:center;justify-content:center;background:#fff}` +
-        `img{max-width:100%;height:auto}</style></head><body>` +
-        `<img src="${url}" alt="Barcode Label" onload="window.focus();window.print();" />` +
+        `<style>` +
+        `@page{size:${widthIn}in ${heightIn}in;margin:0}` +
+        `html,body{margin:0;padding:0;width:${widthIn}in;height:${heightIn}in;overflow:hidden;background:#fff}` +
+        `.label{display:block;width:${widthIn}in;height:${heightIn}in}` +
+        `</style></head><body>` +
+        `<div class="label">${svg}</div>` +
+        `<script>window.onload=function(){window.focus();window.print();};<\/script>` +
         `</body></html>`,
     );
     win.document.close();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch (e) {
     toast.errorFrom(e, "Could not print barcode label.");
   } finally {
@@ -402,38 +406,39 @@ onUnmounted(() => {
           </svg>
           Back to Products
         </button>
-        <div class="sid-header__actions">
+        <div class="staff-detail-tab-bar-actions sid-header__actions">
           <button
             type="button"
-            class="sid-btn"
+            class="staff-outline-action-btn"
             :disabled="printBusy"
             @click="printBarcode"
           >
-            <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V6.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v.852m10.5 0V9.75m0 0a48.063 48.063 0 01-10.5 0" />
             </svg>
             {{ printBusy ? "Preparing…" : "Print Barcode" }}
           </button>
+          <button type="button" class="staff-outline-action-btn" @click="openEdit">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
+            </svg>
+            Edit Product
+          </button>
           <div ref="actionsRoot" class="sid-actions-wrap">
             <button
               type="button"
-              class="sid-btn"
+              class="staff-outline-action-btn"
+              :class="{ 'staff-outline-action-btn--active': actionsOpen }"
               :disabled="actionBusy"
               :aria-expanded="actionsOpen"
               @click.stop="actionsOpen = !actionsOpen"
             >
-              {{ actionBusy ? "Working…" : "Actions" }}
-              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              Actions
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
               </svg>
             </button>
             <div v-if="actionsOpen" class="sid-menu" role="menu">
-              <button type="button" class="sid-menu__item" role="menuitem" @click="openSettings">
-                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
-                </svg>
-                Edit Product
-              </button>
               <button type="button" class="sid-menu__item" role="menuitem" @click="syncProductInfo">
                 <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
@@ -488,7 +493,7 @@ onUnmounted(() => {
                   <h1 class="sid-product__title">
                     {{ variant.product_title || variant.title || "Product" }}
                   </h1>
-                  <button type="button" class="sid-btn sid-btn--sm" @click="openEdit">
+                  <button type="button" class="staff-outline-action-btn staff-outline-action-btn--sm" @click="openEdit">
                     <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
                     </svg>
@@ -610,7 +615,7 @@ onUnmounted(() => {
                 </div>
                 <p class="sid-card__sub">Items included in this bundle</p>
               </div>
-              <button type="button" class="sid-btn sid-btn--sm" :disabled="bundleBusy" @click="openBundleItems">
+              <button type="button" class="staff-outline-action-btn staff-outline-action-btn--sm" :disabled="bundleBusy" @click="openBundleItems">
                 <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
@@ -756,7 +761,7 @@ onUnmounted(() => {
                 </div>
                 <p class="sid-card__sub">Manage inventory by location.</p>
               </div>
-              <button type="button" class="sid-btn sid-btn--sm" @click="comingSoon('Add Location')">
+              <button type="button" class="staff-outline-action-btn staff-outline-action-btn--sm" @click="comingSoon('Add Location')">
                 <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
@@ -895,47 +900,7 @@ onUnmounted(() => {
   color: #2563eb;
 }
 .sid-header__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.55rem;
-}
-/* Outline buttons matching mock: white, thin blue border, blue text/icons */
-.sid-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  height: 2.4rem;
-  padding: 0 1rem;
-  border: 1px solid #3b82f6;
-  border-radius: 0.5rem;
-  background: #fff;
-  color: #3b82f6;
-  font-size: 0.875rem;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-  cursor: pointer;
-  box-shadow: none;
-}
-.sid-btn svg {
-  color: inherit;
-  flex-shrink: 0;
-}
-.sid-btn:hover:not(:disabled) {
-  background: #eff6ff;
-  border-color: #2563eb;
-  color: #2563eb;
-}
-.sid-btn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-.sid-btn--sm {
-  height: 2rem;
-  padding: 0 0.7rem;
-  font-size: 0.8125rem;
-  border-radius: 0.45rem;
+  margin-left: auto;
 }
 .sid-actions-wrap {
   position: relative;

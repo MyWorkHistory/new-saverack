@@ -1786,6 +1786,86 @@ button.staff-status-badge:focus-visible {
   color: #a59bff;
 }
 
+.staff-detail-tab-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.625rem;
+  flex-shrink: 0;
+}
+
+/* Horizontal outline action buttons (Shopify inventory mock, etc.) */
+.staff-outline-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.75rem;
+  padding: 0.625rem 1rem;
+  border: 1.5px solid #7367f0;
+  border-radius: 0.625rem;
+  background: #fff;
+  color: #7367f0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+  box-shadow: none;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.staff-outline-action-btn svg {
+  flex-shrink: 0;
+  color: currentColor;
+}
+
+.staff-outline-action-btn:hover:not(:disabled):not(.staff-outline-action-btn--disabled) {
+  background: rgba(115, 103, 240, 0.06);
+  border-color: #7367f0;
+  color: #7367f0;
+}
+
+.staff-outline-action-btn:focus,
+.staff-outline-action-btn:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.staff-outline-action-btn:disabled,
+.staff-outline-action-btn--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.staff-outline-action-btn--sm {
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8125rem;
+  border-radius: 0.5rem;
+}
+
+.staff-outline-action-btn--active {
+  border-width: 2px;
+  border-color: #7367f0;
+  color: #7367f0;
+}
+
+[data-bs-theme="dark"] .staff-outline-action-btn {
+  background: var(--bs-body-bg);
+}
+
+[data-bs-theme="dark"] .staff-outline-action-btn:hover:not(:disabled):not(.staff-outline-action-btn--disabled),
+[data-bs-theme="dark"] .staff-outline-action-btn--active {
+  border-color: #a59bff;
+  color: #a59bff;
+}
+
 /* Narrow viewports: full-width horizontal tab nav (account detail, invoice actions, etc.) */
 @media (max-width: 1199.98px) {
   .staff-detail-tab-bar-wrap {

@@ -1099,7 +1099,11 @@ class ShopifyIntegrationController extends Controller
             $shopifyVariant->sku = $newSku;
         }
         if (array_key_exists('title', $validated) && $validated['title'] !== null) {
-            $shopifyVariant->title = trim((string) $validated['title']);
+            $newTitle = trim((string) $validated['title']);
+            if ($newTitle !== trim((string) ($shopifyVariant->title ?? ''))) {
+                $labelFieldsChanged = true;
+            }
+            $shopifyVariant->title = $newTitle;
         }
         if (array_key_exists('weight', $validated) && $validated['weight'] !== null) {
             $shopifyVariant->weight = (float) $validated['weight'];
@@ -1278,7 +1282,7 @@ class ShopifyIntegrationController extends Controller
         $shopifyVariant->loadMissing('product');
 
         $labels = app(\App\Services\ShopifyVariantBarcodeLabelService::class);
-        $path = $labels->ensureLabel($shopifyVariant, false);
+        $path = $labels->ensureLabel($shopifyVariant, true);
         if ($path === null || $path === '') {
             return response()->json([
                 'message' => 'Add a barcode or SKU before printing a label.',

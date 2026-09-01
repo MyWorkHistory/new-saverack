@@ -11,12 +11,16 @@ use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyConnectionService;
 use App\Services\ShopifyFulfillmentService;
 use App\Services\ShopifyOAuthService;
+use App\Services\ShopifyOrderActionService;
+use App\Services\ShopifyOrderListService;
 use App\Services\ShopifyOrderSyncService;
 use App\Services\ShopifyProductSyncService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class ShopifyIntegrationController extends Controller
@@ -701,34 +705,15 @@ class ShopifyIntegrationController extends Controller
         return $this->oauthCrmRedirect($accountId, (int) $connection->id, true);
     }
 
-    public function ordersIndex(Request $request): JsonResponse
+    public function ordersIndex(Request $request, ShopifyOrderListService $orders): JsonResponse
     {
         $this->assertAdmin($request);
 
-        $q = trim((string) $request->query('q', ''));
-        $status = strtolower(trim((string) $request->query('fulfillment_status', '')));
         $perPage = max(10, min(100, (int) $request->query('per_page', 25)));
-
-        $query = ShopifyOrder::query()
-            ->with(['connection.clientAccount:id,company_name'])
-            ->orderByDesc('shopify_created_at')
-            ->orderByDesc('id');
-
-        if ($q !== '') {
-            $query->where(function ($builder) use ($q) {
-                $builder->where('name', 'like', '%'.$q.'%')
-                    ->orWhere('email', 'like', '%'.$q.'%')
-                    ->orWhere('shopify_order_id', 'like', '%'.$q.'%');
-            });
-        }
-        if ($status !== '' && $status !== 'all') {
-            $query->where('fulfillment_status', $status);
-        }
-
-        $page = $query->paginate($perPage);
+        $page = $orders->filteredQuery($request)->paginate($perPage);
 
         return response()->json([
-            'data' => collect($page->items())->map(fn (ShopifyOrder $order) => $this->orderListRow($order))->values(),
+            'data' => collect($page->items())->map(fn (ShopifyOrder $order) => $orders->listRow($order))->values(),
             'meta' => [
                 'current_page' => $page->currentPage(),
                 'last_page' => $page->lastPage(),
@@ -738,7 +723,241 @@ class ShopifyIntegrationController extends Controller
         ]);
     }
 
-    public function ordersShow(Request $request, ShopifyOrder $shopifyOrder): JsonResponse
+    public function ordersMeta(Request $request, ShopifyOrderListService $orders): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        return response()->json($orders->filterMeta());
+    }
+
+    public function ordersExport(Request $request, ShopifyOrderListService $orders): StreamedResponse
+    {
+        $this->assertAdmin($request);
+
+        $ids = $request->query('ids');
+        $query = $orders->filteredQuery($request);
+        if (is_string($ids) && trim($ids) !== '') {
+            $idList = array_filter(array_map('intval', explode(',', $ids)));
+            if ($idList !== []) {
+                $query->whereIn('id', $idList);
+            }
+        }
+
+        $rows = $query->get();
+        $filename = 'shopify-orders-'.now()->format('Ymd-His').'.csv';
+
+        return response()->streamDownload(function () use ($rows, $orders) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, [
+                'Status',
+                'Order #',
+                'Recipient',
+                'Order Date',
+                'Country',
+                'Shipping Method',
+                'Account',
+            ]);
+            foreach ($rows as $order) {
+                $row = $orders->listRow($order);
+                fputcsv($out, [
+                    $orders->displayStatusLabel((string) $row['display_status']),
+                    $row['name'],
+                    $row['recipient_name'],
+                    $row['shopify_created_at'],
+                    $row['country'],
+                    $row['shipping_method'],
+                    $row['account_name'],
+                ]);
+            }
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    public function orderSync(Request $request, ShopifyOrder $shopifyOrder, ShopifyOrderActionService $actions): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        try {
+            $order = $actions->syncOrder($shopifyOrder);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => 'Could not sync order from Shopify.'], 500);
+        }
+
+        return response()->json(['order' => app(ShopifyOrderListService::class)->listRow($order)]);
+    }
+
+    public function orderHold(Request $request, ShopifyOrder $shopifyOrder, ShopifyOrderActionService $actions): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        $validated = $request->validate([
+            'reasons' => ['required', 'array', 'min:1'],
+            'reasons.*' => ['required', 'string', 'max:64'],
+        ]);
+
+        try {
+            $order = $actions->holdOrder($shopifyOrder, $validated['reasons']);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => 'Could not hold order.'], 500);
+        }
+
+        return response()->json(['order' => app(ShopifyOrderListService::class)->listRow($order)]);
+    }
+
+    public function orderCancel(Request $request, ShopifyOrder $shopifyOrder, ShopifyOrderActionService $actions): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        try {
+            $order = $actions->cancelOrder($shopifyOrder);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => 'Could not cancel order.'], 500);
+        }
+
+        return response()->json(['order' => app(ShopifyOrderListService::class)->listRow($order)]);
+    }
+
+    public function orderFulfillAll(Request $request, ShopifyOrder $shopifyOrder, ShopifyOrderActionService $actions): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        try {
+            $result = $actions->fulfillAllRemaining($shopifyOrder, $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => 'Could not mark order fulfilled.'], 500);
+        }
+
+        return response()->json([
+            'order' => app(ShopifyOrderListService::class)->listRow($result['order']),
+        ]);
+    }
+
+    public function ordersBulkHold(Request $request, ShopifyOrderActionService $actions, ShopifyOrderListService $orders): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer'],
+            'reasons' => ['required', 'array', 'min:1'],
+            'reasons.*' => ['required', 'string', 'max:64'],
+        ]);
+
+        $updated = [];
+        $errors = [];
+        foreach ($validated['ids'] as $id) {
+            $order = ShopifyOrder::query()->find((int) $id);
+            if ($order === null) {
+                continue;
+            }
+            try {
+                $updated[] = $orders->listRow($actions->holdOrder($order, $validated['reasons']));
+            } catch (RuntimeException $e) {
+                $errors[] = ['id' => (int) $id, 'message' => $e->getMessage()];
+            }
+        }
+
+        return response()->json([
+            'updated' => $updated,
+            'errors' => $errors,
+        ]);
+    }
+
+    public function ordersBulkCancel(Request $request, ShopifyOrderActionService $actions, ShopifyOrderListService $orders): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $updated = [];
+        $errors = [];
+        foreach ($validated['ids'] as $id) {
+            $order = ShopifyOrder::query()->find((int) $id);
+            if ($order === null) {
+                continue;
+            }
+            try {
+                $updated[] = $orders->listRow($actions->cancelOrder($order));
+            } catch (RuntimeException $e) {
+                $errors[] = ['id' => (int) $id, 'message' => $e->getMessage()];
+            }
+        }
+
+        return response()->json([
+            'updated' => $updated,
+            'errors' => $errors,
+        ]);
+    }
+
+    public function ordersBulkFulfill(Request $request, ShopifyOrderActionService $actions, ShopifyOrderListService $orders): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $updated = [];
+        $errors = [];
+        foreach ($validated['ids'] as $id) {
+            $order = ShopifyOrder::query()->find((int) $id);
+            if ($order === null) {
+                continue;
+            }
+            try {
+                $result = $actions->fulfillAllRemaining($order, $request->user());
+                $updated[] = $orders->listRow($result['order']);
+            } catch (RuntimeException $e) {
+                $errors[] = ['id' => (int) $id, 'message' => $e->getMessage()];
+            }
+        }
+
+        return response()->json([
+            'updated' => $updated,
+            'errors' => $errors,
+        ]);
+    }
+
+    public function orderPackingSlip(Request $request, ShopifyOrder $shopifyOrder, ShopifyOrderListService $orders)
+    {
+        $this->assertAdmin($request);
+        $shopifyOrder->load(['connection.clientAccount', 'lineItems']);
+
+        $pdf = Pdf::loadView('pdf.shopify.order-packing-slip', [
+            'order' => $shopifyOrder,
+            'accountName' => $shopifyOrder->connection?->clientAccount?->company_name ?? 'Save Rack',
+            'recipientName' => $orders->recipientName($shopifyOrder),
+            'shippingAddress' => is_array($shopifyOrder->shipping_address_json) ? $shopifyOrder->shipping_address_json : [],
+        ])->setPaper('letter');
+
+        $name = preg_replace('/[^a-zA-Z0-9_-]+/', '-', (string) ($shopifyOrder->name ?? 'order')) ?: 'order';
+
+        return $pdf->stream('shopify-'.$name.'-packing-slip.pdf');
+    }
+
+    public function ordersShow(Request $request, ShopifyOrder $shopifyOrder, ShopifyOrderListService $orders): JsonResponse
     {
         $this->assertAdmin($request);
         $shopifyOrder->load([
@@ -748,7 +967,7 @@ class ShopifyIntegrationController extends Controller
             'fulfillments',
         ]);
 
-        return response()->json(['order' => $this->orderDetail($shopifyOrder)]);
+        return response()->json(['order' => $this->orderDetail($shopifyOrder, $orders)]);
     }
 
     public function fulfillOrder(
@@ -791,7 +1010,7 @@ class ShopifyIntegrationController extends Controller
 
         return response()->json([
             'message' => 'Fulfillment created in Shopify.',
-            'order' => $this->orderDetail($order),
+            'order' => $this->orderDetail($order, app(ShopifyOrderListService::class)),
             'fulfillment' => [
                 'id' => $result['fulfillment']->id,
                 'shopify_fulfillment_id' => $result['fulfillment']->shopify_fulfillment_id,
@@ -1550,37 +1769,16 @@ class ShopifyIntegrationController extends Controller
         return redirect()->away($base.'/admin/clients/accounts?'.$flag);
     }
 
-    private function orderListRow(ShopifyOrder $order): array
+    private function orderDetail(ShopifyOrder $order, ?ShopifyOrderListService $orders = null): array
     {
-        return [
-            'id' => $order->id,
-            'name' => $order->name,
-            'shopify_order_id' => $order->shopify_order_id,
-            'email' => $order->email,
-            'financial_status' => $order->financial_status,
-            'fulfillment_status' => $order->fulfillment_status,
-            'total_price' => $order->total_price,
-            'currency' => $order->currency,
-            'shopify_created_at' => optional($order->shopify_created_at)->toIso8601String(),
-            'account_name' => $order->connection->clientAccount->company_name ?? null,
-            'line_count' => $order->lineItems()->count(),
-        ];
-    }
+        $orders ??= app(ShopifyOrderListService::class);
+        $list = $orders->listRow($order);
 
-    private function orderDetail(ShopifyOrder $order): array
-    {
-        return [
-            'id' => $order->id,
-            'name' => $order->name,
-            'shopify_order_id' => $order->shopify_order_id,
+        return array_merge($list, [
             'email' => $order->email,
             'financial_status' => $order->financial_status,
-            'fulfillment_status' => $order->fulfillment_status,
             'total_price' => $order->total_price,
             'currency' => $order->currency,
-            'shopify_created_at' => optional($order->shopify_created_at)->toIso8601String(),
-            'cancelled_at' => optional($order->cancelled_at)->toIso8601String(),
-            'account_name' => $order->connection->clientAccount->company_name ?? null,
             'customer' => $order->customer_json,
             'shipping_address' => $order->shipping_address_json,
             'line_items' => $order->lineItems->map(fn ($line) => [
@@ -1615,6 +1813,6 @@ class ShopifyIntegrationController extends Controller
                 'tracking_number' => $f->tracking_number,
                 'created_at' => optional($f->created_at)->toIso8601String(),
             ])->values(),
-        ];
+        ]);
     }
 }

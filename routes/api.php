@@ -709,7 +709,17 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('shopify')->group(function () {
         Route::get('/orders', [ShopifyIntegrationController::class, 'ordersIndex']);
+        Route::get('/orders/meta', [ShopifyIntegrationController::class, 'ordersMeta']);
+        Route::get('/orders/export', [ShopifyIntegrationController::class, 'ordersExport']);
+        Route::post('/orders/bulk/hold', [ShopifyIntegrationController::class, 'ordersBulkHold']);
+        Route::post('/orders/bulk/cancel', [ShopifyIntegrationController::class, 'ordersBulkCancel']);
+        Route::post('/orders/bulk/fulfill', [ShopifyIntegrationController::class, 'ordersBulkFulfill']);
         Route::get('/orders/{shopifyOrder}', [ShopifyIntegrationController::class, 'ordersShow']);
+        Route::get('/orders/{shopifyOrder}/packing-slip.pdf', [ShopifyIntegrationController::class, 'orderPackingSlip']);
+        Route::post('/orders/{shopifyOrder}/sync', [ShopifyIntegrationController::class, 'orderSync']);
+        Route::post('/orders/{shopifyOrder}/hold', [ShopifyIntegrationController::class, 'orderHold']);
+        Route::post('/orders/{shopifyOrder}/cancel', [ShopifyIntegrationController::class, 'orderCancel']);
+        Route::post('/orders/{shopifyOrder}/fulfill-all', [ShopifyIntegrationController::class, 'orderFulfillAll']);
         Route::post('/orders/{shopifyOrder}/fulfill', [ShopifyIntegrationController::class, 'fulfillOrder']);
         Route::get('/inventory', [ShopifyIntegrationController::class, 'inventoryIndex']);
         Route::get('/inventory/accounts', [ShopifyIntegrationController::class, 'inventoryAccounts']);

@@ -1,73 +1,229 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
-import CrmRefreshToolbarButton from "../../components/common/CrmRefreshToolbarButton.vue";
+import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
+import ShopifyOrderCancelConfirmModal from "../../components/shopify/ShopifyOrderCancelConfirmModal.vue";
+import ShopifyOrderHoldModal from "../../components/shopify/ShopifyOrderHoldModal.vue";
+import {
+  displayStatusClass,
+  displayStatusLabel,
+  useShopifyOrderActions,
+} from "../../composables/useShopifyOrderActions.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
-import { formatDateTimeUs } from "../../utils/formatUserDates";
 
-const MENU_W = 160;
-const MENU_H = 48;
+const MENU_W = 220;
+const MENU_H = 360;
+const PER_PAGE = 25;
 
 const router = useRouter();
 const toast = useToast();
 const loading = ref(false);
+const metaLoading = ref(false);
 const rows = ref([]);
+const meta = reactive({
+  countries: [],
+  shipping_methods: [],
+  statuses: [],
+  accounts: [],
+});
 const q = ref("");
-const fulfillmentStatus = ref("all");
+const selectedAccountId = ref("");
+const filters = reactive({
+  status: "",
+  shipping_method: "",
+  country: "",
+  created_from: "",
+  created_to: "",
+});
+const draftFilters = reactive({
+  status: "",
+  shipping_method: "",
+  country: "",
+  created_from: "",
+  created_to: "",
+});
 const filterMenuOpen = ref(false);
+const bulkMenuOpen = ref(false);
+const selectedIds = ref([]);
+const pagination = ref({ current_page: 1, last_page: 1, total: 0, per_page: PER_PAGE });
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
+const holdModalOpen = ref(false);
+const cancelModalOpen = ref(false);
+const actionTargetIds = ref([]);
 
-const manageMenuRow = computed(
-  () => rows.value.find((r) => r.id === manageOpenId.value) ?? null,
+let searchTimer = null;
+
+const manageMenuRow = computed(() => rows.value.find((r) => r.id === manageOpenId.value) ?? null);
+const allSelected = computed(
+  () => rows.value.length > 0 && rows.value.every((r) => selectedIds.value.includes(r.id)),
 );
+const selectedCount = computed(() => selectedIds.value.length);
+const accountOptions = computed(() =>
+  (meta.accounts || []).map((a) => ({
+    id: a.id,
+    name: a.name || `Account #${a.id}`,
+    email: "",
+  })),
+);
+const statusOptions = computed(() => [
+  { value: "", label: "Select status" },
+  ...(meta.statuses || []).map((s) => ({ value: s.value, label: s.label })),
+]);
+const shippingOptions = computed(() => [
+  { value: "", label: "Select shipping method" },
+  ...(meta.shipping_methods || []).map((m) => ({ value: m, label: m })),
+]);
+const countryOptions = computed(() => [
+  { value: "", label: "Select country" },
+  ...(meta.countries || []).map((c) => ({ value: c, label: c })),
+]);
+const holdTargetCount = computed(() => actionTargetIds.value.length || 1);
+const cancelTargetCount = computed(() => actionTargetIds.value.length || 1);
 
-function fulfillmentBadgeClass(status) {
-  const s = String(status || "").toLowerCase();
-  if (s === "fulfilled") return "bg-success-subtle text-success-emphasis";
-  if (s === "partial" || s === "partially_fulfilled") return "bg-warning-subtle text-warning-emphasis";
-  if (s === "unfulfilled" || !s) return "bg-secondary-subtle text-secondary-emphasis";
-  return "bg-body-secondary text-body-secondary";
+function mergeUpdatedRow(updated) {
+  if (!updated?.id) return;
+  const idx = rows.value.findIndex((r) => r.id === updated.id);
+  if (idx >= 0) rows.value[idx] = { ...rows.value[idx], ...updated };
 }
 
-function fulfillmentLabel(status) {
-  const s = String(status || "").trim();
-  if (!s) return "Unfulfilled";
-  return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+const actions = useShopifyOrderActions({
+  onUpdated: (payload) => {
+    if (payload?.id) {
+      mergeUpdatedRow(payload);
+      return;
+    }
+    if (Array.isArray(payload?.updated)) {
+      payload.updated.forEach(mergeUpdatedRow);
+    }
+    void load();
+  },
+});
+
+function filterParams() {
+  return {
+    q: q.value || undefined,
+    client_account_id: selectedAccountId.value || undefined,
+    status: filters.status || undefined,
+    shipping_method: filters.shipping_method || undefined,
+    country: filters.country || undefined,
+    created_from: filters.created_from || undefined,
+    created_to: filters.created_to || undefined,
+    per_page: pagination.value.per_page,
+    page: pagination.value.current_page,
+  };
 }
 
-function financialLabel(status) {
-  const s = String(status || "").trim();
-  if (!s) return "—";
-  return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatMoney(row) {
-  if (row?.total_price == null) return "—";
-  const currency = row.currency ? `${row.currency} ` : "";
-  return `${currency}${row.total_price}`;
+async function loadMeta() {
+  metaLoading.value = true;
+  try {
+    const { data } = await api.get("/shopify/orders/meta");
+    meta.countries = Array.isArray(data?.countries) ? data.countries : [];
+    meta.shipping_methods = Array.isArray(data?.shipping_methods) ? data.shipping_methods : [];
+    meta.statuses = Array.isArray(data?.statuses) ? data.statuses : [];
+    meta.accounts = Array.isArray(data?.accounts) ? data.accounts : [];
+  } catch (e) {
+    toast.errorFrom(e, "Could not load filter options.");
+  } finally {
+    metaLoading.value = false;
+  }
 }
 
 async function load() {
   loading.value = true;
   try {
-    const { data } = await api.get("/shopify/orders", {
-      params: {
-        q: q.value || undefined,
-        fulfillment_status: fulfillmentStatus.value,
-        per_page: 50,
-      },
-    });
+    const { data } = await api.get("/shopify/orders", { params: filterParams() });
     rows.value = Array.isArray(data?.data) ? data.data : [];
+    pagination.value = {
+      current_page: data?.meta?.current_page || 1,
+      last_page: data?.meta?.last_page || 1,
+      total: data?.meta?.total || 0,
+      per_page: data?.meta?.per_page || PER_PAGE,
+    };
+    selectedIds.value = selectedIds.value.filter((id) => rows.value.some((r) => r.id === id));
   } catch (e) {
     toast.errorFrom(e, "Could not load Shopify orders.");
   } finally {
     loading.value = false;
   }
+}
+
+function scheduleSearch() {
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    pagination.value.current_page = 1;
+    void load();
+  }, 350);
+}
+
+function openFilters() {
+  draftFilters.status = filters.status;
+  draftFilters.shipping_method = filters.shipping_method;
+  draftFilters.country = filters.country;
+  draftFilters.created_from = filters.created_from;
+  draftFilters.created_to = filters.created_to;
+  filterMenuOpen.value = !filterMenuOpen.value;
+}
+
+function applyFilters() {
+  filters.status = draftFilters.status;
+  filters.shipping_method = draftFilters.shipping_method;
+  filters.country = draftFilters.country;
+  filters.created_from = draftFilters.created_from;
+  filters.created_to = draftFilters.created_to;
+  filterMenuOpen.value = false;
+  pagination.value.current_page = 1;
+  void load();
+}
+
+function clearFilters() {
+  draftFilters.status = "";
+  draftFilters.shipping_method = "";
+  draftFilters.country = "";
+  draftFilters.created_from = "";
+  draftFilters.created_to = "";
+}
+
+function resetAll() {
+  q.value = "";
+  selectedAccountId.value = "";
+  filters.status = "";
+  filters.shipping_method = "";
+  filters.country = "";
+  filters.created_from = "";
+  filters.created_to = "";
+  clearFilters();
+  filterMenuOpen.value = false;
+  bulkMenuOpen.value = false;
+  selectedIds.value = [];
+  pagination.value.current_page = 1;
+  void load();
+}
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    selectedIds.value = [];
+    return;
+  }
+  selectedIds.value = rows.value.map((r) => r.id);
+}
+
+function toggleSelect(id) {
+  if (selectedIds.value.includes(id)) {
+    selectedIds.value = selectedIds.value.filter((x) => x !== id);
+    return;
+  }
+  selectedIds.value = [...selectedIds.value, id];
+}
+
+function goPage(p) {
+  if (p < 1 || p > pagination.value.last_page) return;
+  pagination.value.current_page = p;
+  void load();
 }
 
 function openRow(row) {
@@ -103,31 +259,105 @@ async function toggleManageMenu(row, e) {
   });
 }
 
-function resetFilters() {
-  fulfillmentStatus.value = "all";
-  void load();
+function formatOrderDate(iso) {
+  if (!iso) return { date: "—", time: "" };
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { date: "—", time: "" };
+  return {
+    date: d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+    time: d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+  };
+}
+
+async function exportCsv(selectedOnly = false) {
+  bulkMenuOpen.value = false;
+  try {
+    const params = filterParams();
+    delete params.page;
+    delete params.per_page;
+    if (selectedOnly && selectedIds.value.length) {
+      params.ids = selectedIds.value.join(",");
+    }
+    const { data } = await api.get("/shopify/orders/export", { params, responseType: "blob" });
+    const url = URL.createObjectURL(data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "shopify-orders.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    toast.errorFrom(e, "Could not export orders.");
+  }
+}
+
+function openHoldModal(ids) {
+  actionTargetIds.value = [...ids];
+  holdModalOpen.value = true;
+  manageOpenId.value = null;
+  bulkMenuOpen.value = false;
+}
+
+function openCancelModal(ids) {
+  actionTargetIds.value = [...ids];
+  cancelModalOpen.value = true;
+  manageOpenId.value = null;
+  bulkMenuOpen.value = false;
+}
+
+async function confirmHold(reasons) {
+  const ids = actionTargetIds.value.length ? actionTargetIds.value : [];
+  if (!ids.length) return;
+  const result = await actions.holdOrder(ids, reasons);
+  if (result) {
+    holdModalOpen.value = false;
+    actionTargetIds.value = [];
+    if (ids.length > 1) selectedIds.value = [];
+    else void load();
+  }
+}
+
+async function confirmCancel() {
+  const ids = actionTargetIds.value.length ? actionTargetIds.value : [];
+  if (!ids.length) return;
+  const result = await actions.cancelOrder(ids);
+  if (result) {
+    cancelModalOpen.value = false;
+    actionTargetIds.value = [];
+    selectedIds.value = selectedIds.value.filter((id) => !ids.includes(id));
+    void load();
+  }
+}
+
+function runRowAction(fn, row) {
+  manageOpenId.value = null;
+  fn(row);
 }
 
 function onDocClick(e) {
-  if (!e.target?.closest?.("[data-shopify-orders-filter]")) {
-    filterMenuOpen.value = false;
-  }
-  if (!e.target?.closest?.("[data-shopify-orders-row-actions]")) {
-    manageOpenId.value = null;
-  }
+  if (!e.target?.closest?.("[data-shopify-orders-filter]")) filterMenuOpen.value = false;
+  if (!e.target?.closest?.("[data-shopify-orders-row-actions]")) manageOpenId.value = null;
+  if (!e.target?.closest?.("[data-shopify-orders-bulk-actions]")) bulkMenuOpen.value = false;
 }
+
+watch(q, () => scheduleSearch());
+watch(selectedAccountId, () => {
+  pagination.value.current_page = 1;
+  void load();
+});
 
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Shopify Orders",
-    description: "Shopify orders from connected stores.",
+    description: "Search, filter, and manage Shopify orders.",
   });
   document.addEventListener("click", onDocClick);
+  void loadMeta();
   void load();
 });
 
 onUnmounted(() => {
   document.removeEventListener("click", onDocClick);
+  if (searchTimer) clearTimeout(searchTimer);
 });
 </script>
 
@@ -135,43 +365,61 @@ onUnmounted(() => {
   <div class="staff-page staff-page--wide">
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
       <div class="min-w-0">
-        <h1 class="h4 mb-1 fw-semibold text-body">Shopify Orders</h1>
+        <h1 class="h4 mb-1 fw-semibold text-body">Orders</h1>
         <p class="small text-secondary mb-0">
-          Orders from connected Shopify stores. Webhooks update in near real-time; backup sync runs every 5 minutes.
+          Search, filter, and manage all your orders in one place.
         </p>
       </div>
-      <CrmRefreshToolbarButton
-        :disabled="loading"
-        :loading="loading"
-        @click="load"
-      />
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
       <div class="staff-table-toolbar">
-        <div class="staff-table-toolbar--row shopify-orders-toolbar-row">
-          <div class="shopify-orders-search-wrap flex-shrink-0">
+        <div class="staff-table-toolbar--row orders-toolbar-row">
+          <div class="orders-search-wrap flex-grow-1">
             <div class="input-group orders-toolbar-search-group">
+              <span class="input-group-text bg-white border-end-0 text-secondary">
+                <svg
+                  width="16"
+                  height="16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+              </span>
               <input
                 v-model="q"
                 type="search"
-                class="form-control"
-                placeholder="Search name, email…"
+                class="form-control border-start-0"
+                placeholder="Search by Order # or Recipient"
+                :disabled="loading"
                 autocomplete="off"
-                enterkeyhint="search"
-                aria-label="Search Shopify orders"
-                :disabled="loading"
-                @keydown.enter.prevent="load"
-              />
-              <button
-                type="button"
-                class="btn btn-primary staff-page-primary orders-toolbar-search-btn fw-semibold"
-                :disabled="loading"
-                @click="load"
+                aria-label="Search by order number or recipient"
               >
-                Search
-              </button>
             </div>
+          </div>
+
+          <div class="orders-toolbar-account flex-shrink-0">
+            <CrmSearchableSelect
+              v-model="selectedAccountId"
+              class="staff-toolbar-search staff-toolbar-search--inline"
+              appearance="staff"
+              aria-label="All accounts"
+              :options="accountOptions"
+              :disabled="metaLoading || loading"
+              placeholder="All Accounts"
+              search-placeholder="Search accounts…"
+              :allow-empty="true"
+              empty-label="All Accounts"
+              button-id="shopify-orders-account-trigger"
+            />
           </div>
 
           <div
@@ -182,8 +430,7 @@ onUnmounted(() => {
               type="button"
               class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
               :aria-expanded="filterMenuOpen"
-              :disabled="loading"
-              @click.stop="filterMenuOpen = !filterMenuOpen"
+              @click.stop="openFilters"
             >
               <svg
                 width="18"
@@ -204,146 +451,330 @@ onUnmounted(() => {
             </button>
             <div
               v-if="filterMenuOpen"
-              class="dropdown-menu show shadow border p-0 staff-toolbar-filter-dropdown"
-              role="dialog"
-              aria-label="Shopify order filters"
+              class="orders-filter-popover shadow-sm"
               @click.stop
             >
-              <div class="staff-toolbar-filter-dropdown__head">
-                <span>Filters</span>
-                <button
-                  type="button"
-                  class="btn btn-link btn-sm text-secondary text-decoration-none p-0"
-                  @click="resetFilters"
-                >
-                  Reset
-                </button>
+              <div class="mb-3">
+                <label class="form-label">Order Date</label>
+                <div class="d-flex gap-2">
+                  <input
+                    v-model="draftFilters.created_from"
+                    type="date"
+                    class="form-control form-control-sm"
+                    aria-label="Order date from"
+                  >
+                  <input
+                    v-model="draftFilters.created_to"
+                    type="date"
+                    class="form-control form-control-sm"
+                    aria-label="Order date to"
+                  >
+                </div>
               </div>
-              <div class="staff-toolbar-filter-dropdown__body">
-                <label
-                  class="form-label"
-                  for="shopify-orders-filter-fulfillment"
-                >Fulfillment</label>
+              <div class="mb-3">
+                <label class="form-label">Order Status</label>
                 <select
-                  id="shopify-orders-filter-fulfillment"
-                  v-model="fulfillmentStatus"
-                  class="form-select staff-datatable-filters__select"
-                  :disabled="loading"
-                  @change="load"
+                  v-model="draftFilters.status"
+                  class="form-select form-select-sm"
                 >
-                  <option value="all">All Fulfillment</option>
-                  <option value="unfulfilled">Unfulfilled</option>
-                  <option value="partial">Partial</option>
-                  <option value="fulfilled">Fulfilled</option>
+                  <option
+                    v-for="opt in statusOptions"
+                    :key="opt.value || 'all'"
+                    :value="opt.value"
+                  >
+                    {{ opt.label }}
+                  </option>
                 </select>
               </div>
+              <div class="mb-3">
+                <label class="form-label">Shipping Method</label>
+                <select
+                  v-model="draftFilters.shipping_method"
+                  class="form-select form-select-sm"
+                >
+                  <option
+                    v-for="opt in shippingOptions"
+                    :key="opt.value || 'all-ship'"
+                    :value="opt.value"
+                  >
+                    {{ opt.label }}
+                  </option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Country</label>
+                <select
+                  v-model="draftFilters.country"
+                  class="form-select form-select-sm"
+                >
+                  <option
+                    v-for="opt in countryOptions"
+                    :key="opt.value || 'all-country'"
+                    :value="opt.value"
+                  >
+                    {{ opt.label }}
+                  </option>
+                </select>
+              </div>
+              <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm text-secondary px-0"
+                  @click="clearFilters"
+                >
+                  Clear Filters
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-primary staff-page-primary btn-sm fw-semibold"
+                  @click="applyFilters"
+                >
+                  Apply Filters
+                </button>
+              </div>
             </div>
+          </div>
+
+          <button
+            type="button"
+            class="btn btn-link btn-sm text-secondary d-inline-flex align-items-center gap-1 ms-auto"
+            :disabled="loading"
+            @click="resetAll"
+          >
+            <svg
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
+            </svg>
+            Reset
+          </button>
+
+          <button
+            v-if="!selectedCount"
+            type="button"
+            class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2 flex-shrink-0"
+            :disabled="loading"
+            @click="exportCsv(false)"
+          >
+            Export All
+          </button>
+        </div>
+      </div>
+
+      <div
+        v-if="selectedCount"
+        class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
+      >
+        <label class="form-check mb-0 d-flex align-items-center gap-2">
+          <input
+            class="form-check-input"
+            type="checkbox"
+            :checked="allSelected"
+            @change="toggleSelectAll"
+          >
+          <span class="small staff-bulk-selection-bar__count">{{ selectedCount }} orders selected</span>
+        </label>
+        <button
+          type="button"
+          class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn btn-sm d-inline-flex align-items-center gap-2"
+          @click="exportCsv(true)"
+        >
+          Export
+        </button>
+        <div
+          class="position-relative"
+          data-shopify-orders-bulk-actions
+        >
+          <button
+            type="button"
+            class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn btn-sm d-inline-flex align-items-center gap-2"
+            @click.stop="bulkMenuOpen = !bulkMenuOpen"
+          >
+            Bulk Actions
+            <svg
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </button>
+          <div
+            v-if="bulkMenuOpen"
+            class="dropdown-menu show shadow-sm"
+            style="position: absolute; top: 100%; left: 0; min-width: 12rem; z-index: 20"
+            @click.stop
+          >
+            <button
+              type="button"
+              class="dropdown-item"
+              @click="openHoldModal(selectedIds)"
+            >
+              Hold Order
+            </button>
+            <button
+              type="button"
+              class="dropdown-item"
+              @click="openCancelModal(selectedIds)"
+            >
+              Cancel Order
+            </button>
+            <button
+              type="button"
+              class="dropdown-item"
+              @click="actions.fulfillOrder(selectedIds); bulkMenuOpen = false"
+            >
+              Mark Fulfilled
+            </button>
+            <button
+              type="button"
+              class="dropdown-item"
+              @click="actions.stubAction('Re-Ship Order'); bulkMenuOpen = false"
+            >
+              Re-Ship Order
+            </button>
+            <button
+              type="button"
+              class="dropdown-item"
+              @click="actions.stubAction('Reprocess Order'); bulkMenuOpen = false"
+            >
+              Reprocess Order
+            </button>
           </div>
         </div>
       </div>
 
-      <div class="table-responsive staff-table-wrap d-none d-lg-block">
+      <div
+        v-if="loading && !rows.length"
+        class="p-5 d-flex justify-content-center"
+      >
+        <CrmLoadingSpinner message="Loading orders…" />
+      </div>
+
+      <div
+        v-else
+        class="table-responsive staff-table-wrap"
+      >
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
               <th
                 class="staff-table-head__th"
+                style="width: 2.5rem"
                 scope="col"
-              >Order</th>
+              >
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  :checked="allSelected"
+                  :disabled="!rows.length"
+                  aria-label="Select all orders"
+                  @change="toggleSelectAll"
+                >
+              </th>
               <th
                 class="staff-table-head__th"
                 scope="col"
-              >Account</th>
+              >Status</th>
               <th
-                class="staff-table-head__th text-center"
+                class="staff-table-head__th"
                 scope="col"
-              >Financial</th>
+              >Order #</th>
               <th
-                class="staff-table-head__th text-center"
+                class="staff-table-head__th"
                 scope="col"
-              >Fulfillment</th>
+              >Recipient</th>
+              <th
+                class="staff-table-head__th"
+                scope="col"
+              >Order Date</th>
+              <th
+                class="staff-table-head__th"
+                scope="col"
+              >Country</th>
+              <th
+                class="staff-table-head__th"
+                scope="col"
+              >Shipping Method</th>
               <th
                 class="staff-table-head__th text-end"
-                scope="col"
-              >Total</th>
-              <th
-                class="staff-table-head__th text-center"
-                scope="col"
-              >Created</th>
-              <th
-                class="staff-table-head__th staff-actions-col text-center"
                 scope="col"
               >Action</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="loading">
+            <tr v-if="!rows.length">
               <td
-                colspan="7"
-                class="py-5"
-              >
-                <div class="d-flex justify-content-center py-3">
-                  <CrmLoadingSpinner message="Loading Orders…" />
-                </div>
-              </td>
-            </tr>
-            <tr v-else-if="!rows.length">
-              <td
-                colspan="7"
+                colspan="8"
                 class="px-4 py-5 text-center text-secondary"
               >
-                No Shopify orders yet. Connect a store under Account → Settings and import.
+                No orders found.
               </td>
             </tr>
             <tr
               v-for="row in rows"
-              v-else
               :key="row.id"
-              class="align-middle shopify-orders-result-row"
-              role="button"
-              tabindex="0"
-              @click="openRow(row)"
-              @keydown.enter.prevent="openRow(row)"
+              class="align-middle"
             >
-              <td class="fw-semibold text-body">{{ row.name || "—" }}</td>
-              <td class="text-body staff-table-cell__meta">{{ row.account_name || "—" }}</td>
-              <td class="text-center text-body staff-table-cell__meta">
-                {{ financialLabel(row.financial_status) }}
-              </td>
-              <td class="text-center">
-                <span
-                  class="badge rounded-pill fw-medium"
-                  :class="fulfillmentBadgeClass(row.fulfillment_status)"
+              <td>
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  :checked="selectedIds.includes(row.id)"
+                  :aria-label="`Select order ${row.name}`"
+                  @change="toggleSelect(row.id)"
                 >
-                  {{ fulfillmentLabel(row.fulfillment_status) }}
+              </td>
+              <td>
+                <span
+                  class="badge rounded-pill fw-medium shopify-order-status"
+                  :class="displayStatusClass(row.display_status)"
+                >
+                  {{ displayStatusLabel(row.display_status) }}
                 </span>
               </td>
-              <td class="text-end text-body staff-table-cell__meta text-nowrap">
-                {{ formatMoney(row) }}
-              </td>
-              <td class="text-center text-body staff-table-cell__meta text-nowrap">
-                {{ formatDateTimeUs(row.shopify_created_at) || "—" }}
-              </td>
-              <td
-                class="staff-actions-cell text-center"
-                @click.stop
-              >
-                <div
-                  data-shopify-orders-row-actions
-                  class="staff-actions-inner staff-actions-inner--single justify-content-center"
+              <td>
+                <button
+                  type="button"
+                  class="btn btn-link p-0 text-primary fw-semibold text-decoration-none"
+                  @click="openRow(row)"
                 >
-                  <button
-                    type="button"
-                    class="staff-action-btn staff-action-btn--more"
-                    :class="{ 'is-open': manageOpenId === row.id }"
-                    :aria-expanded="manageOpenId === row.id ? 'true' : 'false'"
-                    aria-haspopup="true"
-                    aria-label="Row actions"
-                    @click="toggleManageMenu(row, $event)"
-                  >
-                    <CrmIconRowActions variant="horizontal" />
-                  </button>
-                </div>
+                  {{ row.name || "—" }}
+                </button>
+              </td>
+              <td class="text-body fw-normal">{{ row.recipient_name || "—" }}</td>
+              <td class="text-nowrap">
+                <div>{{ formatOrderDate(row.shopify_created_at).date }}</div>
+                <div class="small text-secondary">{{ formatOrderDate(row.shopify_created_at).time }}</div>
+              </td>
+              <td>{{ row.country || "—" }}</td>
+              <td>{{ row.shipping_method || "—" }}</td>
+              <td
+                class="text-end"
+                data-shopify-orders-row-actions
+              >
+                <CrmIconRowActions
+                  :active="manageOpenId === row.id"
+                  @toggle="toggleManageMenu(row, $event)"
+                />
               </td>
             </tr>
           </tbody>
@@ -351,120 +782,151 @@ onUnmounted(() => {
       </div>
 
       <div
-        class="crm-mobile-item-cards d-lg-none"
-        aria-label="Shopify orders"
+        v-if="pagination.total > pagination.per_page"
+        class="d-flex flex-wrap justify-content-between align-items-center gap-2 px-3 px-md-4 py-3 border-top"
       >
-        <div
-          v-if="loading"
-          class="crm-mobile-item-card__empty"
-        >
-          <div class="d-flex justify-content-center py-3">
-            <CrmLoadingSpinner message="Loading Orders…" />
-          </div>
-        </div>
-        <div
-          v-else-if="!rows.length"
-          class="crm-mobile-item-card__empty"
-        >
-          No Shopify orders yet.
-        </div>
-        <template v-else>
-          <article
-            v-for="row in rows"
-            :key="`mobile-${row.id}`"
-            class="crm-mobile-item-card"
-            @click="openRow(row)"
+        <span class="small text-secondary">
+          Page {{ pagination.current_page }} of {{ pagination.last_page }} ({{ pagination.total }} orders)
+        </span>
+        <div class="btn-group btn-group-sm">
+          <button
+            type="button"
+            class="btn btn-outline-secondary"
+            :disabled="pagination.current_page <= 1 || loading"
+            @click="goPage(pagination.current_page - 1)"
           >
-            <div class="crm-mobile-item-card__head">
-              <div class="crm-mobile-item-card__head-start">
-                <span
-                  class="badge rounded-pill fw-medium"
-                  :class="fulfillmentBadgeClass(row.fulfillment_status)"
-                >
-                  {{ fulfillmentLabel(row.fulfillment_status) }}
-                </span>
-              </div>
-              <div
-                class="crm-mobile-item-card__head-end"
-                data-shopify-orders-row-actions
-                @click.stop
-              >
-                <button
-                  type="button"
-                  class="staff-action-btn staff-action-btn--more"
-                  :class="{ 'is-open': manageOpenId === row.id }"
-                  :aria-expanded="manageOpenId === row.id ? 'true' : 'false'"
-                  aria-haspopup="true"
-                  aria-label="Row actions"
-                  @click="toggleManageMenu(row, $event)"
-                >
-                  <CrmIconRowActions variant="horizontal" />
-                </button>
-              </div>
-            </div>
-            <div class="crm-mobile-item-card__product">
-              <div class="crm-mobile-item-card__copy">
-                <span class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain">
-                  {{ row.name || "—" }}
-                </span>
-                <div class="crm-mobile-item-card__name">
-                  {{ row.account_name || "—" }}
-                </div>
-              </div>
-            </div>
-            <div class="crm-mobile-item-card__meta">
-              <div class="crm-mobile-item-card__meta-row">
-                <span class="crm-mobile-item-card__meta-label">Total</span>
-                <span class="crm-mobile-item-card__meta-value">{{ formatMoney(row) }}</span>
-              </div>
-              <div class="crm-mobile-item-card__meta-row">
-                <span class="crm-mobile-item-card__meta-label">Created</span>
-                <span class="crm-mobile-item-card__meta-value">
-                  {{ formatDateTimeUs(row.shopify_created_at) || "—" }}
-                </span>
-              </div>
-            </div>
-          </article>
-        </template>
+            Previous
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline-secondary"
+            :disabled="pagination.current_page >= pagination.last_page || loading"
+            @click="goPage(pagination.current_page + 1)"
+          >
+            Next
+          </button>
+        </div>
       </div>
     </div>
 
     <Teleport to="body">
       <div
-        v-if="manageMenuRow"
+        v-if="manageOpenId && manageMenuRow"
+        class="dropdown-menu show shadow-sm"
         data-shopify-orders-row-actions
-        class="staff-row-menu fixed z-[300] overflow-hidden"
-        role="menu"
-        :style="{ top: `${manageMenuRect.top}px`, left: `${manageMenuRect.left}px` }"
+        :style="{ position: 'fixed', top: `${manageMenuRect.top}px`, left: `${manageMenuRect.left}px`, minWidth: `${MENU_W}px`, zIndex: 2000 }"
         @click.stop
       >
         <button
           type="button"
-          class="staff-row-menu__item"
-          role="menuitem"
-          @click="openRow(manageMenuRow)"
+          class="dropdown-item"
+          @click="runRowAction(actions.viewInShopify, manageMenuRow)"
         >
-          View
+          View in Shopify
+        </button>
+        <button
+          type="button"
+          class="dropdown-item"
+          @click="runRowAction((r) => actions.syncOrder(r), manageMenuRow)"
+        >
+          Sync From Shopify
+        </button>
+        <button
+          type="button"
+          class="dropdown-item"
+          @click="openHoldModal([manageMenuRow.id])"
+        >
+          Hold Order
+        </button>
+        <button
+          type="button"
+          class="dropdown-item"
+          @click="openCancelModal([manageMenuRow.id])"
+        >
+          Cancel Order
+        </button>
+        <button
+          type="button"
+          class="dropdown-item"
+          @click="runRowAction((r) => actions.fulfillOrder([r.id]), manageMenuRow)"
+        >
+          Mark Fulfilled
+        </button>
+        <button
+          type="button"
+          class="dropdown-item"
+          @click="runRowAction(() => actions.stubAction('Re-Ship Order'), manageMenuRow)"
+        >
+          Re-Ship Order
+        </button>
+        <button
+          type="button"
+          class="dropdown-item"
+          @click="runRowAction(() => actions.stubAction('Reprocess Order'), manageMenuRow)"
+        >
+          Reprocess Order
+        </button>
+        <button
+          type="button"
+          class="dropdown-item"
+          @click="runRowAction(actions.viewPackingSlip, manageMenuRow)"
+        >
+          View Packing Slip
         </button>
       </div>
     </Teleport>
+
+    <ShopifyOrderHoldModal
+      :open="holdModalOpen"
+      :busy="actions.busy.value"
+      :order-count="holdTargetCount"
+      @close="holdModalOpen = false"
+      @confirm="confirmHold"
+    />
+    <ShopifyOrderCancelConfirmModal
+      :open="cancelModalOpen"
+      :busy="actions.busy.value"
+      :order-count="cancelTargetCount"
+      @close="cancelModalOpen = false"
+      @confirm="confirmCancel"
+    />
   </div>
 </template>
 
 <style scoped>
-.shopify-orders-toolbar-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
+.orders-filter-popover {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 30;
+  width: min(22rem, 92vw);
+  padding: 1rem;
+  background: #fff;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.5rem;
 }
 
-.shopify-orders-search-wrap {
-  flex: 0 0 auto;
-  width: min(22rem, 100%);
+.shopify-order-status {
+  font-size: 0.75rem;
 }
 
-.shopify-orders-result-row {
-  cursor: pointer;
+.shopify-order-status--ready {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.shopify-order-status--hold {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.shopify-order-status--backorder {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.shopify-order-status--shipped {
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 </style>

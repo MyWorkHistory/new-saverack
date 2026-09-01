@@ -1,8 +1,15 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import ShopifyOrderCancelConfirmModal from "../../components/shopify/ShopifyOrderCancelConfirmModal.vue";
+import ShopifyOrderHoldModal from "../../components/shopify/ShopifyOrderHoldModal.vue";
+import {
+  displayStatusClass,
+  displayStatusLabel,
+  useShopifyOrderActions,
+} from "../../composables/useShopifyOrderActions.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 import { formatDateTimeUs } from "../../utils/formatUserDates";
@@ -12,19 +19,9 @@ const router = useRouter();
 const toast = useToast();
 const loading = ref(true);
 const order = ref(null);
-const shipModalOpen = ref(false);
-const shipBusy = ref(false);
-const shipForm = reactive({
-  tracking_company: "UPS",
-  tracking_number: "TEST123456789",
-});
-const shipRows = ref([]);
-
-const hasShipable = computed(() =>
-  (order.value?.fulfillment_orders || []).some((fo) =>
-    (fo.line_items || []).some((li) => Number(li.remaining_quantity) > 0),
-  ),
-);
+const actionsMenuOpen = ref(false);
+const holdModalOpen = ref(false);
+const cancelModalOpen = ref(false);
 
 const orderMetaLine = computed(() => {
   const parts = [];
@@ -37,42 +34,21 @@ const orderMetaLine = computed(() => {
   return parts.join(" · ");
 });
 
-function fulfillmentBadgeClass(status) {
-  const s = String(status || "").toLowerCase();
-  if (s === "fulfilled") return "bg-success-subtle text-success-emphasis";
-  if (s === "partial" || s === "partially_fulfilled") return "bg-warning-subtle text-warning-emphasis";
-  if (s === "unfulfilled" || !s) return "bg-secondary-subtle text-secondary-emphasis";
-  return "bg-body-secondary text-body-secondary";
-}
+const orderId = computed(() => Number(route.params.id || 0));
 
-function fulfillmentLabel(status) {
-  const s = String(status || "").trim();
-  if (!s) return "Unfulfilled";
-  return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function rebuildShipRows() {
-  const rows = [];
-  for (const fo of order.value?.fulfillment_orders || []) {
-    for (const li of fo.line_items || []) {
-      const max = Number(li.remaining_quantity || 0);
-      if (max <= 0) continue;
-      rows.push({
-        fo_line_item_id: li.shopify_fo_line_item_id,
-        max,
-        quantity: max,
-      });
+const actions = useShopifyOrderActions({
+  onUpdated: (updated) => {
+    if (updated?.id) {
+      order.value = { ...order.value, ...updated };
     }
-  }
-  shipRows.value = rows;
-}
+  },
+});
 
 async function load() {
   loading.value = true;
   try {
     const { data } = await api.get(`/shopify/orders/${route.params.id}`);
     order.value = data?.order || null;
-    rebuildShipRows();
   } catch (e) {
     toast.errorFrom(e, "Could not load order.");
   } finally {
@@ -80,45 +56,48 @@ async function load() {
   }
 }
 
-async function submitShip() {
-  const items = shipRows.value
-    .filter((r) => Number(r.quantity) > 0)
-    .map((r) => ({
-      fo_line_item_id: String(r.fo_line_item_id),
-      quantity: Number(r.quantity),
-    }));
-  if (!items.length) {
-    toast.error("Enter at least one quantity.");
-    return;
-  }
-  shipBusy.value = true;
-  try {
-    const { data } = await api.post(`/shopify/orders/${route.params.id}/fulfill`, {
-      items,
-      tracking_company: shipForm.tracking_company,
-      tracking_number: shipForm.tracking_number,
-    });
-    order.value = data?.order || order.value;
-    rebuildShipRows();
-    shipModalOpen.value = false;
-    toast.success(data?.message || "Fulfillment Created.");
-  } catch (e) {
-    toast.errorFrom(e, "Could not create fulfillment.");
-  } finally {
-    shipBusy.value = false;
+function onDocClick(e) {
+  if (!e.target?.closest?.("[data-shopify-order-detail-actions]")) {
+    actionsMenuOpen.value = false;
   }
 }
 
-watch(shipModalOpen, (open) => {
-  if (open) rebuildShipRows();
-});
+async function confirmHold(reasons) {
+  if (!orderId.value) return;
+  const result = await actions.holdOrder([orderId.value], reasons);
+  if (result) {
+    holdModalOpen.value = false;
+    await load();
+  }
+}
+
+async function confirmCancel() {
+  if (!orderId.value) return;
+  const result = await actions.cancelOrder([orderId.value]);
+  if (result) {
+    cancelModalOpen.value = false;
+    await load();
+  }
+}
+
+watch(
+  () => route.params.id,
+  () => {
+    void load();
+  },
+);
 
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Shopify Order",
-    description: "Shopify order detail and fulfillment.",
+    description: "Shopify order detail and actions.",
   });
+  document.addEventListener("click", onDocClick);
   void load();
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClick);
 });
 </script>
 
@@ -145,17 +124,17 @@ onMounted(() => {
           class="btn btn-link btn-sm text-secondary px-0 py-0 mb-2 text-decoration-none order-detail-page__back-link"
           @click="router.push({ name: 'shopify-orders' })"
         >
-          &lt; Back to Shopify Orders
+          &lt; Back to Orders
         </button>
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
           <div class="min-w-0">
             <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
               <h1 class="h4 mb-0 fw-bold text-body">{{ order.name || "Shopify Order" }}</h1>
               <span
-                class="badge rounded-pill fw-medium"
-                :class="fulfillmentBadgeClass(order.fulfillment_status)"
+                class="badge rounded-pill fw-medium shopify-order-status"
+                :class="displayStatusClass(order.display_status)"
               >
-                {{ fulfillmentLabel(order.fulfillment_status) }}
+                {{ displayStatusLabel(order.display_status) }}
               </span>
             </div>
             <p
@@ -165,15 +144,95 @@ onMounted(() => {
               {{ orderMetaLine }}
             </p>
           </div>
-          <div class="d-flex flex-wrap gap-2 align-items-center flex-shrink-0">
+          <div
+            class="position-relative flex-shrink-0"
+            data-shopify-order-detail-actions
+          >
             <button
               type="button"
-              class="btn btn-primary staff-page-primary fw-semibold"
-              :disabled="!hasShipable"
-              @click="shipModalOpen = true"
+              class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2 fw-semibold"
+              @click.stop="actionsMenuOpen = !actionsMenuOpen"
             >
-              Mark Shipped
+              Actions
+              <svg
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
             </button>
+            <div
+              v-if="actionsMenuOpen"
+              class="dropdown-menu show shadow-sm"
+              style="position: absolute; top: 100%; right: 0; min-width: 12rem; z-index: 20"
+              @click.stop
+            >
+              <button
+                type="button"
+                class="dropdown-item"
+                @click="actions.viewInShopify(order); actionsMenuOpen = false"
+              >
+                View in Shopify
+              </button>
+              <button
+                type="button"
+                class="dropdown-item"
+                @click="actions.syncOrder(order); actionsMenuOpen = false"
+              >
+                Sync From Shopify
+              </button>
+              <button
+                type="button"
+                class="dropdown-item"
+                @click="holdModalOpen = true; actionsMenuOpen = false"
+              >
+                Hold Order
+              </button>
+              <button
+                type="button"
+                class="dropdown-item"
+                @click="cancelModalOpen = true; actionsMenuOpen = false"
+              >
+                Cancel Order
+              </button>
+              <button
+                type="button"
+                class="dropdown-item"
+                @click="actions.fulfillOrder([order.id]); actionsMenuOpen = false"
+              >
+                Mark Fulfilled
+              </button>
+              <button
+                type="button"
+                class="dropdown-item"
+                @click="actions.stubAction('Re-Ship Order'); actionsMenuOpen = false"
+              >
+                Re-Ship Order
+              </button>
+              <button
+                type="button"
+                class="dropdown-item"
+                @click="actions.stubAction('Reprocess Order'); actionsMenuOpen = false"
+              >
+                Reprocess Order
+              </button>
+              <button
+                type="button"
+                class="dropdown-item"
+                @click="actions.viewPackingSlip(order); actionsMenuOpen = false"
+              >
+                View Packing Slip
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -321,76 +380,45 @@ onMounted(() => {
       </div>
     </template>
 
-    <div
-      v-if="shipModalOpen"
-      class="modal fade show d-block"
-      tabindex="-1"
-      style="background: rgba(0, 0, 0, 0.35)"
-    >
-      <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h2 class="modal-title h5 mb-0">Mark Shipped</h2>
-            <button
-              type="button"
-              class="btn-close"
-              aria-label="Close"
-              @click="shipModalOpen = false"
-            />
-          </div>
-          <div class="modal-body">
-            <div class="row g-3 mb-3">
-              <div class="col-6">
-                <label class="form-label">Carrier</label>
-                <input
-                  v-model="shipForm.tracking_company"
-                  class="form-control"
-                />
-              </div>
-              <div class="col-6">
-                <label class="form-label">Tracking</label>
-                <input
-                  v-model="shipForm.tracking_number"
-                  class="form-control"
-                />
-              </div>
-            </div>
-            <div
-              v-for="row in shipRows"
-              :key="row.fo_line_item_id"
-              class="d-flex align-items-center justify-content-between gap-2 mb-2"
-            >
-              <span class="small">FO Line {{ row.fo_line_item_id }} (max {{ row.max }})</span>
-              <input
-                v-model.number="row.quantity"
-                type="number"
-                min="0"
-                :max="row.max"
-                class="form-control form-control-sm"
-                style="max-width: 5.5rem"
-              />
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button
-              type="button"
-              class="btn btn-outline-secondary orders-toolbar-outline-btn fw-semibold"
-              :disabled="shipBusy"
-              @click="shipModalOpen = false"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              class="btn btn-primary staff-page-primary fw-semibold"
-              :disabled="shipBusy"
-              @click="submitShip"
-            >
-              {{ shipBusy ? "Creating…" : "Create Fulfillment" }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <ShopifyOrderHoldModal
+      :open="holdModalOpen"
+      :busy="actions.busy.value"
+      :order-count="1"
+      @close="holdModalOpen = false"
+      @confirm="confirmHold"
+    />
+    <ShopifyOrderCancelConfirmModal
+      :open="cancelModalOpen"
+      :busy="actions.busy.value"
+      :order-count="1"
+      @close="cancelModalOpen = false"
+      @confirm="confirmCancel"
+    />
   </div>
 </template>
+
+<style scoped>
+.shopify-order-status {
+  font-size: 0.75rem;
+}
+
+.shopify-order-status--ready {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.shopify-order-status--hold {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.shopify-order-status--backorder {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.shopify-order-status--shipped {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+</style>

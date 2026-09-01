@@ -85,6 +85,35 @@ const countryOptions = computed(() => [
 const holdTargetCount = computed(() => actionTargetIds.value.length || 1);
 const cancelTargetCount = computed(() => actionTargetIds.value.length || 1);
 
+const dateRangeLabel = computed(() => {
+  const from = draftFilters.created_from;
+  const to = draftFilters.created_to;
+  if (from && to) return `${formatShortDate(from)} – ${formatShortDate(to)}`;
+  if (from) return `From ${formatShortDate(from)}`;
+  if (to) return `Until ${formatShortDate(to)}`;
+  return "";
+});
+
+const hasActiveFilters = computed(
+  () =>
+    Boolean(filters.status)
+    || Boolean(filters.shipping_method)
+    || Boolean(filters.country)
+    || Boolean(filters.created_from)
+    || Boolean(filters.created_to),
+);
+
+function formatShortDate(isoDate) {
+  if (!isoDate) return "";
+  const d = new Date(`${isoDate}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return isoDate;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function stubCreateOrder() {
+  toast.warning("Create Order is coming soon.");
+}
+
 function mergeUpdatedRow(updated) {
   if (!updated?.id) return;
   const idx = rows.value.findIndex((r) => r.id === updated.id);
@@ -362,42 +391,49 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide">
-    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
+  <div class="staff-page staff-page--wide shopify-orders-page">
+    <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
       <div class="min-w-0">
-        <h1 class="h4 mb-1 fw-semibold text-body">Orders</h1>
-        <p class="small text-secondary mb-0">
+        <h1 class="h3 mb-2 fw-bold text-body shopify-orders-page__title">Orders</h1>
+        <p class="text-secondary mb-0 shopify-orders-page__subtitle">
           Search, filter, and manage all your orders in one place.
         </p>
       </div>
+      <button
+        type="button"
+        class="btn btn-primary staff-page-primary fw-semibold d-inline-flex align-items-center gap-2 flex-shrink-0"
+        @click="stubCreateOrder"
+      >
+        <span aria-hidden="true">+</span>
+        Create Order
+      </button>
     </div>
 
-    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 orders-page-toolbar">
       <div class="staff-table-toolbar">
-        <div class="staff-table-toolbar--row orders-toolbar-row">
-          <div class="orders-search-wrap flex-grow-1">
-            <div class="input-group orders-toolbar-search-group">
-              <span class="input-group-text bg-white border-end-0 text-secondary">
-                <svg
-                  width="16"
-                  height="16"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  />
-                </svg>
-              </span>
+        <div class="staff-table-toolbar--row orders-toolbar-row shopify-orders-toolbar-row">
+          <div class="shopify-orders-search-wrap flex-grow-1">
+            <div class="shopify-orders-search-field">
+              <svg
+                class="shopify-orders-search-field__icon"
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
               <input
                 v-model="q"
                 type="search"
-                class="form-control border-start-0"
+                class="form-control shopify-orders-search-field__input"
                 placeholder="Search by Order # or Recipient"
                 :disabled="loading"
                 autocomplete="off"
@@ -411,7 +447,7 @@ onUnmounted(() => {
               v-model="selectedAccountId"
               class="staff-toolbar-search staff-toolbar-search--inline"
               appearance="staff"
-              aria-label="All accounts"
+              aria-label="All Accounts"
               :options="accountOptions"
               :disabled="metaLoading || loading"
               placeholder="All Accounts"
@@ -451,31 +487,61 @@ onUnmounted(() => {
             </button>
             <div
               v-if="filterMenuOpen"
-              class="orders-filter-popover shadow-sm"
+              class="dropdown-menu show shadow border p-0 staff-toolbar-filter-dropdown shopify-orders-filter-dropdown"
+              role="dialog"
+              aria-label="Order filters"
               @click.stop
             >
-              <div class="mb-3">
-                <label class="form-label">Order Date</label>
-                <div class="d-flex gap-2">
+              <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="shopify-orders-filter-date">Order Date</label>
+                <div class="shopify-orders-date-range mb-3">
                   <input
-                    v-model="draftFilters.created_from"
-                    type="date"
-                    class="form-control form-control-sm"
-                    aria-label="Order date from"
+                    id="shopify-orders-filter-date"
+                    :value="dateRangeLabel"
+                    type="text"
+                    class="form-control staff-datatable-filters__select shopify-orders-date-range__display"
+                    placeholder="Select date range"
+                    readonly
+                    tabindex="-1"
                   >
-                  <input
-                    v-model="draftFilters.created_to"
-                    type="date"
-                    class="form-control form-control-sm"
-                    aria-label="Order date to"
+                  <svg
+                    class="shopify-orders-date-range__icon"
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
                   >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
+                  <div class="shopify-orders-date-range__pickers">
+                    <input
+                      v-model="draftFilters.created_from"
+                      type="date"
+                      class="form-control form-control-sm"
+                      aria-label="Order date from"
+                    >
+                    <span class="shopify-orders-date-range__sep">to</span>
+                    <input
+                      v-model="draftFilters.created_to"
+                      type="date"
+                      class="form-control form-control-sm"
+                      aria-label="Order date to"
+                    >
+                  </div>
                 </div>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Order Status</label>
+
+                <label class="form-label" for="shopify-orders-filter-status">Order Status</label>
                 <select
+                  id="shopify-orders-filter-status"
                   v-model="draftFilters.status"
-                  class="form-select form-select-sm"
+                  class="form-select staff-datatable-filters__select mb-3"
                 >
                   <option
                     v-for="opt in statusOptions"
@@ -485,12 +551,12 @@ onUnmounted(() => {
                     {{ opt.label }}
                   </option>
                 </select>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Shipping Method</label>
+
+                <label class="form-label" for="shopify-orders-filter-shipping">Shipping Method</label>
                 <select
+                  id="shopify-orders-filter-shipping"
                   v-model="draftFilters.shipping_method"
-                  class="form-select form-select-sm"
+                  class="form-select staff-datatable-filters__select mb-3"
                 >
                   <option
                     v-for="opt in shippingOptions"
@@ -500,12 +566,12 @@ onUnmounted(() => {
                     {{ opt.label }}
                   </option>
                 </select>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Country</label>
+
+                <label class="form-label" for="shopify-orders-filter-country">Country</label>
                 <select
+                  id="shopify-orders-filter-country"
                   v-model="draftFilters.country"
-                  class="form-select form-select-sm"
+                  class="form-select staff-datatable-filters__select mb-0"
                 >
                   <option
                     v-for="opt in countryOptions"
@@ -516,10 +582,10 @@ onUnmounted(() => {
                   </option>
                 </select>
               </div>
-              <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+              <div class="shopify-orders-filter-dropdown__footer">
                 <button
                   type="button"
-                  class="btn btn-link btn-sm text-secondary px-0"
+                  class="btn btn-link btn-sm staff-bulk-clear-link text-decoration-none px-0"
                   @click="clearFilters"
                 >
                   Clear Filters
@@ -537,7 +603,7 @@ onUnmounted(() => {
 
           <button
             type="button"
-            class="btn btn-link btn-sm text-secondary d-inline-flex align-items-center gap-1 ms-auto"
+            class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2 ms-auto flex-shrink-0"
             :disabled="loading"
             @click="resetAll"
           >
@@ -558,16 +624,6 @@ onUnmounted(() => {
             </svg>
             Reset
           </button>
-
-          <button
-            v-if="!selectedCount"
-            type="button"
-            class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2 flex-shrink-0"
-            :disabled="loading"
-            @click="exportCsv(false)"
-          >
-            Export All
-          </button>
         </div>
       </div>
 
@@ -575,29 +631,45 @@ onUnmounted(() => {
         v-if="selectedCount"
         class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
       >
-        <label class="form-check mb-0 d-flex align-items-center gap-2">
-          <input
-            class="form-check-input"
-            type="checkbox"
-            :checked="allSelected"
-            @change="toggleSelectAll"
-          >
-          <span class="small staff-bulk-selection-bar__count">{{ selectedCount }} orders selected</span>
-        </label>
+        <input
+          type="checkbox"
+          class="form-check-input m-0"
+          :checked="allSelected"
+          aria-label="Select all orders on page"
+          @change="toggleSelectAll"
+        >
+        <span class="small staff-bulk-selection-bar__count">
+          {{ selectedCount }} order{{ selectedCount === 1 ? "" : "s" }} selected
+        </span>
         <button
           type="button"
-          class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn btn-sm d-inline-flex align-items-center gap-2"
+          class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn orders-bulk-toolbar-btn d-inline-flex align-items-center gap-2"
           @click="exportCsv(true)"
         >
+          <svg
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
+            />
+          </svg>
           Export
         </button>
         <div
-          class="position-relative"
+          class="position-relative staff-toolbar-bulk-dropdown"
           data-shopify-orders-bulk-actions
         >
           <button
             type="button"
-            class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn btn-sm d-inline-flex align-items-center gap-2"
+            class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn orders-bulk-toolbar-btn d-inline-flex align-items-center gap-2"
             @click.stop="bulkMenuOpen = !bulkMenuOpen"
           >
             Bulk Actions
@@ -620,7 +692,6 @@ onUnmounted(() => {
           <div
             v-if="bulkMenuOpen"
             class="dropdown-menu show shadow-sm"
-            style="position: absolute; top: 100%; left: 0; min-width: 12rem; z-index: 20"
             @click.stop
           >
             <button
@@ -663,6 +734,35 @@ onUnmounted(() => {
       </div>
 
       <div
+        v-else-if="hasActiveFilters || q"
+        class="shopify-orders-toolbar-export-row px-3 px-md-4 py-2 border-bottom d-flex justify-content-end"
+      >
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn orders-bulk-toolbar-btn d-inline-flex align-items-center gap-2"
+          :disabled="loading"
+          @click="exportCsv(false)"
+        >
+          <svg
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
+            />
+          </svg>
+          Export All
+        </button>
+      </div>
+
+      <div
         v-if="loading && !rows.length"
         class="p-5 d-flex justify-content-center"
       >
@@ -673,16 +773,15 @@ onUnmounted(() => {
         v-else
         class="table-responsive staff-table-wrap"
       >
-        <table class="table table-hover align-middle mb-0 staff-data-table">
+        <table class="table table-hover align-middle mb-0 staff-data-table shopify-orders-table">
           <thead class="table-light staff-table-head">
             <tr>
               <th
-                class="staff-table-head__th"
-                style="width: 2.5rem"
+                class="staff-table-head__th staff-table-head__th--select"
                 scope="col"
               >
                 <input
-                  class="form-check-input"
+                  class="form-check-input staff-table-head__check m-0"
                   type="checkbox"
                   :checked="allSelected"
                   :disabled="!rows.length"
@@ -715,7 +814,7 @@ onUnmounted(() => {
                 scope="col"
               >Shipping Method</th>
               <th
-                class="staff-table-head__th text-end"
+                class="staff-table-head__th text-center"
                 scope="col"
               >Action</th>
             </tr>
@@ -732,11 +831,11 @@ onUnmounted(() => {
             <tr
               v-for="row in rows"
               :key="row.id"
-              class="align-middle"
+              class="align-middle shopify-orders-row"
             >
-              <td>
+              <td class="staff-table-cell--tight-check">
                 <input
-                  class="form-check-input"
+                  class="form-check-input staff-table-head__check m-0"
                   type="checkbox"
                   :checked="selectedIds.includes(row.id)"
                   :aria-label="`Select order ${row.name}`"
@@ -754,27 +853,29 @@ onUnmounted(() => {
               <td>
                 <button
                   type="button"
-                  class="btn btn-link p-0 text-primary fw-semibold text-decoration-none"
+                  class="btn btn-link p-0 shopify-orders-order-link fw-semibold text-decoration-none"
                   @click="openRow(row)"
                 >
                   {{ row.name || "—" }}
                 </button>
               </td>
-              <td class="text-body fw-normal">{{ row.recipient_name || "—" }}</td>
-              <td class="text-nowrap">
-                <div>{{ formatOrderDate(row.shopify_created_at).date }}</div>
-                <div class="small text-secondary">{{ formatOrderDate(row.shopify_created_at).time }}</div>
+              <td class="shopify-orders-recipient">{{ row.recipient_name || "—" }}</td>
+              <td class="text-nowrap shopify-orders-date-cell">
+                <div class="shopify-orders-date-cell__date">{{ formatOrderDate(row.shopify_created_at).date }}</div>
+                <div class="shopify-orders-date-cell__time">{{ formatOrderDate(row.shopify_created_at).time }}</div>
               </td>
               <td>{{ row.country || "—" }}</td>
-              <td>{{ row.shipping_method || "—" }}</td>
+              <td class="shopify-orders-shipping">{{ row.shipping_method || "—" }}</td>
               <td
-                class="text-end"
+                class="text-center staff-actions-cell"
                 data-shopify-orders-row-actions
               >
-                <CrmIconRowActions
-                  :active="manageOpenId === row.id"
-                  @toggle="toggleManageMenu(row, $event)"
-                />
+                <div class="staff-actions-inner staff-actions-inner--single justify-content-center">
+                  <CrmIconRowActions
+                    :active="manageOpenId === row.id"
+                    @toggle="toggleManageMenu(row, $event)"
+                  />
+                </div>
               </td>
             </tr>
           </tbody>
@@ -894,20 +995,140 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.orders-filter-popover {
+.orders-page-toolbar .staff-table-toolbar--row.shopify-orders-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.shopify-orders-page__title {
+  letter-spacing: -0.02em;
+}
+
+.shopify-orders-page__subtitle {
+  font-size: 0.9375rem;
+}
+
+.shopify-orders-search-wrap {
+  min-width: min(100%, 18rem);
+  flex: 1 1 16rem;
+}
+
+.shopify-orders-search-field {
+  position: relative;
+}
+
+.shopify-orders-search-field__icon {
+  position: absolute;
+  left: 0.875rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.shopify-orders-search-field__input {
+  min-height: 2.5rem;
+  padding-left: 2.5rem;
+  border-color: #dbeafe;
+  border-radius: 0.5rem;
+  box-shadow: none;
+}
+
+.shopify-orders-search-field__input:focus {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 0.15rem rgba(37, 99, 235, 0.12);
+}
+
+.orders-toolbar-account {
+  flex: 0 0 auto;
+  width: min(11.5rem, 100%);
+}
+
+.shopify-orders-filter-dropdown {
   position: absolute;
   top: calc(100% + 0.35rem);
-  right: 0;
-  z-index: 30;
-  width: min(22rem, 92vw);
-  padding: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 20rem;
+}
+
+.shopify-orders-filter-dropdown__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem 1rem;
+  border-top: 1px solid var(--vx-nav-border, #ececee);
+}
+
+.shopify-orders-date-range {
+  position: relative;
+}
+
+.shopify-orders-date-range__display {
+  padding-right: 2.5rem;
   background: #fff;
-  border: 1px solid var(--bs-border-color);
-  border-radius: 0.5rem;
+  cursor: default;
+}
+
+.shopify-orders-date-range__icon {
+  position: absolute;
+  right: 0.75rem;
+  top: 0.65rem;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.shopify-orders-date-range__pickers {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.shopify-orders-date-range__sep {
+  color: #64748b;
+  font-size: 0.8125rem;
+}
+
+.staff-toolbar-bulk-dropdown .dropdown-menu {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  min-width: 12rem;
+  z-index: 20;
+}
+
+.shopify-orders-order-link {
+  color: #2563eb !important;
+}
+
+.shopify-orders-recipient {
+  color: #1f2937;
+  font-weight: 400;
+}
+
+.shopify-orders-date-cell__date {
+  color: #1f2937;
+  font-size: 0.9375rem;
+}
+
+.shopify-orders-date-cell__time {
+  color: #64748b;
+  font-size: 0.8125rem;
+  line-height: 1.2;
+}
+
+.shopify-orders-shipping {
+  color: #334155;
+  font-size: 0.9375rem;
 }
 
 .shopify-order-status {
   font-size: 0.75rem;
+  padding: 0.35rem 0.65rem;
 }
 
 .shopify-order-status--ready {
@@ -928,5 +1149,13 @@ onUnmounted(() => {
 .shopify-order-status--shipped {
   background: #dbeafe;
   color: #1d4ed8;
+}
+
+@media (max-width: 991.98px) {
+  .shopify-orders-filter-dropdown {
+    left: auto;
+    right: 0;
+    transform: none;
+  }
 }
 </style>

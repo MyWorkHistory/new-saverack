@@ -412,7 +412,7 @@ onUnmounted(() => {
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 orders-page-toolbar">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row orders-toolbar-row shopify-orders-toolbar-row">
-          <div class="shopify-orders-search-wrap flex-grow-1">
+          <div class="orders-search-wrap shopify-orders-search-wrap flex-shrink-0">
             <div class="shopify-orders-search-field">
               <svg
                 class="shopify-orders-search-field__icon"
@@ -814,7 +814,7 @@ onUnmounted(() => {
                 scope="col"
               >Shipping Method</th>
               <th
-                class="staff-table-head__th text-center"
+                class="staff-table-head__th text-center shopify-orders-actions-col"
                 scope="col"
               >Action</th>
             </tr>
@@ -867,10 +867,10 @@ onUnmounted(() => {
               <td>{{ row.country || "—" }}</td>
               <td class="shopify-orders-shipping">{{ row.shipping_method || "—" }}</td>
               <td
-                class="text-center staff-actions-cell"
+                class="text-center staff-actions-cell shopify-orders-actions-cell"
                 data-shopify-orders-row-actions
               >
-                <div class="staff-actions-inner staff-actions-inner--single justify-content-center">
+                <div class="staff-actions-inner staff-actions-inner--single shopify-orders-actions-inner justify-content-center">
                   <CrmIconRowActions
                     :active="manageOpenId === row.id"
                     @toggle="toggleManageMenu(row, $event)"
@@ -1011,12 +1011,14 @@ onUnmounted(() => {
 }
 
 .shopify-orders-search-wrap {
-  min-width: min(100%, 18rem);
-  flex: 1 1 16rem;
+  flex: 0 0 auto;
+  width: min(16.5rem, 100%);
+  max-width: 16.5rem;
 }
 
 .shopify-orders-search-field {
   position: relative;
+  width: 100%;
 }
 
 .shopify-orders-search-field__icon {
@@ -1124,6 +1126,17 @@ onUnmounted(() => {
 .shopify-orders-shipping {
   color: #334155;
   font-size: 0.9375rem;
+}
+
+/* Mock: ACTION column kebab centered (override global end-alignment). */
+.shopify-orders-table :deep(th.shopify-orders-actions-col),
+.shopify-orders-table :deep(td.shopify-orders-actions-cell) {
+  text-align: center !important;
+}
+
+.shopify-orders-actions-inner {
+  justify-content: center !important;
+  width: 100%;
 }
 
 .shopify-order-status {

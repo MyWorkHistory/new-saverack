@@ -1,10 +1,11 @@
 <script setup>
-import { reactive, watch } from "vue";
+import { computed, reactive, watch } from "vue";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
   busy: { type: Boolean, default: false },
   variant: { type: Object, default: null },
+  mode: { type: String, default: "type-only" },
 });
 
 const emit = defineEmits(["update:open", "save"]);
@@ -13,6 +14,12 @@ const form = reactive({
   status: "active",
   product_type: "standard",
 });
+
+const isTypeOnly = computed(() => props.mode === "type-only");
+
+const modalTitle = computed(() =>
+  isTypeOnly.value ? "Edit Product Type" : "Product Settings",
+);
 
 function reset() {
   const v = props.variant || {};
@@ -54,7 +61,7 @@ function submit() {
       <div class="shopify-product-settings" @click.stop>
         <header class="shopify-product-settings__head">
           <h2 id="shopify-product-settings-title" class="shopify-product-settings__title">
-            Product Settings
+            {{ modalTitle }}
           </h2>
           <button
             type="button"
@@ -70,16 +77,18 @@ function submit() {
         </header>
 
         <div class="shopify-product-settings__body">
-          <label class="form-label" for="shopify-product-settings-status">Status</label>
-          <select
-            id="shopify-product-settings-status"
-            v-model="form.status"
-            class="form-select mb-3"
-            :disabled="busy"
-          >
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
+          <template v-if="!isTypeOnly">
+            <label class="form-label" for="shopify-product-settings-status">Status</label>
+            <select
+              id="shopify-product-settings-status"
+              v-model="form.status"
+              class="form-select mb-3"
+              :disabled="busy"
+            >
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </template>
 
           <label class="form-label" for="shopify-product-settings-type">Type</label>
           <select

@@ -222,6 +222,12 @@ async function onImageSelected(event) {
   }
 }
 
+function stripSvgProlog(svg) {
+  return String(svg || "")
+    .trim()
+    .replace(/^\s*<\?xml[^?]*\?>\s*/i, "");
+}
+
 async function printBarcode() {
   if (!variant.value?.id || printBusy.value) return;
   printBusy.value = true;
@@ -230,26 +236,62 @@ async function printBarcode() {
       responseType: "text",
       params: { t: Date.now() },
     });
-    const svg = typeof data === "string" ? data : String(data ?? "");
-    const win = window.open("", "_blank");
-    if (!win) {
-      toast.error("Allow pop-ups to print the barcode label.");
+    const svg = stripSvgProlog(typeof data === "string" ? data : String(data ?? ""));
+    if (!svg || !svg.includes("<svg")) {
+      toast.error("Could not load barcode label.");
       return;
     }
+
     const widthIn = 4;
     const heightIn = 1.5;
-    win.document.write(
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("title", "Barcode Label Print");
+    iframe.style.cssText =
+      "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) {
+      document.body.removeChild(iframe);
+      toast.error("Could not open print preview.");
+      return;
+    }
+
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      if (iframe.parentNode) {
+        iframe.parentNode.removeChild(iframe);
+      }
+    };
+
+    doc.open();
+    doc.write(
       `<!DOCTYPE html><html><head><title>Barcode Label</title>` +
         `<style>` +
         `@page{size:${widthIn}in ${heightIn}in;margin:0}` +
         `html,body{margin:0;padding:0;width:${widthIn}in;height:${heightIn}in;overflow:hidden;background:#fff}` +
-        `.label{display:block;width:${widthIn}in;height:${heightIn}in}` +
+        `.label{display:flex;align-items:center;justify-content:center;width:${widthIn}in;height:${heightIn}in}` +
+        `.label svg{display:block;width:${widthIn}in;height:${heightIn}in}` +
         `</style></head><body>` +
         `<div class="label">${svg}</div>` +
-        `<script>window.onload=function(){window.focus();window.print();};<\/script>` +
         `</body></html>`,
     );
-    win.document.close();
+    doc.close();
+
+    const printWin = iframe.contentWindow;
+    if (!printWin) {
+      cleanup();
+      toast.error("Could not open print preview.");
+      return;
+    }
+
+    printWin.onafterprint = cleanup;
+    setTimeout(cleanup, 30000);
+
+    printWin.focus();
+    printWin.print();
   } catch (e) {
     toast.errorFrom(e, "Could not print barcode label.");
   } finally {
@@ -418,12 +460,6 @@ onUnmounted(() => {
             </svg>
             {{ printBusy ? "Preparing…" : "Print Barcode" }}
           </button>
-          <button type="button" class="staff-outline-action-btn" @click="openEdit">
-            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
-            </svg>
-            Edit Product
-          </button>
           <div ref="actionsRoot" class="sid-actions-wrap">
             <button
               type="button"
@@ -450,6 +486,13 @@ onUnmounted(() => {
                   <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
                 </svg>
                 Push Inventory
+              </button>
+              <button type="button" class="sid-menu__item" role="menuitem" @click="openSettings">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6z" />
+                </svg>
+                Edit Product Type
               </button>
             </div>
           </div>
@@ -669,7 +712,7 @@ onUnmounted(() => {
                         </button>
                         <div v-if="rowMenuOpenId === row.id" class="sid-row-menu__panel" role="menu">
                           <button type="button" class="sid-menu__item" role="menuitem" @click="openQtyEdit(row)">
-                            Edit Qty
+                            Edit
                           </button>
                           <button type="button" class="sid-menu__item" role="menuitem" @click="deleteBundleComponent(row)">
                             Delete
@@ -822,6 +865,7 @@ onUnmounted(() => {
       v-model:open="settingsOpen"
       :busy="settingsBusy"
       :variant="variant"
+      mode="type-only"
       @save="onSaveSettings"
     />
     <ShopifyInventoryBundleItemsModal
@@ -1127,8 +1171,18 @@ onUnmounted(() => {
 }
 .sid-specs__icon {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  margin: 0 auto 0.35rem;
+  border-radius: 999px;
+  background: #f3f4f6;
   color: #9ca3af;
-  margin-bottom: 0.35rem;
+}
+.sid-specs__icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
 }
 .sid-specs .sid-field__label {
   margin-bottom: 0.2rem;
@@ -1301,6 +1355,10 @@ onUnmounted(() => {
   color: #2563eb;
   flex-shrink: 0;
 }
+.sid-onhand__icon svg {
+  width: 1.75rem;
+  height: 1.75rem;
+}
 .sid-onhand__value {
   font-size: 1.95rem;
   font-weight: 700;
@@ -1325,10 +1383,14 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 2.25rem;
+  height: 2.25rem;
   border-radius: 999px;
   flex-shrink: 0;
+}
+.sid-stat__icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
 }
 .sid-stat__icon--alloc {
   background: #ffedd5;
@@ -1379,6 +1441,10 @@ onUnmounted(() => {
   height: 2.25rem;
   border-radius: 0.5rem;
   flex-shrink: 0;
+}
+.sid-loc__icon svg {
+  width: 1.35rem;
+  height: 1.35rem;
 }
 .sid-loc__icon--pick,
 .sid-loc__icon--backstock {

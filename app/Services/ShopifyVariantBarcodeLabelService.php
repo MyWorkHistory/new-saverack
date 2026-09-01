@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\ShopifyProductVariant;
 use App\Support\Barcode\QrCodeSvg;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\Response;
 
 class ShopifyVariantBarcodeLabelService
 {
@@ -138,6 +140,62 @@ class ShopifyVariantBarcodeLabelService
         }
 
         return Storage::disk('public')->path($path);
+    }
+
+    /**
+     * Stream a printable PDF label (4in x 1.5in) — same open-in-tab flow as ShipHero inventory.
+     */
+    public function streamPdf(ShopifyProductVariant $variant): Response
+    {
+        $qrPayload = $this->qrPayloadForVariant($variant);
+        $displayCode = $this->displayCodeForVariant($variant);
+        if ($qrPayload === '' && $displayCode === '') {
+            throw new \RuntimeException('Add a barcode or SKU before printing a label.');
+        }
+        if ($qrPayload === '') {
+            $qrPayload = $displayCode;
+        }
+
+        $productName = $this->productNameForVariant($variant);
+        if (mb_strlen($productName) > 52) {
+            $productName = rtrim(mb_substr($productName, 0, 49)).'…';
+        }
+
+        // 4in x 1.5in at 72 dpi.
+        $pageW = (int) round(self::LABEL_WIDTH_IN * 72);
+        $pageH = (int) round(self::LABEL_HEIGHT_IN * 72);
+        $qrSize = 86;
+        $qrLeft = 8;
+        $qrTop = round(($pageH - $qrSize) / 2, 1);
+        $textLeft = $qrLeft + $qrSize + 10;
+        $textW = $pageW - $textLeft - 8;
+        $codeTop = round($pageH * 0.38, 1);
+        $nameTop = round($pageH * 0.58, 1);
+
+        $pdf = Pdf::loadView('pdf.shopify.variant-barcode-label', [
+            'qrDataUri' => QrCodeSvg::dataUri($qrPayload, 200),
+            'displayCode' => $displayCode,
+            'productName' => $productName,
+            'pageW' => $pageW,
+            'pageH' => $pageH,
+            'qrSize' => $qrSize,
+            'qrLeft' => $qrLeft,
+            'qrTop' => $qrTop,
+            'textLeft' => $textLeft,
+            'textW' => $textW,
+            'codeTop' => $codeTop,
+            'nameTop' => $nameTop,
+            'codeFont' => 15,
+            'nameFont' => 9,
+        ])->setPaper([0, 0, $pageW, $pageH]);
+
+        $filename = 'barcode-label-'.$variant->id.'.pdf';
+
+        return response($pdf->output(), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="'.$filename.'"',
+            'Cache-Control' => 'private, max-age=0, must-revalidate',
+        ]);
     }
 
     private function buildLabelSvg(string $qrPayload, string $displayCode, string $productName): string

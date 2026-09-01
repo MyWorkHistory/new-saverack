@@ -1529,6 +1529,30 @@ class ShopifyIntegrationController extends Controller
         ]);
     }
 
+    /**
+     * @return \Symfony\Component\HttpFoundation\Response|JsonResponse
+     */
+    public function barcodeLabelPdf(Request $request, ShopifyProductVariant $shopifyVariant)
+    {
+        $this->assertAdmin($request);
+        $shopifyVariant->loadMissing('product');
+
+        try {
+            return app(\App\Services\ShopifyVariantBarcodeLabelService::class)
+                ->streamPdf($shopifyVariant);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not generate barcode label.',
+            ], 500);
+        }
+    }
+
     public function bundleComponents(Request $request, ShopifyProductVariant $shopifyVariant): JsonResponse
     {
         $this->assertAdmin($request);

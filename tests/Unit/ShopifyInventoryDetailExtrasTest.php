@@ -131,6 +131,35 @@ class ShopifyInventoryDetailExtrasTest extends TestCase
         $this->assertStringContainsString('>SKU-ONLY<', $svg);
     }
 
+    public function test_barcode_label_pdf_streams_valid_pdf(): void
+    {
+        Storage::fake('public');
+        $connection = $this->connection();
+        $product = ShopifyProduct::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_product_id' => '103',
+            'title' => 'Widget PDF',
+            'status' => 'active',
+            'crm_product_kind' => ShopifyProduct::KIND_STANDARD,
+        ]);
+        $variant = ShopifyProductVariant::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_product_id' => $product->id,
+            'shopify_variant_id' => '203',
+            'shopify_inventory_item_id' => '303',
+            'title' => 'Default',
+            'sku' => 'PDF-SKU',
+            'barcode' => '012345678901',
+        ]);
+
+        $labels = app(ShopifyVariantBarcodeLabelService::class);
+        $response = $labels->streamPdf($variant);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertStringContainsString('application/pdf', (string) $response->headers->get('Content-Type'));
+        $this->assertStringStartsWith('%PDF', $response->getContent());
+    }
+
     public function test_barcode_label_regenerates_when_sku_changes_with_existing_barcode(): void
     {
         Storage::fake('public');

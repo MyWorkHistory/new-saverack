@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
 import ShopifyInventoryEditProductModal from "../../components/shopify/ShopifyInventoryEditProductModal.vue";
 import ShopifyInventoryProductSettingsModal from "../../components/shopify/ShopifyInventoryProductSettingsModal.vue";
 import ShopifyInventoryBundleItemsModal from "../../components/shopify/ShopifyInventoryBundleItemsModal.vue";
@@ -222,78 +223,14 @@ async function onImageSelected(event) {
   }
 }
 
-function stripSvgProlog(svg) {
-  return String(svg || "")
-    .trim()
-    .replace(/^\s*<\?xml[^?]*\?>\s*/i, "");
-}
-
 async function printBarcode() {
   if (!variant.value?.id || printBusy.value) return;
   printBusy.value = true;
   try {
-    const { data } = await api.get(`/shopify/inventory/${variant.value.id}/barcode-label`, {
-      responseType: "text",
-      params: { t: Date.now() },
-    });
-    const svg = stripSvgProlog(typeof data === "string" ? data : String(data ?? ""));
-    if (!svg || !svg.includes("<svg")) {
-      toast.error("Could not load barcode label.");
-      return;
-    }
-
-    const widthIn = 4;
-    const heightIn = 1.5;
-    const iframe = document.createElement("iframe");
-    iframe.setAttribute("title", "Barcode Label Print");
-    iframe.style.cssText =
-      "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentDocument || iframe.contentWindow?.document;
-    if (!doc) {
-      document.body.removeChild(iframe);
-      toast.error("Could not open print preview.");
-      return;
-    }
-
-    let cleaned = false;
-    const cleanup = () => {
-      if (cleaned) return;
-      cleaned = true;
-      if (iframe.parentNode) {
-        iframe.parentNode.removeChild(iframe);
-      }
-    };
-
-    doc.open();
-    doc.write(
-      `<!DOCTYPE html><html><head><title>Barcode Label</title>` +
-        `<style>` +
-        `@page{size:${widthIn}in ${heightIn}in;margin:0}` +
-        `html,body{margin:0;padding:0;width:${widthIn}in;height:${heightIn}in;overflow:hidden;background:#fff}` +
-        `.label{display:flex;align-items:center;justify-content:center;width:${widthIn}in;height:${heightIn}in}` +
-        `.label svg{display:block;width:${widthIn}in;height:${heightIn}in}` +
-        `</style></head><body>` +
-        `<div class="label">${svg}</div>` +
-        `</body></html>`,
-    );
-    doc.close();
-
-    const printWin = iframe.contentWindow;
-    if (!printWin) {
-      cleanup();
-      toast.error("Could not open print preview.");
-      return;
-    }
-
-    printWin.onafterprint = cleanup;
-    setTimeout(cleanup, 30000);
-
-    printWin.focus();
-    printWin.print();
+    await openApiPdfBlob(api, `/shopify/inventory/${variant.value.id}/barcode-label.pdf`);
   } catch (e) {
-    toast.errorFrom(e, "Could not print barcode label.");
+    const msg = e instanceof Error ? e.message : "";
+    toast.error(msg || "Could not open barcode label PDF.");
   } finally {
     printBusy.value = false;
   }
@@ -458,7 +395,7 @@ onUnmounted(() => {
             <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V6.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v.852m10.5 0V9.75m0 0a48.063 48.063 0 01-10.5 0" />
             </svg>
-            {{ printBusy ? "Preparing…" : "Print Barcode" }}
+            {{ printBusy ? "Generating Label… Please Wait" : "Print Barcode" }}
           </button>
           <div ref="actionsRoot" class="sid-actions-wrap">
             <button

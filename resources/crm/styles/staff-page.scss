@@ -1801,12 +1801,12 @@ button.staff-status-badge:focus-visible {
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
-  min-height: 2.75rem;
-  padding: 0.625rem 1rem;
-  border: 1.5px solid #7367f0;
-  border-radius: 0.625rem;
+  min-height: 2.4rem;
+  padding: 0 1rem;
+  border: 1px solid #3b82f6;
+  border-radius: 0.5rem;
   background: #fff;
-  color: #7367f0;
+  color: #3b82f6;
   font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.2;
@@ -1817,6 +1817,7 @@ button.staff-status-badge:focus-visible {
   transition:
     background-color 0.15s ease,
     border-color 0.15s ease,
+    border-width 0.15s ease,
     color 0.15s ease;
 }
 
@@ -1825,10 +1826,11 @@ button.staff-status-badge:focus-visible {
   color: currentColor;
 }
 
-.staff-outline-action-btn:hover:not(:disabled):not(.staff-outline-action-btn--disabled) {
-  background: rgba(115, 103, 240, 0.06);
-  border-color: #7367f0;
-  color: #7367f0;
+.staff-outline-action-btn:hover:not(:disabled):not(.staff-outline-action-btn--disabled),
+.staff-outline-action-btn--active {
+  background: rgba(59, 130, 246, 0.06);
+  border: 1.5px solid #2563eb;
+  color: #2563eb;
 }
 
 .staff-outline-action-btn:focus,
@@ -1845,25 +1847,28 @@ button.staff-status-badge:focus-visible {
 
 .staff-outline-action-btn--sm {
   min-height: 2rem;
-  padding: 0.35rem 0.75rem;
+  padding: 0 0.7rem;
   font-size: 0.8125rem;
-  border-radius: 0.5rem;
+  border-radius: 0.45rem;
 }
 
-.staff-outline-action-btn--active {
-  border-width: 2px;
-  border-color: #7367f0;
-  color: #7367f0;
+.staff-outline-action-btn--active:focus,
+.staff-outline-action-btn--active:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 [data-bs-theme="dark"] .staff-outline-action-btn {
   background: var(--bs-body-bg);
+  border-color: #60a5fa;
+  color: #60a5fa;
 }
 
 [data-bs-theme="dark"] .staff-outline-action-btn:hover:not(:disabled):not(.staff-outline-action-btn--disabled),
 [data-bs-theme="dark"] .staff-outline-action-btn--active {
-  border-color: #a59bff;
-  color: #a59bff;
+  border-color: #93c5fd;
+  color: #93c5fd;
+  background: rgba(96, 165, 250, 0.1);
 }
 
 /* Narrow viewports: full-width horizontal tab nav (account detail, invoice actions, etc.) */

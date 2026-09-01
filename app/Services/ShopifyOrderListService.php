@@ -154,6 +154,16 @@ class ShopifyOrderListService
             ? 'https://'.$shopDomain.'/admin/orders/'.$shopifyId
             : null;
 
+        $accountName = null;
+        $clientAccountId = null;
+        if ($connection !== null) {
+            $clientAccountId = $connection->client_account_id;
+            $clientAccount = $connection->clientAccount;
+            if ($clientAccount !== null) {
+                $accountName = $clientAccount->company_name;
+            }
+        }
+
         return [
             'id' => $order->id,
             'name' => $order->name,
@@ -163,8 +173,8 @@ class ShopifyOrderListService
             'shopify_created_at' => optional($order->shopify_created_at)->toIso8601String(),
             'country' => $this->countryCode($order),
             'shipping_method' => $this->shippingMethod($order),
-            'account_name' => $connection?->clientAccount?->company_name,
-            'client_account_id' => $connection?->client_account_id,
+            'account_name' => $accountName,
+            'client_account_id' => $clientAccountId,
             'connection_id' => $order->connection_id,
             'shop_domain' => $shopDomain !== '' ? $shopDomain : null,
             'shopify_admin_url' => $adminUrl,
@@ -195,13 +205,18 @@ class ShopifyOrderListService
 
     public function displayStatusLabel(string $status): string
     {
-        return match ($status) {
-            self::DISPLAY_READY => 'Ready to Ship',
-            self::DISPLAY_ON_HOLD => 'On Hold',
-            self::DISPLAY_BACKORDER => 'Backorder',
-            self::DISPLAY_SHIPPED => 'Shipped',
-            default => ucwords(str_replace('_', ' ', $status)),
-        };
+        switch ($status) {
+            case self::DISPLAY_READY:
+                return 'Ready to Ship';
+            case self::DISPLAY_ON_HOLD:
+                return 'On Hold';
+            case self::DISPLAY_BACKORDER:
+                return 'Backorder';
+            case self::DISPLAY_SHIPPED:
+                return 'Shipped';
+            default:
+                return ucwords(str_replace('_', ' ', $status));
+        }
     }
 
     private function looksLikeBackorder(ShopifyOrder $order): bool
@@ -311,10 +326,15 @@ class ShopifyOrderListService
             ->where('shop_domain', '!=', '')
             ->orderBy('id')
             ->get()
-            ->map(fn (ClientAccountShopifyConnection $c) => [
-                'id' => (int) $c->client_account_id,
-                'name' => $c->clientAccount?->company_name ?? ('Account #'.$c->client_account_id),
-            ])
+            ->map(function (ClientAccountShopifyConnection $c) {
+                $clientAccount = $c->clientAccount;
+                $name = $clientAccount !== null ? $clientAccount->company_name : null;
+
+                return [
+                    'id' => (int) $c->client_account_id,
+                    'name' => $name ?? ('Account #'.$c->client_account_id),
+                ];
+            })
             ->unique('id')
             ->values()
             ->all();

@@ -945,9 +945,18 @@ class ShopifyIntegrationController extends Controller
         $this->assertAdmin($request);
         $shopifyOrder->load(['connection.clientAccount', 'lineItems']);
 
+        $accountName = 'Save Rack';
+        $connection = $shopifyOrder->connection;
+        if ($connection !== null && $connection->clientAccount !== null) {
+            $companyName = trim((string) $connection->clientAccount->company_name);
+            if ($companyName !== '') {
+                $accountName = $companyName;
+            }
+        }
+
         $pdf = Pdf::loadView('pdf.shopify.order-packing-slip', [
             'order' => $shopifyOrder,
-            'accountName' => $shopifyOrder->connection?->clientAccount?->company_name ?? 'Save Rack',
+            'accountName' => $accountName,
             'recipientName' => $orders->recipientName($shopifyOrder),
             'shippingAddress' => is_array($shopifyOrder->shipping_address_json) ? $shopifyOrder->shipping_address_json : [],
         ])->setPaper('letter');

@@ -612,7 +612,7 @@ onUnmounted(() => {
       <div class="shopify-loc-summary mb-3">
         <div class="shopify-loc-summary__main">
           <div class="shopify-loc-hero-icon" aria-hidden="true">
-            <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="#2563eb" stroke-width="1.7">
+            <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="#2563eb" stroke-width="1.7">
               <path
                 stroke-linecap="round"
                 stroke-linejoin="round"
@@ -953,101 +953,125 @@ onUnmounted(() => {
     </Teleport>
 
     <Teleport to="body">
-      <div v-if="addItemOpen" class="crm-vx-modal-overlay" @click.self="addItemOpen = false">
-        <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
-          <header class="crm-vx-modal__head" style="text-align: left">
-            <h2 class="crm-vx-modal__title">Add Item</h2>
-          </header>
-          <div class="crm-vx-modal__body">
-            <label class="form-label" for="add-item-account">Account</label>
-            <CrmSearchableSelect
-              id="add-item-account"
-              v-model="addItemForm.client_account_id"
-              class="mb-3"
-              appearance="staff"
-              aria-label="Select account"
-              :options="accountOptions"
-              :disabled="accountsLoading || busy"
-              :allow-empty="false"
-              placeholder="Select Account"
-              empty-label="Select Account"
-              search-placeholder="Search accounts…"
-              teleport-panel
-            />
-
-            <label class="form-label" for="add-item-sku-search">SKU</label>
-            <div data-shopify-loc-sku-search class="position-relative mb-3">
-              <template v-if="addItemForm.shopify_variant_id">
-                <div class="shopify-loc-sku-selected d-flex align-items-center justify-content-between gap-2">
-                  <span class="small text-body min-w-0 text-truncate">{{ addItemForm.product_label || addItemForm.sku }}</span>
-                  <button
-                    type="button"
-                    class="btn btn-link btn-sm p-0 text-decoration-none flex-shrink-0"
-                    :disabled="busy || !addItemForm.client_account_id"
-                    @click="clearSelectedSku"
-                  >
-                    Change
-                  </button>
-                </div>
-              </template>
-              <template v-else>
-                <input
-                  id="add-item-sku-search"
-                  v-model="skuSearchQ"
-                  type="search"
-                  class="form-control"
-                  placeholder="Search by name or SKU…"
-                  autocomplete="off"
-                  :disabled="busy || !addItemForm.client_account_id"
-                  @focus="addItemForm.client_account_id && searchSkus()"
-                  @input="scheduleSkuSearch"
-                />
-                <div
-                  v-if="skuSearchOpen && addItemForm.client_account_id"
-                  class="shopify-loc-sku-dropdown"
-                  role="listbox"
+      <Transition name="shopify-loc-drawer-fade">
+        <div
+          v-if="addItemOpen"
+          class="shopify-loc-drawer-root"
+          aria-modal="true"
+          role="dialog"
+          aria-labelledby="add-item-drawer-title"
+        >
+          <div class="shopify-loc-drawer-backdrop" aria-hidden="true" @click="addItemOpen = false" />
+          <Transition name="shopify-loc-drawer-slide" appear>
+            <aside class="shopify-loc-drawer" @click.stop>
+              <header class="shopify-loc-drawer__head">
+                <h2 id="add-item-drawer-title" class="shopify-loc-drawer__title">Add Item</h2>
+                <button
+                  type="button"
+                  class="shopify-loc-drawer__close"
+                  aria-label="Close"
+                  :disabled="busy"
+                  @click="addItemOpen = false"
                 >
-                  <div v-if="skuSearchLoading" class="px-3 py-2 small text-secondary">Searching…</div>
-                  <button
-                    v-for="row in skuSearchResults"
-                    :key="row.id"
-                    type="button"
-                    class="shopify-loc-sku-dropdown__item"
-                    role="option"
-                    @click="selectSkuResult(row)"
-                  >
-                    <span class="fw-semibold d-block text-truncate">{{ row.product_title || row.title || "—" }}</span>
-                    <span class="small text-secondary">{{ row.sku || "—" }}</span>
-                  </button>
-                  <div
-                    v-if="!skuSearchLoading && !skuSearchResults.length"
-                    class="px-3 py-2 small text-secondary"
-                  >
-                    No products found for this account.
-                  </div>
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </header>
+              <div class="shopify-loc-drawer__body">
+                <label class="form-label" for="add-item-account">Account</label>
+                <CrmSearchableSelect
+                  id="add-item-account"
+                  v-model="addItemForm.client_account_id"
+                  class="mb-3"
+                  appearance="staff"
+                  aria-label="Select account"
+                  :options="accountOptions"
+                  :disabled="accountsLoading || busy"
+                  :allow-empty="false"
+                  placeholder="Select Account"
+                  empty-label="Select Account"
+                  search-placeholder="Search accounts…"
+                  teleport-panel
+                />
+
+                <label class="form-label" for="add-item-sku-search">SKU</label>
+                <div data-shopify-loc-sku-search class="position-relative mb-3">
+                  <template v-if="addItemForm.shopify_variant_id">
+                    <div class="shopify-loc-sku-selected d-flex align-items-center justify-content-between gap-2">
+                      <span class="small text-body min-w-0 text-truncate">{{ addItemForm.product_label || addItemForm.sku }}</span>
+                      <button
+                        type="button"
+                        class="btn btn-link btn-sm p-0 text-decoration-none flex-shrink-0"
+                        :disabled="busy || !addItemForm.client_account_id"
+                        @click="clearSelectedSku"
+                      >
+                        Change
+                      </button>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <input
+                      id="add-item-sku-search"
+                      v-model="skuSearchQ"
+                      type="search"
+                      class="form-control"
+                      placeholder="Search by name or SKU…"
+                      autocomplete="off"
+                      :disabled="busy || !addItemForm.client_account_id"
+                      @focus="addItemForm.client_account_id && searchSkus()"
+                      @input="scheduleSkuSearch"
+                    />
+                    <div
+                      v-if="skuSearchOpen && addItemForm.client_account_id"
+                      class="shopify-loc-sku-dropdown"
+                      role="listbox"
+                    >
+                      <div v-if="skuSearchLoading" class="px-3 py-2 small text-secondary">Searching…</div>
+                      <button
+                        v-for="row in skuSearchResults"
+                        :key="row.id"
+                        type="button"
+                        class="shopify-loc-sku-dropdown__item"
+                        role="option"
+                        @click="selectSkuResult(row)"
+                      >
+                        <span class="fw-semibold d-block text-truncate">{{ row.product_title || row.title || "—" }}</span>
+                        <span class="small text-secondary">{{ row.sku || "—" }}</span>
+                      </button>
+                      <div
+                        v-if="!skuSearchLoading && !skuSearchResults.length"
+                        class="px-3 py-2 small text-secondary"
+                      >
+                        No products found for this account.
+                      </div>
+                    </div>
+                  </template>
+                  <p v-if="!addItemForm.client_account_id" class="small text-secondary mb-0 mt-1">
+                    Select an account to search SKUs.
+                  </p>
                 </div>
-              </template>
-              <p v-if="!addItemForm.client_account_id" class="small text-secondary mb-0 mt-1">
-                Select an account to search SKUs.
-              </p>
-            </div>
 
-            <label class="form-label" for="add-item-reason">Reason for Add</label>
-            <select id="add-item-reason" v-model="addItemForm.reason" class="form-select mb-3">
-              <option v-for="reason in addItemReasons" :key="reason" :value="reason">{{ reason }}</option>
-            </select>
+                <label class="form-label" for="add-item-reason">Reason for Add</label>
+                <select id="add-item-reason" v-model="addItemForm.reason" class="form-select mb-3">
+                  <option v-for="reason in addItemReasons" :key="reason" :value="reason">{{ reason }}</option>
+                </select>
 
-            <label class="form-label" for="add-item-qty">QTY</label>
-            <input id="add-item-qty" v-model="addItemForm.available" type="number" min="1" class="form-control" />
-          </div>
-          <footer class="crm-vx-modal__footer justify-content-end">
-            <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" :disabled="busy" @click="addItemOpen = false">Cancel</button>
-            <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--primary" :disabled="busy" @click="addItem">
-              {{ busy ? "Please Wait…" : "Add Item" }}
-            </button>
-          </footer>
+                <label class="form-label" for="add-item-qty">QTY</label>
+                <input id="add-item-qty" v-model="addItemForm.available" type="number" min="1" class="form-control" />
+              </div>
+              <footer class="shopify-loc-drawer__footer">
+                <button type="button" class="btn btn-outline-secondary" :disabled="busy" @click="addItemOpen = false">
+                  Cancel
+                </button>
+                <button type="button" class="btn btn-primary staff-page-primary" :disabled="busy" @click="addItem">
+                  {{ busy ? "Please Wait…" : "Add Item" }}
+                </button>
+              </footer>
+            </aside>
+          </Transition>
         </div>
-      </div>
+      </Transition>
     </Teleport>
 
     <ShopifyLocationTransferModal
@@ -1131,15 +1155,15 @@ onUnmounted(() => {
 }
 .shopify-loc-summary__main {
   display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
+  align-items: center;
+  gap: 0.85rem;
   min-width: 0;
   flex: 1 1 16rem;
 }
 .shopify-loc-hero-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 0.65rem;
+  width: 3.75rem;
+  height: 3.75rem;
+  border-radius: 0.75rem;
   background: #dbeafe;
   display: inline-flex;
   align-items: center;
@@ -1173,7 +1197,7 @@ onUnmounted(() => {
 }
 .shopify-loc-meta__value {
   font-size: 0.95rem;
-  font-weight: 700;
+  font-weight: 400;
   color: #0f172a;
   line-height: 1.2;
 }
@@ -1197,15 +1221,16 @@ onUnmounted(() => {
 .shopify-loc-summary__aside {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   flex-shrink: 0;
 }
 .shopify-loc-qty-card {
   min-width: 10rem;
-  padding: 0.65rem 0.85rem 0.6rem;
+  padding: 0.75rem 1rem;
   border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 0.65rem;
   background: #fff;
+  text-align: center;
 }
 .shopify-loc-qty-card__top {
   display: flex;
@@ -1218,7 +1243,7 @@ onUnmounted(() => {
   font-size: 0.8rem;
   color: #64748b;
   line-height: 1.3;
-  padding-top: 0.15rem;
+  margin-bottom: 0.35rem;
 }
 .shopify-loc-qty-card__value {
   font-size: 1.5rem;
@@ -1226,6 +1251,7 @@ onUnmounted(() => {
   color: #2563eb;
   line-height: 1.1;
   letter-spacing: -0.02em;
+  text-align: center;
 }
 .sip-product-cell {
   display: flex;
@@ -1352,5 +1378,93 @@ onUnmounted(() => {
 }
 .shopify-loc-sku-dropdown__item:last-child {
   border-bottom: 0;
+}
+
+.shopify-loc-drawer-root {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  justify-content: flex-end;
+  overflow: hidden;
+}
+.shopify-loc-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(1px);
+}
+.shopify-loc-drawer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 28rem;
+  height: 100%;
+  max-height: 100dvh;
+  background: #fff;
+  border-left: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: -8px 0 32px rgba(15, 23, 42, 0.12);
+}
+.shopify-loc-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  flex-shrink: 0;
+}
+.shopify-loc-drawer__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+.shopify-loc-drawer__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+}
+.shopify-loc-drawer__close:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+.shopify-loc-drawer__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+.shopify-loc-drawer__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  flex-shrink: 0;
+}
+.shopify-loc-drawer-fade-enter-active,
+.shopify-loc-drawer-fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+.shopify-loc-drawer-fade-enter-from,
+.shopify-loc-drawer-fade-leave-to {
+  opacity: 0;
+}
+.shopify-loc-drawer-slide-enter-active,
+.shopify-loc-drawer-slide-leave-active {
+  transition: transform 0.22s ease;
+}
+.shopify-loc-drawer-slide-enter-from,
+.shopify-loc-drawer-slide-leave-to {
+  transform: translateX(100%);
 }
 </style>

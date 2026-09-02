@@ -104,7 +104,6 @@ const manageMenuRow = computed(() => rows.value.find((r) => r.id === manageOpenI
 const filterMenuOpen = ref(false);
 const selectedIds = ref(new Set());
 const bulkEmailOpen = ref(false);
-const bulkEmailBusy = ref(false);
 const bulkStatusOpen = ref(false);
 const bulkStatusBusy = ref(false);
 const filtersBeforeSearch = ref(null);
@@ -233,30 +232,34 @@ async function submitBulkStatus({ status, follow_up_days }) {
 
 async function submitBulkEmail({ email_template_id }) {
   if (!email_template_id || !selectedCount.value) return;
-  bulkEmailBusy.value = true;
+
+  const leadIds = Array.from(selectedIds.value);
+  bulkEmailOpen.value = false;
+
   try {
     const { data } = await api.post("/leads/bulk-email", {
-      lead_ids: Array.from(selectedIds.value),
+      lead_ids: leadIds,
       email_template_id,
     });
-    const sent = Number(data?.sent ?? data?.queued ?? 0);
+    const queued = Number(data?.queued ?? 0);
     const skipped = Number(data?.skipped || 0);
     const updated = Number(data?.updated || 0);
     const categoryLabel = data?.category ? leadStatusLabel(data.category) : "";
     let msg = "";
     if (updated && categoryLabel) {
       msg = `${updated} lead${updated === 1 ? "" : "s"} set to ${categoryLabel}`;
-      if (sent) {
-        msg += `; ${sent} email${sent === 1 ? "" : "s"} sent`;
+      if (queued) {
+        msg += `; sending ${queued} email${queued === 1 ? "" : "s"} in the background`;
       }
+    } else if (queued) {
+      msg = `Sending ${queued} email${queued === 1 ? "" : "s"} in the background`;
     } else {
-      msg = `Sent ${sent} email${sent === 1 ? "" : "s"}`;
+      msg = "No emails queued";
     }
     if (skipped) msg += ` (${skipped} skipped)`;
     const failed = Number(data?.failed_ids?.length || 0);
     if (failed) msg += ` (${failed} failed)`;
     toast.success(`${msg}.`);
-    bulkEmailOpen.value = false;
     selectedIds.value = new Set();
     if (updated > 0 && data?.category) {
       query.value = { ...query.value, status: data.category, page: 1 };
@@ -264,9 +267,7 @@ async function submitBulkEmail({ email_template_id }) {
     await fetchRows();
     await loadMeta();
   } catch (e) {
-    toast.errorFrom(e, "Could not send bulk email.");
-  } finally {
-    bulkEmailBusy.value = false;
+    toast.errorFrom(e, "Could not queue bulk email.");
   }
 }
 
@@ -670,7 +671,6 @@ onUnmounted(() => {
     />
     <LeadBulkEmailDrawer
       v-model:open="bulkEmailOpen"
-      :busy="bulkEmailBusy"
       :selected-count="selectedCount"
       :templates="emailTemplatesFlat"
       @submit="submitBulkEmail"
@@ -891,7 +891,6 @@ onUnmounted(() => {
         <button
           type="button"
           class="btn btn-sm staff-page-primary"
-          :disabled="bulkEmailBusy"
           @click="openBulkEmail"
         >
           Bulk Send
@@ -899,7 +898,7 @@ onUnmounted(() => {
         <button
           type="button"
           class="btn btn-link btn-sm staff-bulk-clear-link ms-auto text-decoration-none"
-          :disabled="bulkStatusBusy || bulkEmailBusy"
+          :disabled="bulkStatusBusy"
           @click="clearSelection"
         >
           Clear Selection

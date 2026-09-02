@@ -2,10 +2,10 @@
 
 namespace App\Services;
 
+use App\Jobs\SendLeadBulkTemplateEmailJob;
 use App\Mail\LeadTemplateMailable;
 use App\Models\EmailTemplate;
 use App\Models\Lead;
-use App\Models\LeadStatusEvent;
 use App\Models\User;
 use App\Support\LeadEmailTemplateRenderer;
 use Illuminate\Support\Facades\Log;
@@ -109,12 +109,10 @@ class LeadTemplateMailService
         }
 
         $leads = Lead::query()->whereIn('id', $ids)->get();
-        $sent = [];
+        $toQueue = [];
         $skipped = [];
         $failed = [];
         $updated = 0;
-        $delaySeconds = max(0, (int) config('crm.lead_bulk_email_delay_seconds', 3));
-        $isFirstSend = true;
 
         foreach ($leads as $lead) {
             $email = strtolower(trim((string) $lead->email));
@@ -125,6 +123,7 @@ class LeadTemplateMailService
             try {
                 $this->leads->applyTemplateEmailSend($lead, $template, $actor);
                 $updated++;
+                $toQueue[] = (int) $lead->id;
             } catch (Throwable $e) {
                 $failed[] = (int) $lead->id;
                 Log::warning('lead_template_email.bulk_status_failed', [
@@ -132,24 +131,20 @@ class LeadTemplateMailService
                     'template_id' => $template->id,
                     'message' => $e->getMessage(),
                 ]);
-                continue;
-            }
-
-            if (! $isFirstSend && $delaySeconds > 0) {
-                sleep($delaySeconds);
-            }
-            $isFirstSend = false;
-
-            if ($this->sendToLeadSafe($lead->fresh() ?? $lead, $template, $actor)) {
-                $sent[] = (int) $lead->id;
-            } else {
-                $failed[] = (int) $lead->id;
             }
         }
 
+        if ($toQueue !== []) {
+            SendLeadBulkTemplateEmailJob::dispatchAfterResponse(
+                $toQueue,
+                (int) $template->id,
+                $actor?->id
+            );
+        }
+
         return [
-            'queued' => count($sent),
-            'sent' => count($sent),
+            'queued' => count($toQueue),
+            'sent' => 0,
             'skipped' => count($skipped),
             'skipped_ids' => $skipped,
             'failed_ids' => $failed,

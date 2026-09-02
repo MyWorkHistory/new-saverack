@@ -126,7 +126,7 @@ function submit() {
           class="btn btn-primary staff-page-primary"
           :disabled="!canSubmit"
         >
-          {{ busy ? "Sending…" : "Send" }}
+          Send
         </button>
       </footer>
     </template>

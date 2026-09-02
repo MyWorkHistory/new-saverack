@@ -149,7 +149,7 @@ class LeadTemplateEmailApiTest extends TestCase
             ->assertJsonPath('follow_up_days', null);
     }
 
-    public function test_bulk_email_sends_mail_and_updates_status(): void
+    public function test_bulk_email_queues_mail_and_updates_status(): void
     {
         $this->staffWithLeads();
         Mail::fake();
@@ -190,8 +190,15 @@ class LeadTemplateEmailApiTest extends TestCase
         $this->assertSame(Lead::STATUS_CONTACTED, $leadA->status);
         $this->assertSame(Lead::STATUS_CONTACTED, $leadB->status);
 
+        Queue::assertPushed(SendLeadBulkTemplateEmailJob::class, function (SendLeadBulkTemplateEmailJob $job) use ($template, $leadA, $leadB) {
+            $this->assertSame($template->id, $job->templateId);
+            $this->assertEqualsCanonicalizing([$leadA->id, $leadB->id], $job->leadIds);
+            $job->handle(app(\App\Services\LeadTemplateMailService::class));
+
+            return true;
+        });
+
         Mail::assertSent(LeadTemplateMailable::class, 2);
-        Queue::assertNotPushed(SendLeadBulkTemplateEmailJob::class);
     }
 
     public function test_email_template_uses_subject_field(): void

@@ -61,6 +61,7 @@ class SupplyOrderController extends Controller
                 'submitted_at' => optional(optional($line->order)->submitted_at)->toIso8601String(),
                 'submitted_by_user_id' => optional($line->order)->user_id,
                 'submitted_by_name' => optional(optional($line->order)->user)->name,
+                'order_note' => optional($line->order)->note,
                 'created_at' => optional($line->created_at)->toIso8601String(),
             ];
         })->values()->all();
@@ -86,6 +87,7 @@ class SupplyOrderController extends Controller
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.supply_id' => ['required', 'integer', 'exists:supplies,id'],
             'lines.*.quantity' => ['required', 'integer', 'min:1', 'max:99999999'],
+            'note' => ['sometimes', 'nullable', 'string', 'max:5000'],
         ]);
 
         /** @var User $user */
@@ -100,9 +102,11 @@ class SupplyOrderController extends Controller
         }
 
         $order = DB::transaction(function () use ($validated, $user, $supplies) {
+            $note = isset($validated['note']) ? trim((string) $validated['note']) : '';
             $order = SupplyOrder::query()->create([
                 'user_id' => $user->id,
                 'submitted_at' => now(),
+                'note' => $note !== '' ? $note : null,
             ]);
 
             foreach ($validated['lines'] as $row) {
@@ -131,6 +135,7 @@ class SupplyOrderController extends Controller
         return response()->json([
             'id' => $order->id,
             'submitted_at' => optional($order->submitted_at)->toIso8601String(),
+            'note' => $order->note,
             'lines' => $order->lines->map(fn (SupplyOrderLine $line) => [
                 'id' => $line->id,
                 'name' => $line->name,
@@ -140,5 +145,35 @@ class SupplyOrderController extends Controller
             ])->values()->all(),
             'slack_warning' => $slackWarning,
         ], 201);
+    }
+
+    public function updateLine(Request $request, SupplyOrderLine $supplyOrderLine): JsonResponse
+    {
+        $this->authorize('update', SupplyOrder::class);
+
+        $validated = $request->validate([
+            'quantity' => ['required', 'integer', 'min:1', 'max:99999999'],
+        ]);
+
+        $supplyOrderLine->quantity = (int) $validated['quantity'];
+        $supplyOrderLine->save();
+        $supplyOrderLine->load(['order.user:id,name']);
+
+        return response()->json([
+            'id' => $supplyOrderLine->id,
+            'supply_order_id' => $supplyOrderLine->supply_order_id,
+            'supply_id' => $supplyOrderLine->supply_id,
+            'name' => $supplyOrderLine->name,
+            'type' => $supplyOrderLine->type,
+            'type_label' => Supply::typeLabel($supplyOrderLine->type),
+            'display_name' => trim(Supply::typeLabel($supplyOrderLine->type).' '.$supplyOrderLine->name),
+            'link' => $supplyOrderLine->link,
+            'quantity' => (int) $supplyOrderLine->quantity,
+            'submitted_at' => optional(optional($supplyOrderLine->order)->submitted_at)->toIso8601String(),
+            'submitted_by_user_id' => optional($supplyOrderLine->order)->user_id,
+            'submitted_by_name' => optional(optional($supplyOrderLine->order)->user)->name,
+            'order_note' => optional($supplyOrderLine->order)->note,
+            'created_at' => optional($supplyOrderLine->created_at)->toIso8601String(),
+        ]);
     }
 }

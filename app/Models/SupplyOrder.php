@@ -11,6 +11,7 @@ class SupplyOrder extends Model
     protected $fillable = [
         'user_id',
         'submitted_at',
+        'note',
     ];
 
     protected $casts = [

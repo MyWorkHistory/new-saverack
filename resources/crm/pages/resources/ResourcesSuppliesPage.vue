@@ -10,13 +10,42 @@ import {
 } from "../../constants/supplies.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
-import { userHasPerm as crmUserHasPerm } from "../../utils/crmPerms.js";
 import { crmIsAdmin, crmIsPortalUser } from "../../utils/crmUser.js";
 
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
 
 const CART_STORAGE_PREFIX = "crm.resources.supplies.cart";
+const NOTE_STORAGE_PREFIX = "crm.resources.supplies.note";
+
+function noteStorageKey() {
+  const id = crmUser.value?.id;
+  return id != null ? `${NOTE_STORAGE_PREFIX}.${id}` : `${NOTE_STORAGE_PREFIX}.guest`;
+}
+
+function loadNoteFromStorage() {
+  try {
+    return String(localStorage.getItem(noteStorageKey()) || "");
+  } catch {
+    return "";
+  }
+}
+
+function saveNoteToStorage(note) {
+  try {
+    localStorage.setItem(noteStorageKey(), String(note || ""));
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearNoteStorage() {
+  try {
+    localStorage.removeItem(noteStorageKey());
+  } catch {
+    /* ignore */
+  }
+}
 
 function cartStorageKey() {
   const id = crmUser.value?.id;
@@ -75,18 +104,11 @@ function isStaffAdminUser(user) {
   return crmIsAdmin(user);
 }
 
-const canSubmitOrder = computed(() => {
-  const u = crmUser.value;
-  if (!u) return false;
-  if (isStaffAdminUser(u)) return true;
-  return crmUserHasPerm(
-    u,
-    "resources_supplies.create",
-    "resources.create",
-    "resources_supplies.update",
-    "resources.update",
-  );
-});
+const canManageOrders = computed(() => isStaffAdminUser(crmUser.value));
+
+const canSubmitOrder = computed(() => canManageOrders.value);
+
+const canEditHistory = computed(() => canManageOrders.value);
 
 const canViewSupplies = computed(() => {
   const u = crmUser.value;
@@ -111,6 +133,9 @@ const typeFilter = ref("");
 const selectedSupplyId = ref(null);
 const pickerOpen = ref(false);
 const submitting = ref(false);
+const savingNote = ref(false);
+const orderNote = ref(loadNoteFromStorage());
+const historyEditBusyId = ref(null);
 const searchRoot = ref(null);
 
 let historySearchTimer = null;
@@ -206,7 +231,10 @@ async function loadHistory() {
       page += 1;
     } while (page <= lastPage);
 
-    history.value = all;
+    history.value = all.map((row) => ({
+      ...row,
+      _originalQty: Number(row.quantity || 0),
+    }));
   } catch (e) {
     toast.errorFrom(e, "Could not load order history.");
     history.value = [];
@@ -307,6 +335,47 @@ function historyDisplayName(row) {
   return name || type || "—";
 }
 
+function saveOrderNote() {
+  savingNote.value = true;
+  saveNoteToStorage(orderNote.value);
+  toast.success("Note saved.");
+  savingNote.value = false;
+}
+
+async function updateHistoryQty(row) {
+  if (!canEditHistory.value || !row?.id) return;
+  let qty = parseInt(String(row.quantity), 10);
+  if (!Number.isFinite(qty) || qty < 1) qty = 1;
+  if (qty > 99999999) qty = 99999999;
+  if (qty === Number(row._originalQty)) return;
+
+  historyEditBusyId.value = row.id;
+  try {
+    const { data } = await api.patch(`/admin/supply-order-lines/${row.id}`, {
+      quantity: qty,
+    });
+    row.quantity = Number(data?.quantity ?? qty);
+    row._originalQty = row.quantity;
+    toast.success("History updated.");
+  } catch (e) {
+    row.quantity = row._originalQty;
+    toast.errorFrom(e, "Could not update history.");
+  } finally {
+    historyEditBusyId.value = null;
+  }
+}
+
+function onHistoryQtyBlur(row) {
+  void updateHistoryQty(row);
+}
+
+function onHistoryQtyChange(row) {
+  let qty = parseInt(String(row.quantity), 10);
+  if (!Number.isFinite(qty) || qty < 1) qty = 1;
+  if (qty > 99999999) qty = 99999999;
+  row.quantity = qty;
+}
+
 function formatHistoryDate(val) {
   if (val == null || val === "") return "—";
   const d = val instanceof Date ? val : new Date(val);
@@ -331,14 +400,18 @@ async function submitOrder() {
   }
   submitting.value = true;
   try {
+    const note = String(orderNote.value || "").trim();
     const { data } = await api.post("/admin/supply-orders", {
       lines: cart.value.map((line) => ({
         supply_id: line.supply_id,
         quantity: Number(line.quantity),
       })),
+      note: note || undefined,
     });
     cart.value = [];
     clearCartStorage();
+    orderNote.value = "";
+    clearNoteStorage();
     if (data?.slack_warning) {
       toast.warning(data.slack_warning);
     } else {
@@ -362,6 +435,7 @@ onMounted(async () => {
   document.addEventListener("click", onDocClick);
   // Re-load after crmUser is available so the key is user-scoped.
   cart.value = loadCartFromStorage();
+  orderNote.value = loadNoteFromStorage();
   cartPersistReady = true;
   await Promise.all([loadCatalog(), loadHistory()]);
 });
@@ -374,209 +448,229 @@ onUnmounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide resources-supplies">
-    <!-- Supplies needed -->
-    <section class="resources-supplies__panel mb-4">
-      <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
-        <div class="min-w-0">
-          <h1 class="resources-supplies__title mb-1">Supplies needed</h1>
-          <p class="resources-supplies__subtitle mb-0">
-            Search the same supplies catalog everyone uses (including items added in Settings). Build your order below, then submit — submitted orders appear in team history for all staff.
-          </p>
-        </div>
-        <button
-          v-if="canSubmitOrder"
-          type="button"
-          class="btn btn-primary staff-page-primary resources-supplies__submit fw-semibold"
-          :disabled="submitting"
-          @click="submitOrder"
-        >
-          <svg
-            width="16"
-            height="16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
-            />
-          </svg>
-          {{ submitting ? "Submitting…" : "Submit Order" }}
-        </button>
-      </div>
-
-      <div
-        v-if="canViewSupplies"
-        class="resources-supplies__toolbar mb-3"
-      >
-        <div ref="searchRoot" class="resources-supplies__search">
-          <span class="resources-supplies__search-icon" aria-hidden="true">
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-            </svg>
-          </span>
-          <input
-            v-model="searchQ"
-            type="search"
-            class="form-control resources-supplies__search-input"
-            placeholder="Search by name or type..."
-            aria-label="Search supplies"
-            autocomplete="off"
-            :disabled="catalogLoading"
-            @focus="openPicker"
-            @input="openPicker"
-            @keydown="onSearchKeydown"
-          />
-          <div
-            v-if="pickerOpen"
-            class="resources-supplies__picker"
-            role="listbox"
-          >
+    <!-- Admin order builder + notes -->
+    <section v-if="canManageOrders" class="resources-supplies__panel mb-4">
+      <div class="resources-supplies__split">
+        <div class="resources-supplies__split-col resources-supplies__split-col--order">
+          <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+            <div class="min-w-0">
+              <h1 class="resources-supplies__title mb-1">Supplies needed</h1>
+              <p class="resources-supplies__subtitle mb-0">
+                Search the catalog, add items to your order, then submit. Submitted orders appear in team history.
+              </p>
+            </div>
             <button
-              v-for="s in filteredCatalog"
-              :key="s.id"
               type="button"
-              class="resources-supplies__picker-item"
-              :class="{ 'is-selected': Number(selectedSupplyId) === Number(s.id) }"
-              role="option"
-              @click="pickSupply(s)"
+              class="btn btn-primary staff-page-primary resources-supplies__submit fw-semibold"
+              :disabled="submitting"
+              @click="submitOrder"
             >
-              <span class="fw-semibold">{{ s.name }}</span>
-              <span class="resources-supplies__badge resources-supplies__badge--sm">
-                {{ s.type_label || supplyTypeLabel(s.type) }}
-              </span>
+              <svg
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
+                />
+              </svg>
+              {{ submitting ? "Submitting…" : "Submit Order" }}
             </button>
-            <div
-              v-if="!filteredCatalog.length"
-              class="resources-supplies__picker-empty"
+          </div>
+
+          <div v-if="canViewSupplies" class="resources-supplies__toolbar mb-3">
+            <div ref="searchRoot" class="resources-supplies__search">
+              <span class="resources-supplies__search-icon" aria-hidden="true">
+                <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                </svg>
+              </span>
+              <input
+                v-model="searchQ"
+                type="search"
+                class="form-control resources-supplies__search-input"
+                placeholder="Search by name or type..."
+                aria-label="Search supplies"
+                autocomplete="off"
+                :disabled="catalogLoading"
+                @focus="openPicker"
+                @input="openPicker"
+                @keydown="onSearchKeydown"
+              />
+              <div v-if="pickerOpen" class="resources-supplies__picker" role="listbox">
+                <button
+                  v-for="s in filteredCatalog"
+                  :key="s.id"
+                  type="button"
+                  class="resources-supplies__picker-item"
+                  :class="{ 'is-selected': Number(selectedSupplyId) === Number(s.id) }"
+                  role="option"
+                  @click="pickSupply(s)"
+                >
+                  <span class="fw-semibold">{{ s.name }}</span>
+                  <span class="resources-supplies__badge resources-supplies__badge--sm">
+                    {{ s.type_label || supplyTypeLabel(s.type) }}
+                  </span>
+                </button>
+                <div v-if="!filteredCatalog.length" class="resources-supplies__picker-empty">
+                  No matching supplies.
+                </div>
+              </div>
+            </div>
+
+            <select
+              v-model="typeFilter"
+              class="form-select resources-supplies__type"
+              aria-label="Filter by type"
+              :disabled="catalogLoading"
             >
-              No matching supplies.
+              <option
+                v-for="opt in typeFilterOptions"
+                :key="opt.id === '' ? 'all' : opt.id"
+                :value="opt.id"
+              >
+                {{ opt.name }}
+              </option>
+            </select>
+
+            <button
+              type="button"
+              class="btn resources-supplies__add fw-semibold"
+              :disabled="catalogLoading"
+              @click="addToOrder"
+            >
+              + Add to Order
+            </button>
+          </div>
+
+          <div v-if="catalogLoading" class="py-4">
+            <CrmLoadingSpinner message="Loading catalog…" :center="true" />
+          </div>
+          <div v-else-if="!cart.length" class="resources-supplies__empty">
+            No items in this order yet. Search the catalog and click Add to Order.
+          </div>
+          <ul v-else class="list-unstyled mb-0 resources-supplies__cart">
+            <li
+              v-for="line in cart"
+              :key="line.supply_id"
+              class="resources-supplies__cart-row"
+            >
+              <div class="resources-supplies__icon" aria-hidden="true">
+                <CrmMaterialIcon :name="supplyTypeIcon(line.type)" :size="22" />
+              </div>
+              <div class="min-w-0 flex-grow-1">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                  <button
+                    v-if="line.link"
+                    type="button"
+                    class="btn btn-link p-0 resources-supplies__name"
+                    @click="openItemLink(line.link)"
+                  >
+                    {{ line.name }}
+                  </button>
+                  <span v-else class="resources-supplies__name">{{ line.name }}</span>
+                  <span class="resources-supplies__badge">
+                    {{ line.type_label || supplyTypeLabel(line.type) }}
+                  </span>
+                </div>
+                <div v-if="sizeSubtitle(line.name)" class="resources-supplies__size">
+                  {{ sizeSubtitle(line.name) }}
+                </div>
+              </div>
+              <div class="resources-supplies__qty">
+                <label class="resources-supplies__qty-label" :for="`qty-${line.supply_id}`">
+                  QTY
+                </label>
+                <input
+                  :id="`qty-${line.supply_id}`"
+                  v-model.number="line.quantity"
+                  type="number"
+                  min="1"
+                  max="99999999"
+                  class="form-control resources-supplies__qty-input"
+                  @change="clampQty(line)"
+                  @blur="clampQty(line)"
+                />
+              </div>
+              <button
+                type="button"
+                class="btn resources-supplies__trash"
+                aria-label="Remove from order"
+                @click="removeFromCart(line.supply_id)"
+              >
+                <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                  />
+                </svg>
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <div class="resources-supplies__split-col resources-supplies__split-col--notes">
+          <div class="resources-supplies__notes">
+            <h2 class="resources-supplies__title resources-supplies__title--sm mb-1">Notes</h2>
+            <p class="resources-supplies__subtitle mb-3">
+              Add a note for this order. It is included when you submit and clears after submit.
+            </p>
+            <label class="form-label" for="supply-order-note">Note</label>
+            <textarea
+              id="supply-order-note"
+              v-model="orderNote"
+              class="form-control resources-supplies__notes-input"
+              rows="8"
+              placeholder="Enter note for this order…"
+              :disabled="submitting"
+            />
+            <div class="d-flex justify-content-end mt-3">
+              <button
+                type="button"
+                class="btn btn-outline-secondary"
+                :disabled="savingNote || submitting"
+                @click="saveOrderNote"
+              >
+                {{ savingNote ? "Saving…" : "Save Note" }}
+              </button>
             </div>
           </div>
         </div>
-
-        <select
-          v-model="typeFilter"
-          class="form-select resources-supplies__type"
-          aria-label="Filter by type"
-          :disabled="catalogLoading"
-        >
-          <option
-            v-for="opt in typeFilterOptions"
-            :key="opt.id === '' ? 'all' : opt.id"
-            :value="opt.id"
-          >
-            {{ opt.name }}
-          </option>
-        </select>
-
-        <button
-          type="button"
-          class="btn resources-supplies__add fw-semibold"
-          :disabled="catalogLoading || !canSubmitOrder"
-          :title="!canSubmitOrder ? 'Order permission required to add items' : undefined"
-          @click="addToOrder"
-        >
-          + Add to Order
-        </button>
       </div>
-
-      <div v-if="catalogLoading" class="py-4">
-        <CrmLoadingSpinner message="Loading catalog…" :center="true" />
-      </div>
-      <div v-else-if="!cart.length" class="resources-supplies__empty">
-        No items in this order yet. Search the catalog and click Add to Order.
-      </div>
-      <ul v-else class="list-unstyled mb-0 resources-supplies__cart">
-        <li
-          v-for="line in cart"
-          :key="line.supply_id"
-          class="resources-supplies__cart-row"
-        >
-          <div class="resources-supplies__icon" aria-hidden="true">
-            <CrmMaterialIcon :name="supplyTypeIcon(line.type)" :size="22" />
-          </div>
-          <div class="min-w-0 flex-grow-1">
-            <div class="d-flex flex-wrap align-items-center gap-2">
-              <button
-                v-if="line.link"
-                type="button"
-                class="btn btn-link p-0 resources-supplies__name"
-                @click="openItemLink(line.link)"
-              >
-                {{ line.name }}
-              </button>
-              <span v-else class="resources-supplies__name">{{ line.name }}</span>
-              <span class="resources-supplies__badge">
-                {{ line.type_label || supplyTypeLabel(line.type) }}
-              </span>
-            </div>
-            <div v-if="sizeSubtitle(line.name)" class="resources-supplies__size">
-              {{ sizeSubtitle(line.name) }}
-            </div>
-          </div>
-          <div class="resources-supplies__qty">
-            <label class="resources-supplies__qty-label" :for="`qty-${line.supply_id}`">
-              QTY
-            </label>
-            <input
-              :id="`qty-${line.supply_id}`"
-              v-model.number="line.quantity"
-              type="number"
-              min="1"
-              max="99999999"
-              class="form-control resources-supplies__qty-input"
-              @change="clampQty(line)"
-              @blur="clampQty(line)"
-            />
-          </div>
-          <button
-            type="button"
-            class="btn resources-supplies__trash"
-            aria-label="Remove from order"
-            @click="removeFromCart(line.supply_id)"
-          >
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-              />
-            </svg>
-          </button>
-        </li>
-      </ul>
     </section>
 
     <!-- Order history -->
     <section class="resources-supplies__panel">
-      <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
-        <div class="min-w-0">
+      <div class="resources-supplies__history-head mb-3">
+        <div class="resources-supplies__history-head-left">
           <h2 class="resources-supplies__title resources-supplies__title--sm mb-1">
             Order history
           </h2>
-          <p class="resources-supplies__subtitle mb-0">
+          <p class="resources-supplies__subtitle mb-3">
             All supply orders submitted by staff.
           </p>
-        </div>
-        <div class="resources-supplies__history-search">
-          <span class="resources-supplies__search-icon" aria-hidden="true">
-            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-            </svg>
-          </span>
-          <input
-            v-model="historyQ"
-            type="search"
-            class="form-control resources-supplies__search-input"
-            placeholder="Search history…"
-            aria-label="Search order history"
-            autocomplete="off"
-          />
+          <div class="resources-supplies__history-search">
+            <span class="resources-supplies__search-icon" aria-hidden="true">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+              </svg>
+            </span>
+            <input
+              v-model="historyQ"
+              type="search"
+              class="form-control resources-supplies__search-input"
+              placeholder="Search history…"
+              aria-label="Search order history"
+              autocomplete="off"
+            />
+          </div>
         </div>
       </div>
 
@@ -612,8 +706,27 @@ onUnmounted(() => {
                   {{ historyDisplayName(row) }}
                 </button>
                 <span v-else>{{ historyDisplayName(row) }}</span>
+                <div
+                  v-if="row.order_note"
+                  class="resources-supplies__history-note small text-secondary mt-1"
+                >
+                  Note: {{ row.order_note }}
+                </div>
               </td>
-              <td>{{ row.quantity }}</td>
+              <td>
+                <input
+                  v-if="canEditHistory"
+                  v-model.number="row.quantity"
+                  type="number"
+                  min="1"
+                  max="99999999"
+                  class="form-control resources-supplies__history-qty-input"
+                  :disabled="historyEditBusyId === row.id"
+                  @change="onHistoryQtyChange(row)"
+                  @blur="onHistoryQtyBlur(row)"
+                />
+                <span v-else>{{ row.quantity }}</span>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -646,6 +759,43 @@ onUnmounted(() => {
   font-size: 0.875rem;
   color: #6b7280;
 }
+.resources-supplies__split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+.resources-supplies__split-col--notes {
+  min-height: 100%;
+}
+.resources-supplies__notes {
+  padding: 1rem 1.15rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  background: #f9fafb;
+  height: 100%;
+}
+.resources-supplies__notes-input {
+  min-height: 10.5rem;
+  resize: vertical;
+  border-radius: 0.5rem;
+  border-color: #e5e7eb;
+}
+.resources-supplies__history-head-left {
+  min-width: 0;
+  max-width: 28rem;
+}
+.resources-supplies__history-qty-input {
+  width: 5.25rem;
+  text-align: center;
+  border-radius: 0.45rem;
+  border-color: #e5e7eb;
+  padding: 0.35rem 0.4rem;
+}
+.resources-supplies__history-note {
+  max-width: 28rem;
+  line-height: 1.35;
+}
 .resources-supplies__submit {
   display: inline-flex;
   align-items: center;
@@ -668,7 +818,7 @@ onUnmounted(() => {
 .resources-supplies__history-search {
   position: relative;
   width: 100%;
-  max-width: 260px;
+  max-width: 100%;
 }
 .resources-supplies__search-icon {
   position: absolute;
@@ -863,6 +1013,11 @@ button.resources-supplies__name:hover {
 }
 .resources-supplies__history-link:hover {
   color: #2563eb;
+}
+@media (max-width: 991.98px) {
+  .resources-supplies__split {
+    grid-template-columns: 1fr;
+  }
 }
 @media (max-width: 767.98px) {
   .resources-supplies__type {

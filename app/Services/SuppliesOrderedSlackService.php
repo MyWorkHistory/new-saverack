@@ -60,8 +60,14 @@ class SuppliesOrderedSlackService
             $lines[] = $typeLabel.' '.$name.' - QTY: '.$qty;
         }
 
+        $text = implode("\n", $lines);
+        $note = trim((string) ($order->note ?? ''));
+        if ($note !== '') {
+            $text = 'Notes: '.$note."\n\n".$text;
+        }
+
         return [
-            'text' => implode("\n", $lines),
+            'text' => $text,
             'username' => self::USERNAME,
         ];
     }

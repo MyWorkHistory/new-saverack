@@ -29,13 +29,11 @@ class SupplyOrderPolicy
 
     public function create(User $user): bool
     {
-        if ($user->isAdministrator() || $user->isCrmOwner()) {
-            return true;
-        }
+        return $user->isAdministrator() || $user->isCrmOwner();
+    }
 
-        return $user->hasPermission('resources_supplies.create')
-            || $user->hasPermission('resources.create')
-            || $user->hasPermission('resources_supplies.update')
-            || $user->hasPermission('resources.update');
+    public function update(User $user): bool
+    {
+        return $user->isAdministrator() || $user->isCrmOwner();
     }
 }

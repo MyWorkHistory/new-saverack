@@ -144,6 +144,7 @@ class SuppliesApiTest extends TestCase
         $slack->shouldReceive('send')->once()->andReturn(null);
         $this->app->instance(\App\Services\SuppliesOrderedSlackService::class, $slack);
 
+        $this->actingAsAdmin();
         $this->postJson('/api/admin/supply-orders', [
             'lines' => [
                 ['supply_id' => $box->id, 'quantity' => 3],
@@ -155,7 +156,6 @@ class SuppliesApiTest extends TestCase
         $history = $this->getJson('/api/admin/supply-orders');
         $history->assertOk();
         $this->assertGreaterThanOrEqual(1, count($history->json('data')));
-        $this->assertSame('Nelson', $history->json('data.0.submitted_by_name'));
         $this->assertSame('Rikki Box', $history->json('data.0.name'));
     }
 
@@ -204,9 +204,9 @@ class SuppliesApiTest extends TestCase
         ])->assertForbidden();
     }
 
-    public function test_staff_without_create_cannot_submit_order(): void
+    public function test_staff_with_create_cannot_submit_order(): void
     {
-        $this->staffWith(['resources_supplies.view']);
+        $this->staffWith(['resources_supplies.view', 'resources_supplies.create']);
         $supply = $this->makeSupply();
 
         $this->postJson('/api/admin/supply-orders', [
@@ -242,10 +242,7 @@ class SuppliesApiTest extends TestCase
 
     public function test_submit_order_creates_history_and_calls_slack(): void
     {
-        $user = $this->staffWith([
-            'resources_supplies.view',
-            'resources_supplies.create',
-        ]);
+        $user = $this->actingAsAdmin();
         $box = $this->makeSupply(['name' => '9x9x4', 'type' => Supply::TYPE_BOX]);
         $poly = $this->makeSupply([
             'name' => '6x9',
@@ -294,10 +291,7 @@ class SuppliesApiTest extends TestCase
 
     public function test_submit_order_survives_slack_failure(): void
     {
-        $this->staffWith([
-            'resources_supplies.view',
-            'resources_supplies.create',
-        ]);
+        $this->actingAsAdmin();
         $supply = $this->makeSupply();
 
         $slack = Mockery::mock(SuppliesOrderedSlackService::class);
@@ -316,6 +310,92 @@ class SuppliesApiTest extends TestCase
 
         $this->assertSame(1, SupplyOrder::query()->count());
         $this->assertSame(1, SupplyOrderLine::query()->count());
+    }
+
+    public function test_staff_without_create_cannot_submit_order(): void
+    {
+        $this->staffWith(['resources_supplies.view']);
+        $supply = $this->makeSupply();
+
+        $this->postJson('/api/admin/supply-orders', [
+            'lines' => [
+                ['supply_id' => $supply->id, 'quantity' => 10],
+            ],
+        ])->assertForbidden();
+    }
+
+    public function test_admin_can_submit_order_with_note(): void
+    {
+        $this->actingAsAdmin();
+        $supply = $this->makeSupply();
+
+        $slack = Mockery::mock(SuppliesOrderedSlackService::class);
+        $slack->shouldReceive('send')->once()->andReturn(null);
+        $this->app->instance(SuppliesOrderedSlackService::class, $slack);
+
+        $this->postJson('/api/admin/supply-orders', [
+            'lines' => [
+                ['supply_id' => $supply->id, 'quantity' => 2],
+            ],
+            'note' => 'Need these ASAP',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('note', 'Need these ASAP');
+
+        $this->assertDatabaseHas('supply_orders', [
+            'note' => 'Need these ASAP',
+        ]);
+    }
+
+    public function test_admin_can_update_history_line_quantity(): void
+    {
+        $user = $this->actingAsAdmin();
+        $order = SupplyOrder::query()->create([
+            'user_id' => $user->id,
+            'submitted_at' => now(),
+            'note' => 'Rush',
+        ]);
+        $line = SupplyOrderLine::query()->create([
+            'supply_order_id' => $order->id,
+            'supply_id' => null,
+            'name' => '9x9x4',
+            'type' => Supply::TYPE_BOX,
+            'link' => null,
+            'quantity' => 10,
+        ]);
+
+        $this->patchJson("/api/admin/supply-order-lines/{$line->id}", [
+            'quantity' => 25,
+        ])
+            ->assertOk()
+            ->assertJsonPath('quantity', 25)
+            ->assertJsonPath('order_note', 'Rush');
+
+        $this->assertDatabaseHas('supply_order_lines', [
+            'id' => $line->id,
+            'quantity' => 25,
+        ]);
+    }
+
+    public function test_staff_cannot_update_history_line_quantity(): void
+    {
+        $this->staffWith(['resources_supplies.view', 'resources_supplies.create']);
+        $order = SupplyOrder::query()->create([
+            'user_id' => User::factory()->create(['client_account_id' => null])->id,
+            'submitted_at' => now(),
+        ]);
+        $line = SupplyOrderLine::query()->create([
+            'supply_order_id' => $order->id,
+            'supply_id' => null,
+            'name' => '9x9x4',
+            'type' => Supply::TYPE_BOX,
+            'link' => null,
+            'quantity' => 10,
+        ]);
+
+        $this->patchJson("/api/admin/supply-order-lines/{$line->id}", [
+            'quantity' => 25,
+        ])->assertForbidden();
     }
 
     public function test_history_search_filters_by_name_and_type(): void

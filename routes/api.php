@@ -165,6 +165,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('admin/supplies', [SupplyController::class, 'index']);
     Route::get('admin/supply-orders', [SupplyOrderController::class, 'index']);
     Route::post('admin/supply-orders', [SupplyOrderController::class, 'store']);
+    Route::patch('admin/supply-order-lines/{supplyOrderLine}', [SupplyOrderController::class, 'updateLine']);
 
     Route::prefix('admin/broadcast-emails')->group(function () {
         Route::get('/', [AdminBroadcastEmailController::class, 'index']);

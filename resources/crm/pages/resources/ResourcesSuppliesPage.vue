@@ -1,6 +1,8 @@
 <script setup>
-import { computed, inject, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import api from "../../services/api";
+import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmMaterialIcon from "../../components/common/CrmMaterialIcon.vue";
 import {
@@ -135,8 +137,28 @@ const pickerOpen = ref(false);
 const submitting = ref(false);
 const savingNote = ref(false);
 const orderNote = ref(loadNoteFromStorage());
-const historyEditBusyId = ref(null);
+const historyMenuOpenId = ref(null);
+const historyMenuRect = ref({ top: 0, left: 0 });
+const historyEditOpen = ref(false);
+const historyEditBusy = ref(false);
+const historyEditTarget = ref(null);
+const historyEditForm = reactive({
+  name: "",
+  type: "",
+  quantity: 1,
+  link: "",
+});
+const deleteHistoryOpen = ref(false);
+const deleteHistoryTarget = ref(null);
+const deleteHistoryBusy = ref(false);
 const searchRoot = ref(null);
+
+const MENU_W = 168;
+const MENU_H = 88;
+
+const historyMenuRow = computed(
+  () => history.value.find((r) => r.id === historyMenuOpenId.value) ?? null,
+);
 
 let historySearchTimer = null;
 let cartPersistReady = false;
@@ -342,38 +364,107 @@ function saveOrderNote() {
   savingNote.value = false;
 }
 
-async function updateHistoryQty(row) {
-  if (!canEditHistory.value || !row?.id) return;
-  let qty = parseInt(String(row.quantity), 10);
-  if (!Number.isFinite(qty) || qty < 1) qty = 1;
-  if (qty > 99999999) qty = 99999999;
-  if (qty === Number(row._originalQty)) return;
+function placeHistoryMenu(anchorEl) {
+  if (!(anchorEl instanceof HTMLElement)) return;
+  const r = anchorEl.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+  if (top + MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - MENU_H - 4);
+  }
+  historyMenuRect.value = { top, left };
+}
 
-  historyEditBusyId.value = row.id;
+function closeHistoryMenu() {
+  historyMenuOpenId.value = null;
+}
+
+async function toggleHistoryMenu(row, e) {
+  e?.stopPropagation?.();
+  const rowId = row?.id;
+  if (historyMenuOpenId.value === rowId) {
+    closeHistoryMenu();
+    return;
+  }
+  const btn = e?.currentTarget;
+  historyMenuOpenId.value = rowId;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (btn instanceof HTMLElement) placeHistoryMenu(btn);
+  });
+}
+
+function openHistoryEdit(row) {
+  closeHistoryMenu();
+  historyEditTarget.value = row;
+  historyEditForm.name = String(row?.name || "");
+  historyEditForm.type = String(row?.type || SUPPLY_TYPES[0] || "");
+  historyEditForm.quantity = Math.max(1, Number(row?.quantity) || 1);
+  historyEditForm.link = String(row?.link || "");
+  historyEditOpen.value = true;
+}
+
+async function saveHistoryEdit() {
+  const row = historyEditTarget.value;
+  if (!row?.id || historyEditBusy.value) return;
+  const name = String(historyEditForm.name || "").trim();
+  if (!name) {
+    toast.error("Item name is required.");
+    return;
+  }
+  if (!historyEditForm.type) {
+    toast.error("Select a type.");
+    return;
+  }
+  historyEditBusy.value = true;
   try {
     const { data } = await api.patch(`/admin/supply-order-lines/${row.id}`, {
-      quantity: qty,
+      name,
+      type: historyEditForm.type,
+      quantity: Math.max(1, Number(historyEditForm.quantity) || 1),
+      link: String(historyEditForm.link || "").trim() || null,
     });
-    row.quantity = Number(data?.quantity ?? qty);
-    row._originalQty = row.quantity;
+    const idx = history.value.findIndex((r) => r.id === row.id);
+    if (idx >= 0) {
+      history.value[idx] = {
+        ...history.value[idx],
+        ...data,
+        type_label: data?.type_label || supplyTypeLabel(data?.type),
+        _originalQty: Number(data?.quantity || 0),
+      };
+    }
     toast.success("History updated.");
+    historyEditOpen.value = false;
+    historyEditTarget.value = null;
   } catch (e) {
-    row.quantity = row._originalQty;
     toast.errorFrom(e, "Could not update history.");
   } finally {
-    historyEditBusyId.value = null;
+    historyEditBusy.value = false;
   }
 }
 
-function onHistoryQtyBlur(row) {
-  void updateHistoryQty(row);
+function openDeleteHistory(row) {
+  closeHistoryMenu();
+  deleteHistoryTarget.value = row;
+  deleteHistoryOpen.value = true;
 }
 
-function onHistoryQtyChange(row) {
-  let qty = parseInt(String(row.quantity), 10);
-  if (!Number.isFinite(qty) || qty < 1) qty = 1;
-  if (qty > 99999999) qty = 99999999;
-  row.quantity = qty;
+async function confirmDeleteHistory() {
+  const row = deleteHistoryTarget.value;
+  if (!row?.id || deleteHistoryBusy.value) return;
+  deleteHistoryBusy.value = true;
+  try {
+    await api.delete(`/admin/supply-order-lines/${row.id}`);
+    history.value = history.value.filter((r) => r.id !== row.id);
+    toast.success("History row deleted.");
+    deleteHistoryOpen.value = false;
+    deleteHistoryTarget.value = null;
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete history row.");
+  } finally {
+    deleteHistoryBusy.value = false;
+  }
 }
 
 function formatHistoryDate(val) {
@@ -429,6 +520,9 @@ function onDocClick(event) {
   if (!searchRoot.value?.contains?.(event.target)) {
     closePicker();
   }
+  if (!event.target?.closest?.("[data-supply-history-actions]")) {
+    closeHistoryMenu();
+  }
 }
 
 onMounted(async () => {
@@ -452,101 +546,103 @@ onUnmounted(() => {
     <section v-if="canManageOrders" class="resources-supplies__panel mb-4">
       <div class="resources-supplies__split">
         <div class="resources-supplies__split-col resources-supplies__split-col--order">
-          <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
-            <div class="min-w-0">
-              <h1 class="resources-supplies__title mb-1">Supplies needed</h1>
-              <p class="resources-supplies__subtitle mb-0">
-                Search the catalog, add items to your order, then submit. Submitted orders appear in team history.
-              </p>
-            </div>
-            <button
-              type="button"
-              class="btn btn-primary staff-page-primary resources-supplies__submit fw-semibold"
-              :disabled="submitting"
-              @click="submitOrder"
-            >
-              <svg
-                width="16"
-                height="16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
-                />
-              </svg>
-              {{ submitting ? "Submitting…" : "Submit Order" }}
-            </button>
+          <div class="mb-3">
+            <h1 class="resources-supplies__title mb-1">Supplies needed</h1>
+            <p class="resources-supplies__subtitle mb-0">
+              Search the catalog, add items to your order, then submit. Submitted orders appear in team history.
+            </p>
           </div>
 
           <div v-if="canViewSupplies" class="resources-supplies__toolbar mb-3">
-            <div ref="searchRoot" class="resources-supplies__search">
-              <span class="resources-supplies__search-icon" aria-hidden="true">
-                <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                </svg>
-              </span>
-              <input
-                v-model="searchQ"
-                type="search"
-                class="form-control resources-supplies__search-input"
-                placeholder="Search by name or type..."
-                aria-label="Search supplies"
-                autocomplete="off"
-                :disabled="catalogLoading"
-                @focus="openPicker"
-                @input="openPicker"
-                @keydown="onSearchKeydown"
-              />
-              <div v-if="pickerOpen" class="resources-supplies__picker" role="listbox">
-                <button
-                  v-for="s in filteredCatalog"
-                  :key="s.id"
-                  type="button"
-                  class="resources-supplies__picker-item"
-                  :class="{ 'is-selected': Number(selectedSupplyId) === Number(s.id) }"
-                  role="option"
-                  @click="pickSupply(s)"
-                >
-                  <span class="fw-semibold">{{ s.name }}</span>
-                  <span class="resources-supplies__badge resources-supplies__badge--sm">
-                    {{ s.type_label || supplyTypeLabel(s.type) }}
-                  </span>
-                </button>
-                <div v-if="!filteredCatalog.length" class="resources-supplies__picker-empty">
-                  No matching supplies.
+            <div class="resources-supplies__toolbar-main">
+              <div ref="searchRoot" class="resources-supplies__search">
+                <span class="resources-supplies__search-icon" aria-hidden="true">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                  </svg>
+                </span>
+                <input
+                  v-model="searchQ"
+                  type="search"
+                  class="form-control resources-supplies__search-input"
+                  placeholder="Search by name or type..."
+                  aria-label="Search supplies"
+                  autocomplete="off"
+                  :disabled="catalogLoading"
+                  @focus="openPicker"
+                  @input="openPicker"
+                  @keydown="onSearchKeydown"
+                />
+                <div v-if="pickerOpen" class="resources-supplies__picker" role="listbox">
+                  <button
+                    v-for="s in filteredCatalog"
+                    :key="s.id"
+                    type="button"
+                    class="resources-supplies__picker-item"
+                    :class="{ 'is-selected': Number(selectedSupplyId) === Number(s.id) }"
+                    role="option"
+                    @click="pickSupply(s)"
+                  >
+                    <span class="fw-semibold">{{ s.name }}</span>
+                    <span class="resources-supplies__badge resources-supplies__badge--sm">
+                      {{ s.type_label || supplyTypeLabel(s.type) }}
+                    </span>
+                  </button>
+                  <div v-if="!filteredCatalog.length" class="resources-supplies__picker-empty">
+                    No matching supplies.
+                  </div>
                 </div>
               </div>
+
+              <select
+                v-model="typeFilter"
+                class="form-select resources-supplies__type"
+                aria-label="Filter by type"
+                :disabled="catalogLoading"
+              >
+                <option
+                  v-for="opt in typeFilterOptions"
+                  :key="opt.id === '' ? 'all' : opt.id"
+                  :value="opt.id"
+                >
+                  {{ opt.name }}
+                </option>
+              </select>
             </div>
 
-            <select
-              v-model="typeFilter"
-              class="form-select resources-supplies__type"
-              aria-label="Filter by type"
-              :disabled="catalogLoading"
-            >
-              <option
-                v-for="opt in typeFilterOptions"
-                :key="opt.id === '' ? 'all' : opt.id"
-                :value="opt.id"
+            <div class="resources-supplies__toolbar-actions">
+              <button
+                type="button"
+                class="btn btn-primary staff-page-primary resources-supplies__submit fw-semibold"
+                :disabled="submitting"
+                @click="submitOrder"
               >
-                {{ opt.name }}
-              </option>
-            </select>
-
-            <button
-              type="button"
-              class="btn resources-supplies__add fw-semibold"
-              :disabled="catalogLoading"
-              @click="addToOrder"
-            >
-              + Add to Order
-            </button>
+                <svg
+                  width="16"
+                  height="16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
+                  />
+                </svg>
+                {{ submitting ? "Submitting…" : "Submit Order" }}
+              </button>
+              <button
+                type="button"
+                class="btn resources-supplies__add fw-semibold"
+                :disabled="catalogLoading"
+                @click="addToOrder"
+              >
+                + Add to Order
+              </button>
+            </div>
           </div>
 
           <div v-if="catalogLoading" class="py-4">
@@ -634,7 +730,7 @@ onUnmounted(() => {
             <div class="d-flex justify-content-end mt-3">
               <button
                 type="button"
-                class="btn btn-outline-secondary"
+                class="btn btn-primary btn-sm staff-page-primary fw-semibold w-100"
                 :disabled="savingNote || submitting"
                 @click="saveOrderNote"
               >
@@ -685,11 +781,12 @@ onUnmounted(() => {
               <th scope="col">Ordered By</th>
               <th scope="col">Item Name</th>
               <th scope="col">QTY</th>
+              <th v-if="canEditHistory" scope="col" class="staff-actions-col text-center">Action</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!filteredHistory.length">
-              <td colspan="4" class="text-center text-secondary py-4">
+              <td :colspan="canEditHistory ? 5 : 4" class="text-center text-secondary py-4">
                 No orders yet.
               </td>
             </tr>
@@ -713,25 +810,150 @@ onUnmounted(() => {
                   Note: {{ row.order_note }}
                 </div>
               </td>
-              <td>
-                <input
-                  v-if="canEditHistory"
-                  v-model.number="row.quantity"
-                  type="number"
-                  min="1"
-                  max="99999999"
-                  class="form-control resources-supplies__history-qty-input"
-                  :disabled="historyEditBusyId === row.id"
-                  @change="onHistoryQtyChange(row)"
-                  @blur="onHistoryQtyBlur(row)"
-                />
-                <span v-else>{{ row.quantity }}</span>
+              <td>{{ row.quantity }}</td>
+              <td v-if="canEditHistory" class="staff-actions-cell text-center">
+                <div
+                  data-supply-history-actions
+                  class="staff-actions-inner staff-actions-inner--single justify-content-center"
+                >
+                  <button
+                    type="button"
+                    class="staff-action-btn staff-action-btn--more"
+                    :class="{ 'is-open': historyMenuOpenId === row.id }"
+                    :aria-expanded="historyMenuOpenId === row.id"
+                    aria-haspopup="true"
+                    aria-label="Row actions"
+                    @click="toggleHistoryMenu(row, $event)"
+                  >
+                    <CrmIconRowActions variant="horizontal" />
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
     </section>
+
+    <Teleport to="body">
+      <div
+        v-if="historyMenuRow"
+        data-supply-history-actions
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
+        :style="{
+          top: `${historyMenuRect.top}px`,
+          left: `${historyMenuRect.left}px`,
+          minWidth: `${MENU_W}px`,
+        }"
+        @click.stop
+      >
+        <button
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openHistoryEdit(historyMenuRow)"
+        >
+          Edit
+        </button>
+        <hr class="staff-row-menu__divider" />
+        <button
+          type="button"
+          class="staff-row-menu__item staff-row-menu__item--danger"
+          role="menuitem"
+          @click="openDeleteHistory(historyMenuRow)"
+        >
+          Delete
+        </button>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="historyEditOpen"
+        class="crm-vx-modal-overlay"
+        @click.self="historyEditOpen = false"
+      >
+        <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+          <header class="crm-vx-modal__head" style="text-align: left">
+            <h2 class="crm-vx-modal__title">Edit History</h2>
+          </header>
+          <div class="crm-vx-modal__body">
+            <label class="form-label" for="history-edit-name">Item Name</label>
+            <input
+              id="history-edit-name"
+              v-model="historyEditForm.name"
+              type="text"
+              class="form-control mb-3"
+              :disabled="historyEditBusy"
+            />
+            <label class="form-label" for="history-edit-type">Type</label>
+            <select
+              id="history-edit-type"
+              v-model="historyEditForm.type"
+              class="form-select mb-3"
+              :disabled="historyEditBusy"
+            >
+              <option v-for="t in SUPPLY_TYPES" :key="t" :value="t">
+                {{ supplyTypeLabel(t) }}
+              </option>
+            </select>
+            <label class="form-label" for="history-edit-qty">QTY</label>
+            <input
+              id="history-edit-qty"
+              v-model.number="historyEditForm.quantity"
+              type="number"
+              min="1"
+              max="99999999"
+              class="form-control mb-3"
+              :disabled="historyEditBusy"
+            />
+            <label class="form-label" for="history-edit-link">Link</label>
+            <input
+              id="history-edit-link"
+              v-model="historyEditForm.link"
+              type="url"
+              class="form-control"
+              placeholder="https://"
+              :disabled="historyEditBusy"
+            />
+          </div>
+          <footer class="crm-vx-modal__footer justify-content-end">
+            <button
+              type="button"
+              class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+              :disabled="historyEditBusy"
+              @click="historyEditOpen = false"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+              :disabled="historyEditBusy"
+              @click="saveHistoryEdit"
+            >
+              {{ historyEditBusy ? "Saving…" : "Save" }}
+            </button>
+          </footer>
+        </div>
+      </div>
+    </Teleport>
+
+    <ConfirmModal
+      :open="deleteHistoryOpen"
+      title="Delete History Row?"
+      :message="
+        deleteHistoryTarget
+          ? `Delete ${historyDisplayName(deleteHistoryTarget)} from order history? This cannot be undone.`
+          : 'Delete this history row?'
+      "
+      confirm-label="Delete"
+      :busy="deleteHistoryBusy"
+      danger
+      @close="deleteHistoryOpen = false"
+      @confirm="confirmDeleteHistory"
+    />
   </div>
 </template>
 
@@ -785,13 +1007,6 @@ onUnmounted(() => {
   min-width: 0;
   max-width: 28rem;
 }
-.resources-supplies__history-qty-input {
-  width: 5.25rem;
-  text-align: center;
-  border-radius: 0.45rem;
-  border-color: #e5e7eb;
-  padding: 0.35rem 0.4rem;
-}
 .resources-supplies__history-note {
   max-width: 28rem;
   line-height: 1.35;
@@ -809,6 +1024,28 @@ onUnmounted(() => {
   flex-wrap: wrap;
   align-items: stretch;
   gap: 0.65rem;
+}
+.resources-supplies__toolbar-main {
+  flex: 1 1 16rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.65rem;
+  min-width: 0;
+}
+.resources-supplies__toolbar-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 11rem;
+}
+.resources-supplies__toolbar-actions .resources-supplies__submit {
+  width: 100%;
+  justify-content: center;
+}
+.resources-supplies__toolbar-actions .resources-supplies__add {
+  width: 100%;
 }
 .resources-supplies__search {
   position: relative;
@@ -1020,6 +1257,13 @@ button.resources-supplies__name:hover {
   }
 }
 @media (max-width: 767.98px) {
+  .resources-supplies__toolbar-main {
+    flex: 1 1 100%;
+  }
+  .resources-supplies__toolbar-actions {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
   .resources-supplies__type {
     flex: 1 1 8rem;
   }

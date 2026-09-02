@@ -365,16 +365,63 @@ class SuppliesApiTest extends TestCase
         ]);
 
         $this->patchJson("/api/admin/supply-order-lines/{$line->id}", [
+            'name' => '12x12x8',
+            'type' => Supply::TYPE_BOX,
             'quantity' => 25,
+            'link' => 'https://example.com/box',
         ])
             ->assertOk()
             ->assertJsonPath('quantity', 25)
+            ->assertJsonPath('name', '12x12x8')
             ->assertJsonPath('order_note', 'Rush');
 
         $this->assertDatabaseHas('supply_order_lines', [
             'id' => $line->id,
+            'name' => '12x12x8',
             'quantity' => 25,
         ]);
+    }
+
+    public function test_admin_can_delete_history_line(): void
+    {
+        $user = $this->actingAsAdmin();
+        $order = SupplyOrder::query()->create([
+            'user_id' => $user->id,
+            'submitted_at' => now(),
+        ]);
+        $line = SupplyOrderLine::query()->create([
+            'supply_order_id' => $order->id,
+            'supply_id' => null,
+            'name' => '9x9x4',
+            'type' => Supply::TYPE_BOX,
+            'link' => null,
+            'quantity' => 10,
+        ]);
+
+        $this->deleteJson("/api/admin/supply-order-lines/{$line->id}")
+            ->assertOk();
+
+        $this->assertDatabaseMissing('supply_order_lines', ['id' => $line->id]);
+    }
+
+    public function test_staff_cannot_delete_history_line(): void
+    {
+        $this->staffWith(['resources_supplies.view', 'resources_supplies.create']);
+        $order = SupplyOrder::query()->create([
+            'user_id' => User::factory()->create(['client_account_id' => null])->id,
+            'submitted_at' => now(),
+        ]);
+        $line = SupplyOrderLine::query()->create([
+            'supply_order_id' => $order->id,
+            'supply_id' => null,
+            'name' => '9x9x4',
+            'type' => Supply::TYPE_BOX,
+            'link' => null,
+            'quantity' => 10,
+        ]);
+
+        $this->deleteJson("/api/admin/supply-order-lines/{$line->id}")
+            ->assertForbidden();
     }
 
     public function test_staff_cannot_update_history_line_quantity(): void
@@ -394,7 +441,10 @@ class SuppliesApiTest extends TestCase
         ]);
 
         $this->patchJson("/api/admin/supply-order-lines/{$line->id}", [
+            'name' => '9x9x4',
+            'type' => Supply::TYPE_BOX,
             'quantity' => 25,
+            'link' => null,
         ])->assertForbidden();
     }
 

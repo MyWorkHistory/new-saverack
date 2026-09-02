@@ -11,6 +11,7 @@ use App\Services\SuppliesOrderedSlackService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Throwable;
 
 class SupplyOrderController extends Controller
@@ -152,28 +153,52 @@ class SupplyOrderController extends Controller
         $this->authorize('update', SupplyOrder::class);
 
         $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'type' => ['required', 'string', Rule::in(Supply::TYPES)],
             'quantity' => ['required', 'integer', 'min:1', 'max:99999999'],
+            'link' => ['nullable', 'string', 'max:2048'],
         ]);
 
+        $supplyOrderLine->name = trim((string) $validated['name']);
+        $supplyOrderLine->type = (string) $validated['type'];
         $supplyOrderLine->quantity = (int) $validated['quantity'];
+        $link = trim((string) ($validated['link'] ?? ''));
+        $supplyOrderLine->link = $link !== '' ? $link : null;
         $supplyOrderLine->save();
         $supplyOrderLine->load(['order.user:id,name']);
 
-        return response()->json([
-            'id' => $supplyOrderLine->id,
-            'supply_order_id' => $supplyOrderLine->supply_order_id,
-            'supply_id' => $supplyOrderLine->supply_id,
-            'name' => $supplyOrderLine->name,
-            'type' => $supplyOrderLine->type,
-            'type_label' => Supply::typeLabel($supplyOrderLine->type),
-            'display_name' => trim(Supply::typeLabel($supplyOrderLine->type).' '.$supplyOrderLine->name),
-            'link' => $supplyOrderLine->link,
-            'quantity' => (int) $supplyOrderLine->quantity,
-            'submitted_at' => optional(optional($supplyOrderLine->order)->submitted_at)->toIso8601String(),
-            'submitted_by_user_id' => optional($supplyOrderLine->order)->user_id,
-            'submitted_by_name' => optional(optional($supplyOrderLine->order)->user)->name,
-            'order_note' => optional($supplyOrderLine->order)->note,
-            'created_at' => optional($supplyOrderLine->created_at)->toIso8601String(),
-        ]);
+        return response()->json($this->serializeOrderLine($supplyOrderLine));
+    }
+
+    public function destroyLine(Request $request, SupplyOrderLine $supplyOrderLine): JsonResponse
+    {
+        $this->authorize('update', SupplyOrder::class);
+
+        $supplyOrderLine->delete();
+
+        return response()->json(['message' => 'History row deleted.']);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeOrderLine(SupplyOrderLine $line): array
+    {
+        return [
+            'id' => $line->id,
+            'supply_order_id' => $line->supply_order_id,
+            'supply_id' => $line->supply_id,
+            'name' => $line->name,
+            'type' => $line->type,
+            'type_label' => Supply::typeLabel($line->type),
+            'display_name' => trim(Supply::typeLabel($line->type).' '.$line->name),
+            'link' => $line->link,
+            'quantity' => (int) $line->quantity,
+            'submitted_at' => optional(optional($line->order)->submitted_at)->toIso8601String(),
+            'submitted_by_user_id' => optional($line->order)->user_id,
+            'submitted_by_name' => optional(optional($line->order)->user)->name,
+            'order_note' => optional($line->order)->note,
+            'created_at' => optional($line->created_at)->toIso8601String(),
+        ];
     }
 }

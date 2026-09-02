@@ -126,6 +126,15 @@ class ClientAccountService
         $data['status'] = $data['status'] ?? ClientAccount::STATUS_PENDING;
 
         return DB::transaction(function () use ($data, $portalPlainPassword, $actor) {
+            if (
+                ! array_key_exists('accounting_email', $data)
+                && isset($data['email'])
+                && is_string($data['email'])
+                && trim($data['email']) !== ''
+            ) {
+                $data['accounting_email'] = trim($data['email']);
+            }
+
             $account = ClientAccount::query()->create($data);
 
             $this->ensureDefaultFeeItems($account);
@@ -841,6 +850,7 @@ class ClientAccountService
             'contact_last_name' => $account->contact_last_name,
             'contact_full_name' => $account->contactFullName(),
             'email' => $account->email,
+            'accounting_email' => $account->accounting_email,
             'phone' => $account->phone,
             'notify_email' => (bool) $account->notify_email,
             'notification_email' => $account->notification_email,

@@ -254,6 +254,54 @@ class BillingInvoiceApiTest extends TestCase
         $res->assertJsonPath('recipients.0', 'billing@example.com');
     }
 
+    public function test_send_email_includes_accounting_email_recipient_option(): void
+    {
+        Mail::fake();
+
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Accounting Recipients Co',
+            'email' => 'main@accounting-recipients.test',
+            'accounting_email' => 'billing@accounting-recipients.test',
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-ACCT-EMAIL-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+
+        $detail = $this->getJson("/api/invoices/{$invoice->id}");
+        $detail->assertOk();
+        $detail->assertJsonPath('email_recipient_options.0.email', 'main@accounting-recipients.test');
+        $detail->assertJsonPath('email_recipient_options.0.tag', 'default');
+        $detail->assertJsonPath('email_recipient_options.1.email', 'billing@accounting-recipients.test');
+        $detail->assertJsonPath('email_recipient_options.1.tag', 'accounting');
+
+        $res = $this->postJson("/api/invoices/{$invoice->id}/email", [
+            'recipients' => ['billing@accounting-recipients.test'],
+        ]);
+        $res->assertOk()->assertJsonCount(1, 'recipients');
+        $res->assertJsonPath('recipients.0', 'billing@accounting-recipients.test');
+
+        Mail::assertSent(InvoiceSentMailable::class, function (InvoiceSentMailable $mail) {
+            return $mail->hasTo('billing@accounting-recipients.test');
+        });
+    }
+
     public function test_whatsapp_request_accepts_send_storage_invoice_type(): void
     {
         Http::fake([

@@ -99,6 +99,7 @@ class PortalClientProvisioningService
                 'contact_first_name' => $first !== '' ? $first : null,
                 'contact_last_name' => $last,
                 'email' => $email,
+                'accounting_email' => $email,
                 'phone' => $phone !== '' ? $phone : null,
                 'notify_email' => false,
             ]);

@@ -376,14 +376,31 @@ const payAvailableDisplayCents = computed(
   () => Math.max(0, payAvailablePreviewCents.value),
 );
 
-const emailRecipientOptionList = computed(() =>
-  Array.isArray(invoice.value?.email_recipient_options) ? invoice.value.email_recipient_options : [],
-);
+const emailRecipientOptions = computed(() => {
+  const raw = invoice.value?.email_recipient_options;
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry) => {
+    if (typeof entry === "string") {
+      return { email: entry, tag: "default" };
+    }
+    const email = String(entry?.email || "").trim().toLowerCase();
+    const tag = String(entry?.tag || "default").trim().toLowerCase();
+    return { email, tag: tag || "default" };
+  }).filter((entry) => entry.email);
+});
+
+const emailRecipientOptionList = computed(() => emailRecipientOptions.value);
+
+function emailRecipientTagLabel(tag) {
+  const normalized = String(tag || "").trim().toLowerCase();
+  if (normalized === "accounting") return "accounting";
+  return "default";
+}
 
 const allEmailRecipientsSelected = computed(() => {
   const opts = emailRecipientOptionList.value;
   if (!opts.length) return false;
-  return opts.every((e) => sendEmailRecipients.value.includes(e));
+  return opts.every((entry) => sendEmailRecipients.value.includes(entry.email));
 });
 
 const someEmailRecipientsSelected = computed(() => sendEmailRecipients.value.length > 0);
@@ -1196,12 +1213,12 @@ async function sendInvoice() {
 function openSendEmailModal() {
   if (messagingActionsDisabled.value) return;
   sendEmailMessage.value = "";
-  sendEmailRecipients.value = [...emailRecipientOptionList.value];
+  sendEmailRecipients.value = emailRecipientOptionList.value.map((entry) => entry.email);
   sendEmailModalOpen.value = true;
 }
 
 function selectAllEmailRecipients() {
-  sendEmailRecipients.value = [...emailRecipientOptionList.value];
+  sendEmailRecipients.value = emailRecipientOptionList.value.map((entry) => entry.email);
 }
 
 function unselectAllEmailRecipients() {
@@ -3628,17 +3645,22 @@ function onDocKeydown(e) {
                 </div>
                 <div class="billing-send-email-recipients__list">
                   <label
-                    v-for="email in emailRecipientOptionList"
-                    :key="email"
+                    v-for="entry in emailRecipientOptionList"
+                    :key="`${entry.email}-${entry.tag}`"
                     class="billing-send-email-recipients__row"
                   >
                     <input
                       v-model="sendEmailRecipients"
                       class="billing-send-email-recipients__check"
                       type="checkbox"
-                      :value="email"
+                      :value="entry.email"
                     />
-                    <span class="billing-send-email-recipients__email">{{ email }}</span>
+                    <span class="billing-send-email-recipients__email">
+                      {{ entry.email }}
+                      <span class="billing-send-email-recipients__tag text-secondary">
+                        ({{ emailRecipientTagLabel(entry.tag) }})
+                      </span>
+                    </span>
                   </label>
                 </div>
               </div>
@@ -4780,6 +4802,9 @@ function onDocKeydown(e) {
 .billing-send-email-recipients__email {
   word-break: break-all;
   line-height: 1.35;
+}
+.billing-send-email-recipients__tag {
+  font-size: 0.8125rem;
 }
 .billing-send-email-message {
   margin-top: 0.35rem;

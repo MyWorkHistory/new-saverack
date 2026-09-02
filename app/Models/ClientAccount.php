@@ -106,6 +106,7 @@ class ClientAccount extends Model
         'contact_first_name',
         'contact_last_name',
         'email',
+        'accounting_email',
         'phone',
         'notify_email',
         'notification_email',

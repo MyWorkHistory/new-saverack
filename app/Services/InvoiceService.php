@@ -1519,7 +1519,7 @@ class InvoiceService
                 : 0,
             'client_account_whatsapp_e164' => $account !== null ? $account->whatsapp_e164 : null,
             'client_account_whatsapp_api_id' => $account !== null ? $account->whatsapp_api_id : null,
-            'email_recipient_options' => $this->invoiceRecipientEmails($invoice),
+            'email_recipient_options' => $this->invoiceRecipientEmailOptions($invoice),
             'customer_view_url' => $this->publicCustomerViewUrl($invoice),
             'customer_pdf_url' => $this->publicCustomerPdfUrl($invoice),
             'paid_at' => $invoice->paid_at !== null ? $invoice->paid_at->toIso8601String() : null,
@@ -3223,17 +3223,40 @@ class InvoiceService
     }
 
     /**
+     * @return list<array{email: string, tag: string}>
+     */
+    private function invoiceRecipientEmailOptions(Invoice $invoice): array
+    {
+        $invoice->loadMissing('clientAccount');
+        $account = $invoice->clientAccount;
+        if ($account === null) {
+            return [];
+        }
+
+        $options = [];
+        $defaultEmail = is_string($account->email) ? strtolower(trim($account->email)) : '';
+        if ($defaultEmail !== '' && filter_var($defaultEmail, FILTER_VALIDATE_EMAIL)) {
+            $options[] = ['email' => $defaultEmail, 'tag' => 'default'];
+        }
+
+        $accountingEmail = is_string($account->accounting_email) ? strtolower(trim($account->accounting_email)) : '';
+        if (
+            $accountingEmail !== ''
+            && filter_var($accountingEmail, FILTER_VALIDATE_EMAIL)
+            && $accountingEmail !== $defaultEmail
+        ) {
+            $options[] = ['email' => $accountingEmail, 'tag' => 'accounting'];
+        }
+
+        return $options;
+    }
+
+    /**
      * @return list<string>
      */
     private function invoiceRecipientEmails(Invoice $invoice): array
     {
-        $invoice->loadMissing('clientAccount');
-        $account = $invoice->clientAccount;
-        if ($account !== null && is_string($account->email) && filter_var($account->email, FILTER_VALIDATE_EMAIL)) {
-            return [strtolower(trim($account->email))];
-        }
-
-        return [];
+        return array_column($this->invoiceRecipientEmailOptions($invoice), 'email');
     }
 
     private function defaultWhatsappMessage(Invoice $invoice, string $invoiceUrl, string $type): string

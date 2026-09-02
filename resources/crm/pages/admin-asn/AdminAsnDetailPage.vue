@@ -123,7 +123,7 @@ const asnRouteId = computed(() => Number(asnId.value || 0));
 const isDraft = computed(() => String(asn.value?.status || "").toLowerCase() === "draft");
 const isPending = computed(() => String(asn.value?.status || "").toLowerCase() === "pending");
 const isNonCompliant = computed(() => String(asn.value?.status || "").toLowerCase() === "non_compliant");
-const canAddProducts = computed(() => isDraft.value || isNonCompliant.value);
+const canAddProducts = computed(() => true);
 
 const receivingFees = computed(() => {
   const rows = asn.value?.asn_bill_lines;
@@ -1959,7 +1959,6 @@ onUnmounted(() => {
                 {{ enrichBusy ? "Refreshing…" : "Refresh Specs" }}
               </button>
               <button
-                v-if="isNonCompliant"
                 type="button"
                 class="btn btn-outline-secondary"
                 :disabled="csvImportBusy || lineBusy"
@@ -1968,7 +1967,6 @@ onUnmounted(() => {
                 Import CSV
               </button>
               <button
-                v-if="isNonCompliant"
                 type="button"
                 class="btn btn-outline-primary"
                 :disabled="csvImportBusy || lineBusy"
@@ -1979,7 +1977,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div v-if="isNonCompliant" v-show="addPanelOpen" class="border-bottom">
+          <div v-show="addPanelOpen" class="border-bottom">
             <AsnProductCatalogPanel
               :client-account-id="clientAccountId"
               :asn-id="asnRouteId"

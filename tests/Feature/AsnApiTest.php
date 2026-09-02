@@ -31,6 +31,14 @@ class AsnApiTest extends TestCase
         );
     }
 
+    private function receivingViewPermission(): Permission
+    {
+        return Permission::query()->firstOrCreate(
+            ['key' => 'receiving.view'],
+            ['label' => 'View receiving', 'module' => 'receiving']
+        );
+    }
+
     private function account(): ClientAccount
     {
         return ClientAccount::create([
@@ -560,5 +568,94 @@ class AsnApiTest extends TestCase
         $this->patchJson('/api/asns/'.$asn->id.'/number', [
             'asn_number' => 'TAKEN-1',
         ])->assertStatus(422);
+    }
+
+    public function test_portal_user_can_add_line_when_asn_is_pending(): void
+    {
+        $account = $this->account();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0110',
+            'status' => ClientAccountAsn::STATUS_PENDING,
+            'total_boxes' => 1,
+            'total_pallets' => 0,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $this->postJson('/api/asns/'.$asn->id.'/lines', [
+            'shiphero_product_id' => 'prod-pending-1',
+            'sku' => 'PENDING-SKU-1',
+            'name' => 'Pending Widget',
+            'expected_qty' => 4,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('sku', 'PENDING-SKU-1');
+
+        $this->assertDatabaseHas('client_account_asn_lines', [
+            'client_account_asn_id' => $asn->id,
+            'sku' => 'PENDING-SKU-1',
+            'expected_qty' => 4,
+        ]);
+    }
+
+    public function test_portal_user_cannot_add_line_when_asn_is_in_progress(): void
+    {
+        $account = $this->account();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0111',
+            'status' => ClientAccountAsn::STATUS_IN_PROGRESS,
+            'total_boxes' => 1,
+            'total_pallets' => 0,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $this->postJson('/api/asns/'.$asn->id.'/lines', [
+            'sku' => 'BLOCKED-SKU',
+            'name' => 'Blocked Widget',
+            'expected_qty' => 1,
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['status']);
+    }
+
+    public function test_staff_can_add_line_when_asn_is_in_progress(): void
+    {
+        $user = User::factory()->create(['client_account_id' => null]);
+        $user->permissions()->attach($this->receivingViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $account = $this->account();
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0112',
+            'status' => ClientAccountAsn::STATUS_IN_PROGRESS,
+            'total_boxes' => 1,
+            'total_pallets' => 0,
+            'expected_qty' => 0,
+            'accepted_qty' => 0,
+            'rejected_qty' => 0,
+        ]);
+
+        $this->postJson('/api/asns/'.$asn->id.'/lines', [
+            'shiphero_product_id' => 'prod-staff-1',
+            'sku' => 'STAFF-ADD-1',
+            'name' => 'Staff Added Widget',
+            'expected_qty' => 2,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('sku', 'STAFF-ADD-1');
     }
 }

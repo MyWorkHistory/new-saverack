@@ -88,6 +88,7 @@ const asnNumericId = computed(() => asnRouteId.value || Number(asn.value?.id ?? 
 
 const isDraft = computed(() => String(asn.value?.status || "").toLowerCase() === "draft");
 const isPending = computed(() => String(asn.value?.status || "").toLowerCase() === "pending");
+const canAddProducts = computed(() => isDraft.value || isPending.value);
 const canDeleteAsn = computed(() => {
   const s = String(asn.value?.status || "").toLowerCase();
   return s === "draft" || s === "pending";
@@ -358,7 +359,7 @@ function closeAddNewSkuModal() {
 }
 
 async function submitAddNewSku() {
-  if (!asn.value?.id || !isDraft.value) return;
+  if (!asn.value?.id || !canAddProducts.value) return;
   const sku = addNewSkuSku.value.trim();
   const name = addNewSkuName.value.trim();
   const qty = Math.max(0, Number(addNewSkuQty.value) || 0);
@@ -632,7 +633,7 @@ async function saveNotes() {
 }
 
 async function addFromCatalog({ product, quantity }) {
-  if (!asn.value || !isDraft.value) return;
+  if (!asn.value || !canAddProducts.value) return;
   const p = product && typeof product === "object" ? product : null;
   const qty = Math.max(0, Number(quantity) || 0);
   if (qty <= 0) {
@@ -831,7 +832,7 @@ onUnmounted(() => {
               </button>
             </div>
             <button
-              v-if="isDraft"
+              v-if="canAddProducts"
               type="button"
               class="btn btn-sm btn-outline-primary"
               @click="addPanelOpen = !addPanelOpen"

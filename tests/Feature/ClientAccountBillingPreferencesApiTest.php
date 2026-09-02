@@ -215,4 +215,31 @@ class ClientAccountBillingPreferencesApiTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('payment_terms_days', 1);
     }
+
+    public function test_staff_patch_sets_accounting_email_via_billing_section(): void
+    {
+        $user = User::factory()->create(['client_account_id' => null]);
+        $user->permissions()->attach($this->clientsUpdatePermission()->id);
+        Sanctum::actingAs($user);
+
+        $account = ClientAccount::create([
+            'company_name' => 'Accounting Email Co',
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'email' => 'main@accounting-email.test',
+            'accounting_email' => 'main@accounting-email.test',
+        ]);
+
+        $response = $this->patchJson('/api/client-accounts/'.$account->id, [
+            'accounting_email' => 'billing@accounting-email.test',
+            'history_section' => 'billing',
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('accounting_email', 'billing@accounting-email.test');
+        $response->assertJsonPath('email', 'main@accounting-email.test');
+
+        $account->refresh();
+        $this->assertSame('billing@accounting-email.test', $account->accounting_email);
+        $this->assertSame('main@accounting-email.test', $account->email);
+    }
 }

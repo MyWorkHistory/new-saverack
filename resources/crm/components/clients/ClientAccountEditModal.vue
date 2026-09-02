@@ -54,6 +54,7 @@ const form = reactive({
   payment_terms_days: 1,
   cc_fee_percent: "3.50",
   stripe_customer_id: "",
+  accounting_email: "",
   shiphero_customer_account_id: "",
   whatsapp_api_id: "",
 });
@@ -112,9 +113,9 @@ const modalSubtitle = computed(() => {
     case "address":
       return "Street, city, and country.";
     case "billing":
-      return "Default payment type, Stripe customer ID, payment terms, postage, packaging, and ASN billing.";
+      return "Accounting email, default payment type, Stripe customer ID, payment terms, postage, packaging, and ASN billing.";
     case "payment":
-      return "Default payment type, Stripe customer ID, payment terms, postage, packaging, and ASN billing.";
+      return "Accounting email, default payment type, Stripe customer ID, payment terms, postage, packaging, and ASN billing.";
     case "settings":
       return "WhatsApp API ID and ShipHero customer account ID.";
     default:
@@ -183,6 +184,7 @@ async function load() {
         ? Number(data.cc_fee_percent).toFixed(2)
         : "3.50";
     form.stripe_customer_id = data.stripe_customer_id || "";
+    form.accounting_email = data.accounting_email || "";
     form.shiphero_customer_account_id = data.shiphero_customer_account_id || "";
     form.whatsapp_api_id = data.whatsapp_api_id || "";
   } catch (e) {
@@ -241,6 +243,7 @@ function buildPatch() {
       payment_terms_days: Math.max(1, Number(form.payment_terms_days) || 1),
       cc_fee_percent: trimOrNull(form.cc_fee_percent),
       stripe_customer_id: trimOrNull(form.stripe_customer_id),
+      accounting_email: trimOrNull(form.accounting_email),
       shiphero_customer_account_id: trimOrNull(form.shiphero_customer_account_id),
       whatsapp_api_id: trimOrNull(form.whatsapp_api_id),
     };
@@ -273,6 +276,7 @@ function buildPatch() {
   }
   if (props.section === "billing" || props.section === "payment") {
     return {
+      accounting_email: trimOrNull(form.accounting_email),
       default_payment_type: trimOrNull(form.default_payment_type),
       postage_option: form.postage_option || DEFAULT_POSTAGE_OPTION,
       packaging_option: form.packaging_option || DEFAULT_PACKAGING_OPTION,
@@ -593,6 +597,22 @@ async function onSubmit() {
                   <template v-if="showBilling">
                     <p class="small fw-semibold text-secondary mb-0">Billing</p>
                     <div class="row g-3">
+                      <div class="col-12">
+                        <label class="form-label small mb-1 text-secondary" for="cae-accounting-email"
+                          >Accounting email</label
+                        >
+                        <input
+                          id="cae-accounting-email"
+                          v-model="form.accounting_email"
+                          type="email"
+                          class="form-control"
+                          autocomplete="off"
+                          placeholder="billing@company.com"
+                        />
+                        <p class="small text-secondary mb-0 mt-1">
+                          Used for invoice and billing correspondence. Does not change the main account login email.
+                        </p>
+                      </div>
                       <div class="col-sm-6">
                         <label class="form-label small mb-1 text-secondary" for="cae-payment-type-main"
                           >Default payment type</label

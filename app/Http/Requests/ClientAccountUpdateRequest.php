@@ -83,6 +83,15 @@ class ClientAccountUpdateRequest extends FormRequest
                 $this->merge(['whatsapp_api_id' => trim((string) $raw)]);
             }
         }
+
+        if ($this->exists('accounting_email')) {
+            $raw = $this->input('accounting_email');
+            if ($raw === null || $raw === '') {
+                $this->merge(['accounting_email' => null]);
+            } else {
+                $this->merge(['accounting_email' => trim((string) $raw)]);
+            }
+        }
     }
 
     public function rules(): array
@@ -104,6 +113,7 @@ class ClientAccountUpdateRequest extends FormRequest
                 'max:190',
                 Rule::unique('client_accounts', 'email')->ignore($this->route('client_account')),
             ],
+            'accounting_email' => ['sometimes', 'nullable', 'email', 'max:190'],
             'phone' => ['sometimes', 'nullable', 'string', 'max:64'],
             'notify_email' => ['sometimes', 'boolean'],
             'notification_email' => ['sometimes', 'nullable', 'email', 'max:190'],

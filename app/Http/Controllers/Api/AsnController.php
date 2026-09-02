@@ -54,6 +54,15 @@ class AsnController extends Controller
         return (int) ($user->client_account_id ?? 0) > 0;
     }
 
+    private function canAddAsnLines(ClientAccountAsn $asn, bool $portal): bool
+    {
+        if (! $portal) {
+            return true;
+        }
+
+        return $asn->status === ClientAccountAsn::STATUS_DRAFT
+            || $asn->status === ClientAccountAsn::STATUS_PENDING;
+    }
 
     private function assertDeletableStatus(Request $request, ClientAccountAsn $asn): void
     {
@@ -719,11 +728,11 @@ class AsnController extends Controller
     {
         $this->authorizeAsn($request, $asn);
         $portal = $this->isPortalUser($request);
-        $canAddLines = $asn->status === ClientAccountAsn::STATUS_DRAFT
-            || (! $portal && $asn->status === ClientAccountAsn::STATUS_NON_COMPLIANT);
-        if (! $canAddLines) {
+        if (! $this->canAddAsnLines($asn, $portal)) {
             throw ValidationException::withMessages([
-                'status' => ['Products can only be added while the ASN is in draft.'],
+                'status' => [$portal
+                    ? 'Products can only be added while the ASN is draft or pending.'
+                    : 'Products cannot be added to this ASN.'],
             ]);
         }
 
@@ -815,11 +824,11 @@ class AsnController extends Controller
     {
         $this->authorizeAsn($request, $asn);
         $portal = $this->isPortalUser($request);
-        $canAddLines = $asn->status === ClientAccountAsn::STATUS_DRAFT
-            || (! $portal && $asn->status === ClientAccountAsn::STATUS_NON_COMPLIANT);
-        if (! $canAddLines) {
+        if (! $this->canAddAsnLines($asn, $portal)) {
             throw ValidationException::withMessages([
-                'status' => ['Products can only be added while the ASN is in draft.'],
+                'status' => [$portal
+                    ? 'Products can only be added while the ASN is draft or pending.'
+                    : 'Products cannot be added to this ASN.'],
             ]);
         }
 

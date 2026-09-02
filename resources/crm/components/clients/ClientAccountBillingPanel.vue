@@ -50,6 +50,12 @@ const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
 const preferenceRows = computed(() => [
   {
+    key: "accounting_email",
+    label: "Accounting email",
+    value: display(props.account.accounting_email),
+    icon: "email",
+  },
+  {
     key: "payment_type",
     label: "Default payment type",
     value: display(props.account.default_payment_type),
@@ -538,6 +544,18 @@ watch(() => props.accountId, load);
                   >
                     <path d="M12 22V12M12 12L3 7l9-5 9 5-9 5z" />
                     <path d="M3 7v10l9 5 9-5V7" />
+                  </svg>
+                  <svg
+                    v-else-if="row.icon === 'email'"
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.75"
+                    viewBox="0 0 24 24"
+                  >
+                    <rect x="2" y="4" width="20" height="16" rx="2" />
+                    <path d="M22 7l-10 7L2 7" />
                   </svg>
                   <svg
                     v-else-if="row.icon === 'asn'"

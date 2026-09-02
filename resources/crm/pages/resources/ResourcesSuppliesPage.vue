@@ -591,7 +591,7 @@ onUnmounted(() => {
                   v-model="searchQ"
                   type="search"
                   class="form-control resources-supplies__search-input"
-                  placeholder="Search…"
+                  placeholder="Search by name or type..."
                   aria-label="Search supplies"
                   autocomplete="off"
                   :disabled="catalogLoading"
@@ -1037,9 +1037,8 @@ onUnmounted(() => {
 }
 .resources-supplies__search {
   position: relative;
-  flex: 0 1 9rem;
-  width: 9rem;
-  min-width: 7rem;
+  flex: 1 1 14rem;
+  min-width: 12rem;
   max-width: 100%;
 }
 .resources-supplies__history-search {
@@ -1249,8 +1248,8 @@ button.resources-supplies__name:hover {
 }
 @media (max-width: 767.98px) {
   .resources-supplies__search {
-    flex: 1 1 7rem;
-    width: auto;
+    flex: 1 1 10rem;
+    min-width: 8rem;
   }
   .resources-supplies__type {
     flex: 1 1 7rem;

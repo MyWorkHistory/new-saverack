@@ -554,7 +554,7 @@ onUnmounted(() => {
           </div>
 
           <div v-if="canViewSupplies" class="resources-supplies__toolbar mb-3">
-            <div class="resources-supplies__toolbar-main">
+            <div class="resources-supplies__toolbar-filters">
               <div ref="searchRoot" class="resources-supplies__search">
                 <span class="resources-supplies__search-icon" aria-hidden="true">
                   <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
@@ -1021,24 +1021,23 @@ onUnmounted(() => {
 }
 .resources-supplies__toolbar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
+  flex-direction: column;
   gap: 0.65rem;
 }
-.resources-supplies__toolbar-main {
-  flex: 1 1 16rem;
+.resources-supplies__toolbar-filters {
   display: flex;
   flex-wrap: wrap;
   align-items: stretch;
   gap: 0.65rem;
+  width: 100%;
   min-width: 0;
 }
 .resources-supplies__toolbar-actions {
-  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  min-width: 11rem;
+  width: 100%;
+  max-width: 12rem;
 }
 .resources-supplies__toolbar-actions .resources-supplies__submit {
   width: 100%;
@@ -1049,8 +1048,8 @@ onUnmounted(() => {
 }
 .resources-supplies__search {
   position: relative;
-  flex: 1 1 16rem;
-  min-width: 12rem;
+  flex: 1 1 12rem;
+  min-width: 10rem;
 }
 .resources-supplies__history-search {
   position: relative;
@@ -1075,6 +1074,7 @@ onUnmounted(() => {
 }
 .resources-supplies__type {
   flex: 0 0 10.5rem;
+  width: 10.5rem;
   max-width: 100%;
   border-radius: 0.5rem;
   border-color: #e5e7eb;
@@ -1257,15 +1257,12 @@ button.resources-supplies__name:hover {
   }
 }
 @media (max-width: 767.98px) {
-  .resources-supplies__toolbar-main {
-    flex: 1 1 100%;
-  }
   .resources-supplies__toolbar-actions {
-    flex: 1 1 100%;
-    min-width: 0;
+    max-width: none;
   }
   .resources-supplies__type {
     flex: 1 1 8rem;
+    width: auto;
   }
   .resources-supplies__add {
     flex: 1 1 auto;

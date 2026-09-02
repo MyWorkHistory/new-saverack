@@ -1,9 +1,10 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
+import ShopifyInventoryAddLocationModal from "../../components/shopify/ShopifyInventoryAddLocationModal.vue";
 import ShopifyInventoryEditProductModal from "../../components/shopify/ShopifyInventoryEditProductModal.vue";
 import ShopifyInventoryProductSettingsModal from "../../components/shopify/ShopifyInventoryProductSettingsModal.vue";
 import ShopifyInventoryBundleItemsModal from "../../components/shopify/ShopifyInventoryBundleItemsModal.vue";
@@ -33,20 +34,39 @@ const qtyEditOpen = ref(false);
 const qtyEditBusy = ref(false);
 const qtyEditComponent = ref(null);
 const qtyEditValue = ref(1);
+const expandedLocationGroup = ref(null);
+const addLocationOpen = ref(false);
+const addItemReasons = ref([]);
 
-const inventoryStats = {
-  total_on_hand: 0,
-  allocated: 0,
-  available: 0,
-  backorder: 0,
-  asn: 0,
-};
-
-const locationGroups = [
-  { key: "pick", label: "Pick Locations", icon: "cart", count: 0 },
-  { key: "backstock", label: "Backstock Locations", icon: "cube", count: 0 },
-  { key: "other", label: "Other Locations", icon: "bag", count: 0 },
+const defaultLocationGroups = () => [
+  { key: "pick", label: "Pick Locations", icon: "cart", count: 0, locations: [] },
+  { key: "backstock", label: "Backstock Locations", icon: "cube", count: 0, locations: [] },
+  { key: "other", label: "Other Locations", icon: "bag", count: 0, locations: [] },
 ];
+
+const inventoryStats = computed(() => {
+  const stats = variant.value?.inventory_stats;
+  return {
+    total_on_hand: Number(stats?.total_on_hand || 0),
+    allocated: Number(stats?.allocated || 0),
+    available: Number(stats?.available || 0),
+    backorder: Number(stats?.backorder || 0),
+    asn: Number(stats?.asn || 0),
+  };
+});
+
+const locationGroups = computed(() => {
+  const groups = Array.isArray(variant.value?.location_groups) ? variant.value.location_groups : [];
+  if (!groups.length) return defaultLocationGroups();
+  const iconByKey = { pick: "cart", backstock: "cube", other: "bag" };
+  return groups.map((group) => ({
+    key: group.key,
+    label: group.label,
+    icon: iconByKey[group.key] || "bag",
+    count: Number(group.count || 0),
+    locations: Array.isArray(group.locations) ? group.locations : [],
+  }));
+});
 
 const dimUnitLabel = computed(() =>
   String(variant.value?.dimension_unit || "").toUpperCase() === "CENTIMETERS" ? "cm" : "in",
@@ -333,8 +353,18 @@ async function pushInventory() {
   }
 }
 
-function comingSoon(label) {
-  toast.warning(`${label} will be available when CRM inventory is connected.`);
+function toggleLocationGroup(key) {
+  expandedLocationGroup.value = expandedLocationGroup.value === key ? null : key;
+}
+
+function openAddLocation() {
+  addLocationOpen.value = true;
+}
+
+function formatLocationQty(loc) {
+  const name = String(loc?.name || "—");
+  const qty = Number(loc?.available || 0);
+  return `${name} (${qty.toLocaleString("en-US")})`;
 }
 
 function onDocClick(event) {
@@ -347,12 +377,30 @@ function onDocClick(event) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   setCrmPageMeta({
     title: "Save Rack | Shopify Variant",
     description: "Shopify product inventory details.",
   });
   document.addEventListener("click", onDocClick);
+  try {
+    const { data } = await api.get("/shopify/locations/meta");
+    addItemReasons.value = Array.isArray(data?.add_item_reasons) ? data.add_item_reasons : [];
+  } catch {
+    addItemReasons.value = [
+      "Account Setup",
+      "Client Request",
+      "Cycle Count",
+      "Expired",
+      "Kitting / Bundling",
+      "Order Fulfillment",
+      "Picking Error",
+      "Putaway Error",
+      "Receiving Discrepancy",
+      "Restock",
+      "Return",
+    ];
+  }
   void load();
 });
 
@@ -741,7 +789,7 @@ onUnmounted(() => {
                 </div>
                 <p class="sid-card__sub">Manage inventory by location.</p>
               </div>
-              <button type="button" class="staff-outline-action-btn staff-outline-action-btn--sm" @click="comingSoon('Add Location')">
+              <button type="button" class="staff-outline-action-btn staff-outline-action-btn--sm" @click="openAddLocation">
                 <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
@@ -750,35 +798,64 @@ onUnmounted(() => {
             </div>
 
             <div class="sid-locs">
-              <button
+              <div
                 v-for="group in locationGroups"
                 :key="group.key"
-                type="button"
-                class="sid-loc"
-                @click="comingSoon(group.label)"
+                class="sid-loc-wrap"
               >
-                <span class="sid-loc__icon" :class="`sid-loc__icon--${group.key}`" aria-hidden="true">
-                  <svg v-if="group.icon === 'cart'" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
-                  </svg>
-                  <svg v-else-if="group.icon === 'cube'" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
-                  </svg>
-                  <svg v-else width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007z" />
-                  </svg>
-                </span>
-                <div class="sid-loc__body">
-                  <div class="sid-loc__title-row">
-                    <span class="sid-loc__title">{{ group.label }}</span>
-                    <span class="sid-loc__badge">{{ group.count }}</span>
+                <button
+                  type="button"
+                  class="sid-loc"
+                  :class="{ 'sid-loc--expanded': expandedLocationGroup === group.key }"
+                  :aria-expanded="expandedLocationGroup === group.key"
+                  @click="toggleLocationGroup(group.key)"
+                >
+                  <span class="sid-loc__icon" :class="`sid-loc__icon--${group.key}`" aria-hidden="true">
+                    <svg v-if="group.icon === 'cart'" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+                    </svg>
+                    <svg v-else-if="group.icon === 'cube'" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                    </svg>
+                    <svg v-else width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007z" />
+                    </svg>
+                  </span>
+                  <div class="sid-loc__body">
+                    <div class="sid-loc__title-row">
+                      <span class="sid-loc__title">{{ group.label }}</span>
+                      <span class="sid-loc__badge">{{ group.count }}</span>
+                    </div>
+                    <div v-if="!group.locations.length" class="sid-loc__empty">No locations yet</div>
+                    <div v-else-if="expandedLocationGroup !== group.key" class="sid-loc__preview">
+                      {{ group.locations.map(formatLocationQty).join(", ") }}
+                    </div>
                   </div>
-                  <div class="sid-loc__empty">No locations yet</div>
+                  <svg
+                    class="sid-loc__chevron"
+                    :class="{ 'sid-loc__chevron--open': expandedLocationGroup === group.key }"
+                    width="16"
+                    height="16"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                  </svg>
+                </button>
+                <div v-if="expandedLocationGroup === group.key && group.locations.length" class="sid-loc__list">
+                  <RouterLink
+                    v-for="loc in group.locations"
+                    :key="loc.location_id"
+                    :to="{ name: 'shopify-location-detail', params: { id: String(loc.location_id) } }"
+                    class="sid-loc__item"
+                  >
+                    <span class="sid-loc__item-name">{{ loc.name }}</span>
+                    <span class="sid-loc__item-qty">{{ Number(loc.available || 0).toLocaleString("en-US") }}</span>
+                  </RouterLink>
                 </div>
-                <svg class="sid-loc__chevron" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                </svg>
-              </button>
+              </div>
             </div>
 
             <button type="button" class="sid-view-all" @click="router.push({ name: 'shopify-locations' })">
@@ -811,6 +888,13 @@ onUnmounted(() => {
       :variant-id="variant?.id"
       :existing-components="bundleComponents"
       @save="onSaveBundleItems"
+    />
+    <ShopifyInventoryAddLocationModal
+      v-model:open="addLocationOpen"
+      :variant-id="variant?.id"
+      :client-account-id="variant?.client_account_id"
+      :add-item-reasons="addItemReasons"
+      @saved="load"
     />
 
     <Teleport to="body">
@@ -1355,6 +1439,11 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 0.55rem;
 }
+.sid-loc-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
 .sid-loc {
   display: flex;
   align-items: center;
@@ -1369,6 +1458,48 @@ onUnmounted(() => {
 }
 .sid-loc:hover {
   background: #f9fafb;
+}
+.sid-loc--expanded {
+  background: #f9fafb;
+  border-color: #dbeafe;
+}
+.sid-loc__preview {
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  color: #6b7280;
+  line-height: 1.35;
+}
+.sid-loc__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0 0.35rem 0.15rem;
+}
+.sid-loc__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  background: #fff;
+  text-decoration: none;
+  color: inherit;
+  font-size: 0.85rem;
+}
+.sid-loc__item:hover {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+.sid-loc__item-name {
+  font-weight: 600;
+  color: #111827;
+}
+.sid-loc__item-qty {
+  font-weight: 700;
+  color: #2563eb;
+  flex-shrink: 0;
 }
 .sid-loc__icon {
   display: inline-flex;
@@ -1428,6 +1559,10 @@ onUnmounted(() => {
 .sid-loc__chevron {
   color: #3b82f6;
   flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+.sid-loc__chevron--open {
+  transform: rotate(90deg);
 }
 .sid-view-all {
   display: inline-flex;

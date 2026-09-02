@@ -7,6 +7,8 @@ use App\Models\ClientAccountShopifyConnection;
 use App\Models\Role;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
+use App\Models\ShopifyWarehouseLocation;
+use App\Models\ShopifyWarehouseLocationItem;
 use App\Models\ShopifyVariantBundleComponent;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -145,6 +147,62 @@ class ShopifyInventoryDetailApiTest extends TestCase
         $this->deleteJson('/api/shopify/inventory/'.$parent->id.'/bundle-components/'.$row->id)
             ->assertOk()
             ->assertJsonPath('components', []);
+    }
+
+    public function test_show_includes_warehouse_location_groups_and_inventory_stats(): void
+    {
+        $this->actingAsAdmin();
+        [, $parent] = $this->seedBundlePair();
+
+        $pickLoc = ShopifyWarehouseLocation::query()->create([
+            'name' => 'A-01-100',
+            'type' => 'Large Shelf',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        $backstockLoc = ShopifyWarehouseLocation::query()->create([
+            'name' => 'OS-01',
+            'type' => 'Large Bin',
+            'pickable' => false,
+            'sellable' => true,
+        ]);
+        $receivingLoc = ShopifyWarehouseLocation::query()->create([
+            'name' => 'Receiving',
+            'type' => 'Medium Bin',
+            'pickable' => false,
+            'sellable' => false,
+        ]);
+
+        ShopifyWarehouseLocationItem::query()->create([
+            'location_id' => $pickLoc->id,
+            'shopify_variant_id' => $parent->id,
+            'available' => 5,
+        ]);
+        ShopifyWarehouseLocationItem::query()->create([
+            'location_id' => $backstockLoc->id,
+            'shopify_variant_id' => $parent->id,
+            'available' => 12,
+        ]);
+        ShopifyWarehouseLocationItem::query()->create([
+            'location_id' => $receivingLoc->id,
+            'shopify_variant_id' => $parent->id,
+            'available' => 3,
+        ]);
+
+        $this->getJson('/api/shopify/inventory/'.$parent->id)
+            ->assertOk()
+            ->assertJsonPath('variant.inventory_stats.total_on_hand', 20)
+            ->assertJsonPath('variant.inventory_stats.available', 20)
+            ->assertJsonPath('variant.location_groups.0.key', 'pick')
+            ->assertJsonPath('variant.location_groups.0.count', 1)
+            ->assertJsonPath('variant.location_groups.0.locations.0.name', 'A-01-100')
+            ->assertJsonPath('variant.location_groups.0.locations.0.available', 5)
+            ->assertJsonPath('variant.location_groups.1.key', 'backstock')
+            ->assertJsonPath('variant.location_groups.1.count', 1)
+            ->assertJsonPath('variant.location_groups.1.locations.0.name', 'OS-01')
+            ->assertJsonPath('variant.location_groups.2.key', 'other')
+            ->assertJsonPath('variant.location_groups.2.count', 1)
+            ->assertJsonPath('variant.location_groups.2.locations.0.name', 'Receiving');
     }
 
     public function test_crm_image_upload_sets_display_url(): void

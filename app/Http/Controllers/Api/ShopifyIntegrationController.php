@@ -8,6 +8,8 @@ use App\Models\ClientAccountShopifyConnection;
 use App\Models\ShopifyLocation;
 use App\Models\ShopifyOrder;
 use App\Models\ShopifyProductVariant;
+use App\Models\ShopifyWarehouseLocationItem;
+use App\Services\AsnReceivingService;
 use App\Services\ShopifyConnectionService;
 use App\Services\ShopifyFulfillmentService;
 use App\Services\ShopifyOAuthService;
@@ -1262,8 +1264,10 @@ class ShopifyIntegrationController extends Controller
             }
         }
 
+        $warehouseSummary = $this->warehouseLocationSummary($shopifyVariant);
+
         return response()->json([
-            'variant' => [
+            'variant' => array_merge([
                 'id' => $shopifyVariant->id,
                 'sku' => $shopifyVariant->sku,
                 'title' => $shopifyVariant->title,
@@ -1290,7 +1294,7 @@ class ShopifyIntegrationController extends Controller
                 'bundle' => $kind === \App\Models\ShopifyProduct::KIND_BUNDLE,
                 'bundle_components' => $components,
                 'inventory' => $inventory,
-            ],
+            ], $warehouseSummary),
         ]);
     }
 
@@ -1702,6 +1706,78 @@ class ShopifyIntegrationController extends Controller
         })->values();
 
         return response()->json(['products' => $rows]);
+    }
+
+    /**
+     * @return array{location_groups: list<array{key: string, label: string, count: int, locations: list<array<string, mixed>}>, inventory_stats: array{total_on_hand: int, allocated: int, available: int, backorder: int, asn: int}}
+     */
+    private function warehouseLocationSummary(ShopifyProductVariant $variant): array
+    {
+        $items = ShopifyWarehouseLocationItem::query()
+            ->where('shopify_variant_id', $variant->id)
+            ->where('available', '>', 0)
+            ->with('location')
+            ->get();
+
+        $grouped = [
+            'pick' => [],
+            'backstock' => [],
+            'other' => [],
+        ];
+        $receivingName = strtolower(AsnReceivingService::RECEIVING_LOCATION_NAME);
+        $totalOnHand = 0;
+
+        foreach ($items as $item) {
+            $location = $item->location;
+            if ($location === null) {
+                continue;
+            }
+            $qty = (int) $item->available;
+            $totalOnHand += $qty;
+            $entry = [
+                'location_id' => (int) $location->id,
+                'name' => (string) $location->name,
+                'available' => $qty,
+                'type' => $location->type,
+                'pickable' => (bool) $location->pickable,
+                'sellable' => (bool) $location->sellable,
+            ];
+            $nameLower = strtolower(trim((string) $location->name));
+            if ($nameLower === $receivingName) {
+                $grouped['other'][] = $entry;
+            } elseif ($location->pickable) {
+                $grouped['pick'][] = $entry;
+            } else {
+                $grouped['backstock'][] = $entry;
+            }
+        }
+
+        $labels = [
+            'pick' => 'Pick Locations',
+            'backstock' => 'Backstock Locations',
+            'other' => 'Other Locations',
+        ];
+        $locationGroups = [];
+        foreach ($labels as $key => $label) {
+            $locations = $grouped[$key];
+            $locationGroups[] = [
+                'key' => $key,
+                'label' => $label,
+                'count' => count($locations),
+                'locations' => $locations,
+            ];
+        }
+
+        return [
+            'location_groups' => $locationGroups,
+            'inventory_stats' => [
+                'total_on_hand' => $totalOnHand,
+                'allocated' => 0,
+                'available' => $totalOnHand,
+                'backorder' => 0,
+                'asn' => 0,
+            ],
+        ];
     }
 
     /**

@@ -135,10 +135,11 @@ class LeadTemplateMailService
         }
 
         if ($toQueue !== []) {
+            $actorId = $actor !== null ? (int) $actor->id : null;
             SendLeadBulkTemplateEmailJob::dispatchAfterResponse(
                 $toQueue,
                 (int) $template->id,
-                $actor?->id
+                $actorId
             );
         }
 

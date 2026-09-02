@@ -553,8 +553,34 @@ onUnmounted(() => {
             </p>
           </div>
 
-          <div v-if="canViewSupplies" class="resources-supplies__toolbar mb-3">
-            <div class="resources-supplies__toolbar-filters">
+          <div v-if="canViewSupplies" class="resources-supplies__order-tools mb-3">
+            <div v-if="canSubmitOrder" class="resources-supplies__submit-row">
+              <button
+                type="button"
+                class="btn btn-primary staff-page-primary resources-supplies__submit fw-semibold"
+                :disabled="submitting"
+                @click="submitOrder"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
+                  />
+                </svg>
+                {{ submitting ? "Submitting…" : "Submit Order" }}
+              </button>
+            </div>
+
+            <div class="resources-supplies__toolbar">
               <div ref="searchRoot" class="resources-supplies__search">
                 <span class="resources-supplies__search-icon" aria-hidden="true">
                   <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
@@ -565,7 +591,7 @@ onUnmounted(() => {
                   v-model="searchQ"
                   type="search"
                   class="form-control resources-supplies__search-input"
-                  placeholder="Search by name or type..."
+                  placeholder="Search…"
                   aria-label="Search supplies"
                   autocomplete="off"
                   :disabled="catalogLoading"
@@ -608,32 +634,7 @@ onUnmounted(() => {
                   {{ opt.name }}
                 </option>
               </select>
-            </div>
 
-            <div class="resources-supplies__toolbar-actions">
-              <button
-                type="button"
-                class="btn btn-primary staff-page-primary resources-supplies__submit fw-semibold"
-                :disabled="submitting"
-                @click="submitOrder"
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
-                  />
-                </svg>
-                {{ submitting ? "Submitting…" : "Submit Order" }}
-              </button>
               <button
                 type="button"
                 class="btn resources-supplies__add fw-semibold"
@@ -1019,37 +1020,27 @@ onUnmounted(() => {
   padding: 0.55rem 1rem;
   white-space: nowrap;
 }
-.resources-supplies__toolbar {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-.resources-supplies__toolbar-filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-  gap: 0.65rem;
-  width: 100%;
-  min-width: 0;
-}
-.resources-supplies__toolbar-actions {
+.resources-supplies__order-tools {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  width: 100%;
-  max-width: 12rem;
 }
-.resources-supplies__toolbar-actions .resources-supplies__submit {
-  width: 100%;
-  justify-content: center;
+.resources-supplies__submit-row {
+  display: flex;
+  justify-content: flex-end;
 }
-.resources-supplies__toolbar-actions .resources-supplies__add {
-  width: 100%;
+.resources-supplies__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.5rem;
 }
 .resources-supplies__search {
   position: relative;
-  flex: 1 1 12rem;
-  min-width: 10rem;
+  flex: 0 1 9rem;
+  width: 9rem;
+  min-width: 7rem;
+  max-width: 100%;
 }
 .resources-supplies__history-search {
   position: relative;
@@ -1073,8 +1064,8 @@ onUnmounted(() => {
   min-height: 2.5rem;
 }
 .resources-supplies__type {
-  flex: 0 0 10.5rem;
-  width: 10.5rem;
+  flex: 0 0 8.5rem;
+  width: 8.5rem;
   max-width: 100%;
   border-radius: 0.5rem;
   border-color: #e5e7eb;
@@ -1257,11 +1248,12 @@ button.resources-supplies__name:hover {
   }
 }
 @media (max-width: 767.98px) {
-  .resources-supplies__toolbar-actions {
-    max-width: none;
+  .resources-supplies__search {
+    flex: 1 1 7rem;
+    width: auto;
   }
   .resources-supplies__type {
-    flex: 1 1 8rem;
+    flex: 1 1 7rem;
     width: auto;
   }
   .resources-supplies__add {

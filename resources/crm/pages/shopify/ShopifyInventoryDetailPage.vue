@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
 import ShopifyInventoryAddLocationModal from "../../components/shopify/ShopifyInventoryAddLocationModal.vue";
@@ -14,6 +15,9 @@ import { useToast } from "../../composables/useToast";
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
+
+const BUNDLE_MENU_W = 160;
+const BUNDLE_MENU_H = 88;
 
 const loading = ref(true);
 const saveBusy = ref(false);
@@ -30,6 +34,7 @@ const actionsOpen = ref(false);
 const actionsRoot = ref(null);
 const imageInput = ref(null);
 const rowMenuOpenId = ref(null);
+const bundleMenuRect = ref({ top: 0, left: 0 });
 const qtyEditOpen = ref(false);
 const qtyEditBusy = ref(false);
 const qtyEditComponent = ref(null);
@@ -135,6 +140,10 @@ const isBundle = computed(
 
 const bundleComponents = computed(() =>
   Array.isArray(variant.value?.bundle_components) ? variant.value.bundle_components : [],
+);
+
+const bundleMenuRow = computed(
+  () => bundleComponents.value.find((row) => row.id === rowMenuOpenId.value) ?? null,
 );
 
 const productTypeLabel = computed(() => {
@@ -256,8 +265,31 @@ async function printBarcode() {
   }
 }
 
-function toggleRowMenu(id) {
-  rowMenuOpenId.value = rowMenuOpenId.value === id ? null : id;
+function placeBundleMenu(btn) {
+  if (!(btn instanceof HTMLElement)) return;
+  const r = btn.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - BUNDLE_MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - BUNDLE_MENU_W - 8));
+  if (top + BUNDLE_MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - BUNDLE_MENU_H - 4);
+  }
+  bundleMenuRect.value = { top, left };
+}
+
+async function toggleBundleMenu(row, e) {
+  e?.stopPropagation?.();
+  const id = row?.id;
+  if (rowMenuOpenId.value === id) {
+    rowMenuOpenId.value = null;
+    return;
+  }
+  const btn = e?.currentTarget;
+  rowMenuOpenId.value = id;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (btn instanceof HTMLElement) placeBundleMenu(btn);
+  });
 }
 
 function openQtyEdit(component) {
@@ -371,8 +403,7 @@ function onDocClick(event) {
   if (!actionsRoot.value?.contains?.(event.target)) {
     actionsOpen.value = false;
   }
-  const menuEl = event.target?.closest?.("[data-sid-row-menu]");
-  if (!menuEl) {
+  if (!event.target?.closest?.("[data-sid-bundle-row-actions]")) {
     rowMenuOpenId.value = null;
   }
 }
@@ -659,13 +690,18 @@ onUnmounted(() => {
             </div>
 
             <div v-else class="sid-bundle-table-wrap">
-              <table class="sid-bundle-table">
+              <table class="table staff-data-table sid-bundle-table mb-0">
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>SKU</th>
-                    <th>QTY</th>
-                    <th class="sid-bundle-table__actions">Actions</th>
+                    <th class="staff-table-head__th" scope="col">Name</th>
+                    <th class="staff-table-head__th" scope="col">SKU</th>
+                    <th class="staff-table-head__th" scope="col">QTY</th>
+                    <th
+                      class="staff-table-head__th text-center staff-actions-col"
+                      scope="col"
+                    >
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -681,28 +717,22 @@ onUnmounted(() => {
                     </td>
                     <td>{{ row.sku || "—" }}</td>
                     <td>{{ row.quantity }}</td>
-                    <td class="sid-bundle-table__actions">
-                      <div class="sid-row-menu" data-sid-row-menu>
+                    <td class="staff-actions-cell text-center" @click.stop>
+                      <div
+                        data-sid-bundle-row-actions
+                        class="staff-actions-inner staff-actions-inner--single justify-content-center"
+                      >
                         <button
                           type="button"
-                          class="sid-row-menu__btn"
-                          aria-label="Row Actions"
-                          @click.stop="toggleRowMenu(row.id)"
+                          class="staff-action-btn staff-action-btn--more"
+                          :class="{ 'is-open': rowMenuOpenId === row.id }"
+                          :aria-expanded="rowMenuOpenId === row.id ? 'true' : 'false'"
+                          aria-haspopup="true"
+                          aria-label="Row actions"
+                          @click="toggleBundleMenu(row, $event)"
                         >
-                          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <circle cx="12" cy="5" r="1.6" />
-                            <circle cx="12" cy="12" r="1.6" />
-                            <circle cx="12" cy="19" r="1.6" />
-                          </svg>
+                          <CrmIconRowActions variant="horizontal" />
                         </button>
-                        <div v-if="rowMenuOpenId === row.id" class="sid-row-menu__panel" role="menu">
-                          <button type="button" class="sid-menu__item" role="menuitem" @click="openQtyEdit(row)">
-                            Edit
-                          </button>
-                          <button type="button" class="sid-menu__item" role="menuitem" @click="deleteBundleComponent(row)">
-                            Delete
-                          </button>
-                        </div>
                       </div>
                     </td>
                   </tr>
@@ -896,6 +926,34 @@ onUnmounted(() => {
       :add-item-reasons="addItemReasons"
       @saved="load"
     />
+
+    <Teleport to="body">
+      <div
+        v-if="bundleMenuRow"
+        data-sid-bundle-row-actions
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
+        :style="{ top: `${bundleMenuRect.top}px`, left: `${bundleMenuRect.left}px` }"
+        @click.stop
+      >
+        <button
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openQtyEdit(bundleMenuRow)"
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          class="staff-row-menu__item staff-row-menu__item--danger"
+          role="menuitem"
+          @click="deleteBundleComponent(bundleMenuRow)"
+        >
+          Delete
+        </button>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div
@@ -1236,30 +1294,20 @@ onUnmounted(() => {
   margin: 0;
 }
 .sid-bundle-table-wrap {
-  overflow-x: auto;
+  overflow: visible;
 }
 .sid-bundle-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
-  font-size: 0.875rem;
 }
-.sid-bundle-table th {
-  text-align: left;
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: #9ca3af;
-  padding: 0.45rem 0.5rem;
-  border-bottom: 1px solid #e5e7eb;
+.sid-bundle-table > thead > tr > th:not(.staff-actions-col),
+.sid-bundle-table > tbody > tr > td:not(.staff-actions-cell) {
+  overflow: hidden;
 }
-.sid-bundle-table td {
-  padding: 0.7rem 0.5rem;
-  border-bottom: 1px solid #f3f4f6;
-  color: #374151;
-  vertical-align: middle;
-}
-.sid-bundle-table__actions {
-  width: 3rem;
-  text-align: right;
+.sid-bundle-table > thead > tr > th:nth-child(3),
+.sid-bundle-table > tbody > tr > td:nth-child(3) {
+  width: 4.5rem;
 }
 .sid-bundle-name {
   display: flex;
@@ -1295,38 +1343,6 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.sid-row-menu {
-  position: relative;
-  display: inline-flex;
-  justify-content: flex-end;
-}
-.sid-row-menu__btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border: 1px solid #3b82f6;
-  border-radius: 0.4rem;
-  background: #fff;
-  color: #3b82f6;
-  cursor: pointer;
-}
-.sid-row-menu__btn:hover {
-  background: #eff6ff;
-}
-.sid-row-menu__panel {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 20;
-  min-width: 8.5rem;
-  padding: 0.3rem;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.5rem;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
 }
 .sid-qty-overlay {
   position: fixed;

@@ -545,6 +545,33 @@ onUnmounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide resources-supplies">
+    <!-- Submit button above the card -->
+    <div v-if="canSubmitOrder && canViewSupplies" class="resources-supplies__top-bar mb-3">
+      <button
+        type="button"
+        class="btn btn-primary staff-page-primary resources-supplies__submit fw-semibold"
+        :disabled="submitting"
+        @click="submitOrder"
+      >
+        <svg
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
+          />
+        </svg>
+        {{ submitting ? "Submitting…" : "Submit Order" }}
+      </button>
+    </div>
+
     <!-- Shared order builder + notes -->
     <section v-if="canViewSupplies" class="resources-supplies__panel mb-4">
       <div class="resources-supplies__split">
@@ -557,32 +584,6 @@ onUnmounted(() => {
           </div>
 
           <div class="resources-supplies__order-tools mb-3">
-            <div v-if="canSubmitOrder" class="resources-supplies__submit-row">
-              <button
-                type="button"
-                class="btn btn-primary staff-page-primary resources-supplies__submit fw-semibold"
-                :disabled="submitting"
-                @click="submitOrder"
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
-                  />
-                </svg>
-                {{ submitting ? "Submitting…" : "Submit Order" }}
-              </button>
-            </div>
-
             <div class="resources-supplies__toolbar">
               <div ref="searchRoot" class="resources-supplies__search">
                 <span class="resources-supplies__search-icon" aria-hidden="true">
@@ -965,6 +966,10 @@ onUnmounted(() => {
 .resources-supplies {
   width: 100%;
 }
+.resources-supplies__top-bar {
+  display: flex;
+  justify-content: flex-end;
+}
 .resources-supplies__panel {
   background: #fff;
   border: 1px solid #e5e7eb;
@@ -1027,10 +1032,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-}
-.resources-supplies__submit-row {
-  display: flex;
-  justify-content: flex-end;
 }
 .resources-supplies__toolbar {
   display: flex;

@@ -23,10 +23,12 @@ class SupplyOrderController extends Controller
         $q = trim((string) $request->query('q', ''));
         $perPage = min(500, max(1, (int) $request->query('per_page', 100)));
 
-        // Team-wide history: never scope to the current user.
+        // Team-wide history: only submitted orders (exclude the shared draft).
         $query = SupplyOrderLine::query()
             ->with(['order.user:id,name'])
-            ->whereHas('order')
+            ->whereHas('order', function ($q) {
+                $q->whereNotNull('submitted_at');
+            })
             ->orderByDesc('id');
 
         if ($q !== '') {

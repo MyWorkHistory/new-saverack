@@ -327,6 +327,98 @@ GQL
     }
 
     /**
+     * Create a product (plus its default variant) in Shopify and mirror it into the CRM.
+     *
+     * @param  array{name:string, sku?:string|null, barcode?:string|null, weight?:float|null, weight_unit?:string|null, length?:float|null, width?:float|null, height?:float|null, dimension_unit?:string|null}  $fields
+     */
+    public function createProductWithVariant(
+        ClientAccountShopifyConnection $connection,
+        array $fields
+    ): ShopifyProductVariant {
+        if (! $connection->hasCredentials()) {
+            throw new RuntimeException('Shopify connection credentials missing.');
+        }
+        $title = trim((string) ($fields['name'] ?? ''));
+        if ($title === '') {
+            throw new RuntimeException('Product name is required.');
+        }
+
+        $api = $this->client->forConnection($connection);
+        $data = $api->graphql(
+            <<<'GQL'
+mutation productCreate($input: ProductInput!) {
+  productCreate(input: $input) {
+    product {
+      id
+      title
+      handle
+      status
+      vendor
+      productType
+      updatedAt
+      variants(first: 1) {
+        edges {
+          node {
+            id
+            title
+            sku
+            barcode
+            price
+            inventoryItem { id }
+            updatedAt
+          }
+        }
+      }
+    }
+    userErrors { field message }
+  }
+}
+GQL
+            ,
+            [
+                'input' => [
+                    'title' => $title,
+                    'status' => 'ACTIVE',
+                ],
+            ]
+        );
+        $this->assertNoUserErrors($data['productCreate'] ?? null);
+
+        $node = is_array($data['productCreate']['product'] ?? null) ? $data['productCreate']['product'] : [];
+        if (ShopifyGid::toId((string) ($node['id'] ?? '')) === '') {
+            throw new RuntimeException('Shopify did not return the new product.');
+        }
+        $this->upsertProductFromShopifyNode($connection, $node, true);
+
+        $variantNodes = $this->extractVariantNodes($node);
+        $variantId = ShopifyGid::toId((string) ($variantNodes[0]['id'] ?? ''));
+        if ($variantId === '') {
+            throw new RuntimeException('Shopify did not return a default variant.');
+        }
+
+        $variant = ShopifyProductVariant::query()
+            ->with(['product', 'connection'])
+            ->where('connection_id', $connection->id)
+            ->where('shopify_variant_id', $variantId)
+            ->first();
+        if ($variant === null) {
+            throw new RuntimeException('Could not store the new product locally.');
+        }
+
+        $push = [];
+        foreach (['sku', 'barcode', 'weight', 'weight_unit', 'length', 'width', 'height', 'dimension_unit'] as $key) {
+            if (array_key_exists($key, $fields) && $fields[$key] !== null && $fields[$key] !== '') {
+                $push[$key] = $fields[$key];
+            }
+        }
+        if ($push !== []) {
+            $variant = $this->pushVariantToShopify($variant, $push);
+        }
+
+        return $variant;
+    }
+
+    /**
      * Push CRM-edited fields to Shopify.
      *
      * @param  array{title?:string|null, sku?:string|null, barcode?:string|null, weight?:float|null, weight_unit?:string|null, length?:float|null, width?:float|null, height?:float|null, dimension_unit?:string|null, product_title?:string|null}  $fields

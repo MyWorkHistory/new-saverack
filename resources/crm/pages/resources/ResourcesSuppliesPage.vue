@@ -17,80 +17,6 @@ import { crmIsAdmin, crmIsPortalUser } from "../../utils/crmUser.js";
 const crmUser = inject("crmUser", ref(null));
 const toast = useToast();
 
-const CART_STORAGE_PREFIX = "crm.resources.supplies.cart";
-const NOTE_STORAGE_PREFIX = "crm.resources.supplies.note";
-
-function noteStorageKey() {
-  const id = crmUser.value?.id;
-  return id != null ? `${NOTE_STORAGE_PREFIX}.${id}` : `${NOTE_STORAGE_PREFIX}.guest`;
-}
-
-function loadNoteFromStorage() {
-  try {
-    return String(localStorage.getItem(noteStorageKey()) || "");
-  } catch {
-    return "";
-  }
-}
-
-function saveNoteToStorage(note) {
-  try {
-    localStorage.setItem(noteStorageKey(), String(note || ""));
-  } catch {
-    /* ignore */
-  }
-}
-
-function clearNoteStorage() {
-  try {
-    localStorage.removeItem(noteStorageKey());
-  } catch {
-    /* ignore */
-  }
-}
-
-function cartStorageKey() {
-  const id = crmUser.value?.id;
-  return id != null ? `${CART_STORAGE_PREFIX}.${id}` : `${CART_STORAGE_PREFIX}.guest`;
-}
-
-function loadCartFromStorage() {
-  try {
-    const raw = localStorage.getItem(cartStorageKey());
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((line) => ({
-        supply_id: Number(line.supply_id),
-        name: String(line.name || ""),
-        type: String(line.type || ""),
-        type_label: String(line.type_label || supplyTypeLabel(line.type)),
-        link: line.link ? String(line.link) : null,
-        quantity: Math.max(1, Math.min(99999999, Number(line.quantity) || 1)),
-      }))
-      .filter((line) => Number.isFinite(line.supply_id) && line.supply_id > 0);
-  } catch {
-    return [];
-  }
-}
-
-function saveCartToStorage(lines) {
-  try {
-    localStorage.setItem(cartStorageKey(), JSON.stringify(lines));
-  } catch {
-    /* ignore quota / private mode */
-  }
-}
-
-function clearCartStorage() {
-  try {
-    localStorage.removeItem(cartStorageKey());
-  } catch {
-    /* ignore */
-  }
-}
-
 function isStaffAdminUser(user) {
   if (!user || typeof user !== "object") return false;
   if (
@@ -107,9 +33,7 @@ function isStaffAdminUser(user) {
 }
 
 const canManageOrders = computed(() => isStaffAdminUser(crmUser.value));
-
 const canSubmitOrder = computed(() => canManageOrders.value);
-
 const canEditHistory = computed(() => canManageOrders.value);
 
 const canViewSupplies = computed(() => {
@@ -125,8 +49,10 @@ setCrmPageMeta({
 
 const catalogLoading = ref(true);
 const historyLoading = ref(true);
+const draftLoading = ref(true);
 const catalog = ref([]);
-const cart = ref(loadCartFromStorage());
+const cart = ref([]);
+const orderNote = ref("");
 const history = ref([]);
 const historyQ = ref("");
 const historyQDebounced = ref("");
@@ -136,7 +62,6 @@ const selectedSupplyId = ref(null);
 const pickerOpen = ref(false);
 const submitting = ref(false);
 const savingNote = ref(false);
-const orderNote = ref(loadNoteFromStorage());
 const historyMenuOpenId = ref(null);
 const historyMenuRect = ref({ top: 0, left: 0 });
 const historyEditOpen = ref(false);
@@ -161,16 +86,6 @@ const historyMenuRow = computed(
 );
 
 let historySearchTimer = null;
-let cartPersistReady = false;
-
-watch(
-  cart,
-  (lines) => {
-    if (!cartPersistReady) return;
-    saveCartToStorage(lines);
-  },
-  { deep: true },
-);
 
 const typeFilterOptions = computed(() => [
   { id: "", name: "All Types" },
@@ -233,6 +148,21 @@ async function loadCatalog() {
   }
 }
 
+async function loadDraft() {
+  draftLoading.value = true;
+  try {
+    const { data } = await api.get("/admin/supply-orders/draft");
+    cart.value = Array.isArray(data?.lines) ? data.lines : [];
+    orderNote.value = String(data?.note || "");
+  } catch (e) {
+    toast.errorFrom(e, "Could not load shared draft.");
+    cart.value = [];
+    orderNote.value = "";
+  } finally {
+    draftLoading.value = false;
+  }
+}
+
 async function loadHistory() {
   historyLoading.value = true;
   try {
@@ -280,8 +210,7 @@ function pickSupply(supply) {
   closePicker();
 }
 
-function addToOrder() {
-  if (!canSubmitOrder.value) return;
+async function addToOrder() {
   let supply = selectedSupply.value;
   if (!supply) {
     const matches = filteredCatalog.value;
@@ -297,20 +226,18 @@ function addToOrder() {
       return;
     }
   }
-  const id = Number(supply.id);
-  const existing = cart.value.find((line) => Number(line.supply_id) === id);
-  if (existing) {
-    existing.quantity = Math.min(99999999, Number(existing.quantity || 0) + 1);
-  } else {
-    cart.value.push({
+
+  try {
+    const { data } = await api.post("/admin/supply-orders/draft/lines", {
       supply_id: supply.id,
-      name: supply.name,
-      type: supply.type,
-      type_label: supply.type_label || supplyTypeLabel(supply.type),
-      link: supply.link || null,
       quantity: 1,
     });
+    cart.value = Array.isArray(data?.lines) ? data.lines : cart.value;
+    orderNote.value = String(data?.note ?? orderNote.value);
+  } catch (e) {
+    toast.errorFrom(e, "Could not add to order.");
   }
+
   selectedSupplyId.value = null;
   searchQ.value = "";
   closePicker();
@@ -325,16 +252,32 @@ function onSearchKeydown(e) {
   }
 }
 
-function removeFromCart(supplyId) {
-  cart.value = cart.value.filter((line) => Number(line.supply_id) !== Number(supplyId));
+async function removeFromCart(lineId) {
+  try {
+    await api.delete(`/admin/supply-orders/draft/lines/${lineId}`);
+    cart.value = cart.value.filter((line) => line.id !== lineId);
+  } catch (e) {
+    toast.errorFrom(e, "Could not remove item.");
+  }
 }
 
-function clampQty(line) {
+let qtyDebounceTimers = {};
+function onQtyChange(line) {
   let n = parseInt(String(line.quantity), 10);
   if (!Number.isFinite(n) || n < 1) n = 1;
   if (n > 99999999) n = 99999999;
   line.quantity = n;
-  saveCartToStorage(cart.value);
+
+  clearTimeout(qtyDebounceTimers[line.id]);
+  qtyDebounceTimers[line.id] = setTimeout(async () => {
+    try {
+      await api.patch(`/admin/supply-orders/draft/lines/${line.id}`, {
+        quantity: n,
+      });
+    } catch (e) {
+      toast.errorFrom(e, "Could not update quantity.");
+    }
+  }, 400);
 }
 
 function openItemLink(link) {
@@ -357,11 +300,18 @@ function historyDisplayName(row) {
   return name || type || "—";
 }
 
-function saveOrderNote() {
+async function saveOrderNote() {
   savingNote.value = true;
-  saveNoteToStorage(orderNote.value);
-  toast.success("Note saved.");
-  savingNote.value = false;
+  try {
+    await api.patch("/admin/supply-orders/draft/note", {
+      note: orderNote.value || null,
+    });
+    toast.success("Note saved.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not save note.");
+  } finally {
+    savingNote.value = false;
+  }
 }
 
 function placeHistoryMenu(anchorEl) {
@@ -486,29 +436,17 @@ async function submitOrder() {
     toast.error("Add at least one supply to the order.");
     return;
   }
-  for (const line of cart.value) {
-    clampQty(line);
-  }
   submitting.value = true;
   try {
-    const note = String(orderNote.value || "").trim();
-    const { data } = await api.post("/admin/supply-orders", {
-      lines: cart.value.map((line) => ({
-        supply_id: line.supply_id,
-        quantity: Number(line.quantity),
-      })),
-      note: note || undefined,
-    });
+    const { data } = await api.post("/admin/supply-orders/draft/submit");
     cart.value = [];
-    clearCartStorage();
     orderNote.value = "";
-    clearNoteStorage();
     if (data?.slack_warning) {
       toast.warning(data.slack_warning);
     } else {
       toast.success("Order submitted.");
     }
-    await loadHistory();
+    await Promise.all([loadDraft(), loadHistory()]);
   } catch (e) {
     toast.errorFrom(e, "Could not submit order.");
   } finally {
@@ -527,23 +465,20 @@ function onDocClick(event) {
 
 onMounted(async () => {
   document.addEventListener("click", onDocClick);
-  // Re-load after crmUser is available so the key is user-scoped.
-  cart.value = loadCartFromStorage();
-  orderNote.value = loadNoteFromStorage();
-  cartPersistReady = true;
-  await Promise.all([loadCatalog(), loadHistory()]);
+  await Promise.all([loadCatalog(), loadDraft(), loadHistory()]);
 });
 
 onUnmounted(() => {
   document.removeEventListener("click", onDocClick);
   clearTimeout(historySearchTimer);
+  Object.values(qtyDebounceTimers).forEach(clearTimeout);
 });
 </script>
 
 <template>
   <div class="staff-page staff-page--wide resources-supplies">
-    <!-- Admin order builder + notes -->
-    <section v-if="canManageOrders" class="resources-supplies__panel mb-4">
+    <!-- Shared order builder + notes -->
+    <section v-if="canViewSupplies" class="resources-supplies__panel mb-4">
       <div class="resources-supplies__split">
         <div class="resources-supplies__split-col resources-supplies__split-col--order">
           <div class="mb-3">
@@ -553,7 +488,7 @@ onUnmounted(() => {
             </p>
           </div>
 
-          <div v-if="canViewSupplies" class="resources-supplies__order-tools mb-3">
+          <div class="resources-supplies__order-tools mb-3">
             <div v-if="canSubmitOrder" class="resources-supplies__submit-row">
               <button
                 type="button"
@@ -646,7 +581,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div v-if="catalogLoading" class="py-4">
+          <div v-if="catalogLoading || draftLoading" class="py-4">
             <CrmLoadingSpinner message="Loading catalog…" :center="true" />
           </div>
           <div v-else-if="!cart.length" class="resources-supplies__empty">
@@ -655,7 +590,7 @@ onUnmounted(() => {
           <ul v-else class="list-unstyled mb-0 resources-supplies__cart">
             <li
               v-for="line in cart"
-              :key="line.supply_id"
+              :key="line.id"
               class="resources-supplies__cart-row"
             >
               <div class="resources-supplies__icon" aria-hidden="true">
@@ -681,25 +616,25 @@ onUnmounted(() => {
                 </div>
               </div>
               <div class="resources-supplies__qty">
-                <label class="resources-supplies__qty-label" :for="`qty-${line.supply_id}`">
+                <label class="resources-supplies__qty-label" :for="`qty-${line.id}`">
                   QTY
                 </label>
                 <input
-                  :id="`qty-${line.supply_id}`"
+                  :id="`qty-${line.id}`"
                   v-model.number="line.quantity"
                   type="number"
                   min="1"
                   max="99999999"
                   class="form-control resources-supplies__qty-input"
-                  @change="clampQty(line)"
-                  @blur="clampQty(line)"
+                  @change="onQtyChange(line)"
+                  @blur="onQtyChange(line)"
                 />
               </div>
               <button
                 type="button"
                 class="btn resources-supplies__trash"
                 aria-label="Remove from order"
-                @click="removeFromCart(line.supply_id)"
+                @click="removeFromCart(line.id)"
               >
                 <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
                   <path

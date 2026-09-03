@@ -179,6 +179,224 @@ class SupplyOrderController extends Controller
         return response()->json(['message' => 'History row deleted.']);
     }
 
+    // -------------------------------------------------------
+    //  Shared Draft (team-wide pending cart)
+    // -------------------------------------------------------
+
+    /**
+     * Get (or create) the single shared draft order that the whole team sees.
+     */
+    private function sharedDraft(): SupplyOrder
+    {
+        $draft = SupplyOrder::query()
+            ->whereNull('submitted_at')
+            ->orderBy('id')
+            ->first();
+
+        if ($draft === null) {
+            $draft = SupplyOrder::query()->create([
+                'user_id' => 0,
+                'submitted_at' => null,
+            ]);
+        }
+
+        return $draft;
+    }
+
+    /**
+     * GET /api/admin/supply-orders/draft
+     */
+    public function showDraft(Request $request): JsonResponse
+    {
+        $this->authorize('viewAny', SupplyOrder::class);
+
+        $draft = $this->sharedDraft();
+        $draft->load('lines');
+
+        return response()->json([
+            'id' => $draft->id,
+            'note' => $draft->note,
+            'lines' => $draft->lines->map(function (SupplyOrderLine $line) {
+                return $this->serializeDraftLine($line);
+            })->values()->all(),
+        ]);
+    }
+
+    /**
+     * POST /api/admin/supply-orders/draft/lines
+     */
+    public function addDraftLine(Request $request): JsonResponse
+    {
+        $this->authorize('editDraft', SupplyOrder::class);
+
+        $validated = $request->validate([
+            'supply_id' => ['required', 'integer', 'exists:supplies,id'],
+            'quantity' => ['sometimes', 'integer', 'min:1', 'max:99999999'],
+        ]);
+
+        $draft = $this->sharedDraft();
+        $supply = Supply::query()->find((int) $validated['supply_id']);
+        if ($supply === null) {
+            return response()->json(['message' => 'Supply not found.'], 422);
+        }
+
+        $qty = (int) ($validated['quantity'] ?? 1);
+
+        // If the supply is already in the draft, bump its quantity instead of duplicating.
+        $existing = SupplyOrderLine::query()
+            ->where('supply_order_id', $draft->id)
+            ->where('supply_id', $supply->id)
+            ->first();
+
+        if ($existing !== null) {
+            $existing->quantity = min(99999999, (int) $existing->quantity + $qty);
+            $existing->save();
+        } else {
+            SupplyOrderLine::query()->create([
+                'supply_order_id' => $draft->id,
+                'supply_id' => $supply->id,
+                'name' => $supply->name,
+                'type' => $supply->type,
+                'link' => $supply->link,
+                'quantity' => $qty,
+            ]);
+        }
+
+        // Return the refreshed draft.
+        $draft->load('lines');
+
+        return response()->json([
+            'id' => $draft->id,
+            'note' => $draft->note,
+            'lines' => $draft->lines->map(function (SupplyOrderLine $line) {
+                return $this->serializeDraftLine($line);
+            })->values()->all(),
+        ]);
+    }
+
+    /**
+     * PATCH /api/admin/supply-orders/draft/lines/{supplyOrderLine}
+     */
+    public function updateDraftLine(Request $request, SupplyOrderLine $supplyOrderLine): JsonResponse
+    {
+        $this->authorize('editDraft', SupplyOrder::class);
+
+        $draft = $this->sharedDraft();
+        if ((int) $supplyOrderLine->supply_order_id !== (int) $draft->id) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
+            'quantity' => ['required', 'integer', 'min:1', 'max:99999999'],
+        ]);
+
+        $supplyOrderLine->quantity = (int) $validated['quantity'];
+        $supplyOrderLine->save();
+
+        return response()->json($this->serializeDraftLine($supplyOrderLine));
+    }
+
+    /**
+     * DELETE /api/admin/supply-orders/draft/lines/{supplyOrderLine}
+     */
+    public function removeDraftLine(Request $request, SupplyOrderLine $supplyOrderLine): JsonResponse
+    {
+        $this->authorize('editDraft', SupplyOrder::class);
+
+        $draft = $this->sharedDraft();
+        if ((int) $supplyOrderLine->supply_order_id !== (int) $draft->id) {
+            abort(404);
+        }
+
+        $supplyOrderLine->delete();
+
+        return response()->json(['message' => 'Removed from draft.']);
+    }
+
+    /**
+     * PATCH /api/admin/supply-orders/draft/note
+     */
+    public function updateDraftNote(Request $request): JsonResponse
+    {
+        $this->authorize('editDraft', SupplyOrder::class);
+
+        $validated = $request->validate([
+            'note' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        $draft = $this->sharedDraft();
+        $note = trim((string) ($validated['note'] ?? ''));
+        $draft->note = $note !== '' ? $note : null;
+        $draft->save();
+
+        return response()->json(['note' => $draft->note]);
+    }
+
+    /**
+     * POST /api/admin/supply-orders/draft/submit
+     *
+     * Promotes the shared draft to a submitted order and sends the Slack notification.
+     */
+    public function submitDraft(Request $request, SuppliesOrderedSlackService $slack): JsonResponse
+    {
+        $this->authorize('submitDraft', SupplyOrder::class);
+
+        $draft = $this->sharedDraft();
+        $draft->load('lines');
+
+        if ($draft->lines->isEmpty()) {
+            return response()->json(['message' => 'Add at least one supply to the order.'], 422);
+        }
+
+        /** @var User $user */
+        $user = $request->user();
+        $draft->user_id = $user->id;
+        $draft->submitted_at = now();
+        $draft->save();
+
+        $slackWarning = null;
+        try {
+            $slack->send($draft);
+        } catch (Throwable $e) {
+            report($e);
+            $slackWarning = 'Order saved, but Slack notification failed.';
+        }
+
+        return response()->json([
+            'id' => $draft->id,
+            'submitted_at' => optional($draft->submitted_at)->toIso8601String(),
+            'note' => $draft->note,
+            'lines' => $draft->lines->map(fn (SupplyOrderLine $line) => [
+                'id' => $line->id,
+                'name' => $line->name,
+                'type' => $line->type,
+                'type_label' => Supply::typeLabel($line->type),
+                'quantity' => (int) $line->quantity,
+            ])->values()->all(),
+            'slack_warning' => $slackWarning,
+        ], 201);
+    }
+
+    // -------------------------------------------------------
+    //  Serialization helpers
+    // -------------------------------------------------------
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeDraftLine(SupplyOrderLine $line): array
+    {
+        return [
+            'id' => $line->id,
+            'supply_id' => $line->supply_id,
+            'name' => $line->name,
+            'type' => $line->type,
+            'type_label' => Supply::typeLabel($line->type),
+            'link' => $line->link,
+            'quantity' => (int) $line->quantity,
+        ];
+    }
+
     /**
      * @return array<string, mixed>
      */

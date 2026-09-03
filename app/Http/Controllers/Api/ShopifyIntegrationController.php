@@ -16,11 +16,13 @@ use App\Services\ShopifyOAuthService;
 use App\Services\ShopifyOrderActionService;
 use App\Services\ShopifyOrderListService;
 use App\Services\ShopifyOrderSyncService;
+use App\Services\ShopifyProductCsvService;
 use App\Services\ShopifyProductSyncService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
@@ -1069,6 +1071,97 @@ class ShopifyIntegrationController extends Controller
         });
 
         return response()->json(['data' => $data]);
+    }
+
+    /**
+     * Import Products (CSV) — creates products in Shopify and mirrors them locally.
+     * Parsing happens inline so header problems surface immediately; the Shopify
+     * calls run after the response so the upload returns straight away.
+     */
+    public function importProductsCsv(Request $request, ShopifyProductCsvService $csv): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        $validated = $request->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt', 'max:10240'],
+            'client_account_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $connection = ClientAccountShopifyConnection::query()
+            ->where('client_account_id', (int) $validated['client_account_id'])
+            ->orderBy('id')
+            ->get()
+            ->first(function (ClientAccountShopifyConnection $candidate) {
+                return $candidate->hasCredentials();
+            });
+
+        if ($connection === null) {
+            throw ValidationException::withMessages([
+                'client_account_id' => ['This account has no connected Shopify store.'],
+            ]);
+        }
+
+        $parsed = $csv->parse((string) $validated['file']->getRealPath(), ['name', 'sku']);
+        $rows = $parsed['rows'];
+        $errors = $parsed['errors'];
+
+        if ($rows !== []) {
+            \App\Jobs\ImportShopifyProductsCsvJob::dispatchAfterResponse((int) $connection->id, $rows);
+        }
+
+        return response()->json([
+            'message' => $this->csvUploadMessage(count($rows), count($errors), 'created'),
+            'queued' => count($rows),
+            'skipped' => count($errors),
+            'errors' => array_slice($errors, 0, 25),
+        ], 202);
+    }
+
+    /**
+     * Bulk Edit (CSV) — SKU is the only required column. Blank cells are skipped so
+     * they keep their current value, and every applied change is pushed to Shopify.
+     */
+    public function bulkEditProductsCsv(Request $request, ShopifyProductCsvService $csv): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        $validated = $request->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt', 'max:10240'],
+            'client_account_id' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $parsed = $csv->parse((string) $validated['file']->getRealPath(), ['sku']);
+        $rows = $parsed['rows'];
+        $errors = $parsed['errors'];
+
+        $accountId = isset($validated['client_account_id']) ? (int) $validated['client_account_id'] : 0;
+        if ($rows !== []) {
+            \App\Jobs\BulkEditShopifyProductsCsvJob::dispatchAfterResponse(
+                $accountId > 0 ? $accountId : null,
+                $rows
+            );
+        }
+
+        return response()->json([
+            'message' => $this->csvUploadMessage(count($rows), count($errors), 'updated'),
+            'queued' => count($rows),
+            'skipped' => count($errors),
+            'errors' => array_slice($errors, 0, 25),
+        ], 202);
+    }
+
+    private function csvUploadMessage(int $queued, int $skipped, string $verb): string
+    {
+        if ($queued === 0) {
+            return 'No usable rows found in the CSV.';
+        }
+
+        $message = $queued.' row'.($queued === 1 ? '' : 's').' uploaded. Products are being '.$verb.' in the background.';
+        if ($skipped > 0) {
+            $message .= ' '.$skipped.' row'.($skipped === 1 ? '' : 's').' skipped.';
+        }
+
+        return $message;
     }
 
     public function inventoryIndex(Request $request): JsonResponse

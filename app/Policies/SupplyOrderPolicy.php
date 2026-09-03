@@ -36,4 +36,20 @@ class SupplyOrderPolicy
     {
         return $user->isAdministrator() || $user->isCrmOwner();
     }
+
+    /**
+     * Anyone who can view the supplies page can add to / edit the shared draft.
+     */
+    public function editDraft(User $user): bool
+    {
+        return $this->viewAny($user);
+    }
+
+    /**
+     * Only admins can submit the shared draft.
+     */
+    public function submitDraft(User $user): bool
+    {
+        return $this->create($user);
+    }
 }

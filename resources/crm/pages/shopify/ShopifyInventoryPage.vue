@@ -242,6 +242,13 @@ function openActions(action) {
   if (action === "bulk") bulkOpen.value = true;
 }
 
+// CSV work runs after the response, so refresh once it has had time to land.
+function onCsvQueued() {
+  window.setTimeout(() => {
+    void load();
+  }, 4000);
+}
+
 function onDocClick(e) {
   if (!e.target?.closest?.("[data-shopify-inventory-row-actions]")) {
     manageOpenId.value = null;
@@ -298,7 +305,7 @@ onUnmounted(() => {
         <div class="position-relative" data-sip-actions>
           <button
             type="button"
-            class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+            class="btn btn-outline-primary staff-toolbar-btn d-inline-flex align-items-center gap-2"
             :aria-expanded="actionsMenuOpen"
             @click.stop="actionsMenuOpen = !actionsMenuOpen"
           >
@@ -751,10 +758,16 @@ onUnmounted(() => {
       :accounts="accounts"
       @pushed="load"
     />
-    <ShopifyInventoryImportProductsModal v-model:open="importOpen" />
+    <ShopifyInventoryImportProductsModal
+      v-model:open="importOpen"
+      :accounts="accounts"
+      :client-account-id="accountId"
+      @queued="onCsvQueued"
+    />
     <ShopifyInventoryBulkEditModal
       v-model:open="bulkOpen"
-      :selected-ids="selectedIds"
+      :client-account-id="accountId"
+      @queued="onCsvQueued"
     />
     <ShopifyInventoryAddProductModal v-model:open="addOpen" />
   </div>

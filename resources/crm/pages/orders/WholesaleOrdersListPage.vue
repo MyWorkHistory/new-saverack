@@ -134,9 +134,19 @@ async function loadList() {
   }
 }
 
+function orderDetailHref(row) {
+  if (!row?.id) return "";
+  return router.resolve({
+    name: detailRouteName.value,
+    params: { id: String(row.id) },
+  }).href;
+}
+
 function openRow(row) {
-  if (!row?.id) return;
-  router.push({ name: detailRouteName.value, params: { id: String(row.id) } });
+  const href = orderDetailHref(row);
+  if (!href) return;
+  manageOpenId.value = null;
+  window.open(href, "_blank", "noopener,noreferrer");
 }
 
 function placeManageMenu(btn) {

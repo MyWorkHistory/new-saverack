@@ -165,6 +165,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('admin/supplies', [SupplyController::class, 'index']);
     Route::get('admin/supply-orders', [SupplyOrderController::class, 'index']);
     Route::post('admin/supply-orders', [SupplyOrderController::class, 'store']);
+    Route::get('admin/supply-orders/draft', [SupplyOrderController::class, 'showDraft']);
+    Route::post('admin/supply-orders/draft/lines', [SupplyOrderController::class, 'addDraftLine']);
+    Route::patch('admin/supply-orders/draft/lines/{supplyOrderLine}', [SupplyOrderController::class, 'updateDraftLine']);
+    Route::delete('admin/supply-orders/draft/lines/{supplyOrderLine}', [SupplyOrderController::class, 'removeDraftLine']);
+    Route::patch('admin/supply-orders/draft/note', [SupplyOrderController::class, 'updateDraftNote']);
+    Route::post('admin/supply-orders/draft/submit', [SupplyOrderController::class, 'submitDraft']);
     Route::patch('admin/supply-order-lines/{supplyOrderLine}', [SupplyOrderController::class, 'updateLine']);
     Route::delete('admin/supply-order-lines/{supplyOrderLine}', [SupplyOrderController::class, 'destroyLine']);
 
@@ -725,6 +731,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/orders/{shopifyOrder}/fulfill', [ShopifyIntegrationController::class, 'fulfillOrder']);
         Route::get('/inventory', [ShopifyIntegrationController::class, 'inventoryIndex']);
         Route::get('/inventory/accounts', [ShopifyIntegrationController::class, 'inventoryAccounts']);
+        Route::post('/inventory/import', [ShopifyIntegrationController::class, 'importProductsCsv']);
+        Route::post('/inventory/bulk-edit', [ShopifyIntegrationController::class, 'bulkEditProductsCsv']);
         Route::get('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'inventoryShow']);
         Route::patch('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'updateVariant']);
         Route::patch('/inventory/{shopifyVariant}/settings', [ShopifyIntegrationController::class, 'updateProductSettings']);

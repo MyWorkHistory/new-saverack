@@ -1,22 +1,17 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('supply_orders', function (Blueprint $table) {
-            $table->timestamp('submitted_at')->nullable()->change();
-        });
+        DB::statement('ALTER TABLE supply_orders MODIFY submitted_at TIMESTAMP NULL DEFAULT NULL');
     }
 
     public function down(): void
     {
-        Schema::table('supply_orders', function (Blueprint $table) {
-            $table->timestamp('submitted_at')->nullable(false)->change();
-        });
+        DB::statement('ALTER TABLE supply_orders MODIFY submitted_at TIMESTAMP NOT NULL');
     }
 };

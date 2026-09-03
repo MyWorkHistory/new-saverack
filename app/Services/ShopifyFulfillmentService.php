@@ -32,7 +32,7 @@ class ShopifyFulfillmentService
         ShopifyOrder $order,
         array $items,
         string $trackingCompany = 'UPS',
-        string $trackingNumber = 'TEST123456789',
+        string $trackingNumber = '',
         ?User $actor = null
     ): array {
         $connection = $order->connection;
@@ -40,8 +40,11 @@ class ShopifyFulfillmentService
             throw new RuntimeException('Shopify connection credentials missing.');
         }
 
-        $trackingCompany = trim($trackingCompany) !== '' ? trim($trackingCompany) : 'UPS';
-        $trackingNumber = trim($trackingNumber) !== '' ? trim($trackingNumber) : 'TEST123456789';
+        $trackingCompany = trim($trackingCompany);
+        $trackingNumber = trim($trackingNumber);
+        if ($trackingCompany === '' && $trackingNumber !== '') {
+            $trackingCompany = 'UPS';
+        }
 
         $byFo = [];
         foreach ($items as $item) {
@@ -86,6 +89,17 @@ class ShopifyFulfillmentService
             ];
         }
 
+        $fulfillmentInput = [
+            'lineItemsByFulfillmentOrder' => $lineItemsByFo,
+            'notifyCustomer' => false,
+        ];
+        if ($trackingNumber !== '') {
+            $fulfillmentInput['trackingInfo'] = [
+                'company' => $trackingCompany !== '' ? $trackingCompany : 'UPS',
+                'number' => $trackingNumber,
+            ];
+        }
+
         $api = $this->client->forConnection($connection);
         $data = $api->graphql(
             <<<'GQL'
@@ -102,14 +116,7 @@ mutation fulfillmentCreate($fulfillment: FulfillmentInput!) {
 GQL
             ,
             [
-                'fulfillment' => [
-                    'lineItemsByFulfillmentOrder' => $lineItemsByFo,
-                    'trackingInfo' => [
-                        'company' => $trackingCompany,
-                        'number' => $trackingNumber,
-                    ],
-                    'notifyCustomer' => false,
-                ],
+                'fulfillment' => $fulfillmentInput,
             ]
         );
 

@@ -2,13 +2,19 @@
 
 namespace App\Services;
 
+use App\Models\ShopifyInventoryLevel;
+use App\Models\ShopifyLocation;
 use App\Models\ShopifyOrder;
+use App\Models\ShopifyOrderLineItem;
+use App\Models\ShopifyProductVariant;
 use App\Models\User;
 use App\Support\ShopifyGid;
 use RuntimeException;
 
 class ShopifyOrderActionService
 {
+    public const SHIPPED_STATUS_LOCK_MESSAGE = 'Cannot change shipped order status.';
+
     /** @var ShopifyClient */
     private $client;
 
@@ -18,14 +24,31 @@ class ShopifyOrderActionService
     /** @var ShopifyFulfillmentService */
     private $fulfillments;
 
+    /** @var ShopifyOrderListService */
+    private $list;
+
+    /** @var ShopifyProductSyncService */
+    private $products;
+
     public function __construct(
         ShopifyClient $client,
         ShopifyOrderSyncService $sync,
-        ShopifyFulfillmentService $fulfillments
+        ShopifyFulfillmentService $fulfillments,
+        ShopifyOrderListService $list,
+        ShopifyProductSyncService $products
     ) {
         $this->client = $client;
         $this->sync = $sync;
         $this->fulfillments = $fulfillments;
+        $this->list = $list;
+        $this->products = $products;
+    }
+
+    public function assertNotShipped(ShopifyOrder $order): void
+    {
+        if ($this->list->isFulfilled($order)) {
+            throw new RuntimeException(self::SHIPPED_STATUS_LOCK_MESSAGE);
+        }
     }
 
     public function syncOrder(ShopifyOrder $order): ShopifyOrder
@@ -48,6 +71,8 @@ class ShopifyOrderActionService
      */
     public function holdOrder(ShopifyOrder $order, array $reasons): ShopifyOrder
     {
+        $this->assertNotShipped($order);
+
         $reasons = array_values(array_filter(array_map('trim', $reasons)));
         if ($reasons === []) {
             throw new RuntimeException('Select at least one hold reason.');
@@ -64,22 +89,26 @@ class ShopifyOrderActionService
         }
 
         $order->crm_hold_reasons = $reasons;
+        $order->crm_fulfillment_cancelled_at = null;
         $order->save();
 
         return $order->fresh(['connection.clientAccount', 'lineItems']);
     }
 
-    public function cancelOrder(ShopifyOrder $order): ShopifyOrder
+    public function cancelOrder(ShopifyOrder $order, bool $cancelInShopify = false): ShopifyOrder
     {
-        $connection = $order->connection;
-        if ($connection === null || ! $connection->hasCredentials()) {
-            throw new RuntimeException('Shopify connection credentials missing.');
-        }
+        $this->assertNotShipped($order);
 
-        $gid = ShopifyGid::of('Order', (string) $order->shopify_order_id);
-        $api = $this->client->forConnection($connection);
-        $data = $api->graphql(
-            <<<'GQL'
+        if ($cancelInShopify) {
+            $connection = $order->connection;
+            if ($connection === null || ! $connection->hasCredentials()) {
+                throw new RuntimeException('Shopify connection credentials missing.');
+            }
+
+            $gid = ShopifyGid::of('Order', (string) $order->shopify_order_id);
+            $api = $this->client->forConnection($connection);
+            $data = $api->graphql(
+                <<<'GQL'
 mutation orderCancel($orderId: ID!, $reason: OrderCancelReason!, $notifyCustomer: Boolean, $refund: Boolean, $restock: Boolean) {
   orderCancel(orderId: $orderId, reason: $reason, notifyCustomer: $notifyCustomer, refund: $refund, restock: $restock) {
     order { id cancelledAt }
@@ -87,36 +116,76 @@ mutation orderCancel($orderId: ID!, $reason: OrderCancelReason!, $notifyCustomer
   }
 }
 GQL
-            ,
-            [
-                'orderId' => $gid,
-                'reason' => 'OTHER',
-                'notifyCustomer' => false,
-                'refund' => false,
-                'restock' => true,
-            ]
-        );
+                ,
+                [
+                    'orderId' => $gid,
+                    'reason' => 'OTHER',
+                    'notifyCustomer' => false,
+                    'refund' => false,
+                    'restock' => true,
+                ]
+            );
 
-        $payload = is_array($data['orderCancel'] ?? null) ? $data['orderCancel'] : [];
-        $errors = is_array($payload['userErrors'] ?? null) ? $payload['userErrors'] : [];
-        if ($errors !== []) {
-            throw new RuntimeException((string) ($errors[0]['message'] ?? 'Order cancel failed.'));
+            $payload = is_array($data['orderCancel'] ?? null) ? $data['orderCancel'] : [];
+            $errors = is_array($payload['userErrors'] ?? null) ? $payload['userErrors'] : [];
+            if ($errors !== []) {
+                throw new RuntimeException((string) ($errors[0]['message'] ?? 'Order cancel failed.'));
+            }
+
+            $refreshed = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
+            if ($refreshed === null) {
+                throw new RuntimeException('Order cancelled in Shopify but local sync failed.');
+            }
+
+            $refreshed->crm_fulfillment_cancelled_at = now();
+            $refreshed->save();
+
+            return $refreshed->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
         }
 
-        $refreshed = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
-        if ($refreshed === null) {
-            throw new RuntimeException('Order cancelled in Shopify but local sync failed.');
-        }
-
-        return $refreshed->fresh(['connection.clientAccount', 'lineItems']);
+        return $this->cancelFulfillmentInCrm($order);
     }
 
     /**
-     * @return array{fulfillment:\App\Models\ShopifyFulfillment, order:ShopifyOrder}
+     * Cancel 3PL fulfillment for all items in CRM only (does not call Shopify).
      */
-    public function fulfillAllRemaining(ShopifyOrder $order, ?User $actor = null): array
+    public function cancelFulfillmentInCrm(ShopifyOrder $order): ShopifyOrder
     {
-        $order->loadMissing('fulfillmentOrders.lineItems');
+        $this->assertNotShipped($order);
+
+        $order->loadMissing(['lineItems', 'fulfillmentOrders.lineItems']);
+
+        foreach ($order->fulfillmentOrders as $fo) {
+            foreach ($fo->lineItems as $line) {
+                $line->remaining_quantity = 0;
+                $line->save();
+            }
+        }
+        foreach ($order->lineItems as $lineItem) {
+            $lineItem->fulfillable_quantity = 0;
+            $lineItem->save();
+        }
+
+        $order->crm_fulfillment_cancelled_at = now();
+        $order->crm_hold_reasons = [];
+        $order->save();
+
+        return $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
+    }
+
+    /**
+     * @param  list<int>|null  $deductLineItemIds  Order line item IDs to deduct inventory for (null = all remaining)
+     * @return array{fulfillment:\App\Models\ShopifyFulfillment|null, order:ShopifyOrder}
+     */
+    public function fulfillAllRemaining(
+        ShopifyOrder $order,
+        ?User $actor = null,
+        ?string $trackingNumber = null,
+        ?array $deductLineItemIds = null
+    ): array {
+        $this->assertNotShipped($order);
+
+        $order->loadMissing(['lineItems', 'fulfillmentOrders.lineItems', 'connection']);
 
         $items = [];
         foreach ($order->fulfillmentOrders as $fo) {
@@ -136,7 +205,231 @@ GQL
             throw new RuntimeException('No fulfillable quantities remain on this order.');
         }
 
-        return $this->fulfillments->markShipped($order, $items, 'UPS', 'TEST123456789', $actor);
+        $tracking = trim((string) ($trackingNumber ?? ''));
+        $result = $this->fulfillments->markShipped(
+            $order,
+            $items,
+            'UPS',
+            $tracking,
+            $actor
+        );
+
+        $orderFresh = $result['order'];
+        $orderFresh->crm_fulfillment_cancelled_at = null;
+        $orderFresh->crm_hold_reasons = [];
+        $orderFresh->save();
+
+        $this->deductInventoryForOrder($orderFresh, $deductLineItemIds);
+
+        return [
+            'fulfillment' => $result['fulfillment'],
+            'order' => $orderFresh->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']),
+        ];
+    }
+
+    /**
+     * Re-ship selected order line items: keep order #, mark those lines pending, leave Fulfilled.
+     *
+     * @param  list<int>  $lineItemIds
+     */
+    public function reshipOrder(ShopifyOrder $order, array $lineItemIds): ShopifyOrder
+    {
+        if (! $this->list->isFulfilled($order)) {
+            throw new RuntimeException('Re-Ship is only available for fulfilled orders.');
+        }
+
+        $lineItemIds = array_values(array_unique(array_filter(array_map('intval', $lineItemIds))));
+        if ($lineItemIds === []) {
+            throw new RuntimeException('Select at least one item to re-ship.');
+        }
+
+        $order->loadMissing(['lineItems', 'fulfillmentOrders.lineItems']);
+        $selected = $order->lineItems->whereIn('id', $lineItemIds);
+        if ($selected->isEmpty()) {
+            throw new RuntimeException('No matching line items found.');
+        }
+
+        foreach ($selected as $lineItem) {
+            /** @var ShopifyOrderLineItem $lineItem */
+            $qty = max(1, (int) $lineItem->quantity);
+            $lineItem->fulfilled_quantity = 0;
+            $lineItem->fulfillable_quantity = $qty;
+            $lineItem->save();
+
+            foreach ($order->fulfillmentOrders as $fo) {
+                foreach ($fo->lineItems as $foLine) {
+                    $matchesLocal = (int) ($foLine->shopify_order_line_item_id ?? 0) === (int) $lineItem->id;
+                    $matchesShopify = trim((string) ($foLine->shopify_line_item_id ?? '')) !== ''
+                        && trim((string) $foLine->shopify_line_item_id) === trim((string) ($lineItem->shopify_line_item_id ?? ''));
+                    $raw = is_array($foLine->raw_json) ? $foLine->raw_json : [];
+                    $matchSku = trim((string) ($raw['sku'] ?? '')) !== ''
+                        && trim((string) ($raw['sku'] ?? '')) === trim((string) ($lineItem->sku ?? ''));
+                    if ($matchesLocal || $matchesShopify || $matchSku) {
+                        $foLine->remaining_quantity = $qty;
+                        $foLine->save();
+                    }
+                }
+            }
+        }
+
+        $order->fulfillment_status = 'unfulfilled';
+        $order->crm_fulfillment_cancelled_at = null;
+        $order->crm_hold_reasons = [];
+        $order->save();
+
+        return $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
+    }
+
+    public function reprocessOrder(ShopifyOrder $order): ShopifyOrder
+    {
+        $this->assertNotShipped($order);
+
+        $order->crm_hold_reasons = [];
+        $order->crm_fulfillment_cancelled_at = null;
+        $order->save();
+
+        $connection = $order->connection;
+        if ($connection !== null && $connection->hasCredentials()) {
+            $refreshed = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
+            if ($refreshed !== null) {
+                $refreshed->crm_hold_reasons = [];
+                $refreshed->crm_fulfillment_cancelled_at = null;
+                $refreshed->save();
+
+                return $refreshed->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
+            }
+        }
+
+        return $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
+    }
+
+    /**
+     * Apply a CRM display-status change (not Fulfilled — that uses fulfill flow).
+     *
+     * @param  list<string>  $holdReasons
+     */
+    public function applyDisplayStatus(ShopifyOrder $order, string $status, array $holdReasons = []): ShopifyOrder
+    {
+        $status = strtolower(trim($status));
+        if ($status === 'shipped') {
+            $status = ShopifyOrderListService::DISPLAY_FULFILLED;
+        }
+
+        if ($this->list->isFulfilled($order)) {
+            throw new RuntimeException(self::SHIPPED_STATUS_LOCK_MESSAGE);
+        }
+
+        if ($status === ShopifyOrderListService::DISPLAY_FULFILLED) {
+            throw new RuntimeException('Use Mark Fulfilled to set Fulfilled status.');
+        }
+
+        if ($status === ShopifyOrderListService::DISPLAY_ON_HOLD) {
+            return $this->holdOrder($order, $holdReasons);
+        }
+
+        $this->assertNotShipped($order);
+
+        if ($status === ShopifyOrderListService::DISPLAY_READY) {
+            $order->crm_hold_reasons = [];
+            $order->crm_fulfillment_cancelled_at = null;
+            $raw = is_array($order->raw_json) ? $order->raw_json : [];
+            unset($raw['crm_display_hint']);
+            $order->raw_json = $raw;
+            $order->save();
+
+            return $order->fresh(['connection.clientAccount', 'lineItems']);
+        }
+
+        if ($status === ShopifyOrderListService::DISPLAY_BACKORDER) {
+            $order->crm_hold_reasons = [];
+            $order->crm_fulfillment_cancelled_at = null;
+            $raw = is_array($order->raw_json) ? $order->raw_json : [];
+            $raw['crm_display_hint'] = 'backorder';
+            $order->raw_json = $raw;
+            $order->save();
+
+            return $order->fresh(['connection.clientAccount', 'lineItems']);
+        }
+
+        throw new RuntimeException('Unsupported status.');
+    }
+
+    /**
+     * @param  list<int>|null  $deductLineItemIds
+     */
+    private function deductInventoryForOrder(ShopifyOrder $order, ?array $deductLineItemIds): void
+    {
+        $order->loadMissing(['lineItems', 'connection']);
+        $connection = $order->connection;
+        if ($connection === null) {
+            return;
+        }
+
+        $lines = $order->lineItems;
+        if ($deductLineItemIds !== null) {
+            $ids = array_map('intval', $deductLineItemIds);
+            $lines = $lines->whereIn('id', $ids);
+        }
+
+        foreach ($lines as $lineItem) {
+            $sku = trim((string) ($lineItem->sku ?? ''));
+            $qty = max(0, (int) $lineItem->quantity);
+            if ($sku === '' || $qty <= 0) {
+                continue;
+            }
+
+            $variant = ShopifyProductVariant::query()
+                ->with('connection')
+                ->where('connection_id', $connection->id)
+                ->where('sku', $sku)
+                ->first();
+            if ($variant === null) {
+                continue;
+            }
+
+            $itemId = trim((string) ($variant->shopify_inventory_item_id ?? ''));
+            if ($itemId === '') {
+                continue;
+            }
+
+            $enabledLocations = ShopifyLocation::query()
+                ->where('connection_id', $connection->id)
+                ->where('sync_inventory', true)
+                ->pluck('shopify_location_id')
+                ->map(static function ($id) {
+                    return (string) $id;
+                })
+                ->all();
+
+            $levels = ShopifyInventoryLevel::query()
+                ->where('connection_id', $connection->id)
+                ->where('shopify_inventory_item_id', $itemId)
+                ->get();
+
+            $pushLevels = [];
+            foreach ($levels as $level) {
+                $locId = (string) $level->shopify_location_id;
+                if ($enabledLocations !== [] && ! in_array($locId, $enabledLocations, true)) {
+                    continue;
+                }
+                $available = max(0, (int) $level->available - $qty);
+                $level->available = $available;
+                $level->crm_set_at = now();
+                $level->save();
+                $pushLevels[] = [
+                    'location_id' => $locId,
+                    'available' => $available,
+                ];
+            }
+
+            if ($pushLevels !== []) {
+                try {
+                    $this->products->pushInventoryToShopify($variant, $pushLevels);
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
+        }
     }
 
     /**

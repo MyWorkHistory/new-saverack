@@ -109,7 +109,8 @@ class ShopifyOrderActionsApiTest extends TestCase
 
         $this->getJson('/api/shopify/orders?status=shipped')
             ->assertOk()
-            ->assertJsonPath('data.0.id', $shipped->id);
+            ->assertJsonPath('data.0.id', $shipped->id)
+            ->assertJsonPath('data.0.display_status', 'fulfilled');
     }
 
     public function test_orders_export_returns_csv_headers(): void
@@ -178,6 +179,141 @@ class ShopifyOrderActionsApiTest extends TestCase
                 'statuses',
                 'hold_reasons',
                 'accounts',
-            ]);
+            ])
+            ->assertJsonFragment(['value' => 'fulfilled', 'label' => 'Fulfilled']);
+    }
+
+    public function test_fulfilled_order_cannot_be_held(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder(['fulfillment_status' => 'fulfilled']);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/hold', [
+            'reasons' => ['Admin Hold'],
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Cannot change shipped order status.');
+    }
+
+    public function test_bulk_hold_rejects_fulfilled_orders(): void
+    {
+        $this->actingAsAdmin();
+        [, , $ready] = $this->seedOrder(['name' => '#ready']);
+        [, , $fulfilled] = $this->seedOrder([
+            'name' => '#done',
+            'shopify_order_id' => '5002',
+            'fulfillment_status' => 'fulfilled',
+        ]);
+
+        $mock = Mockery::mock(ShopifyOrderActionService::class);
+        $mock->shouldReceive('holdOrder')
+            ->andReturnUsing(function (ShopifyOrder $o, array $reasons) {
+                if (strtolower((string) $o->fulfillment_status) === 'fulfilled') {
+                    throw new \RuntimeException('Cannot change shipped order status.');
+                }
+                $o->crm_hold_reasons = $reasons;
+                $o->save();
+
+                return $o->fresh(['connection.clientAccount']);
+            });
+        $this->app->instance(ShopifyOrderActionService::class, $mock);
+
+        $this->postJson('/api/shopify/orders/bulk/hold', [
+            'ids' => [$ready->id, $fulfilled->id],
+            'reasons' => ['Admin Hold'],
+        ])
+            ->assertOk()
+            ->assertJsonPath('updated.0.id', $ready->id)
+            ->assertJsonPath('errors.0.id', $fulfilled->id)
+            ->assertJsonPath('errors.0.message', 'Cannot change shipped order status.');
+    }
+
+    public function test_crm_only_cancel_does_not_call_shopify_cancel(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder();
+
+        $mock = Mockery::mock(ShopifyOrderActionService::class);
+        $mock->shouldReceive('cancelOrder')
+            ->once()
+            ->with(Mockery::on(fn ($o) => (int) $o->id === (int) $order->id), false)
+            ->andReturnUsing(function (ShopifyOrder $o) {
+                $o->crm_fulfillment_cancelled_at = now();
+                $o->save();
+
+                return $o->fresh(['connection.clientAccount']);
+            });
+        $this->app->instance(ShopifyOrderActionService::class, $mock);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/cancel', [
+            'cancel_in_shopify' => false,
+        ])->assertOk();
+
+        $order->refresh();
+        $this->assertNotNull($order->crm_fulfillment_cancelled_at);
+    }
+
+    public function test_export_uses_blank_cells_and_us_date(): void
+    {
+        $this->actingAsAdmin();
+        $this->seedOrder([
+            'name' => '#1001',
+            'fulfillment_status' => 'fulfilled',
+            'shopify_created_at' => '2026-08-18 15:20:18',
+            'shipping_address_json' => [],
+            'customer_json' => [],
+            'email' => null,
+            'raw_json' => [],
+        ]);
+
+        $csv = $this->get('/api/shopify/orders/export')->streamedContent();
+        $this->assertStringContainsString('Fulfilled', $csv);
+        $this->assertStringContainsString('1001', $csv);
+        $this->assertStringNotContainsString('#1001', $csv);
+        $this->assertStringContainsString('08-18-2026', $csv);
+        $this->assertStringNotContainsString('—', $csv);
+    }
+
+    public function test_reprocess_rejected_for_fulfilled_order(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder(['fulfillment_status' => 'fulfilled']);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/reprocess')
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Cannot change shipped order status.');
+    }
+
+    public function test_reship_rejected_when_not_fulfilled(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder();
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/reship', [
+            'line_item_ids' => [1],
+        ])
+            ->assertStatus(422);
+    }
+
+    public function test_fulfill_all_rejected_for_already_fulfilled_order(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder(['fulfillment_status' => 'fulfilled']);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/fulfill-all')
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Cannot change shipped order status.');
+    }
+
+    public function test_display_status_ready_clears_hold(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder(['crm_hold_reasons' => ['Admin Hold']]);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/display-status', [
+            'status' => 'ready_to_ship',
+        ])
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'ready_to_ship');
     }
 }

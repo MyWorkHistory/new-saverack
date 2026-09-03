@@ -6,10 +6,16 @@ import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import ShopifyOrderCancelConfirmModal from "../../components/shopify/ShopifyOrderCancelConfirmModal.vue";
+import ShopifyOrderFulfillModal from "../../components/shopify/ShopifyOrderFulfillModal.vue";
 import ShopifyOrderHoldModal from "../../components/shopify/ShopifyOrderHoldModal.vue";
+import ShopifyOrderReprocessModal from "../../components/shopify/ShopifyOrderReprocessModal.vue";
+import ShopifyOrderReshipModal from "../../components/shopify/ShopifyOrderReshipModal.vue";
+import ShopifyOrderStatusPickerModal from "../../components/shopify/ShopifyOrderStatusPickerModal.vue";
 import {
   displayStatusClass,
   displayStatusLabel,
+  formatShopifyOrderName,
+  isFulfilledStatus,
   useShopifyOrderActions,
 } from "../../composables/useShopifyOrderActions.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -45,6 +51,7 @@ const draftFilters = reactive({
   country: "",
   created_from: "",
   created_to: "",
+  date_preset: "",
 });
 const filterMenuOpen = ref(false);
 const bulkMenuOpen = ref(false);
@@ -54,7 +61,13 @@ const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
 const holdModalOpen = ref(false);
 const cancelModalOpen = ref(false);
+const fulfillModalOpen = ref(false);
+const reshipModalOpen = ref(false);
+const reprocessModalOpen = ref(false);
+const statusPickerOpen = ref(false);
 const actionTargetIds = ref([]);
+const actionOrder = ref(null);
+const actionLineItems = ref([]);
 
 let searchTimer = null;
 
@@ -85,14 +98,12 @@ const countryOptions = computed(() => [
 const holdTargetCount = computed(() => actionTargetIds.value.length || 1);
 const cancelTargetCount = computed(() => actionTargetIds.value.length || 1);
 
-const dateRangeLabel = computed(() => {
-  const from = draftFilters.created_from;
-  const to = draftFilters.created_to;
-  if (from && to) return `${formatShortDate(from)} – ${formatShortDate(to)}`;
-  if (from) return `From ${formatShortDate(from)}`;
-  if (to) return `Until ${formatShortDate(to)}`;
-  return "";
-});
+const DATE_PRESETS = [
+  { value: "today", label: "Today" },
+  { value: "last_7", label: "Last 7 Days" },
+  { value: "last_30", label: "Last 30 Days" },
+  { value: "custom", label: "Custom" },
+];
 
 const hasActiveFilters = computed(
   () =>
@@ -103,11 +114,46 @@ const hasActiveFilters = computed(
     || Boolean(filters.created_to),
 );
 
-function formatShortDate(isoDate) {
-  if (!isoDate) return "";
-  const d = new Date(`${isoDate}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return isoDate;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+function isoDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function applyDatePreset(preset) {
+  draftFilters.date_preset = preset;
+  if (!preset) {
+    draftFilters.created_from = "";
+    draftFilters.created_to = "";
+    return;
+  }
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  if (preset === "today") {
+    const v = isoDate(today);
+    draftFilters.created_from = v;
+    draftFilters.created_to = v;
+    return;
+  }
+  if (preset === "last_7") {
+    const from = new Date(today);
+    from.setDate(from.getDate() - 6);
+    draftFilters.created_from = isoDate(from);
+    draftFilters.created_to = isoDate(today);
+    return;
+  }
+  if (preset === "last_30") {
+    const from = new Date(today);
+    from.setDate(from.getDate() - 29);
+    draftFilters.created_from = isoDate(from);
+    draftFilters.created_to = isoDate(today);
+    return;
+  }
+}
+
+function onCustomDateChange() {
+  draftFilters.date_preset = "custom";
 }
 
 function stubCreateOrder() {
@@ -195,7 +241,23 @@ function openFilters() {
   draftFilters.country = filters.country;
   draftFilters.created_from = filters.created_from;
   draftFilters.created_to = filters.created_to;
+  draftFilters.date_preset = inferDatePreset(filters.created_from, filters.created_to);
   filterMenuOpen.value = !filterMenuOpen.value;
+}
+
+function inferDatePreset(from, to) {
+  if (!from && !to) return "";
+  const today = isoDate(new Date());
+  if (from === today && to === today) return "today";
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  const last7 = new Date(d);
+  last7.setDate(last7.getDate() - 6);
+  if (from === isoDate(last7) && to === today) return "last_7";
+  const last30 = new Date(d);
+  last30.setDate(last30.getDate() - 29);
+  if (from === isoDate(last30) && to === today) return "last_30";
+  return "custom";
 }
 
 function applyFilters() {
@@ -215,6 +277,7 @@ function clearFilters() {
   draftFilters.country = "";
   draftFilters.created_from = "";
   draftFilters.created_to = "";
+  draftFilters.date_preset = "";
 }
 
 function resetAll() {
@@ -319,6 +382,12 @@ async function exportCsv(selectedOnly = false) {
   }
 }
 
+async function loadActionOrder(id) {
+  const { data } = await api.get(`/shopify/orders/${id}`);
+  actionOrder.value = data?.order || null;
+  actionLineItems.value = Array.isArray(data?.order?.line_items) ? data.order.line_items : [];
+}
+
 function openHoldModal(ids) {
   actionTargetIds.value = [...ids];
   holdModalOpen.value = true;
@@ -333,6 +402,76 @@ function openCancelModal(ids) {
   bulkMenuOpen.value = false;
 }
 
+async function openFulfillModal(ids) {
+  actionTargetIds.value = [...ids];
+  manageOpenId.value = null;
+  bulkMenuOpen.value = false;
+  if (ids.length === 1) {
+    try {
+      await loadActionOrder(ids[0]);
+    } catch (e) {
+      toast.errorFrom(e, "Could not load order items.");
+      return;
+    }
+  } else {
+    actionOrder.value = null;
+    actionLineItems.value = [];
+  }
+  fulfillModalOpen.value = true;
+}
+
+function openBulkReship() {
+  const selected = rows.value.filter((r) => selectedIds.value.includes(r.id));
+  const fulfilled = selected.filter((r) => isFulfilledStatus(r.display_status));
+  if (fulfilled.length !== 1) {
+    toast.error("Select one fulfilled order to re-ship.");
+    bulkMenuOpen.value = false;
+    return;
+  }
+  void openReshipModal(fulfilled[0]);
+}
+
+async function openReshipModal(row) {
+  if (!isFulfilledStatus(row?.display_status)) {
+    toast.error("Re-Ship is only available for fulfilled orders.");
+    return;
+  }
+  manageOpenId.value = null;
+  bulkMenuOpen.value = false;
+  actionTargetIds.value = [row.id];
+  try {
+    await loadActionOrder(row.id);
+  } catch (e) {
+    toast.errorFrom(e, "Could not load order items.");
+    return;
+  }
+  reshipModalOpen.value = true;
+}
+
+function openReprocessModal(ids) {
+  const targets = rows.value.filter((r) => ids.includes(r.id));
+  const eligible = targets.filter((r) => !isFulfilledStatus(r.display_status));
+  if (eligible.length !== targets.length) {
+    toast.error("Cannot change shipped order status.");
+  }
+  if (!eligible.length) {
+    manageOpenId.value = null;
+    bulkMenuOpen.value = false;
+    return;
+  }
+  actionTargetIds.value = eligible.map((r) => r.id);
+  actionOrder.value = eligible[0] || null;
+  reprocessModalOpen.value = true;
+  manageOpenId.value = null;
+  bulkMenuOpen.value = false;
+}
+
+function openStatusPicker(row) {
+  actionTargetIds.value = [row.id];
+  actionOrder.value = row;
+  statusPickerOpen.value = true;
+}
+
 async function confirmHold(reasons) {
   const ids = actionTargetIds.value.length ? actionTargetIds.value : [];
   if (!ids.length) return;
@@ -345,14 +484,68 @@ async function confirmHold(reasons) {
   }
 }
 
-async function confirmCancel() {
+async function confirmCancel({ cancelInShopify } = {}) {
   const ids = actionTargetIds.value.length ? actionTargetIds.value : [];
   if (!ids.length) return;
-  const result = await actions.cancelOrder(ids);
+  const result = await actions.cancelOrder(ids, Boolean(cancelInShopify));
   if (result) {
     cancelModalOpen.value = false;
     actionTargetIds.value = [];
     selectedIds.value = selectedIds.value.filter((id) => !ids.includes(id));
+    void load();
+  }
+}
+
+async function confirmFulfill({ trackingNumber, deductLineIds } = {}) {
+  const ids = actionTargetIds.value;
+  if (!ids.length) return;
+  const result = await actions.fulfillOrder(ids, {
+    trackingNumber,
+    deductLineIds: ids.length === 1 ? deductLineIds : null,
+  });
+  if (result) {
+    fulfillModalOpen.value = false;
+    actionTargetIds.value = [];
+    void load();
+  }
+}
+
+async function confirmReship(lineItemIds) {
+  const id = actionTargetIds.value[0];
+  if (!id) return;
+  const result = await actions.reshipOrder(id, lineItemIds);
+  if (result) {
+    reshipModalOpen.value = false;
+    void load();
+  }
+}
+
+async function confirmReprocess() {
+  const ids = actionTargetIds.value;
+  if (!ids.length) return;
+  const result = await actions.reprocessOrder(ids);
+  if (result) {
+    reprocessModalOpen.value = false;
+    void load();
+  }
+}
+
+async function onStatusPicked(status) {
+  const ids = actionTargetIds.value;
+  if (!ids.length) return;
+  if (status === "on_hold") {
+    statusPickerOpen.value = false;
+    openHoldModal(ids);
+    return;
+  }
+  if (status === "fulfilled") {
+    statusPickerOpen.value = false;
+    await openFulfillModal(ids);
+    return;
+  }
+  const result = await actions.applyDisplayStatus(ids, status);
+  if (result) {
+    statusPickerOpen.value = false;
     void load();
   }
 }
@@ -412,7 +605,7 @@ onUnmounted(() => {
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100 orders-page-toolbar">
       <div class="staff-table-toolbar">
         <div class="staff-table-toolbar--row orders-toolbar-row shopify-orders-toolbar-row">
-          <div class="orders-search-wrap shopify-orders-search-wrap flex-shrink-0">
+          <div class="orders-search-wrap shopify-orders-search-wrap">
             <div class="shopify-orders-search-field">
               <svg
                 class="shopify-orders-search-field__icon"
@@ -493,39 +686,27 @@ onUnmounted(() => {
               @click.stop
             >
               <div class="staff-toolbar-filter-dropdown__body">
-                <label class="form-label" for="shopify-orders-filter-date">Order Date</label>
+                <label class="form-label" for="shopify-orders-filter-date-preset">Order Date</label>
+                <select
+                  id="shopify-orders-filter-date-preset"
+                  v-model="draftFilters.date_preset"
+                  class="form-select staff-datatable-filters__select mb-2"
+                  @change="applyDatePreset(draftFilters.date_preset)"
+                >
+                  <option value="">Select date range</option>
+                  <option v-for="p in DATE_PRESETS" :key="p.value" :value="p.value">
+                    {{ p.label }}
+                  </option>
+                </select>
                 <div class="shopify-orders-date-range mb-3">
-                  <input
-                    id="shopify-orders-filter-date"
-                    :value="dateRangeLabel"
-                    type="text"
-                    class="form-control staff-datatable-filters__select shopify-orders-date-range__display"
-                    placeholder="Select date range"
-                    readonly
-                    tabindex="-1"
-                  >
-                  <svg
-                    class="shopify-orders-date-range__icon"
-                    width="18"
-                    height="18"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                    />
-                  </svg>
                   <div class="shopify-orders-date-range__pickers">
                     <input
                       v-model="draftFilters.created_from"
                       type="date"
                       class="form-control form-control-sm"
                       aria-label="Order date from"
+                      :disabled="draftFilters.date_preset !== 'custom'"
+                      @change="onCustomDateChange"
                     >
                     <span class="shopify-orders-date-range__sep">to</span>
                     <input
@@ -533,6 +714,8 @@ onUnmounted(() => {
                       type="date"
                       class="form-control form-control-sm"
                       aria-label="Order date to"
+                      :disabled="draftFilters.date_preset !== 'custom'"
+                      @change="onCustomDateChange"
                     >
                   </div>
                 </div>
@@ -711,21 +894,21 @@ onUnmounted(() => {
             <button
               type="button"
               class="dropdown-item"
-              @click="actions.fulfillOrder(selectedIds); bulkMenuOpen = false"
+              @click="openFulfillModal(selectedIds)"
             >
               Mark Fulfilled
             </button>
             <button
               type="button"
               class="dropdown-item"
-              @click="actions.stubAction('Re-Ship Order'); bulkMenuOpen = false"
+              @click="openBulkReship"
             >
               Re-Ship Order
             </button>
             <button
               type="button"
               class="dropdown-item"
-              @click="actions.stubAction('Reprocess Order'); bulkMenuOpen = false"
+              @click="openReprocessModal(selectedIds)"
             >
               Reprocess Order
             </button>
@@ -843,12 +1026,14 @@ onUnmounted(() => {
                 >
               </td>
               <td>
-                <span
-                  class="badge rounded-pill fw-medium shopify-order-status"
+                <button
+                  type="button"
+                  class="badge rounded-pill fw-medium shopify-order-status shopify-order-status--clickable border-0"
                   :class="displayStatusClass(row.display_status)"
+                  @click="openStatusPicker(row)"
                 >
                   {{ displayStatusLabel(row.display_status) }}
-                </span>
+                </button>
               </td>
               <td>
                 <button
@@ -856,7 +1041,7 @@ onUnmounted(() => {
                   class="btn btn-link p-0 shopify-orders-order-link fw-semibold text-decoration-none"
                   @click="openRow(row)"
                 >
-                  {{ row.name || "—" }}
+                  {{ formatShopifyOrderName(row.name) || "—" }}
                 </button>
               </td>
               <td class="shopify-orders-recipient">{{ row.recipient_name || "—" }}</td>
@@ -871,10 +1056,17 @@ onUnmounted(() => {
                 data-shopify-orders-row-actions
               >
                 <div class="staff-actions-inner staff-actions-inner--single shopify-orders-actions-inner justify-content-center">
-                  <CrmIconRowActions
-                    :active="manageOpenId === row.id"
-                    @toggle="toggleManageMenu(row, $event)"
-                  />
+                  <button
+                    type="button"
+                    class="staff-action-btn staff-action-btn--more"
+                    :class="{ 'is-open': manageOpenId === row.id }"
+                    :aria-expanded="manageOpenId === row.id"
+                    aria-haspopup="true"
+                    aria-label="Row actions"
+                    @click="toggleManageMenu(row, $event)"
+                  >
+                    <CrmIconRowActions variant="horizontal" />
+                  </button>
                 </div>
               </td>
             </tr>
@@ -933,6 +1125,7 @@ onUnmounted(() => {
           Sync From Shopify
         </button>
         <button
+          v-if="!isFulfilledStatus(manageMenuRow.display_status)"
           type="button"
           class="dropdown-item"
           @click="openHoldModal([manageMenuRow.id])"
@@ -940,6 +1133,7 @@ onUnmounted(() => {
           Hold Order
         </button>
         <button
+          v-if="!isFulfilledStatus(manageMenuRow.display_status)"
           type="button"
           class="dropdown-item"
           @click="openCancelModal([manageMenuRow.id])"
@@ -947,23 +1141,26 @@ onUnmounted(() => {
           Cancel Order
         </button>
         <button
+          v-if="!isFulfilledStatus(manageMenuRow.display_status)"
           type="button"
           class="dropdown-item"
-          @click="runRowAction((r) => actions.fulfillOrder([r.id]), manageMenuRow)"
+          @click="openFulfillModal([manageMenuRow.id])"
         >
           Mark Fulfilled
         </button>
         <button
+          v-if="isFulfilledStatus(manageMenuRow.display_status)"
           type="button"
           class="dropdown-item"
-          @click="runRowAction(() => actions.stubAction('Re-Ship Order'), manageMenuRow)"
+          @click="openReshipModal(manageMenuRow)"
         >
           Re-Ship Order
         </button>
         <button
+          v-if="!isFulfilledStatus(manageMenuRow.display_status)"
           type="button"
           class="dropdown-item"
-          @click="runRowAction(() => actions.stubAction('Reprocess Order'), manageMenuRow)"
+          @click="openReprocessModal([manageMenuRow.id])"
         >
           Reprocess Order
         </button>
@@ -991,6 +1188,37 @@ onUnmounted(() => {
       @close="cancelModalOpen = false"
       @confirm="confirmCancel"
     />
+    <ShopifyOrderFulfillModal
+      :open="fulfillModalOpen"
+      :busy="actions.busy.value"
+      :order="actionOrder"
+      :line-items="actionLineItems"
+      @close="fulfillModalOpen = false"
+      @confirm="confirmFulfill"
+    />
+    <ShopifyOrderReshipModal
+      :open="reshipModalOpen"
+      :busy="actions.busy.value"
+      :order="actionOrder"
+      :line-items="actionLineItems"
+      @close="reshipModalOpen = false"
+      @confirm="confirmReship"
+    />
+    <ShopifyOrderReprocessModal
+      :open="reprocessModalOpen"
+      :busy="actions.busy.value"
+      :order="actionOrder"
+      :order-count="actionTargetIds.length || 1"
+      @close="reprocessModalOpen = false"
+      @confirm="confirmReprocess"
+    />
+    <ShopifyOrderStatusPickerModal
+      :open="statusPickerOpen"
+      :busy="actions.busy.value"
+      :order="actionOrder"
+      @close="statusPickerOpen = false"
+      @pick="onStatusPicked"
+    />
   </div>
 </template>
 
@@ -1011,9 +1239,9 @@ onUnmounted(() => {
 }
 
 .shopify-orders-search-wrap {
-  flex: 0 0 auto;
-  width: min(16.5rem, 100%);
-  max-width: 16.5rem;
+  flex: 1 1 26rem;
+  min-width: min(26rem, 100%);
+  max-width: 40rem;
 }
 
 .shopify-orders-search-field {
@@ -1162,6 +1390,10 @@ onUnmounted(() => {
 .shopify-order-status--shipped {
   background: #dbeafe;
   color: #1d4ed8;
+}
+
+.shopify-order-status--clickable {
+  cursor: pointer;
 }
 
 @media (max-width: 991.98px) {

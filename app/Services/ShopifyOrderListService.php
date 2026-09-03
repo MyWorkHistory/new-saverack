@@ -15,14 +15,17 @@ class ShopifyOrderListService
 
     public const DISPLAY_BACKORDER = 'backorder';
 
-    public const DISPLAY_SHIPPED = 'shipped';
+    /** @deprecated Use DISPLAY_FULFILLED */
+    public const DISPLAY_SHIPPED = 'fulfilled';
+
+    public const DISPLAY_FULFILLED = 'fulfilled';
 
     /** @var list<string> */
     public const DISPLAY_STATUSES = [
         self::DISPLAY_READY,
         self::DISPLAY_ON_HOLD,
         self::DISPLAY_BACKORDER,
-        self::DISPLAY_SHIPPED,
+        self::DISPLAY_FULFILLED,
     ];
 
     /** @var list<string> */
@@ -38,6 +41,9 @@ class ShopifyOrderListService
         $q = trim((string) $request->query('q', ''));
         $accountId = (int) $request->query('client_account_id', 0);
         $status = strtolower(trim((string) ($request->query('status', $request->query('display_status', '')))));
+        if ($status === 'shipped') {
+            $status = self::DISPLAY_FULFILLED;
+        }
         $shippingMethod = trim((string) $request->query('shipping_method', ''));
         $country = strtoupper(trim((string) $request->query('country', '')));
         $createdFrom = trim((string) $request->query('created_from', ''));
@@ -71,6 +77,8 @@ class ShopifyOrderListService
                 $digits = preg_replace('/\D+/', '', $q) ?? '';
                 if ($digits !== '') {
                     $builder->orWhere('shopify_order_id', 'like', '%'.$digits.'%');
+                    $builder->orWhere('name', 'like', '%#'.$digits.'%');
+                    $builder->orWhere('name', 'like', '%'.$digits.'%');
                 }
             });
         }
@@ -111,7 +119,7 @@ class ShopifyOrderListService
 
     private function applyDisplayStatusFilter(Builder $query, string $status): void
     {
-        if ($status === self::DISPLAY_SHIPPED) {
+        if ($status === self::DISPLAY_FULFILLED) {
             $query->where('fulfillment_status', 'fulfilled');
 
             return;
@@ -139,7 +147,12 @@ class ShopifyOrderListService
         })->where(function (Builder $b) {
             $b->whereNull('crm_hold_reasons')
                 ->orWhereRaw('JSON_LENGTH(crm_hold_reasons) = 0');
-        })->whereNull('cancelled_at');
+        })->whereNull('cancelled_at')
+            ->whereNull('crm_fulfillment_cancelled_at')
+            ->where(function (Builder $b) {
+                $b->whereRaw("JSON_SEARCH(raw_json, 'one', '%backorder%', NULL, '$') IS NULL")
+                    ->whereRaw("JSON_SEARCH(raw_json, 'one', '%Backorder%', NULL, '$') IS NULL");
+            });
     }
 
     /**
@@ -167,6 +180,7 @@ class ShopifyOrderListService
         return [
             'id' => $order->id,
             'name' => $order->name,
+            'display_name' => $this->displayOrderName($order->name),
             'shopify_order_id' => $order->shopify_order_id,
             'display_status' => $this->displayStatus($order),
             'recipient_name' => $this->recipientName($order),
@@ -180,15 +194,26 @@ class ShopifyOrderListService
             'shopify_admin_url' => $adminUrl,
             'crm_hold_reasons' => is_array($order->crm_hold_reasons) ? $order->crm_hold_reasons : [],
             'cancelled_at' => optional($order->cancelled_at)->toIso8601String(),
+            'crm_fulfillment_cancelled_at' => optional($order->crm_fulfillment_cancelled_at)->toIso8601String(),
             'fulfillment_status' => $order->fulfillment_status,
         ];
+    }
+
+    public function displayOrderName(?string $name): string
+    {
+        $value = trim((string) $name);
+        if ($value === '') {
+            return '';
+        }
+
+        return ltrim($value, '#');
     }
 
     public function displayStatus(ShopifyOrder $order): string
     {
         $fulfillment = strtolower(trim((string) $order->fulfillment_status));
         if ($fulfillment === 'fulfilled') {
-            return self::DISPLAY_SHIPPED;
+            return self::DISPLAY_FULFILLED;
         }
 
         $holds = is_array($order->crm_hold_reasons) ? $order->crm_hold_reasons : [];
@@ -203,8 +228,17 @@ class ShopifyOrderListService
         return self::DISPLAY_READY;
     }
 
+    public function isFulfilled(ShopifyOrder $order): bool
+    {
+        return $this->displayStatus($order) === self::DISPLAY_FULFILLED;
+    }
+
     public function displayStatusLabel(string $status): string
     {
+        if ($status === 'shipped') {
+            $status = self::DISPLAY_FULFILLED;
+        }
+
         switch ($status) {
             case self::DISPLAY_READY:
                 return 'Ready to Ship';
@@ -212,8 +246,8 @@ class ShopifyOrderListService
                 return 'On Hold';
             case self::DISPLAY_BACKORDER:
                 return 'Backorder';
-            case self::DISPLAY_SHIPPED:
-                return 'Shipped';
+            case self::DISPLAY_FULFILLED:
+                return 'Fulfilled';
             default:
                 return ucwords(str_replace('_', ' ', $status));
         }
@@ -226,7 +260,13 @@ class ShopifyOrderListService
             return false;
         }
 
-        return stripos($raw, 'backorder') !== false;
+        if (stripos($raw, 'backorder') !== false) {
+            return true;
+        }
+
+        $hint = is_array($order->raw_json) ? ($order->raw_json['crm_display_hint'] ?? '') : '';
+
+        return strtolower((string) $hint) === 'backorder';
     }
 
     public function recipientName(ShopifyOrder $order): string
@@ -242,15 +282,14 @@ class ShopifyOrderListService
             trim((string) ($customer['lastName'] ?? $customer['last_name'] ?? '')),
         ]);
 
-        return $parts !== [] ? implode(' ', $parts) : (trim((string) ($order->email ?? '')) ?: '—');
+        return $parts !== [] ? implode(' ', $parts) : trim((string) ($order->email ?? ''));
     }
 
     public function countryCode(ShopifyOrder $order): string
     {
         $ship = is_array($order->shipping_address_json) ? $order->shipping_address_json : [];
-        $code = strtoupper(trim((string) ($ship['countryCodeV2'] ?? $ship['country_code'] ?? $ship['country'] ?? '')));
 
-        return $code !== '' ? $code : '—';
+        return strtoupper(trim((string) ($ship['countryCodeV2'] ?? $ship['country_code'] ?? $ship['country'] ?? '')));
     }
 
     public function shippingMethod(ShopifyOrder $order): string
@@ -272,7 +311,31 @@ class ShopifyOrderListService
             }
         }
 
-        return '—';
+        return '';
+    }
+
+    /**
+     * Blank-safe CSV cell values (empty string when missing).
+     *
+     * @return list<string>
+     */
+    public function exportCsvRow(ShopifyOrder $order): array
+    {
+        $row = $this->listRow($order);
+        $date = '';
+        if ($order->shopify_created_at !== null) {
+            $date = $order->shopify_created_at->format('m-d-Y');
+        }
+
+        return [
+            $this->displayStatusLabel((string) $row['display_status']),
+            $this->displayOrderName($row['name'] ?? ''),
+            (string) ($row['recipient_name'] ?? ''),
+            $date,
+            (string) ($row['country'] ?? ''),
+            (string) ($row['shipping_method'] ?? ''),
+            (string) ($row['account_name'] ?? ''),
+        ];
     }
 
     /**
@@ -284,7 +347,7 @@ class ShopifyOrderListService
             ->whereNotNull('shipping_address_json')
             ->get(['shipping_address_json'])
             ->map(fn (ShopifyOrder $o) => $this->countryCode($o))
-            ->filter(fn ($c) => $c !== '' && $c !== '—')
+            ->filter(fn ($c) => $c !== '')
             ->unique()
             ->sort()
             ->values()
@@ -295,7 +358,7 @@ class ShopifyOrderListService
             ->limit(500)
             ->get()
             ->map(fn (ShopifyOrder $o) => $this->shippingMethod($o))
-            ->filter(fn ($m) => $m !== '' && $m !== '—')
+            ->filter(fn ($m) => $m !== '')
             ->unique()
             ->sort()
             ->values()

@@ -762,16 +762,7 @@ class ShopifyIntegrationController extends Controller
                 'Account',
             ]);
             foreach ($rows as $order) {
-                $row = $orders->listRow($order);
-                fputcsv($out, [
-                    $orders->displayStatusLabel((string) $row['display_status']),
-                    $row['name'],
-                    $row['recipient_name'],
-                    $row['shopify_created_at'],
-                    $row['country'],
-                    $row['shipping_method'],
-                    $row['account_name'],
-                ]);
+                fputcsv($out, $orders->exportCsvRow($order));
             }
             fclose($out);
         }, $filename, [
@@ -822,8 +813,15 @@ class ShopifyIntegrationController extends Controller
     {
         $this->assertAdmin($request);
 
+        $validated = $request->validate([
+            'cancel_in_shopify' => ['sometimes', 'boolean'],
+        ]);
+
         try {
-            $order = $actions->cancelOrder($shopifyOrder);
+            $order = $actions->cancelOrder(
+                $shopifyOrder,
+                (bool) ($validated['cancel_in_shopify'] ?? false)
+            );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (Throwable $e) {
@@ -839,8 +837,19 @@ class ShopifyIntegrationController extends Controller
     {
         $this->assertAdmin($request);
 
+        $validated = $request->validate([
+            'tracking_number' => ['nullable', 'string', 'max:191'],
+            'deduct_line_ids' => ['nullable', 'array'],
+            'deduct_line_ids.*' => ['integer'],
+        ]);
+
         try {
-            $result = $actions->fulfillAllRemaining($shopifyOrder, $request->user());
+            $result = $actions->fulfillAllRemaining(
+                $shopifyOrder,
+                $request->user(),
+                $validated['tracking_number'] ?? null,
+                isset($validated['deduct_line_ids']) ? array_map('intval', $validated['deduct_line_ids']) : null
+            );
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (Throwable $e) {
@@ -852,6 +861,72 @@ class ShopifyIntegrationController extends Controller
         return response()->json([
             'order' => app(ShopifyOrderListService::class)->listRow($result['order']),
         ]);
+    }
+
+    public function orderReship(Request $request, ShopifyOrder $shopifyOrder, ShopifyOrderActionService $actions): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        $validated = $request->validate([
+            'line_item_ids' => ['required', 'array', 'min:1'],
+            'line_item_ids.*' => ['integer'],
+        ]);
+
+        try {
+            $order = $actions->reshipOrder($shopifyOrder, $validated['line_item_ids']);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => 'Could not create re-shipment.'], 500);
+        }
+
+        return response()->json(['order' => app(ShopifyOrderListService::class)->listRow($order)]);
+    }
+
+    public function orderReprocess(Request $request, ShopifyOrder $shopifyOrder, ShopifyOrderActionService $actions): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        try {
+            $order = $actions->reprocessOrder($shopifyOrder);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => 'Could not reprocess order.'], 500);
+        }
+
+        return response()->json(['order' => app(ShopifyOrderListService::class)->listRow($order)]);
+    }
+
+    public function orderDisplayStatus(Request $request, ShopifyOrder $shopifyOrder, ShopifyOrderActionService $actions): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        $validated = $request->validate([
+            'status' => ['required', 'string', 'max:64'],
+            'reasons' => ['sometimes', 'array'],
+            'reasons.*' => ['string', 'max:64'],
+        ]);
+
+        try {
+            $order = $actions->applyDisplayStatus(
+                $shopifyOrder,
+                $validated['status'],
+                $validated['reasons'] ?? []
+            );
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => 'Could not update status.'], 500);
+        }
+
+        return response()->json(['order' => app(ShopifyOrderListService::class)->listRow($order)]);
     }
 
     public function ordersBulkHold(Request $request, ShopifyOrderActionService $actions, ShopifyOrderListService $orders): JsonResponse
@@ -892,7 +967,9 @@ class ShopifyIntegrationController extends Controller
         $validated = $request->validate([
             'ids' => ['required', 'array', 'min:1'],
             'ids.*' => ['integer'],
+            'cancel_in_shopify' => ['sometimes', 'boolean'],
         ]);
+        $cancelInShopify = (bool) ($validated['cancel_in_shopify'] ?? false);
 
         $updated = [];
         $errors = [];
@@ -902,7 +979,7 @@ class ShopifyIntegrationController extends Controller
                 continue;
             }
             try {
-                $updated[] = $orders->listRow($actions->cancelOrder($order));
+                $updated[] = $orders->listRow($actions->cancelOrder($order, $cancelInShopify));
             } catch (RuntimeException $e) {
                 $errors[] = ['id' => (int) $id, 'message' => $e->getMessage()];
             }
@@ -921,6 +998,7 @@ class ShopifyIntegrationController extends Controller
         $validated = $request->validate([
             'ids' => ['required', 'array', 'min:1'],
             'ids.*' => ['integer'],
+            'tracking_number' => ['nullable', 'string', 'max:191'],
         ]);
 
         $updated = [];
@@ -931,8 +1009,49 @@ class ShopifyIntegrationController extends Controller
                 continue;
             }
             try {
-                $result = $actions->fulfillAllRemaining($order, $request->user());
+                $result = $actions->fulfillAllRemaining(
+                    $order,
+                    $request->user(),
+                    $validated['tracking_number'] ?? null,
+                    null
+                );
                 $updated[] = $orders->listRow($result['order']);
+            } catch (RuntimeException $e) {
+                $errors[] = ['id' => (int) $id, 'message' => $e->getMessage()];
+            }
+        }
+
+        return response()->json([
+            'updated' => $updated,
+            'errors' => $errors,
+        ]);
+    }
+
+    public function ordersBulkDisplayStatus(Request $request, ShopifyOrderActionService $actions, ShopifyOrderListService $orders): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer'],
+            'status' => ['required', 'string', 'max:64'],
+            'reasons' => ['sometimes', 'array'],
+            'reasons.*' => ['string', 'max:64'],
+        ]);
+
+        $updated = [];
+        $errors = [];
+        foreach ($validated['ids'] as $id) {
+            $order = ShopifyOrder::query()->find((int) $id);
+            if ($order === null) {
+                continue;
+            }
+            try {
+                $updated[] = $orders->listRow($actions->applyDisplayStatus(
+                    $order,
+                    $validated['status'],
+                    $validated['reasons'] ?? []
+                ));
             } catch (RuntimeException $e) {
                 $errors[] = ['id' => (int) $id, 'message' => $e->getMessage()];
             }
@@ -1002,8 +1121,8 @@ class ShopifyIntegrationController extends Controller
             $result = $fulfillments->markShipped(
                 $shopifyOrder,
                 $validated['items'],
-                (string) ($validated['tracking_company'] ?? 'UPS'),
-                (string) ($validated['tracking_number'] ?? 'TEST123456789'),
+                (string) ($validated['tracking_company'] ?? ''),
+                (string) ($validated['tracking_number'] ?? ''),
                 $request->user()
             );
         } catch (RuntimeException $e) {

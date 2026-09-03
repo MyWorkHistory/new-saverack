@@ -4,10 +4,16 @@ import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ShopifyOrderCancelConfirmModal from "../../components/shopify/ShopifyOrderCancelConfirmModal.vue";
+import ShopifyOrderFulfillModal from "../../components/shopify/ShopifyOrderFulfillModal.vue";
 import ShopifyOrderHoldModal from "../../components/shopify/ShopifyOrderHoldModal.vue";
+import ShopifyOrderReprocessModal from "../../components/shopify/ShopifyOrderReprocessModal.vue";
+import ShopifyOrderReshipModal from "../../components/shopify/ShopifyOrderReshipModal.vue";
+import ShopifyOrderStatusPickerModal from "../../components/shopify/ShopifyOrderStatusPickerModal.vue";
 import {
   displayStatusClass,
   displayStatusLabel,
+  formatShopifyOrderName,
+  isFulfilledStatus,
   useShopifyOrderActions,
 } from "../../composables/useShopifyOrderActions.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -22,6 +28,10 @@ const order = ref(null);
 const actionsMenuOpen = ref(false);
 const holdModalOpen = ref(false);
 const cancelModalOpen = ref(false);
+const fulfillModalOpen = ref(false);
+const reshipModalOpen = ref(false);
+const reprocessModalOpen = ref(false);
+const statusPickerOpen = ref(false);
 
 const orderMetaLine = computed(() => {
   const parts = [];
@@ -71,11 +81,57 @@ async function confirmHold(reasons) {
   }
 }
 
-async function confirmCancel() {
+async function confirmCancel({ cancelInShopify } = {}) {
   if (!orderId.value) return;
-  const result = await actions.cancelOrder([orderId.value]);
+  const result = await actions.cancelOrder([orderId.value], Boolean(cancelInShopify));
   if (result) {
     cancelModalOpen.value = false;
+    await load();
+  }
+}
+
+async function confirmFulfill({ trackingNumber, deductLineIds } = {}) {
+  if (!orderId.value) return;
+  const result = await actions.fulfillOrder([orderId.value], { trackingNumber, deductLineIds });
+  if (result) {
+    fulfillModalOpen.value = false;
+    await load();
+  }
+}
+
+async function confirmReship(lineItemIds) {
+  if (!orderId.value) return;
+  const result = await actions.reshipOrder(orderId.value, lineItemIds);
+  if (result) {
+    reshipModalOpen.value = false;
+    await load();
+  }
+}
+
+async function confirmReprocess() {
+  if (!orderId.value) return;
+  const result = await actions.reprocessOrder([orderId.value]);
+  if (result) {
+    reprocessModalOpen.value = false;
+    await load();
+  }
+}
+
+async function onStatusPicked(status) {
+  if (!orderId.value) return;
+  if (status === "on_hold") {
+    statusPickerOpen.value = false;
+    holdModalOpen.value = true;
+    return;
+  }
+  if (status === "fulfilled") {
+    statusPickerOpen.value = false;
+    fulfillModalOpen.value = true;
+    return;
+  }
+  const result = await actions.applyDisplayStatus([orderId.value], status);
+  if (result) {
+    statusPickerOpen.value = false;
     await load();
   }
 }
@@ -129,13 +185,15 @@ onUnmounted(() => {
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
           <div class="min-w-0">
             <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
-              <h1 class="h4 mb-0 fw-bold text-body">{{ order.name || "Shopify Order" }}</h1>
-              <span
-                class="badge rounded-pill fw-medium shopify-order-status"
+              <h1 class="h4 mb-0 fw-bold text-body">{{ formatShopifyOrderName(order.name) || "Shopify Order" }}</h1>
+              <button
+                type="button"
+                class="badge rounded-pill fw-medium shopify-order-status shopify-order-status--clickable border-0"
                 :class="displayStatusClass(order.display_status)"
+                @click="statusPickerOpen = true"
               >
                 {{ displayStatusLabel(order.display_status) }}
-              </span>
+              </button>
             </div>
             <p
               v-if="orderMetaLine"
@@ -191,6 +249,7 @@ onUnmounted(() => {
                 Sync From Shopify
               </button>
               <button
+                v-if="!isFulfilledStatus(order.display_status)"
                 type="button"
                 class="dropdown-item"
                 @click="holdModalOpen = true; actionsMenuOpen = false"
@@ -198,6 +257,7 @@ onUnmounted(() => {
                 Hold Order
               </button>
               <button
+                v-if="!isFulfilledStatus(order.display_status)"
                 type="button"
                 class="dropdown-item"
                 @click="cancelModalOpen = true; actionsMenuOpen = false"
@@ -205,23 +265,26 @@ onUnmounted(() => {
                 Cancel Order
               </button>
               <button
+                v-if="!isFulfilledStatus(order.display_status)"
                 type="button"
                 class="dropdown-item"
-                @click="actions.fulfillOrder([order.id]); actionsMenuOpen = false"
+                @click="fulfillModalOpen = true; actionsMenuOpen = false"
               >
                 Mark Fulfilled
               </button>
               <button
+                v-if="isFulfilledStatus(order.display_status)"
                 type="button"
                 class="dropdown-item"
-                @click="actions.stubAction('Re-Ship Order'); actionsMenuOpen = false"
+                @click="reshipModalOpen = true; actionsMenuOpen = false"
               >
                 Re-Ship Order
               </button>
               <button
+                v-if="!isFulfilledStatus(order.display_status)"
                 type="button"
                 class="dropdown-item"
-                @click="actions.stubAction('Reprocess Order'); actionsMenuOpen = false"
+                @click="reprocessModalOpen = true; actionsMenuOpen = false"
               >
                 Reprocess Order
               </button>
@@ -394,6 +457,36 @@ onUnmounted(() => {
       @close="cancelModalOpen = false"
       @confirm="confirmCancel"
     />
+    <ShopifyOrderFulfillModal
+      :open="fulfillModalOpen"
+      :busy="actions.busy.value"
+      :order="order"
+      :line-items="order?.line_items || []"
+      @close="fulfillModalOpen = false"
+      @confirm="confirmFulfill"
+    />
+    <ShopifyOrderReshipModal
+      :open="reshipModalOpen"
+      :busy="actions.busy.value"
+      :order="order"
+      :line-items="order?.line_items || []"
+      @close="reshipModalOpen = false"
+      @confirm="confirmReship"
+    />
+    <ShopifyOrderReprocessModal
+      :open="reprocessModalOpen"
+      :busy="actions.busy.value"
+      :order="order"
+      @close="reprocessModalOpen = false"
+      @confirm="confirmReprocess"
+    />
+    <ShopifyOrderStatusPickerModal
+      :open="statusPickerOpen"
+      :busy="actions.busy.value"
+      :order="order"
+      @close="statusPickerOpen = false"
+      @pick="onStatusPicked"
+    />
   </div>
 </template>
 
@@ -420,5 +513,9 @@ onUnmounted(() => {
 .shopify-order-status--shipped {
   background: #dbeafe;
   color: #1d4ed8;
+}
+
+.shopify-order-status--clickable {
+  cursor: pointer;
 }
 </style>

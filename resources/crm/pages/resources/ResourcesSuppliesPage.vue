@@ -1003,7 +1003,7 @@ onUnmounted(() => {
   padding: 1rem 1.15rem;
   border: 1px solid #e5e7eb;
   border-radius: 0.75rem;
-  background: #f9fafb;
+  background: #fff;
   height: 100%;
 }
 .resources-supplies__notes-input {

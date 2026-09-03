@@ -124,6 +124,31 @@ class ShopifyOrderActionsApiTest extends TestCase
         $this->assertStringContainsString('Status,Order #,Recipient', $response->streamedContent());
     }
 
+    public function test_hold_persists_even_when_shopify_tag_sync_fails(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder();
+
+        $api = Mockery::mock(\App\Services\ShopifyClient::class);
+        $api->shouldReceive('graphql')
+            ->once()
+            ->andThrow(new \RuntimeException('Order does not exist'));
+
+        $client = Mockery::mock(\App\Services\ShopifyClient::class);
+        $client->shouldReceive('forConnection')->andReturn($api);
+        $this->app->instance(\App\Services\ShopifyClient::class, $client);
+        $this->app->forgetInstance(ShopifyOrderActionService::class);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/hold', [
+            'reasons' => ['Admin Hold'],
+        ])
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'on_hold');
+
+        $order->refresh();
+        $this->assertSame(['Admin Hold'], $order->crm_hold_reasons);
+    }
+
     public function test_hold_persists_crm_hold_reasons(): void
     {
         $this->actingAsAdmin();

@@ -86,14 +86,20 @@ class ShopifyOrderActionService
             throw new RuntimeException('Invalid hold reason: '.implode(', ', $invalid));
         }
 
-        $connection = $order->connection;
-        if ($connection !== null && $connection->hasCredentials()) {
-            $this->pushHoldTags($connection, $order, $reasons);
-        }
-
+        // Persist CRM hold first — Shopify tag sync must not block the CRM action.
         $order->crm_hold_reasons = $reasons;
         $order->crm_fulfillment_cancelled_at = null;
         $order->save();
+
+        $order->loadMissing('connection');
+        $connection = $order->connection;
+        if ($connection !== null && $connection->hasCredentials()) {
+            try {
+                $this->pushHoldTags($connection, $order, $reasons);
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
 
         return $order->fresh(['connection.clientAccount', 'lineItems']);
     }
@@ -210,9 +216,13 @@ GQL
 
         $connection = $order->connection;
         if ($connection !== null && $connection->hasCredentials()) {
-            $synced = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
-            if ($synced !== null) {
-                $order = $synced;
+            try {
+                $synced = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
+                if ($synced !== null) {
+                    $order = $synced;
+                }
+            } catch (\Throwable $e) {
+                report($e);
             }
         }
 
@@ -475,41 +485,56 @@ GQL
      */
     private function pushHoldTags($connection, ShopifyOrder $order, array $reasons): void
     {
-        $existingTags = [];
-        $raw = is_array($order->raw_json) ? $order->raw_json : [];
-        if (isset($raw['tags']) && is_array($raw['tags'])) {
-            $existingTags = $raw['tags'];
-        } elseif (isset($raw['tags']) && is_string($raw['tags'])) {
-            $existingTags = array_map('trim', explode(',', $raw['tags']));
+        $holdTags = array_values(array_unique(array_filter(array_map(
+            static fn (string $r) => 'crm-hold:'.$r,
+            $reasons
+        ))));
+        if ($holdTags === []) {
+            return;
         }
 
-        $holdTags = array_map(fn (string $r) => 'crm-hold:'.$r, $reasons);
-        $merged = array_values(array_unique(array_filter(array_merge(
-            $existingTags,
-            $holdTags
-        ))));
+        $orderId = trim((string) $order->shopify_order_id);
+        if ($orderId === '') {
+            throw new RuntimeException('Shopify order id missing for hold tag sync.');
+        }
 
-        $gid = ShopifyGid::of('Order', (string) $order->shopify_order_id);
+        $gid = ShopifyGid::of('Order', $orderId);
         $api = $this->client->forConnection($connection);
+
+        // Confirm the order is visible to this shop token before mutating.
+        $probe = $api->graphql(
+            <<<'GQL'
+query OrderExists($id: ID!) {
+  order(id: $id) { id }
+}
+GQL
+            ,
+            ['id' => $gid]
+        );
+        if (! is_array($probe['order'] ?? null) || trim((string) ($probe['order']['id'] ?? '')) === '') {
+            throw new RuntimeException(
+                'Shopify order '.$orderId.' is not reachable with this store connection (Order does not exist).'
+            );
+        }
+
+        // tagsAdd appends; avoids wiping existing merchant tags via orderUpdate.
         $data = $api->graphql(
             <<<'GQL'
-mutation orderUpdate($input: OrderInput!) {
-  orderUpdate(input: $input) {
-    order { id tags }
+mutation tagsAdd($id: ID!, $tags: [String!]!) {
+  tagsAdd(id: $id, tags: $tags) {
+    node { ... on Order { id tags } }
     userErrors { field message }
   }
 }
 GQL
             ,
             [
-                'input' => [
-                    'id' => $gid,
-                    'tags' => $merged,
-                ],
+                'id' => $gid,
+                'tags' => $holdTags,
             ]
         );
 
-        $payload = is_array($data['orderUpdate'] ?? null) ? $data['orderUpdate'] : [];
+        $payload = is_array($data['tagsAdd'] ?? null) ? $data['tagsAdd'] : [];
         $errors = is_array($payload['userErrors'] ?? null) ? $payload['userErrors'] : [];
         if ($errors !== []) {
             throw new RuntimeException((string) ($errors[0]['message'] ?? 'Could not update order tags.'));

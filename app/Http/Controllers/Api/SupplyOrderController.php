@@ -186,7 +186,7 @@ class SupplyOrderController extends Controller
     /**
      * Get (or create) the single shared draft order that the whole team sees.
      */
-    private function sharedDraft(): SupplyOrder
+    private function sharedDraft(?Request $request = null): SupplyOrder
     {
         $draft = SupplyOrder::query()
             ->whereNull('submitted_at')
@@ -194,8 +194,12 @@ class SupplyOrderController extends Controller
             ->first();
 
         if ($draft === null) {
+            $userId = $request !== null && $request->user() !== null
+                ? (int) $request->user()->id
+                : 1;
+
             $draft = SupplyOrder::query()->create([
-                'user_id' => 0,
+                'user_id' => $userId,
                 'submitted_at' => null,
             ]);
         }
@@ -210,7 +214,7 @@ class SupplyOrderController extends Controller
     {
         $this->authorize('viewAny', SupplyOrder::class);
 
-        $draft = $this->sharedDraft();
+        $draft = $this->sharedDraft($request);
         $draft->load('lines');
 
         return response()->json([
@@ -234,7 +238,7 @@ class SupplyOrderController extends Controller
             'quantity' => ['sometimes', 'integer', 'min:1', 'max:99999999'],
         ]);
 
-        $draft = $this->sharedDraft();
+        $draft = $this->sharedDraft($request);
         $supply = Supply::query()->find((int) $validated['supply_id']);
         if ($supply === null) {
             return response()->json(['message' => 'Supply not found.'], 422);
@@ -281,7 +285,7 @@ class SupplyOrderController extends Controller
     {
         $this->authorize('editDraft', SupplyOrder::class);
 
-        $draft = $this->sharedDraft();
+        $draft = $this->sharedDraft($request);
         if ((int) $supplyOrderLine->supply_order_id !== (int) $draft->id) {
             abort(404);
         }
@@ -303,7 +307,7 @@ class SupplyOrderController extends Controller
     {
         $this->authorize('editDraft', SupplyOrder::class);
 
-        $draft = $this->sharedDraft();
+        $draft = $this->sharedDraft($request);
         if ((int) $supplyOrderLine->supply_order_id !== (int) $draft->id) {
             abort(404);
         }
@@ -324,7 +328,7 @@ class SupplyOrderController extends Controller
             'note' => ['nullable', 'string', 'max:5000'],
         ]);
 
-        $draft = $this->sharedDraft();
+        $draft = $this->sharedDraft($request);
         $note = trim((string) ($validated['note'] ?? ''));
         $draft->note = $note !== '' ? $note : null;
         $draft->save();
@@ -341,7 +345,7 @@ class SupplyOrderController extends Controller
     {
         $this->authorize('submitDraft', SupplyOrder::class);
 
-        $draft = $this->sharedDraft();
+        $draft = $this->sharedDraft($request);
         $draft->load('lines');
 
         if ($draft->lines->isEmpty()) {

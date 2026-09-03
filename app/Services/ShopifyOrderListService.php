@@ -142,11 +142,14 @@ class ShopifyOrderListService
         }
 
         if ($status === self::DISPLAY_BACKORDER) {
-            $query->where(function (Builder $b) {
-                $b->whereRaw("JSON_SEARCH(raw_json, 'one', '%backorder%', NULL, '$') IS NOT NULL")
-                    ->orWhereRaw("JSON_SEARCH(raw_json, 'one', '%Backorder%', NULL, '$') IS NOT NULL");
-            })->whereNull('cancelled_at')
+            $query->whereRaw(
+                "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_json, '$.crm_display_hint')), '')) = 'backorder'"
+            )->whereNull('cancelled_at')
                 ->whereNull('crm_fulfillment_cancelled_at')
+                ->where(function (Builder $b) {
+                    $b->whereNull('crm_hold_reasons')
+                        ->orWhereRaw('JSON_LENGTH(crm_hold_reasons) = 0');
+                })
                 ->where(function (Builder $b) {
                     $b->whereNull('fulfillment_status')
                         ->orWhere('fulfillment_status', '!=', 'fulfilled');
@@ -175,10 +178,9 @@ class ShopifyOrderListService
                 ->orWhereRaw('JSON_LENGTH(crm_hold_reasons) = 0');
         })->whereNull('cancelled_at')
             ->whereNull('crm_fulfillment_cancelled_at')
-            ->where(function (Builder $b) {
-                $b->whereRaw("JSON_SEARCH(raw_json, 'one', '%backorder%', NULL, '$') IS NULL")
-                    ->whereRaw("JSON_SEARCH(raw_json, 'one', '%Backorder%', NULL, '$') IS NULL");
-            });
+            ->whereRaw(
+                "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_json, '$.crm_display_hint')), '')) != 'backorder'"
+            );
     }
 
     /**
@@ -292,18 +294,12 @@ class ShopifyOrderListService
 
     private function looksLikeBackorder(ShopifyOrder $order): bool
     {
-        $raw = json_encode($order->raw_json ?? []);
-        if (! is_string($raw)) {
-            return false;
-        }
+        // CRM status picker owns backorder — do not scan the full Shopify payload
+        // (false positives kept orders stuck on Backorder after Ready to Ship).
+        $raw = is_array($order->raw_json) ? $order->raw_json : [];
+        $hint = strtolower(trim((string) ($raw['crm_display_hint'] ?? '')));
 
-        if (stripos($raw, 'backorder') !== false) {
-            return true;
-        }
-
-        $hint = is_array($order->raw_json) ? ($order->raw_json['crm_display_hint'] ?? '') : '';
-
-        return strtolower((string) $hint) === 'backorder';
+        return $hint === 'backorder';
     }
 
     public function recipientName(ShopifyOrder $order): string

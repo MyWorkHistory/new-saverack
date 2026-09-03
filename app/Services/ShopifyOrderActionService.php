@@ -15,6 +15,8 @@ class ShopifyOrderActionService
 {
     public const SHIPPED_STATUS_LOCK_MESSAGE = 'Cannot change shipped order status.';
 
+    public const CANCELLED_STATUS_LOCK_MESSAGE = 'Cannot change cancelled order status.';
+
     /** @var ShopifyClient */
     private $client;
 
@@ -93,8 +95,8 @@ class ShopifyOrderActionService
     public function holdOrder(ShopifyOrder $order, array $reasons): ShopifyOrder
     {
         $this->assertNotShipped($order);
-        if ($this->list->isCancelled($order)) {
-            throw new RuntimeException('Cannot hold a cancelled order.');
+        if ($order->cancelled_at !== null) {
+            throw new RuntimeException(self::CANCELLED_STATUS_LOCK_MESSAGE);
         }
 
         $reasons = array_values(array_filter(array_map('trim', $reasons)));
@@ -108,6 +110,7 @@ class ShopifyOrderActionService
         }
 
         // Persist CRM hold first — Shopify tag sync must not block the CRM action.
+        // Clearing CRM-only cancel lets status recover from Cancelled → On Hold.
         $order->crm_hold_reasons = $reasons;
         $order->crm_fulfillment_cancelled_at = null;
         $order->save();
@@ -385,6 +388,10 @@ GQL
             throw new RuntimeException(self::SHIPPED_STATUS_LOCK_MESSAGE);
         }
 
+        if ($order->cancelled_at !== null) {
+            throw new RuntimeException(self::CANCELLED_STATUS_LOCK_MESSAGE);
+        }
+
         if ($status === ShopifyOrderListService::DISPLAY_FULFILLED) {
             throw new RuntimeException('Use Mark Fulfilled to set Fulfilled status.');
         }
@@ -399,7 +406,8 @@ GQL
             $order->crm_hold_reasons = [];
             $order->crm_fulfillment_cancelled_at = null;
             $raw = is_array($order->raw_json) ? $order->raw_json : [];
-            unset($raw['crm_display_hint']);
+            // Explicit override so Backorder does not stick after clearing the hint.
+            $raw['crm_display_hint'] = 'ready_to_ship';
             $order->raw_json = $raw;
             $order->save();
 

@@ -517,4 +517,67 @@ class ShopifyOrderActionsApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('order.display_status', 'ready_to_ship');
     }
+
+    public function test_display_status_ready_clears_sticky_backorder_hint(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder([
+            'raw_json' => [
+                'shippingLine' => ['title' => 'endicia / MediaMail'],
+                'crm_display_hint' => 'backorder',
+                // Noise that previously kept status stuck on Backorder via stripos on full JSON.
+                'note' => 'Customer asked about backorder policy',
+            ],
+        ]);
+
+        $this->getJson('/api/shopify/orders/'.$order->id)
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'backorder');
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/display-status', [
+            'status' => 'ready_to_ship',
+        ])
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'ready_to_ship');
+    }
+
+    public function test_display_status_backorder_sets_hint(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder();
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/display-status', [
+            'status' => 'backorder',
+        ])
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'backorder');
+    }
+
+    public function test_crm_cancelled_can_recover_to_ready(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder([
+            'crm_fulfillment_cancelled_at' => now(),
+        ]);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/display-status', [
+            'status' => 'ready_to_ship',
+        ])
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'ready_to_ship');
+    }
+
+    public function test_shopify_cancelled_cannot_change_display_status(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder([
+            'cancelled_at' => now(),
+        ]);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/display-status', [
+            'status' => 'ready_to_ship',
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Cannot change cancelled order status.');
+    }
 }

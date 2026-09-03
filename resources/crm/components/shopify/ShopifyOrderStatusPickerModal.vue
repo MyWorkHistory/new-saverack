@@ -30,6 +30,19 @@ const alreadyFulfilled = computed(
   () => props.orderCount === 1 && isFulfilledStatus(currentStatus.value),
 );
 
+/** Shopify-cancelled orders are locked; CRM-only cancel can be recovered via Ready / Hold / Backorder. */
+const shopifyCancelledLocked = computed(
+  () => props.orderCount === 1 && Boolean(props.order?.cancelled_at),
+);
+
+const statusLocked = computed(() => alreadyFulfilled.value || shopifyCancelledLocked.value);
+
+const lockMessage = computed(() =>
+  alreadyFulfilled.value
+    ? "Cannot change shipped order status."
+    : "Cannot change cancelled order status.",
+);
+
 watch(
   () => props.open,
   (isOpen) => {
@@ -45,7 +58,7 @@ function onClose() {
 }
 
 function choose(value) {
-  if (alreadyFulfilled.value) return;
+  if (statusLocked.value) return;
   selected.value = value;
   step.value = "confirm";
 }
@@ -68,9 +81,9 @@ function onConfirm() {
       <div class="so-modal" @click.stop>
         <button type="button" class="so-modal__close" aria-label="Close" :disabled="busy" @click="onClose">×</button>
 
-        <template v-if="alreadyFulfilled">
+        <template v-if="statusLocked">
           <h2 class="so-modal__title">Cannot Change Status</h2>
-          <p class="so-modal__lead">Cannot change shipped order status.</p>
+          <p class="so-modal__lead">{{ lockMessage }}</p>
           <footer class="so-modal__foot">
             <button type="button" class="btn btn-primary staff-page-primary fw-semibold" @click="onClose">
               OK

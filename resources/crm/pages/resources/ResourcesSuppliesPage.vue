@@ -463,9 +463,77 @@ function onDocClick(event) {
   }
 }
 
+/**
+ * One-time migration: push any items left in localStorage into the shared server
+ * draft, then clear localStorage so it never runs again.
+ */
+async function migrateLocalStorageCart() {
+  const KEY_PREFIX = "crm.resources.supplies.cart";
+  const NOTE_PREFIX = "crm.resources.supplies.note";
+  try {
+    // Try every user-keyed variant that might exist in this browser.
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith(KEY_PREFIX) || key.startsWith(NOTE_PREFIX))) {
+        keysToRemove.push(key);
+      }
+    }
+
+    // Find the first cart with items.
+    let lines = [];
+    let note = "";
+    for (const key of keysToRemove) {
+      if (key.startsWith(KEY_PREFIX)) {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+          if (Array.isArray(parsed) && parsed.length && !lines.length) {
+            lines = parsed;
+          }
+        } catch { /* skip */ }
+      }
+      if (key.startsWith(NOTE_PREFIX)) {
+        const val = localStorage.getItem(key) || "";
+        if (val && !note) note = val;
+      }
+    }
+
+    if (lines.length) {
+      for (const line of lines) {
+        const supplyId = Number(line.supply_id);
+        const qty = Math.max(1, Number(line.quantity) || 1);
+        if (!supplyId) continue;
+        try {
+          await api.post("/admin/supply-orders/draft/lines", {
+            supply_id: supplyId,
+            quantity: qty,
+          });
+        } catch { /* item may no longer exist in catalog — skip */ }
+      }
+    }
+
+    if (note) {
+      try {
+        await api.patch("/admin/supply-orders/draft/note", { note });
+      } catch { /* ignore */ }
+    }
+
+    // Clear all old keys so this never runs again.
+    keysToRemove.forEach((key) => {
+      try { localStorage.removeItem(key); } catch { /* ignore */ }
+    });
+
+    if (lines.length || note) {
+      await loadDraft();
+    }
+  } catch { /* ignore migration errors */ }
+}
+
 onMounted(async () => {
   document.addEventListener("click", onDocClick);
   await Promise.all([loadCatalog(), loadDraft(), loadHistory()]);
+  // After initial load, migrate any leftover localStorage data into the shared draft.
+  await migrateLocalStorageCart();
 });
 
 onUnmounted(() => {

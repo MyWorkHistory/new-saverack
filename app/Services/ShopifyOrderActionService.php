@@ -72,6 +72,9 @@ class ShopifyOrderActionService
     public function holdOrder(ShopifyOrder $order, array $reasons): ShopifyOrder
     {
         $this->assertNotShipped($order);
+        if ($this->list->isCancelled($order)) {
+            throw new RuntimeException('Cannot hold a cancelled order.');
+        }
 
         $reasons = array_values(array_filter(array_map('trim', $reasons)));
         if ($reasons === []) {
@@ -109,9 +112,10 @@ class ShopifyOrderActionService
             $api = $this->client->forConnection($connection);
             $data = $api->graphql(
                 <<<'GQL'
-mutation orderCancel($orderId: ID!, $reason: OrderCancelReason!, $notifyCustomer: Boolean, $refund: Boolean, $restock: Boolean) {
-  orderCancel(orderId: $orderId, reason: $reason, notifyCustomer: $notifyCustomer, refund: $refund, restock: $restock) {
-    order { id cancelledAt }
+mutation orderCancel($orderId: ID!, $reason: OrderCancelReason!, $notifyCustomer: Boolean, $refundMethod: OrderCancelRefundMethodInput!, $restock: Boolean!) {
+  orderCancel(orderId: $orderId, reason: $reason, notifyCustomer: $notifyCustomer, refundMethod: $refundMethod, restock: $restock) {
+    job { id done }
+    orderCancelUserErrors { field message code }
     userErrors { field message }
   }
 }
@@ -121,23 +125,38 @@ GQL
                     'orderId' => $gid,
                     'reason' => 'OTHER',
                     'notifyCustomer' => false,
-                    'refund' => false,
+                    'refundMethod' => [
+                        'originalPaymentMethodsRefund' => false,
+                    ],
                     'restock' => true,
                 ]
             );
 
             $payload = is_array($data['orderCancel'] ?? null) ? $data['orderCancel'] : [];
-            $errors = is_array($payload['userErrors'] ?? null) ? $payload['userErrors'] : [];
-            if ($errors !== []) {
-                throw new RuntimeException((string) ($errors[0]['message'] ?? 'Order cancel failed.'));
+            $cancelErrors = is_array($payload['orderCancelUserErrors'] ?? null) ? $payload['orderCancelUserErrors'] : [];
+            if ($cancelErrors === []) {
+                $cancelErrors = is_array($payload['userErrors'] ?? null) ? $payload['userErrors'] : [];
+            }
+            if ($cancelErrors !== []) {
+                throw new RuntimeException((string) ($cancelErrors[0]['message'] ?? 'Order cancel failed.'));
             }
 
-            $refreshed = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
+            $refreshed = null;
+            for ($attempt = 0; $attempt < 4; $attempt++) {
+                if ($attempt > 0) {
+                    usleep(400000);
+                }
+                $refreshed = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
+                if ($refreshed !== null && $refreshed->cancelled_at !== null) {
+                    break;
+                }
+            }
             if ($refreshed === null) {
                 throw new RuntimeException('Order cancelled in Shopify but local sync failed.');
             }
 
             $refreshed->crm_fulfillment_cancelled_at = now();
+            $refreshed->crm_hold_reasons = [];
             $refreshed->save();
 
             return $refreshed->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
@@ -185,6 +204,23 @@ GQL
     ): array {
         $this->assertNotShipped($order);
 
+        if ($this->list->isCancelled($order)) {
+            throw new RuntimeException('Cannot fulfill a cancelled order.');
+        }
+
+        $connection = $order->connection;
+        if ($connection !== null && $connection->hasCredentials()) {
+            $synced = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
+            if ($synced !== null) {
+                $order = $synced;
+            }
+        }
+
+        $this->assertNotShipped($order);
+        if ($this->list->isCancelled($order)) {
+            throw new RuntimeException('Cannot fulfill a cancelled order.');
+        }
+
         $order->loadMissing(['lineItems', 'fulfillmentOrders.lineItems', 'connection']);
 
         $items = [];
@@ -202,7 +238,9 @@ GQL
         }
 
         if ($items === []) {
-            throw new RuntimeException('No fulfillable quantities remain on this order.');
+            throw new RuntimeException(
+                'No fulfillable quantities remain on this order. Sync the order from Shopify and try again.'
+            );
         }
 
         $tracking = trim((string) ($trackingNumber ?? ''));

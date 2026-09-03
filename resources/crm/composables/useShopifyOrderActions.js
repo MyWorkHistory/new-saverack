@@ -15,6 +15,7 @@ export const SHOPIFY_DISPLAY_STATUS_LABELS = {
   backorder: "Backorder",
   fulfilled: "Fulfilled",
   shipped: "Fulfilled",
+  cancelled: "Cancelled",
 };
 
 export function formatShopifyOrderName(name) {
@@ -32,12 +33,17 @@ export function displayStatusClass(status) {
   if (key === "on_hold") return "shopify-order-status--hold";
   if (key === "backorder") return "shopify-order-status--backorder";
   if (key === "fulfilled" || key === "shipped") return "shopify-order-status--shipped";
+  if (key === "cancelled") return "shopify-order-status--cancelled";
   return "bg-secondary-subtle text-secondary-emphasis";
 }
 
 export function isFulfilledStatus(status) {
   const key = String(status || "").trim();
   return key === "fulfilled" || key === "shipped";
+}
+
+export function isCancelledStatus(status) {
+  return String(status || "").trim() === "cancelled";
 }
 
 export function useShopifyOrderActions({ onUpdated } = {}) {

@@ -13,6 +13,7 @@ import {
   displayStatusClass,
   displayStatusLabel,
   formatShopifyOrderName,
+  isCancelledStatus,
   isFulfilledStatus,
   useShopifyOrderActions,
 } from "../../composables/useShopifyOrderActions.js";
@@ -45,6 +46,10 @@ const orderMetaLine = computed(() => {
 });
 
 const orderId = computed(() => Number(route.params.id || 0));
+
+function canChangeOrderActions(status) {
+  return !isFulfilledStatus(status) && !isCancelledStatus(status);
+}
 
 const actions = useShopifyOrderActions({
   onUpdated: (updated) => {
@@ -230,44 +235,49 @@ onUnmounted(() => {
             </button>
             <div
               v-if="actionsMenuOpen"
-              class="dropdown-menu show shadow-sm"
-              style="position: absolute; top: 100%; right: 0; min-width: 12rem; z-index: 20"
+              class="staff-row-menu shopify-order-detail-actions-menu"
+              role="menu"
               @click.stop
             >
               <button
                 type="button"
-                class="dropdown-item"
+                class="staff-row-menu__item"
+                role="menuitem"
                 @click="actions.viewInShopify(order); actionsMenuOpen = false"
               >
                 View in Shopify
               </button>
               <button
                 type="button"
-                class="dropdown-item"
+                class="staff-row-menu__item"
+                role="menuitem"
                 @click="actions.syncOrder(order); actionsMenuOpen = false"
               >
                 Sync From Shopify
               </button>
               <button
-                v-if="!isFulfilledStatus(order.display_status)"
+                v-if="canChangeOrderActions(order.display_status)"
                 type="button"
-                class="dropdown-item"
+                class="staff-row-menu__item"
+                role="menuitem"
                 @click="holdModalOpen = true; actionsMenuOpen = false"
               >
                 Hold Order
               </button>
               <button
-                v-if="!isFulfilledStatus(order.display_status)"
+                v-if="canChangeOrderActions(order.display_status)"
                 type="button"
-                class="dropdown-item"
+                class="staff-row-menu__item staff-row-menu__item--danger"
+                role="menuitem"
                 @click="cancelModalOpen = true; actionsMenuOpen = false"
               >
                 Cancel Order
               </button>
               <button
-                v-if="!isFulfilledStatus(order.display_status)"
+                v-if="canChangeOrderActions(order.display_status)"
                 type="button"
-                class="dropdown-item"
+                class="staff-row-menu__item"
+                role="menuitem"
                 @click="fulfillModalOpen = true; actionsMenuOpen = false"
               >
                 Mark Fulfilled
@@ -275,22 +285,25 @@ onUnmounted(() => {
               <button
                 v-if="isFulfilledStatus(order.display_status)"
                 type="button"
-                class="dropdown-item"
+                class="staff-row-menu__item"
+                role="menuitem"
                 @click="reshipModalOpen = true; actionsMenuOpen = false"
               >
                 Re-Ship Order
               </button>
               <button
-                v-if="!isFulfilledStatus(order.display_status)"
+                v-if="canChangeOrderActions(order.display_status)"
                 type="button"
-                class="dropdown-item"
+                class="staff-row-menu__item"
+                role="menuitem"
                 @click="reprocessModalOpen = true; actionsMenuOpen = false"
               >
                 Reprocess Order
               </button>
               <button
                 type="button"
-                class="dropdown-item"
+                class="staff-row-menu__item"
+                role="menuitem"
                 @click="actions.viewPackingSlip(order); actionsMenuOpen = false"
               >
                 View Packing Slip
@@ -515,7 +528,21 @@ onUnmounted(() => {
   color: #1d4ed8;
 }
 
+.shopify-order-status--cancelled {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
 .shopify-order-status--clickable {
   cursor: pointer;
+}
+
+.shopify-order-detail-actions-menu {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  left: auto;
+  min-width: 12rem;
+  z-index: 20;
 }
 </style>

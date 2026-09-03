@@ -105,7 +105,7 @@ function onSubmit() {
         </div>
 
         <footer class="so-modal__foot">
-          <button type="button" class="btn btn-outline-primary" :disabled="busy" @click="onClose">
+          <button type="button" class="btn btn-outline-secondary orders-toolbar-outline-btn" :disabled="busy" @click="onClose">
             Cancel
           </button>
           <button
@@ -196,12 +196,15 @@ function onSubmit() {
   gap: 0.2rem;
   text-align: left;
   padding: 0.85rem 0.9rem;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #e5e7eb !important;
   border-radius: 0.65rem;
   background: #fff;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
 }
 .so-hold-card.is-selected {
-  border-color: #3b82f6;
+  border-color: #3b82f6 !important;
   background: #eff6ff;
 }
 .so-hold-card__check {

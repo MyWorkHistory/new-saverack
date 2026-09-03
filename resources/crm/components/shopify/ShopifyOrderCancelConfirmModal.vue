@@ -76,10 +76,20 @@ function onConfirm() {
         </label>
 
         <footer class="so-modal__foot">
-          <button type="button" class="btn btn-outline-secondary" :disabled="busy" @click="onClose">
+          <button
+            type="button"
+            class="btn btn-outline-secondary orders-toolbar-outline-btn"
+            :disabled="busy"
+            @click="onClose"
+          >
             Keep Order
           </button>
-          <button type="button" class="btn btn-danger fw-semibold" :disabled="busy" @click="onConfirm">
+          <button
+            type="button"
+            class="crm-vx-modal-btn crm-vx-modal-btn--danger"
+            :disabled="busy"
+            @click="onConfirm"
+          >
             {{ busy ? "Canceling…" : "Cancel Order" }}
           </button>
         </footer>

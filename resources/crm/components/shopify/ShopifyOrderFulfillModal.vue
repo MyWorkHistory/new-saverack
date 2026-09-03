@@ -133,7 +133,7 @@ function onSubmit() {
         </div>
 
         <footer class="so-modal__foot">
-          <button type="button" class="btn btn-outline-secondary" :disabled="busy" @click="onClose">Cancel</button>
+          <button type="button" class="btn btn-outline-secondary orders-toolbar-outline-btn" :disabled="busy" @click="onClose">Cancel</button>
           <button
             type="button"
             class="btn fw-semibold so-btn-fulfill"
@@ -296,11 +296,11 @@ function onSubmit() {
 .so-btn-fulfill {
   background: #15803d;
   border-color: #15803d;
-  color: #fff;
+  color: #fff !important;
 }
 .so-btn-fulfill:hover:not(:disabled) {
   background: #166534;
   border-color: #166534;
-  color: #fff;
+  color: #fff !important;
 }
 </style>

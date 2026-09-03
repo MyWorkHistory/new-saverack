@@ -15,6 +15,7 @@ import {
   displayStatusClass,
   displayStatusLabel,
   formatShopifyOrderName,
+  isCancelledStatus,
   isFulfilledStatus,
   useShopifyOrderActions,
 } from "../../composables/useShopifyOrderActions.js";
@@ -97,6 +98,10 @@ const countryOptions = computed(() => [
 ]);
 const holdTargetCount = computed(() => actionTargetIds.value.length || 1);
 const cancelTargetCount = computed(() => actionTargetIds.value.length || 1);
+
+function canChangeOrderActions(status) {
+  return !isFulfilledStatus(status) && !isCancelledStatus(status);
+}
 
 const DATE_PRESETS = [
   { value: "today", label: "Today" },
@@ -450,7 +455,7 @@ async function openReshipModal(row) {
 
 function openReprocessModal(ids) {
   const targets = rows.value.filter((r) => ids.includes(r.id));
-  const eligible = targets.filter((r) => !isFulfilledStatus(r.display_status));
+  const eligible = targets.filter((r) => canChangeOrderActions(r.display_status));
   if (eligible.length !== targets.length) {
     toast.error("Cannot change shipped order status.");
   }
@@ -874,40 +879,46 @@ onUnmounted(() => {
           </button>
           <div
             v-if="bulkMenuOpen"
-            class="dropdown-menu show shadow-sm"
+            class="dropdown-menu show shadow border p-0 staff-toolbar-filter-dropdown shopify-orders-bulk-menu"
+            role="menu"
             @click.stop
           >
             <button
               type="button"
-              class="dropdown-item"
+              class="staff-row-menu__item"
+              role="menuitem"
               @click="openHoldModal(selectedIds)"
             >
               Hold Order
             </button>
             <button
               type="button"
-              class="dropdown-item"
+              class="staff-row-menu__item"
+              role="menuitem"
               @click="openCancelModal(selectedIds)"
             >
               Cancel Order
             </button>
             <button
               type="button"
-              class="dropdown-item"
+              class="staff-row-menu__item"
+              role="menuitem"
               @click="openFulfillModal(selectedIds)"
             >
               Mark Fulfilled
             </button>
             <button
               type="button"
-              class="dropdown-item"
+              class="staff-row-menu__item"
+              role="menuitem"
               @click="openBulkReship"
             >
               Re-Ship Order
             </button>
             <button
               type="button"
-              class="dropdown-item"
+              class="staff-row-menu__item"
+              role="menuitem"
               @click="openReprocessModal(selectedIds)"
             >
               Reprocess Order
@@ -1084,7 +1095,7 @@ onUnmounted(() => {
         <div class="btn-group btn-group-sm">
           <button
             type="button"
-            class="btn btn-outline-secondary"
+            class="btn btn-outline-secondary orders-toolbar-outline-btn"
             :disabled="pagination.current_page <= 1 || loading"
             @click="goPage(pagination.current_page - 1)"
           >
@@ -1092,7 +1103,7 @@ onUnmounted(() => {
           </button>
           <button
             type="button"
-            class="btn btn-outline-secondary"
+            class="btn btn-outline-secondary orders-toolbar-outline-btn"
             :disabled="pagination.current_page >= pagination.last_page || loading"
             @click="goPage(pagination.current_page + 1)"
           >
@@ -1105,45 +1116,51 @@ onUnmounted(() => {
     <Teleport to="body">
       <div
         v-if="manageOpenId && manageMenuRow"
-        class="dropdown-menu show shadow-sm"
+        class="staff-row-menu"
         data-shopify-orders-row-actions
-        :style="{ position: 'fixed', top: `${manageMenuRect.top}px`, left: `${manageMenuRect.left}px`, minWidth: `${MENU_W}px`, zIndex: 2000 }"
+        role="menu"
+        :style="{ top: `${manageMenuRect.top}px`, left: `${manageMenuRect.left}px`, minWidth: `${MENU_W}px` }"
         @click.stop
       >
         <button
           type="button"
-          class="dropdown-item"
+          class="staff-row-menu__item"
+          role="menuitem"
           @click="runRowAction(actions.viewInShopify, manageMenuRow)"
         >
           View in Shopify
         </button>
         <button
           type="button"
-          class="dropdown-item"
+          class="staff-row-menu__item"
+          role="menuitem"
           @click="runRowAction((r) => actions.syncOrder(r), manageMenuRow)"
         >
           Sync From Shopify
         </button>
         <button
-          v-if="!isFulfilledStatus(manageMenuRow.display_status)"
+          v-if="canChangeOrderActions(manageMenuRow.display_status)"
           type="button"
-          class="dropdown-item"
+          class="staff-row-menu__item"
+          role="menuitem"
           @click="openHoldModal([manageMenuRow.id])"
         >
           Hold Order
         </button>
         <button
-          v-if="!isFulfilledStatus(manageMenuRow.display_status)"
+          v-if="canChangeOrderActions(manageMenuRow.display_status)"
           type="button"
-          class="dropdown-item"
+          class="staff-row-menu__item staff-row-menu__item--danger"
+          role="menuitem"
           @click="openCancelModal([manageMenuRow.id])"
         >
           Cancel Order
         </button>
         <button
-          v-if="!isFulfilledStatus(manageMenuRow.display_status)"
+          v-if="canChangeOrderActions(manageMenuRow.display_status)"
           type="button"
-          class="dropdown-item"
+          class="staff-row-menu__item"
+          role="menuitem"
           @click="openFulfillModal([manageMenuRow.id])"
         >
           Mark Fulfilled
@@ -1151,22 +1168,25 @@ onUnmounted(() => {
         <button
           v-if="isFulfilledStatus(manageMenuRow.display_status)"
           type="button"
-          class="dropdown-item"
+          class="staff-row-menu__item"
+          role="menuitem"
           @click="openReshipModal(manageMenuRow)"
         >
           Re-Ship Order
         </button>
         <button
-          v-if="!isFulfilledStatus(manageMenuRow.display_status)"
+          v-if="canChangeOrderActions(manageMenuRow.display_status)"
           type="button"
-          class="dropdown-item"
+          class="staff-row-menu__item"
+          role="menuitem"
           @click="openReprocessModal([manageMenuRow.id])"
         >
           Reprocess Order
         </button>
         <button
           type="button"
-          class="dropdown-item"
+          class="staff-row-menu__item"
+          role="menuitem"
           @click="runRowAction(actions.viewPackingSlip, manageMenuRow)"
         >
           View Packing Slip
@@ -1323,12 +1343,14 @@ onUnmounted(() => {
   font-size: 0.8125rem;
 }
 
-.staff-toolbar-bulk-dropdown .dropdown-menu {
+.staff-toolbar-bulk-dropdown .shopify-orders-bulk-menu {
   position: absolute;
   top: calc(100% + 0.25rem);
   left: 0;
   min-width: 12rem;
   z-index: 20;
+  background: #fff !important;
+  padding: 0.35rem 0 !important;
 }
 
 .shopify-orders-order-link {
@@ -1390,6 +1412,11 @@ onUnmounted(() => {
 .shopify-order-status--shipped {
   background: #dbeafe;
   color: #1d4ed8;
+}
+
+.shopify-order-status--cancelled {
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
 .shopify-order-status--clickable {

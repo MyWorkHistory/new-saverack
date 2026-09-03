@@ -113,7 +113,7 @@ function onSubmit() {
         </div>
 
         <footer class="so-modal__foot">
-          <button type="button" class="btn btn-outline-primary" :disabled="busy" @click="onClose">Cancel</button>
+          <button type="button" class="btn btn-outline-secondary orders-toolbar-outline-btn" :disabled="busy" @click="onClose">Cancel</button>
           <button
             type="button"
             class="btn btn-primary staff-page-primary fw-semibold"

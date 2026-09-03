@@ -20,12 +20,15 @@ class ShopifyOrderListService
 
     public const DISPLAY_FULFILLED = 'fulfilled';
 
+    public const DISPLAY_CANCELLED = 'cancelled';
+
     /** @var list<string> */
     public const DISPLAY_STATUSES = [
         self::DISPLAY_READY,
         self::DISPLAY_ON_HOLD,
         self::DISPLAY_BACKORDER,
         self::DISPLAY_FULFILLED,
+        self::DISPLAY_CANCELLED,
     ];
 
     /** @var list<string> */
@@ -127,7 +130,13 @@ class ShopifyOrderListService
 
         if ($status === self::DISPLAY_ON_HOLD) {
             $query->whereNotNull('crm_hold_reasons')
-                ->whereRaw('JSON_LENGTH(crm_hold_reasons) > 0');
+                ->whereRaw('JSON_LENGTH(crm_hold_reasons) > 0')
+                ->whereNull('cancelled_at')
+                ->whereNull('crm_fulfillment_cancelled_at')
+                ->where(function (Builder $b) {
+                    $b->whereNull('fulfillment_status')
+                        ->orWhere('fulfillment_status', '!=', 'fulfilled');
+                });
 
             return;
         }
@@ -136,6 +145,23 @@ class ShopifyOrderListService
             $query->where(function (Builder $b) {
                 $b->whereRaw("JSON_SEARCH(raw_json, 'one', '%backorder%', NULL, '$') IS NOT NULL")
                     ->orWhereRaw("JSON_SEARCH(raw_json, 'one', '%Backorder%', NULL, '$') IS NOT NULL");
+            })->whereNull('cancelled_at')
+                ->whereNull('crm_fulfillment_cancelled_at')
+                ->where(function (Builder $b) {
+                    $b->whereNull('fulfillment_status')
+                        ->orWhere('fulfillment_status', '!=', 'fulfilled');
+                });
+
+            return;
+        }
+
+        if ($status === self::DISPLAY_CANCELLED) {
+            $query->where(function (Builder $b) {
+                $b->whereNotNull('cancelled_at')
+                    ->orWhereNotNull('crm_fulfillment_cancelled_at');
+            })->where(function (Builder $b) {
+                $b->whereNull('fulfillment_status')
+                    ->orWhere('fulfillment_status', '!=', 'fulfilled');
             });
 
             return;
@@ -216,6 +242,10 @@ class ShopifyOrderListService
             return self::DISPLAY_FULFILLED;
         }
 
+        if ($order->cancelled_at !== null || $order->crm_fulfillment_cancelled_at !== null) {
+            return self::DISPLAY_CANCELLED;
+        }
+
         $holds = is_array($order->crm_hold_reasons) ? $order->crm_hold_reasons : [];
         if ($holds !== []) {
             return self::DISPLAY_ON_HOLD;
@@ -233,6 +263,11 @@ class ShopifyOrderListService
         return $this->displayStatus($order) === self::DISPLAY_FULFILLED;
     }
 
+    public function isCancelled(ShopifyOrder $order): bool
+    {
+        return $this->displayStatus($order) === self::DISPLAY_CANCELLED;
+    }
+
     public function displayStatusLabel(string $status): string
     {
         if ($status === 'shipped') {
@@ -248,6 +283,8 @@ class ShopifyOrderListService
                 return 'Backorder';
             case self::DISPLAY_FULFILLED:
                 return 'Fulfilled';
+            case self::DISPLAY_CANCELLED:
+                return 'Cancelled';
             default:
                 return ucwords(str_replace('_', ' ', $status));
         }

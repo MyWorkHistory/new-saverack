@@ -247,10 +247,121 @@ class ShopifyOrderActionsApiTest extends TestCase
 
         $this->postJson('/api/shopify/orders/'.$order->id.'/cancel', [
             'cancel_in_shopify' => false,
-        ])->assertOk();
+        ])
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'cancelled');
 
         $order->refresh();
         $this->assertNotNull($order->crm_fulfillment_cancelled_at);
+    }
+
+    public function test_crm_cancel_via_real_service_sets_cancelled_display_status(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder();
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/cancel', [
+            'cancel_in_shopify' => false,
+        ])
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'cancelled');
+
+        $order->refresh();
+        $this->assertNotNull($order->crm_fulfillment_cancelled_at);
+        $this->assertNull($order->cancelled_at);
+    }
+
+    public function test_orders_meta_includes_cancelled_status(): void
+    {
+        $this->actingAsAdmin();
+        $this->seedOrder();
+
+        $this->getJson('/api/shopify/orders/meta')
+            ->assertOk()
+            ->assertJsonFragment(['value' => 'cancelled', 'label' => 'Cancelled']);
+    }
+
+    public function test_shopify_cancel_uses_refund_method_payload(): void
+    {
+        $this->actingAsAdmin();
+        [, $connection, $order] = $this->seedOrder();
+
+        $api = Mockery::mock(\App\Services\ShopifyClient::class);
+        $api->shouldReceive('graphql')
+            ->once()
+            ->withArgs(function (string $query, array $vars) {
+                return str_contains($query, 'refundMethod')
+                    && str_contains($query, 'orderCancelUserErrors')
+                    && str_contains($query, 'job { id done }')
+                    && ! str_contains($query, 'order { id cancelledAt }')
+                    && ($vars['reason'] ?? null) === 'OTHER'
+                    && ($vars['refundMethod']['originalPaymentMethodsRefund'] ?? null) === false
+                    && ($vars['restock'] ?? null) === true;
+            })
+            ->andReturn([
+                'orderCancel' => [
+                    'job' => ['id' => 'gid://shopify/Job/1', 'done' => true],
+                    'orderCancelUserErrors' => [],
+                    'userErrors' => [],
+                ],
+            ]);
+
+        $client = Mockery::mock(\App\Services\ShopifyClient::class);
+        $client->shouldReceive('forConnection')->andReturn($api);
+        $this->app->instance(\App\Services\ShopifyClient::class, $client);
+
+        $sync = Mockery::mock(\App\Services\ShopifyOrderSyncService::class);
+        $sync->shouldReceive('refreshOrderByShopifyId')
+            ->atLeast()
+            ->once()
+            ->andReturnUsing(function () use ($order) {
+                $order->cancelled_at = now();
+                $order->save();
+
+                return $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
+            });
+        $this->app->instance(\App\Services\ShopifyOrderSyncService::class, $sync);
+        $this->app->forgetInstance(ShopifyOrderActionService::class);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/cancel', [
+            'cancel_in_shopify' => true,
+        ])
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'cancelled');
+
+        $this->assertNotNull($connection->fresh());
+    }
+
+    public function test_fulfill_all_rejected_for_cancelled_order(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder([
+            'crm_fulfillment_cancelled_at' => now(),
+        ]);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/fulfill-all')
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Cannot fulfill a cancelled order.');
+    }
+
+    public function test_fulfill_all_rejects_when_no_fo_lines_after_sync(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder();
+
+        $sync = Mockery::mock(\App\Services\ShopifyOrderSyncService::class);
+        $sync->shouldReceive('refreshOrderByShopifyId')
+            ->once()
+            ->andReturn($order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']));
+        $this->app->instance(\App\Services\ShopifyOrderSyncService::class, $sync);
+        $this->app->forgetInstance(ShopifyOrderActionService::class);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/fulfill-all')
+            ->assertStatus(422)
+            ->assertJsonPath(
+                'message',
+                'No fulfillable quantities remain on this order. Sync the order from Shopify and try again.'
+            );
     }
 
     public function test_export_uses_blank_cells_and_us_date(): void

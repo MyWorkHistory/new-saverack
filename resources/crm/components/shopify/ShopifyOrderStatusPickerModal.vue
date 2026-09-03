@@ -20,7 +20,7 @@ const selected = ref("");
 
 const options = computed(() =>
   Object.entries(SHOPIFY_DISPLAY_STATUS_LABELS)
-    .filter(([value]) => value !== "shipped")
+    .filter(([value]) => value !== "shipped" && value !== "cancelled")
     .map(([value, label]) => ({ value, label })),
 );
 
@@ -98,7 +98,7 @@ function onConfirm() {
             </button>
           </div>
           <footer class="so-modal__foot">
-            <button type="button" class="btn btn-outline-secondary" :disabled="busy" @click="onClose">
+            <button type="button" class="btn btn-outline-secondary orders-toolbar-outline-btn" :disabled="busy" @click="onClose">
               Cancel
             </button>
           </footer>
@@ -112,7 +112,7 @@ function onConfirm() {
             to <strong>{{ displayStatusLabel(selected) }}</strong>?
           </p>
           <footer class="so-modal__foot">
-            <button type="button" class="btn btn-outline-secondary" :disabled="busy" @click="step = 'pick'">
+            <button type="button" class="btn btn-outline-secondary orders-toolbar-outline-btn" :disabled="busy" @click="step = 'pick'">
               Back
             </button>
             <button
@@ -178,11 +178,14 @@ function onConfirm() {
 .so-status-list__item {
   text-align: left;
   padding: 0.7rem 0.9rem;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #e5e7eb !important;
   border-radius: 0.55rem;
   background: #fff;
   font-weight: 600;
   color: #111827;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
 }
 .so-status-list__item:hover:not(:disabled) {
   border-color: #93c5fd;

@@ -730,6 +730,7 @@ GQL
             }
 
             $this->syncFulfillmentOrders($connection, $order, $node);
+            $this->syncFulfillmentOrdersFromRestApi($connection, $order);
 
             return true;
         });
@@ -768,6 +769,52 @@ GQL
     }
 
     /**
+     * Fetch fulfillment orders via REST and upsert local FO rows.
+     * Public so Mark Fulfilled / Sync can recover when GraphQL FO data is missing.
+     */
+    public function syncFulfillmentOrdersFromRestApi(
+        ClientAccountShopifyConnection $connection,
+        ShopifyOrder $order
+    ): int {
+        $orderId = ShopifyGid::toId((string) $order->shopify_order_id);
+        if ($orderId === '') {
+            return 0;
+        }
+
+        $api = $this->client->forConnection($connection);
+        try {
+            $response = $api->restGet('orders/'.$orderId.'/fulfillment_orders.json');
+        } catch (Throwable $e) {
+            Log::warning('shopify.order.fo_rest_failed', [
+                'connection_id' => $connection->id,
+                'order_id' => $orderId,
+                'message' => $e->getMessage(),
+            ]);
+
+            return 0;
+        }
+
+        if (($response['status'] ?? 0) < 200 || ($response['status'] ?? 0) >= 300) {
+            Log::warning('shopify.order.fo_rest_http', [
+                'connection_id' => $connection->id,
+                'order_id' => $orderId,
+                'status' => $response['status'] ?? null,
+            ]);
+
+            return 0;
+        }
+
+        $list = $response['json']['fulfillment_orders'] ?? null;
+        if (! is_array($list) || $list === []) {
+            return 0;
+        }
+
+        $this->upsertFulfillmentOrdersFromList($connection, $order, $list);
+
+        return count($list);
+    }
+
+    /**
      * @param  array<string, mixed>  $orderNode
      */
     private function syncFulfillmentOrders(
@@ -776,21 +823,83 @@ GQL
         array $orderNode
     ): void {
         $foEdges = $orderNode['fulfillmentOrders']['edges'] ?? null;
-        if (! is_array($foEdges)) {
-            return;
+        if (is_array($foEdges) && $foEdges !== []) {
+            $normalized = [];
+            foreach ($foEdges as $edge) {
+                $fo = is_array($edge['node'] ?? null) ? $edge['node'] : null;
+                if ($fo === null) {
+                    continue;
+                }
+                $normalized[] = $this->normalizeGraphqlFulfillmentOrder($fo);
+            }
+            if ($normalized !== []) {
+                $this->upsertFulfillmentOrdersFromList($connection, $order, $normalized);
+
+                return;
+            }
         }
 
+        $restList = $orderNode['fulfillment_orders'] ?? null;
+        if (is_array($restList) && $restList !== []) {
+            $this->upsertFulfillmentOrdersFromList($connection, $order, $restList);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $fo
+     * @return array<string, mixed>
+     */
+    private function normalizeGraphqlFulfillmentOrder(array $fo): array
+    {
+        $lineItems = [];
+        foreach (($fo['lineItems']['edges'] ?? []) as $lineEdge) {
+            $line = is_array($lineEdge['node'] ?? null) ? $lineEdge['node'] : null;
+            if ($line === null) {
+                continue;
+            }
+            $lineItems[] = [
+                'id' => $line['id'] ?? null,
+                'quantity' => (int) ($line['totalQuantity'] ?? 0),
+                'fulfillable_quantity' => (int) ($line['remainingQuantity'] ?? 0),
+                'line_item_id' => $line['lineItem']['id'] ?? null,
+                'raw' => $line,
+            ];
+        }
+
+        return [
+            'id' => $fo['id'] ?? null,
+            'status' => $fo['status'] ?? null,
+            'request_status' => $fo['requestStatus'] ?? null,
+            'assigned_location_id' => $fo['assignedLocation']['location']['id'] ?? null,
+            'line_items' => $lineItems,
+            'raw' => $fo,
+        ];
+    }
+
+    /**
+     * Upsert FO + lines from REST-shaped list (also accepts normalized GraphQL conversions).
+     *
+     * @param  list<array<string, mixed>>  $list
+     */
+    private function upsertFulfillmentOrdersFromList(
+        ClientAccountShopifyConnection $connection,
+        ShopifyOrder $order,
+        array $list
+    ): void {
         $seenFoIds = [];
-        foreach ($foEdges as $edge) {
-            $fo = is_array($edge['node'] ?? null) ? $edge['node'] : null;
-            if ($fo === null) {
+        foreach ($list as $fo) {
+            if (! is_array($fo)) {
                 continue;
             }
             $foId = ShopifyGid::toId((string) ($fo['id'] ?? ''));
             if ($foId === '') {
                 continue;
             }
-            $locationId = ShopifyGid::toId((string) (($fo['assignedLocation']['location']['id'] ?? '') ?: ''));
+            $locationId = ShopifyGid::toId((string) (
+                $fo['assigned_location_id']
+                ?? (is_array($fo['assigned_location'] ?? null) ? ($fo['assigned_location']['location_id'] ?? $fo['assigned_location']['id'] ?? '') : '')
+                ?? ''
+            ));
 
             $seenFoIds[] = $foId;
             $foRow = ShopifyFulfillmentOrder::query()->updateOrCreate(
@@ -801,23 +910,26 @@ GQL
                 [
                     'shopify_order_id' => $order->id,
                     'status' => strtolower((string) ($fo['status'] ?? '')),
-                    'request_status' => strtolower((string) ($fo['requestStatus'] ?? '')),
+                    'request_status' => strtolower((string) ($fo['request_status'] ?? $fo['requestStatus'] ?? '')),
                     'shopify_location_id' => $locationId !== '' ? $locationId : null,
-                    'raw_json' => $fo,
+                    'raw_json' => is_array($fo['raw'] ?? null) ? $fo['raw'] : $fo,
                 ]
             );
 
             $seenFoLineIds = [];
-            foreach (($fo['lineItems']['edges'] ?? []) as $lineEdge) {
-                $line = is_array($lineEdge['node'] ?? null) ? $lineEdge['node'] : null;
-                if ($line === null) {
+            $lines = $fo['line_items'] ?? [];
+            if (! is_array($lines)) {
+                $lines = [];
+            }
+            foreach ($lines as $line) {
+                if (! is_array($line)) {
                     continue;
                 }
                 $foLineId = ShopifyGid::toId((string) ($line['id'] ?? ''));
                 if ($foLineId === '') {
                     continue;
                 }
-                $orderLineShopifyId = ShopifyGid::toId((string) (($line['lineItem']['id'] ?? '') ?: ''));
+                $orderLineShopifyId = ShopifyGid::toId((string) ($line['line_item_id'] ?? ''));
                 $orderLineRowId = null;
                 if ($orderLineShopifyId !== '') {
                     $orderLineRowId = ShopifyOrderLineItem::query()
@@ -825,6 +937,9 @@ GQL
                         ->where('shopify_line_item_id', $orderLineShopifyId)
                         ->value('id');
                 }
+
+                $totalQty = (int) ($line['quantity'] ?? $line['totalQuantity'] ?? 0);
+                $remaining = (int) ($line['fulfillable_quantity'] ?? $line['remainingQuantity'] ?? $totalQty);
 
                 $seenFoLineIds[] = $foLineId;
                 ShopifyFulfillmentOrderLineItem::query()->updateOrCreate(
@@ -836,9 +951,9 @@ GQL
                         'shopify_fulfillment_order_id' => $foRow->id,
                         'shopify_order_line_item_id' => $orderLineRowId,
                         'shopify_line_item_id' => $orderLineShopifyId !== '' ? $orderLineShopifyId : null,
-                        'total_quantity' => (int) ($line['totalQuantity'] ?? 0),
-                        'remaining_quantity' => (int) ($line['remainingQuantity'] ?? 0),
-                        'raw_json' => $line,
+                        'total_quantity' => $totalQty,
+                        'remaining_quantity' => $remaining,
+                        'raw_json' => is_array($line['raw'] ?? null) ? $line['raw'] : $line,
                     ]
                 );
             }
@@ -852,13 +967,15 @@ GQL
             $foLinePrune->delete();
         }
 
-        $foPrune = ShopifyFulfillmentOrder::query()
-            ->where('connection_id', $connection->id)
-            ->where('shopify_order_id', $order->id);
-        if ($seenFoIds !== []) {
-            $foPrune->whereNotIn('shopify_fulfillment_order_id', $seenFoIds);
+        if ($seenFoIds === []) {
+            return;
         }
-        $foPrune->delete();
+
+        ShopifyFulfillmentOrder::query()
+            ->where('connection_id', $connection->id)
+            ->where('shopify_order_id', $order->id)
+            ->whereNotIn('shopify_fulfillment_order_id', $seenFoIds)
+            ->delete();
     }
 
     /**

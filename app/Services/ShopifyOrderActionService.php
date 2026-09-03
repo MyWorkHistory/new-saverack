@@ -58,12 +58,33 @@ class ShopifyOrderActionService
             throw new RuntimeException('Shopify connection credentials missing.');
         }
 
-        $refreshed = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
-        if ($refreshed === null) {
+        $refreshed = null;
+        try {
+            $refreshed = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        $target = $refreshed ?? $order;
+        $foCount = 0;
+        try {
+            $foCount = $this->sync->syncFulfillmentOrdersFromRestApi($connection, $target);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        $fresh = $target->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
+        if ($fresh === null) {
             throw new RuntimeException('Could not sync order from Shopify.');
         }
 
-        return $refreshed->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
+        if ($refreshed === null && $foCount === 0 && $fresh->fulfillmentOrders->isEmpty()) {
+            throw new RuntimeException(
+                'Could not sync order from Shopify. Check the store connection token and that the order still exists in Shopify Admin.'
+            );
+        }
+
+        return $fresh;
     }
 
     /**
@@ -233,18 +254,15 @@ GQL
 
         $order->loadMissing(['lineItems', 'fulfillmentOrders.lineItems', 'connection']);
 
-        $items = [];
-        foreach ($order->fulfillmentOrders as $fo) {
-            foreach ($fo->lineItems as $line) {
-                $remaining = (int) $line->remaining_quantity;
-                if ($remaining <= 0) {
-                    continue;
-                }
-                $items[] = [
-                    'fo_line_item_id' => (string) $line->shopify_fo_line_item_id,
-                    'quantity' => $remaining,
-                ];
+        $items = $this->collectFulfillableFoItems($order);
+        if ($items === [] && $connection !== null && $connection->hasCredentials()) {
+            try {
+                $this->sync->syncFulfillmentOrdersFromRestApi($connection, $order);
+            } catch (\Throwable $e) {
+                report($e);
             }
+            $order->load(['fulfillmentOrders.lineItems']);
+            $items = $this->collectFulfillableFoItems($order);
         }
 
         if ($items === []) {
@@ -400,6 +418,32 @@ GQL
         }
 
         throw new RuntimeException('Unsupported status.');
+    }
+
+    /**
+     * @return list<array{fo_line_item_id:string, quantity:int}>
+     */
+    private function collectFulfillableFoItems(ShopifyOrder $order): array
+    {
+        $items = [];
+        foreach ($order->fulfillmentOrders as $fo) {
+            $status = strtolower(trim((string) ($fo->status ?? '')));
+            if (in_array($status, ['closed', 'cancelled', 'incomplete'], true)) {
+                continue;
+            }
+            foreach ($fo->lineItems as $line) {
+                $remaining = (int) $line->remaining_quantity;
+                if ($remaining <= 0) {
+                    continue;
+                }
+                $items[] = [
+                    'fo_line_item_id' => (string) $line->shopify_fo_line_item_id,
+                    'quantity' => $remaining,
+                ];
+            }
+        }
+
+        return $items;
     }
 
     /**

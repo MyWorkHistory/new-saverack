@@ -378,6 +378,9 @@ class ShopifyOrderActionsApiTest extends TestCase
         $sync->shouldReceive('refreshOrderByShopifyId')
             ->once()
             ->andReturn($order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']));
+        $sync->shouldReceive('syncFulfillmentOrdersFromRestApi')
+            ->once()
+            ->andReturn(0);
         $this->app->instance(\App\Services\ShopifyOrderSyncService::class, $sync);
         $this->app->forgetInstance(ShopifyOrderActionService::class);
 
@@ -387,6 +390,68 @@ class ShopifyOrderActionsApiTest extends TestCase
                 'message',
                 'No fulfillable quantities remain on this order. Sync the order from Shopify and try again.'
             );
+    }
+
+    public function test_fulfill_loads_fo_lines_from_rest_when_missing(): void
+    {
+        $this->actingAsAdmin();
+        [, $connection, $order] = $this->seedOrder();
+
+        $line = \App\Models\ShopifyOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => '9001',
+            'sku' => 'SKU-1',
+            'title' => 'Widget',
+            'quantity' => 2,
+            'fulfillable_quantity' => 2,
+            'fulfilled_quantity' => 0,
+            'price' => 10,
+        ]);
+
+        $sync = Mockery::mock(\App\Services\ShopifyOrderSyncService::class);
+        $sync->shouldReceive('refreshOrderByShopifyId')->andReturn($order->fresh());
+        $sync->shouldReceive('syncFulfillmentOrdersFromRestApi')
+            ->once()
+            ->andReturnUsing(function () use ($connection, $order, $line) {
+                $fo = \App\Models\ShopifyFulfillmentOrder::query()->create([
+                    'connection_id' => $connection->id,
+                    'shopify_order_id' => $order->id,
+                    'shopify_fulfillment_order_id' => '7001',
+                    'status' => 'open',
+                ]);
+                \App\Models\ShopifyFulfillmentOrderLineItem::query()->create([
+                    'connection_id' => $connection->id,
+                    'shopify_fulfillment_order_id' => $fo->id,
+                    'shopify_order_line_item_id' => $line->id,
+                    'shopify_fo_line_item_id' => '8001',
+                    'shopify_line_item_id' => '9001',
+                    'total_quantity' => 2,
+                    'remaining_quantity' => 2,
+                ]);
+
+                return 1;
+            });
+        $this->app->instance(\App\Services\ShopifyOrderSyncService::class, $sync);
+
+        $fulfillments = Mockery::mock(\App\Services\ShopifyFulfillmentService::class);
+        $fulfillments->shouldReceive('markShipped')
+            ->once()
+            ->andReturnUsing(function (ShopifyOrder $o) {
+                $o->fulfillment_status = 'fulfilled';
+                $o->save();
+
+                return [
+                    'fulfillment' => null,
+                    'order' => $o->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']),
+                ];
+            });
+        $this->app->instance(\App\Services\ShopifyFulfillmentService::class, $fulfillments);
+        $this->app->forgetInstance(ShopifyOrderActionService::class);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/fulfill-all')
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'fulfilled');
     }
 
     public function test_export_uses_blank_cells_and_us_date(): void

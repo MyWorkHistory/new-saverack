@@ -1011,6 +1011,12 @@ onUnmounted(() => {
   resize: vertical;
   border-radius: 0.5rem;
   border-color: #e5e7eb;
+  background: #fff;
+  background-color: #fff;
+}
+.resources-supplies__notes-input:disabled {
+  background: #fff;
+  background-color: #fff;
 }
 .resources-supplies__history-head-left {
   min-width: 0;

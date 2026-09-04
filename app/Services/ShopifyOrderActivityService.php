@@ -35,7 +35,7 @@ class ShopifyOrderActivityService
             'title' => $title,
             'detail' => $detail,
             'meta' => $meta,
-            'actor_user_id' => $actor?->id,
+            'actor_user_id' => $actor !== null ? $actor->id : null,
             'actor_label' => $label,
         ]);
     }

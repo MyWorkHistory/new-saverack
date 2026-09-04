@@ -2275,7 +2275,7 @@ class ShopifyIntegrationController extends Controller
                         ->where('sku', trim((string) $line->sku))
                         ->first();
                 }
-                $crmVariantId = $crmVariant?->id;
+                $crmVariantId = $crmVariant !== null ? $crmVariant->id : null;
                 $imageUrl = null;
                 if ($crmVariant !== null) {
                     $imageUrl = $crmVariant->displayImageUrl();

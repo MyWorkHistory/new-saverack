@@ -733,6 +733,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/orders/{shopifyOrder}/reprocess', [ShopifyIntegrationController::class, 'orderReprocess']);
         Route::post('/orders/{shopifyOrder}/display-status', [ShopifyIntegrationController::class, 'orderDisplayStatus']);
         Route::post('/orders/{shopifyOrder}/fulfill', [ShopifyIntegrationController::class, 'fulfillOrder']);
+        Route::post('/orders/{shopifyOrder}/items', [ShopifyIntegrationController::class, 'orderUpdateItems']);
+        Route::post('/orders/{shopifyOrder}/shipping-address', [ShopifyIntegrationController::class, 'orderUpdateShippingAddress']);
+        Route::post('/orders/{shopifyOrder}/shipping-method', [ShopifyIntegrationController::class, 'orderUpdateShippingMethod']);
         Route::get('/inventory', [ShopifyIntegrationController::class, 'inventoryIndex']);
         Route::get('/inventory/accounts', [ShopifyIntegrationController::class, 'inventoryAccounts']);
         Route::post('/inventory/import', [ShopifyIntegrationController::class, 'importProductsCsv']);

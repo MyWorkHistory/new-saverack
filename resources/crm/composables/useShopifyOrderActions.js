@@ -258,6 +258,54 @@ export function useShopifyOrderActions({ onUpdated } = {}) {
     }
   }
 
+  async function updateOrderItems(orderId, payload) {
+    if (!orderId) return null;
+    busy.value = true;
+    try {
+      const { data } = await api.post(`/shopify/orders/${orderId}/items`, payload);
+      toast.success("Order updated.");
+      onUpdated?.(data?.order);
+      return data?.order ?? null;
+    } catch (e) {
+      toast.errorFrom(e, "Could not update order items.");
+      return null;
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  async function updateShippingAddress(orderId, payload) {
+    if (!orderId) return null;
+    busy.value = true;
+    try {
+      const { data } = await api.post(`/shopify/orders/${orderId}/shipping-address`, payload);
+      toast.success("Address updated.");
+      onUpdated?.(data?.order);
+      return data?.order ?? null;
+    } catch (e) {
+      toast.errorFrom(e, "Could not update address.");
+      return null;
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  async function updateShippingMethod(orderId, payload) {
+    if (!orderId) return null;
+    busy.value = true;
+    try {
+      const { data } = await api.post(`/shopify/orders/${orderId}/shipping-method`, payload);
+      toast.success("Shipping method updated.");
+      onUpdated?.(data?.order);
+      return data?.order ?? null;
+    } catch (e) {
+      toast.errorFrom(e, "Could not update shipping method.");
+      return null;
+    } finally {
+      busy.value = false;
+    }
+  }
+
   return {
     busy,
     syncOrder,
@@ -269,5 +317,8 @@ export function useShopifyOrderActions({ onUpdated } = {}) {
     applyDisplayStatus,
     viewInShopify,
     viewPackingSlip,
+    updateOrderItems,
+    updateShippingAddress,
+    updateShippingMethod,
   };
 }

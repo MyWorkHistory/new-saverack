@@ -14,6 +14,8 @@ use App\Services\ShopifyConnectionService;
 use App\Services\ShopifyFulfillmentService;
 use App\Services\ShopifyOAuthService;
 use App\Services\ShopifyOrderActionService;
+use App\Services\ShopifyOrderActivityService;
+use App\Services\ShopifyOrderEditService;
 use App\Services\ShopifyOrderListService;
 use App\Services\ShopifyOrderSyncService;
 use App\Services\ShopifyProductCsvService;
@@ -797,7 +799,7 @@ class ShopifyIntegrationController extends Controller
         ]);
 
         try {
-            $order = $actions->holdOrder($shopifyOrder, $validated['reasons']);
+            $order = $actions->holdOrder($shopifyOrder, $validated['reasons'], $request->user());
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         } catch (Throwable $e) {
@@ -948,7 +950,7 @@ class ShopifyIntegrationController extends Controller
                 continue;
             }
             try {
-                $updated[] = $orders->listRow($actions->holdOrder($order, $validated['reasons']));
+                $updated[] = $orders->listRow($actions->holdOrder($order, $validated['reasons'], $request->user()));
             } catch (RuntimeException $e) {
                 $errors[] = ['id' => (int) $id, 'message' => $e->getMessage()];
             }
@@ -1100,6 +1102,112 @@ class ShopifyIntegrationController extends Controller
         ]);
 
         return response()->json(['order' => $this->orderDetail($shopifyOrder, $orders)]);
+    }
+
+    public function orderUpdateItems(
+        Request $request,
+        ShopifyOrder $shopifyOrder,
+        ShopifyOrderEditService $edits
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $validated = $request->validate([
+            'lines' => ['sometimes', 'array'],
+            'lines.*.id' => ['required', 'integer'],
+            'lines.*.quantity' => ['required', 'integer', 'min:0'],
+            'lines.*.action' => ['nullable', 'string', 'in:cancel,fulfilled'],
+            'add' => ['sometimes', 'array'],
+            'add.*.shopify_variant_id' => ['required', 'string'],
+            'add.*.quantity' => ['required', 'integer', 'min:1'],
+        ]);
+
+        try {
+            $order = $edits->updateItems($shopifyOrder, $validated, $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => 'Could not update order items.'], 500);
+        }
+
+        $order->load([
+            'connection.clientAccount:id,company_name',
+            'lineItems',
+            'fulfillmentOrders.lineItems',
+            'fulfillments',
+        ]);
+
+        return response()->json(['order' => $this->orderDetail($order)]);
+    }
+
+    public function orderUpdateShippingAddress(
+        Request $request,
+        ShopifyOrder $shopifyOrder,
+        ShopifyOrderEditService $edits
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $validated = $request->validate([
+            'full_name' => ['required', 'string', 'max:191'],
+            'address1' => ['required', 'string', 'max:191'],
+            'address2' => ['nullable', 'string', 'max:191'],
+            'city' => ['required', 'string', 'max:128'],
+            'province' => ['nullable', 'string', 'max:128'],
+            'zip' => ['nullable', 'string', 'max:32'],
+            'country' => ['required', 'string', 'max:128'],
+            'email' => ['nullable', 'email', 'max:191'],
+            'phone' => ['nullable', 'string', 'max:64'],
+        ]);
+
+        try {
+            $order = $edits->updateShippingAddress($shopifyOrder, $validated, $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => 'Could not update shipping address.'], 500);
+        }
+
+        $order->load([
+            'connection.clientAccount:id,company_name',
+            'lineItems',
+            'fulfillmentOrders.lineItems',
+            'fulfillments',
+        ]);
+
+        return response()->json(['order' => $this->orderDetail($order)]);
+    }
+
+    public function orderUpdateShippingMethod(
+        Request $request,
+        ShopifyOrder $shopifyOrder,
+        ShopifyOrderEditService $edits
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $validated = $request->validate([
+            'carrier' => ['required', 'string', 'in:UPS,USPS,FEDEX,DHL'],
+            'service' => ['required', 'string', 'max:128'],
+            'price' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        try {
+            $order = $edits->updateShippingMethod($shopifyOrder, $validated, $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => 'Could not update shipping method.'], 500);
+        }
+
+        $order->load([
+            'connection.clientAccount:id,company_name',
+            'lineItems',
+            'fulfillmentOrders.lineItems',
+            'fulfillments',
+        ]);
+
+        return response()->json(['order' => $this->orderDetail($order)]);
     }
 
     public function fulfillOrder(
@@ -2094,25 +2202,124 @@ class ShopifyIntegrationController extends Controller
     {
         $orders ??= app(ShopifyOrderListService::class);
         $list = $orders->listRow($order);
+        $shipping = $orders->shippingDetails($order);
+        $ship = is_array($order->shipping_address_json) ? $order->shipping_address_json : [];
+        $customer = is_array($order->customer_json) ? $order->customer_json : [];
+
+        $variantIds = $order->lineItems
+            ->map(fn ($line) => trim((string) ($line->shopify_variant_id ?? '')))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $crmVariants = [];
+        if ($variantIds !== [] && $order->connection_id) {
+            $crmVariants = ShopifyProductVariant::query()
+                ->where('connection_id', $order->connection_id)
+                ->whereIn('shopify_variant_id', $variantIds)
+                ->get()
+                ->keyBy(fn ($v) => (string) $v->shopify_variant_id);
+        }
+
+        $crmVariantPkIds = collect($crmVariants)->pluck('id')->filter()->values()->all();
+        $locationsByVariantPk = [];
+        if ($crmVariantPkIds !== []) {
+            $items = ShopifyWarehouseLocationItem::query()
+                ->with('location')
+                ->whereIn('shopify_variant_id', $crmVariantPkIds)
+                ->where('available', '>', 0)
+                ->get();
+            foreach ($items as $item) {
+                $pk = (int) $item->shopify_variant_id;
+                if (isset($locationsByVariantPk[$pk])) {
+                    continue;
+                }
+                $name = trim((string) ($item->location->name ?? ''));
+                if ($name !== '') {
+                    $locationsByVariantPk[$pk] = $name;
+                }
+            }
+        }
+
+        $recipientName = $orders->recipientName($order);
+        $phone = trim((string) ($ship['phone'] ?? $customer['phone'] ?? ''));
 
         return array_merge($list, [
             'email' => $order->email,
+            'phone' => $phone !== '' ? $phone : null,
             'financial_status' => $order->financial_status,
             'total_price' => $order->total_price,
             'currency' => $order->currency,
             'customer' => $order->customer_json,
             'shipping_address' => $order->shipping_address_json,
-            'line_items' => $order->lineItems->map(fn ($line) => [
-                'id' => $line->id,
-                'shopify_line_item_id' => $line->shopify_line_item_id,
-                'sku' => $line->sku,
-                'title' => $line->title,
-                'variant_title' => $line->variant_title,
-                'quantity' => $line->quantity,
-                'fulfillable_quantity' => $line->fulfillable_quantity,
-                'fulfilled_quantity' => $line->fulfilled_quantity,
-                'price' => $line->price,
-            ])->values(),
+            'recipient' => [
+                'name' => $recipientName,
+                'address1' => trim((string) ($ship['address1'] ?? '')),
+                'address2' => trim((string) ($ship['address2'] ?? '')),
+                'city' => trim((string) ($ship['city'] ?? '')),
+                'province' => trim((string) ($ship['province'] ?? $ship['provinceCode'] ?? '')),
+                'zip' => trim((string) ($ship['zip'] ?? '')),
+                'country' => trim((string) ($ship['country'] ?? $ship['countryCodeV2'] ?? '')),
+                'email' => trim((string) ($order->email ?? $customer['email'] ?? '')),
+                'phone' => $phone !== '' ? $phone : null,
+            ],
+            'shipping' => $shipping,
+            'line_items' => $order->lineItems->map(function ($line) use ($crmVariants, $locationsByVariantPk, $order) {
+                $shopifyVariantId = trim((string) ($line->shopify_variant_id ?? ''));
+                /** @var ShopifyProductVariant|null $crmVariant */
+                $crmVariant = $shopifyVariantId !== '' ? ($crmVariants[$shopifyVariantId] ?? null) : null;
+                if ($crmVariant === null && trim((string) ($line->sku ?? '')) !== '') {
+                    $crmVariant = ShopifyProductVariant::query()
+                        ->where('connection_id', $order->connection_id)
+                        ->where('sku', trim((string) $line->sku))
+                        ->first();
+                }
+                $crmVariantId = $crmVariant?->id;
+                $imageUrl = null;
+                if ($crmVariant !== null) {
+                    $imageUrl = $crmVariant->displayImageUrl();
+                }
+                if (! $imageUrl) {
+                    $raw = is_array($line->raw_json) ? $line->raw_json : [];
+                    $imageUrl = $raw['image']['url'] ?? $raw['image']['src'] ?? null;
+                }
+
+                $qty = (int) $line->quantity;
+                $fulfilled = (int) ($line->fulfilled_quantity ?? 0);
+                $fulfillable = (int) ($line->fulfillable_quantity ?? 0);
+                if ($qty <= 0) {
+                    $lineStatus = 'cancelled';
+                } elseif ($fulfilled >= $qty && $qty > 0) {
+                    $lineStatus = 'fulfilled';
+                } elseif ($fulfillable <= 0 && $fulfilled > 0) {
+                    $lineStatus = 'fulfilled';
+                } else {
+                    $lineStatus = 'pending';
+                }
+
+                $location = '—';
+                if ($crmVariantId && isset($locationsByVariantPk[(int) $crmVariantId])) {
+                    $location = $locationsByVariantPk[(int) $crmVariantId];
+                }
+
+                return [
+                    'id' => $line->id,
+                    'shopify_line_item_id' => $line->shopify_line_item_id,
+                    'shopify_variant_id' => $shopifyVariantId !== '' ? $shopifyVariantId : null,
+                    'crm_variant_id' => $crmVariantId,
+                    'sku' => $line->sku,
+                    'title' => $line->title,
+                    'variant_title' => $line->variant_title,
+                    'quantity' => $qty,
+                    'fulfillable_quantity' => $fulfillable,
+                    'fulfilled_quantity' => $fulfilled,
+                    'price' => $line->price,
+                    'image_url' => $imageUrl,
+                    'location' => $location,
+                    'line_status' => $lineStatus,
+                ];
+            })->values(),
             'fulfillment_orders' => $order->fulfillmentOrders->map(fn ($fo) => [
                 'id' => $fo->id,
                 'shopify_fulfillment_order_id' => $fo->shopify_fulfillment_order_id,
@@ -2134,6 +2341,7 @@ class ShopifyIntegrationController extends Controller
                 'tracking_number' => $f->tracking_number,
                 'created_at' => optional($f->created_at)->toIso8601String(),
             ])->values(),
+            'timeline' => app(ShopifyOrderActivityService::class)->timelineFor($order),
         ]);
     }
 }

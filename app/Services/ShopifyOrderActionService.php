@@ -92,7 +92,7 @@ class ShopifyOrderActionService
     /**
      * @param  list<string>  $reasons
      */
-    public function holdOrder(ShopifyOrder $order, array $reasons): ShopifyOrder
+    public function holdOrder(ShopifyOrder $order, array $reasons, ?User $actor = null): ShopifyOrder
     {
         $this->assertNotShipped($order);
         if ($order->cancelled_at !== null) {
@@ -114,6 +114,18 @@ class ShopifyOrderActionService
         $order->crm_hold_reasons = $reasons;
         $order->crm_fulfillment_cancelled_at = null;
         $order->save();
+
+        try {
+            app(ShopifyOrderActivityService::class)->record(
+                $order,
+                \App\Models\ShopifyOrderActivity::TYPE_HOLD,
+                'Order Put On Hold',
+                'Reason: '.implode(', ', $reasons),
+                $actor
+            );
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         $order->loadMissing('connection');
         $connection = $order->connection;

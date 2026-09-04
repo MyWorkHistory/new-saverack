@@ -656,6 +656,20 @@ GQL
                 ->where('shopify_order_id', $orderId)
                 ->first();
 
+            $priorLines = [];
+            if ($existing !== null) {
+                $priorLines = $existing->lineItems()
+                    ->get(['sku', 'title', 'quantity', 'shopify_line_item_id'])
+                    ->map(fn ($li) => [
+                        'sku' => (string) ($li->sku ?? ''),
+                        'title' => (string) ($li->title ?? ''),
+                        'quantity' => (int) $li->quantity,
+                        'id' => (string) ($li->shopify_line_item_id ?? ''),
+                    ])
+                    ->keyBy('id')
+                    ->all();
+            }
+
             $rawJson = $this->prepareOrderRawJson($node, $existing);
             $total = $node['totalPriceSet']['shopMoney']['amount'] ?? $node['total_price'] ?? null;
             $fulfillmentStatus = strtolower((string) ($node['displayFulfillmentStatus'] ?? $node['fulfillment_status'] ?? 'unfulfilled'));
@@ -749,8 +763,66 @@ GQL
             $this->syncFulfillmentOrders($connection, $order, $node);
             $this->syncFulfillmentOrdersFromRestApi($connection, $order);
 
+            if ($order->wasRecentlyCreated) {
+                try {
+                    app(ShopifyOrderActivityService::class)->record(
+                        $order,
+                        \App\Models\ShopifyOrderActivity::TYPE_IMPORTED,
+                        'Order imported from Shopify',
+                        null,
+                        null,
+                        'System'
+                    );
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            } elseif ($priorLines !== []) {
+                try {
+                    $this->recordShopifyLineDiffs($order, $priorLines);
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
+
             return true;
         });
+    }
+
+    /**
+     * @param  array<string, array{sku:string,title:string,quantity:int,id:string}>  $priorLines
+     */
+    private function recordShopifyLineDiffs(ShopifyOrder $order, array $priorLines): void
+    {
+        $order->loadMissing('lineItems');
+        $details = [];
+        foreach ($order->lineItems as $line) {
+            $id = (string) ($line->shopify_line_item_id ?? '');
+            $prev = $priorLines[$id] ?? null;
+            if ($prev === null) {
+                $details[] = 'Added '.trim((string) ($line->title ?: 'item')).' (SKU: '.trim((string) ($line->sku ?: '—')).') qty '.(int) $line->quantity;
+                continue;
+            }
+            if ((int) $prev['quantity'] !== (int) $line->quantity) {
+                $details[] = trim((string) ($line->title ?: 'item')).' (SKU: '.trim((string) ($line->sku ?: '—')).') qty '.$prev['quantity'].' → '.(int) $line->quantity;
+            }
+        }
+        foreach ($priorLines as $id => $prev) {
+            $still = $order->lineItems->firstWhere('shopify_line_item_id', $id);
+            if ($still === null) {
+                $details[] = 'Removed '.trim((string) ($prev['title'] ?: 'item')).' (SKU: '.trim((string) ($prev['sku'] ?: '—')).')';
+            }
+        }
+        if ($details === []) {
+            return;
+        }
+        app(ShopifyOrderActivityService::class)->record(
+            $order,
+            \App\Models\ShopifyOrderActivity::TYPE_SHOPIFY_EDIT,
+            'Order Edited',
+            implode('; ', $details),
+            null,
+            'Shopify'
+        );
     }
 
     /**

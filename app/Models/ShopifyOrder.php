@@ -62,4 +62,9 @@ class ShopifyOrder extends Model
     {
         return $this->hasMany(ShopifyFulfillment::class, 'shopify_order_id');
     }
+
+    public function activities(): HasMany
+    {
+        return $this->hasMany(ShopifyOrderActivity::class, 'shopify_order_id');
+    }
 }

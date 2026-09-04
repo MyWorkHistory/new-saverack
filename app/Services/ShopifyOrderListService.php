@@ -367,6 +367,42 @@ class ShopifyOrderListService
     }
 
     /**
+     * @return array{requested:string, carrier:string, service:string, price:string|null, currency:string|null}
+     */
+    public function shippingDetails(ShopifyOrder $order): array
+    {
+        $raw = is_array($order->raw_json) ? $order->raw_json : [];
+        $method = $this->shippingMethod($order);
+        $carrier = strtoupper(trim((string) ($raw['crm_shipping_carrier'] ?? $raw['shippingLine']['source'] ?? '')));
+        $service = trim((string) ($raw['crm_shipping_service'] ?? $raw['shippingLine']['code'] ?? ''));
+        if ($service === '') {
+            $service = $method;
+        }
+        if ($carrier === '' && $method !== '') {
+            foreach (['UPS', 'USPS', 'FEDEX', 'DHL'] as $known) {
+                if (stripos($method, $known) !== false) {
+                    $carrier = $known === 'FEDEX' ? 'FEDEX' : $known;
+                    break;
+                }
+            }
+        }
+        $line = is_array($raw['shippingLine'] ?? null) ? $raw['shippingLine'] : [];
+        $amount = $line['originalPriceSet']['shopMoney']['amount'] ?? $line['price'] ?? null;
+        $currency = $line['originalPriceSet']['shopMoney']['currencyCode'] ?? $order->currency;
+        if (($amount === null || $amount === '') && is_array($raw['shipping_lines'][0] ?? null)) {
+            $amount = $raw['shipping_lines'][0]['price'] ?? null;
+        }
+
+        return [
+            'requested' => $method,
+            'carrier' => $carrier,
+            'service' => $service,
+            'price' => $amount !== null && $amount !== '' ? (string) $amount : null,
+            'currency' => $currency !== null && $currency !== '' ? (string) $currency : null,
+        ];
+    }
+
+    /**
      * Blank-safe CSV cell values (empty string when missing).
      *
      * @return list<string>

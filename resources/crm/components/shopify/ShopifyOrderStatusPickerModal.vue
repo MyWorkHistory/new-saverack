@@ -39,7 +39,7 @@ const statusLocked = computed(() => alreadyFulfilled.value || shopifyCancelledLo
 
 const lockMessage = computed(() =>
   alreadyFulfilled.value
-    ? "Cannot change shipped order status."
+    ? "Cannot change fulfilled order status."
     : "Cannot change cancelled order status.",
 );
 

@@ -217,7 +217,7 @@ class ShopifyOrderActionsApiTest extends TestCase
             'reasons' => ['Admin Hold'],
         ])
             ->assertStatus(422)
-            ->assertJsonPath('message', 'Cannot change shipped order status.');
+            ->assertJsonPath('message', 'Cannot change fulfilled order status.');
     }
 
     public function test_bulk_hold_rejects_fulfilled_orders(): void
@@ -234,7 +234,7 @@ class ShopifyOrderActionsApiTest extends TestCase
         $mock->shouldReceive('holdOrder')
             ->andReturnUsing(function (ShopifyOrder $o, array $reasons) {
                 if (strtolower((string) $o->fulfillment_status) === 'fulfilled') {
-                    throw new \RuntimeException('Cannot change shipped order status.');
+                    throw new \RuntimeException('Cannot change fulfilled order status.');
                 }
                 $o->crm_hold_reasons = $reasons;
                 $o->save();
@@ -250,7 +250,7 @@ class ShopifyOrderActionsApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('updated.0.id', $ready->id)
             ->assertJsonPath('errors.0.id', $fulfilled->id)
-            ->assertJsonPath('errors.0.message', 'Cannot change shipped order status.');
+            ->assertJsonPath('errors.0.message', 'Cannot change fulfilled order status.');
     }
 
     public function test_crm_only_cancel_does_not_call_shopify_cancel(): void
@@ -482,7 +482,7 @@ class ShopifyOrderActionsApiTest extends TestCase
 
         $this->postJson('/api/shopify/orders/'.$order->id.'/reprocess')
             ->assertStatus(422)
-            ->assertJsonPath('message', 'Cannot change shipped order status.');
+            ->assertJsonPath('message', 'Cannot change fulfilled order status.');
     }
 
     public function test_reship_rejected_when_not_fulfilled(): void
@@ -503,7 +503,7 @@ class ShopifyOrderActionsApiTest extends TestCase
 
         $this->postJson('/api/shopify/orders/'.$order->id.'/fulfill-all')
             ->assertStatus(422)
-            ->assertJsonPath('message', 'Cannot change shipped order status.');
+            ->assertJsonPath('message', 'Cannot change fulfilled order status.');
     }
 
     public function test_display_status_ready_clears_hold(): void

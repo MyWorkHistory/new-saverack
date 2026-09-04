@@ -13,7 +13,7 @@ use RuntimeException;
 
 class ShopifyOrderActionService
 {
-    public const SHIPPED_STATUS_LOCK_MESSAGE = 'Cannot change shipped order status.';
+    public const SHIPPED_STATUS_LOCK_MESSAGE = 'Cannot change fulfilled order status.';
 
     public const CANCELLED_STATUS_LOCK_MESSAGE = 'Cannot change cancelled order status.';
 

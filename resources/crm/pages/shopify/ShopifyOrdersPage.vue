@@ -457,7 +457,7 @@ function openReprocessModal(ids) {
   const targets = rows.value.filter((r) => ids.includes(r.id));
   const eligible = targets.filter((r) => canChangeOrderActions(r.display_status));
   if (eligible.length !== targets.length) {
-    toast.error("Cannot change shipped order status.");
+    toast.error("Cannot change fulfilled order status.");
   }
   if (!eligible.length) {
     manageOpenId.value = null;

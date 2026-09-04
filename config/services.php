@@ -115,7 +115,7 @@ return [
         'client_secret' => env('SHOPIFY_CLIENT_SECRET'),
         'scopes' => env(
             'SHOPIFY_SCOPES',
-            'read_products,write_products,read_inventory,write_inventory,read_orders,write_orders,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_locations'
+            'read_products,write_products,read_inventory,write_inventory,read_orders,write_orders,write_order_edits,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_locations'
         ),
         'oauth_redirect_uri' => env('SHOPIFY_OAUTH_REDIRECT_URI'),
         /**

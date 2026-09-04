@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import ShopifyCarrierLogo from "../../components/shopify/ShopifyCarrierLogo.vue";
 import ShopifyOrderCancelConfirmModal from "../../components/shopify/ShopifyOrderCancelConfirmModal.vue";
 import ShopifyOrderEditAddressModal from "../../components/shopify/ShopifyOrderEditAddressModal.vue";
 import ShopifyOrderEditItemsModal from "../../components/shopify/ShopifyOrderEditItemsModal.vue";
@@ -22,7 +23,6 @@ import {
 } from "../../composables/useShopifyOrderActions.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
-import { formatDateTimeUs } from "../../utils/formatUserDates";
 
 const route = useRoute();
 const router = useRouter();
@@ -46,11 +46,24 @@ const timeline = computed(() => (Array.isArray(order.value?.timeline) ? order.va
 const recipient = computed(() => order.value?.recipient || null);
 const shipping = computed(() => order.value?.shipping || null);
 
-const createdLabel = computed(() => {
-  const raw = order.value?.shopify_created_at;
-  if (!raw) return "";
-  return formatDateTimeUs(raw);
-});
+/** Screenshot format: August 18, 2026 at 10:24 AM */
+function formatDetailDateTime(val) {
+  if (val == null || val === "") return "";
+  const d = val instanceof Date ? val : new Date(val);
+  if (Number.isNaN(d.getTime())) return "";
+  const datePart = new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(d);
+  const timePart = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(d);
+  return `${datePart} at ${timePart}`;
+}
+
+const createdLabel = computed(() => formatDetailDateTime(order.value?.shopify_created_at));
 
 function canChangeOrderActions(status) {
   return !isFulfilledStatus(status) && !isCancelledStatus(status);
@@ -103,12 +116,19 @@ function lineStatusLabel(status) {
 }
 
 function timelineIconClass(type) {
-  if (type === "order_hold") return "so-timeline__icon so-timeline__icon--hold";
-  if (type === "order_edited" || type === "address_updated" || type === "shipping_updated" || type === "items_updated") {
-    return "so-timeline__icon so-timeline__icon--edit";
+  if (type === "order_hold") return "so-timeline__icon--hold";
+  if (type === "order_edited" || type === "address_updated" || type === "shipping_updated" || type === "items_updated" || type === "shopify_edit") {
+    return "so-timeline__icon--edit";
   }
-  if (type === "order_fulfill" || type === "ready_to_ship") return "so-timeline__icon so-timeline__icon--ok";
-  return "so-timeline__icon so-timeline__icon--create";
+  if (type === "order_fulfill" || type === "ready_to_ship") return "so-timeline__icon--ok";
+  return "so-timeline__icon--create";
+}
+
+function timelineGlyph(type) {
+  if (type === "order_hold") return "pause";
+  if (type === "order_fulfill" || type === "ready_to_ship") return "check";
+  if (type === "order_imported" || type === "order_created") return "plus";
+  return "edit";
 }
 
 function formatAddress(r) {
@@ -258,29 +278,35 @@ onUnmounted(() => {
         </button>
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
           <div class="min-w-0">
-            <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
-              <h1 class="h4 mb-0 fw-bold text-body">
+            <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
+              <h1 class="so-detail-title mb-0">
                 Order #{{ formatShopifyOrderName(order.name || order.display_name) || "—" }}
               </h1>
               <button
                 type="button"
-                class="badge rounded-pill fw-medium shopify-order-status shopify-order-status--clickable border-0"
+                class="so-status-pill"
                 :class="displayStatusClass(order.display_status)"
                 @click="statusPickerOpen = true"
               >
                 {{ displayStatusLabel(order.display_status) }}
               </button>
             </div>
-            <p class="small text-secondary mb-0 so-detail-meta">
-              <span v-if="createdLabel">{{ createdLabel }}</span>
+            <p class="so-detail-meta mb-0">
+              <span v-if="createdLabel" class="so-detail-meta__item">
+                <svg class="so-detail-meta__cal" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <rect x="3" y="5" width="18" height="16" rx="2" />
+                  <path d="M16 3v4M8 3v4M3 11h18" />
+                </svg>
+                {{ createdLabel }}
+              </span>
               <span v-if="createdLabel" class="so-detail-meta__sep">|</span>
-              <span>Sales Channel: Shopify</span>
+              <span class="so-detail-meta__item">Sales Channel: Shopify</span>
             </p>
           </div>
           <div class="d-flex flex-wrap gap-2">
             <button
               type="button"
-              class="btn btn-outline-secondary orders-toolbar-outline-btn fw-semibold d-inline-flex align-items-center gap-2"
+              class="btn so-btn-outline fw-semibold d-inline-flex align-items-center gap-2"
               @click="editItemsOpen = true"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -292,7 +318,7 @@ onUnmounted(() => {
             <div class="position-relative" data-shopify-order-detail-actions>
               <button
                 type="button"
-                class="btn btn-outline-secondary orders-toolbar-outline-btn fw-semibold d-inline-flex align-items-center gap-2"
+                class="btn so-btn-outline fw-semibold d-inline-flex align-items-center gap-2"
                 @click.stop="actionsMenuOpen = !actionsMenuOpen"
               >
                 More Actions
@@ -415,13 +441,28 @@ onUnmounted(() => {
             <h2 class="so-card__title">Timeline</h2>
             <ul v-if="timeline.length" class="so-timeline list-unstyled mb-0">
               <li v-for="ev in timeline" :key="ev.id" class="so-timeline__item">
-                <span :class="timelineIconClass(ev.type)" aria-hidden="true" />
+                <span class="so-timeline__icon" :class="timelineIconClass(ev.type)" aria-hidden="true">
+                  <svg v-if="timelineGlyph(ev.type) === 'plus'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  <svg v-else-if="timelineGlyph(ev.type) === 'pause'" width="12" height="12" viewBox="0 0 24 24" fill="#fff">
+                    <rect x="6" y="5" width="4" height="14" rx="1" />
+                    <rect x="14" y="5" width="4" height="14" rx="1" />
+                  </svg>
+                  <svg v-else-if="timelineGlyph(ev.type) === 'check'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                </span>
                 <div class="so-timeline__body">
                   <div class="d-flex justify-content-between gap-3">
-                    <div>
-                      <div class="fw-semibold">{{ ev.title }}</div>
+                    <div class="min-w-0">
+                      <div class="fw-semibold text-body">{{ ev.title }}</div>
                       <div class="small text-secondary">
-                        {{ formatDateTimeUs(ev.created_at) }}
+                        {{ formatDetailDateTime(ev.created_at) }}
                         <template v-if="ev.detail"> · {{ ev.detail }}</template>
                       </div>
                     </div>
@@ -436,32 +477,55 @@ onUnmounted(() => {
 
         <aside class="so-detail-side">
           <section class="so-card mb-3">
-            <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="d-flex justify-content-between align-items-center mb-3">
               <h2 class="so-card__title mb-0">Recipient</h2>
-              <button type="button" class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn fw-semibold" @click="editAddressOpen = true">
+              <button type="button" class="btn btn-sm so-btn-outline fw-semibold" @click="editAddressOpen = true">
                 Edit
               </button>
             </div>
-            <div class="fw-semibold mb-1">{{ recipient?.name || order.recipient_name || "—" }}</div>
-            <p class="mb-2 text-body">{{ formatAddress(recipient) || "—" }}</p>
-            <div v-if="recipient?.email || order.email" class="small text-secondary mb-1">{{ recipient?.email || order.email }}</div>
-            <div v-if="recipient?.phone" class="small text-secondary">{{ recipient.phone }}</div>
+            <div class="fw-bold mb-1 text-body">{{ recipient?.name || order.recipient_name || "—" }}</div>
+            <p class="mb-3 text-body so-recipient-addr">{{ formatAddress(recipient) || "—" }}</p>
+            <div v-if="recipient?.email || order.email" class="so-contact-row mb-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M4 6h16v12H4z" />
+                <path d="M4 7l8 6 8-6" />
+              </svg>
+              <span>{{ recipient?.email || order.email }}</span>
+            </div>
+            <div v-if="recipient?.phone" class="so-contact-row">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M6.5 3h3l1.5 4-2 1.5a12 12 0 006 6L16.5 13l4 1.5v3A2 2 0 0118.5 20 15.5 15.5 0 014 5.5 2 2 0 016.5 3z" />
+              </svg>
+              <span>{{ recipient.phone }}</span>
+            </div>
           </section>
 
           <section class="so-card">
-            <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="d-flex justify-content-between align-items-center mb-3">
               <h2 class="so-card__title mb-0">Shipping Method</h2>
-              <button type="button" class="btn btn-sm btn-outline-secondary orders-toolbar-outline-btn fw-semibold" @click="editShippingOpen = true">
+              <button type="button" class="btn btn-sm so-btn-outline fw-semibold" @click="editShippingOpen = true">
                 Edit
               </button>
             </div>
             <dl class="so-ship-dl mb-0">
-              <div><dt>Requested</dt><dd>{{ shipping?.requested || order.shipping_method || "—" }}</dd></div>
-              <div><dt>Carrier</dt><dd>{{ carrierLabel(shipping?.carrier) }}</dd></div>
-              <div><dt>Service</dt><dd>{{ shipping?.service || "—" }}</dd></div>
+              <div>
+                <dt>Requested</dt>
+                <dd>{{ shipping?.requested || order.shipping_method || "—" }}</dd>
+              </div>
+              <div>
+                <dt>Carrier</dt>
+                <dd class="d-inline-flex align-items-center gap-2">
+                  <ShopifyCarrierLogo v-if="shipping?.carrier" :carrier="shipping.carrier" :size="20" />
+                  <span>{{ carrierLabel(shipping?.carrier) }}</span>
+                </dd>
+              </div>
+              <div>
+                <dt>Service</dt>
+                <dd>{{ shipping?.service || "—" }}</dd>
+              </div>
               <div>
                 <dt>Price</dt>
-                <dd class="fw-semibold">
+                <dd class="fw-bold">
                   <template v-if="shipping?.price != null">
                     ${{ Number(shipping.price).toFixed(2) }}
                   </template>
@@ -533,13 +597,61 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.so-detail-back { color: #2563eb !important; }
-.so-detail-meta { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
-.so-detail-meta__sep { color: #cbd5e1; }
+.so-detail-back { color: #2563eb !important; font-weight: 500; }
+.so-detail-title { font-size: 1.5rem; font-weight: 700; color: #111827; line-height: 1.2; }
+.so-status-pill {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.so-status-pill.shopify-order-status--ready {
+  background: #d1fae5;
+  color: #047857;
+}
+.so-status-pill.shopify-order-status--hold {
+  background: #ffedd5;
+  color: #c2410c;
+}
+.so-status-pill.shopify-order-status--backorder {
+  background: #e0e7ff;
+  color: #4338ca;
+}
+.so-status-pill.shopify-order-status--shipped {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.so-status-pill.shopify-order-status--cancelled {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.so-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+.so-detail-meta__item { display: inline-flex; align-items: center; gap: 0.35rem; }
+.so-detail-meta__cal { color: #9ca3af; }
+.so-detail-meta__sep { color: #d1d5db; }
+.so-btn-outline {
+  border: 1px solid #3b82f6;
+  color: #2563eb;
+  background: #fff;
+}
+.so-btn-outline:hover {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #2563eb;
+}
 .so-detail-actions-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 12rem; }
 .so-detail-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 20rem;
+  grid-template-columns: minmax(0, 1fr) 22rem;
   gap: 1.25rem;
   align-items: start;
 }
@@ -550,9 +662,10 @@ onUnmounted(() => {
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 0.75rem;
-  padding: 1.1rem 1.2rem;
+  padding: 1.15rem 1.25rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
-.so-card__title { font-size: 1.05rem; font-weight: 700; margin: 0 0 0.85rem; }
+.so-card__title { font-size: 1.05rem; font-weight: 700; margin: 0 0 0.85rem; color: #111827; }
 .so-items-table thead th {
   font-size: 0.72rem;
   text-transform: uppercase;
@@ -573,9 +686,9 @@ onUnmounted(() => {
 .so-item-link__title { color: #111827; }
 .so-item-link:hover .so-item-link__title { color: #2563eb; text-decoration: underline; }
 .so-item-thumb {
-  width: 42px;
-  height: 42px;
-  border-radius: 0.4rem;
+  width: 44px;
+  height: 44px;
+  border-radius: 0.45rem;
   object-fit: cover;
   background: #f3f4f6;
   flex-shrink: 0;
@@ -583,7 +696,7 @@ onUnmounted(() => {
 .so-item-thumb--empty { border: 1px solid #e5e7eb; }
 .so-line-status {
   display: inline-block;
-  padding: 0.2rem 0.55rem;
+  padding: 0.22rem 0.6rem;
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
@@ -591,31 +704,48 @@ onUnmounted(() => {
 .so-line-status--pending { background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
 .so-line-status--cancelled { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
 .so-line-status--fulfilled { background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; }
-.so-ship-dl > div { display: grid; grid-template-columns: 6.5rem 1fr; gap: 0.35rem; margin-bottom: 0.45rem; }
+.so-recipient-addr { color: #374151; line-height: 1.45; }
+.so-contact-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+.so-ship-dl > div {
+  display: grid;
+  grid-template-columns: 6.5rem 1fr;
+  gap: 0.35rem;
+  margin-bottom: 0.55rem;
+  align-items: center;
+}
 .so-ship-dl dt { margin: 0; color: #6b7280; font-weight: 500; }
-.so-ship-dl dd { margin: 0; }
+.so-ship-dl dd { margin: 0; color: #111827; }
 .so-timeline__item {
   display: grid;
-  grid-template-columns: 1.5rem 1fr;
-  gap: 0.75rem;
+  grid-template-columns: 1.6rem 1fr;
+  gap: 0.85rem;
   position: relative;
-  padding-bottom: 1.1rem;
+  padding-bottom: 1.15rem;
 }
 .so-timeline__item:not(:last-child)::before {
   content: "";
   position: absolute;
-  left: 0.65rem;
-  top: 1.4rem;
+  left: 0.7rem;
+  top: 1.55rem;
   bottom: 0;
-  width: 1px;
+  width: 2px;
   background: #e5e7eb;
 }
 .so-timeline__icon {
-  width: 1.35rem;
-  height: 1.35rem;
+  width: 1.45rem;
+  height: 1.45rem;
   border-radius: 999px;
-  display: inline-block;
-  margin-top: 0.15rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.1rem;
+  flex-shrink: 0;
 }
 .so-timeline__icon--create { background: #3b82f6; }
 .so-timeline__icon--hold { background: #f59e0b; }

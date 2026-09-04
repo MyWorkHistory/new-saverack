@@ -164,11 +164,13 @@ GQL
         $amount = number_format((float) $price, 2, '.', '');
         $currency = strtoupper(trim((string) ($order->currency ?: 'USD'))) ?: 'USD';
 
-        $api = $this->client->forConnection($connection);
-        $orderGid = ShopifyGid::of('Order', (string) $order->shopify_order_id);
+        $shopifySynced = false;
+        try {
+            $api = $this->client->forConnection($connection);
+            $orderGid = ShopifyGid::of('Order', (string) $order->shopify_order_id);
 
-        $begin = $api->graphql(
-            <<<'GQL'
+            $begin = $api->graphql(
+                <<<'GQL'
 mutation OrderEditBegin($id: ID!) {
   orderEditBegin(id: $id) {
     calculatedOrder { id }
@@ -176,20 +178,20 @@ mutation OrderEditBegin($id: ID!) {
   }
 }
 GQL
-            ,
-            ['id' => $orderGid]
-        );
-        $beginErrors = is_array($begin['orderEditBegin']['userErrors'] ?? null) ? $begin['orderEditBegin']['userErrors'] : [];
-        if ($beginErrors !== []) {
-            throw new RuntimeException((string) ($beginErrors[0]['message'] ?? 'Could not start order edit.'));
-        }
-        $calculatedId = (string) ($begin['orderEditBegin']['calculatedOrder']['id'] ?? '');
-        if ($calculatedId === '') {
-            throw new RuntimeException('Could not start order edit session.');
-        }
+                ,
+                ['id' => $orderGid]
+            );
+            $beginErrors = is_array($begin['orderEditBegin']['userErrors'] ?? null) ? $begin['orderEditBegin']['userErrors'] : [];
+            if ($beginErrors !== []) {
+                throw new RuntimeException((string) ($beginErrors[0]['message'] ?? 'Could not start order edit.'));
+            }
+            $calculatedId = (string) ($begin['orderEditBegin']['calculatedOrder']['id'] ?? '');
+            if ($calculatedId === '') {
+                throw new RuntimeException('Could not start order edit session.');
+            }
 
-        $add = $api->graphql(
-            <<<'GQL'
+            $add = $api->graphql(
+                <<<'GQL'
 mutation OrderEditAddShippingLine($id: ID!, $shippingLine: OrderEditAddShippingLineInput!) {
   orderEditAddShippingLine(id: $id, shippingLine: $shippingLine) {
     calculatedOrder { id }
@@ -197,31 +199,62 @@ mutation OrderEditAddShippingLine($id: ID!, $shippingLine: OrderEditAddShippingL
   }
 }
 GQL
-            ,
-            [
-                'id' => $calculatedId,
-                'shippingLine' => [
-                    'title' => $title,
-                    'price' => [
-                        'amount' => $amount,
-                        'currencyCode' => $currency,
+                ,
+                [
+                    'id' => $calculatedId,
+                    'shippingLine' => [
+                        'title' => $title,
+                        'price' => [
+                            'amount' => $amount,
+                            'currencyCode' => $currency,
+                        ],
                     ],
-                ],
-            ]
-        );
-        $addErrors = is_array($add['orderEditAddShippingLine']['userErrors'] ?? null)
-            ? $add['orderEditAddShippingLine']['userErrors']
-            : [];
-        if ($addErrors !== []) {
-            throw new RuntimeException((string) ($addErrors[0]['message'] ?? 'Could not update shipping method in Shopify.'));
+                ]
+            );
+            $addErrors = is_array($add['orderEditAddShippingLine']['userErrors'] ?? null)
+                ? $add['orderEditAddShippingLine']['userErrors']
+                : [];
+            if ($addErrors !== []) {
+                throw new RuntimeException((string) ($addErrors[0]['message'] ?? 'Could not update shipping method in Shopify.'));
+            }
+
+            $this->commitOrderEdit($api, $calculatedId, 'Updated shipping method');
+            $shopifySynced = true;
+
+            $refreshed = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
+            if ($refreshed !== null) {
+                $order = $refreshed;
+            }
+        } catch (RuntimeException $e) {
+            if (! $this->isMissingOrderEditScope($e->getMessage())) {
+                throw $e;
+            }
+            // Persist CRM display so staff can continue; reconnect store after adding write_order_edits.
         }
 
-        $this->commitOrderEdit($api, $calculatedId, 'Updated shipping method');
+        return $this->persistLocalShippingMethod($order, $carrier, $service, $title, $amount, $currency, $actor, $shopifySynced);
+    }
 
-        $refreshed = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
-        $target = $refreshed ?? $order->fresh(['connection', 'lineItems']);
+    private function isMissingOrderEditScope(string $message): bool
+    {
+        $m = strtolower($message);
 
-        $raw = is_array($target->raw_json) ? $target->raw_json : [];
+        return strpos($m, 'write_order_edits') !== false
+            || (strpos($m, 'access denied') !== false && strpos($m, 'orderedit') !== false)
+            || (strpos($m, 'access denied') !== false && strpos($m, 'order edit') !== false);
+    }
+
+    private function persistLocalShippingMethod(
+        ShopifyOrder $order,
+        string $carrier,
+        string $service,
+        string $title,
+        string $amount,
+        string $currency,
+        ?User $actor,
+        bool $shopifySynced
+    ): ShopifyOrder {
+        $raw = is_array($order->raw_json) ? $order->raw_json : [];
         $raw['shippingLine'] = array_merge(
             is_array($raw['shippingLine'] ?? null) ? $raw['shippingLine'] : [],
             [
@@ -238,18 +271,23 @@ GQL
         );
         $raw['crm_shipping_carrier'] = $carrier;
         $raw['crm_shipping_service'] = $service;
-        $target->raw_json = $raw;
-        $target->save();
+        $order->raw_json = $raw;
+        $order->save();
+
+        $detail = 'Updated shipping method to '.$title;
+        if (! $shopifySynced) {
+            $detail .= ' (saved in CRM — reconnect the Shopify store after adding the write_order_edits scope to sync to Shopify)';
+        }
 
         $this->activities->record(
-            $target,
+            $order,
             ShopifyOrderActivity::TYPE_SHIPPING,
             'Order Edited',
-            'Updated shipping method to '.$title,
+            $detail,
             $actor
         );
 
-        return $target->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems', 'fulfillments']);
+        return $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems', 'fulfillments']);
     }
 
     /**
@@ -302,8 +340,9 @@ GQL
         $api = $this->client->forConnection($connection);
 
         if ($needsEdit) {
-            $orderGid = ShopifyGid::of('Order', (string) $order->shopify_order_id);
-            $begin = $api->graphql(
+            try {
+                $orderGid = ShopifyGid::of('Order', (string) $order->shopify_order_id);
+                $begin = $api->graphql(
                 <<<'GQL'
 mutation OrderEditBegin($id: ID!) {
   orderEditBegin(id: $id) {
@@ -429,6 +468,14 @@ GQL
             $this->commitOrderEdit($api, $calculatedId, 'Updated order items');
             $refreshed = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
             $target = $refreshed ?? $order->fresh(['connection', 'lineItems', 'fulfillmentOrders.lineItems']);
+            } catch (RuntimeException $e) {
+                if ($this->isMissingOrderEditScope($e->getMessage())) {
+                    throw new RuntimeException(
+                        'Shopify app is missing the write_order_edits scope. Add it in the Shopify app settings, set SHOPIFY_SCOPES (includes write_order_edits), then reconnect the store under Account → Stores.'
+                    );
+                }
+                throw $e;
+            }
         } else {
             $target = $order->fresh(['connection', 'lineItems', 'fulfillmentOrders.lineItems']);
         }

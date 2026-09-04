@@ -1,12 +1,13 @@
 <script setup>
 import { computed, ref, watch } from "vue";
+import ShopifyCarrierLogo from "./ShopifyCarrierLogo.vue";
 import { formatShopifyOrderName } from "../../composables/useShopifyOrderActions.js";
 
 const CARRIERS = [
-  { value: "UPS", label: "UPS", color: "#351C15" },
-  { value: "USPS", label: "USPS", color: "#333366" },
-  { value: "FEDEX", label: "FedEx", color: "#4D148C" },
-  { value: "DHL", label: "DHL", color: "#FFCC00" },
+  { value: "UPS", label: "UPS" },
+  { value: "USPS", label: "USPS" },
+  { value: "FEDEX", label: "FedEx" },
+  { value: "DHL", label: "DHL" },
 ];
 
 const SERVICES = {
@@ -27,14 +28,17 @@ const emit = defineEmits(["close", "confirm"]);
 
 const carrier = ref("UPS");
 const service = ref("UPS Ground");
+const carrierMenuOpen = ref(false);
 
 const orderLabel = computed(() => formatShopifyOrderName(props.order?.name || props.order?.display_name) || "—");
 const serviceOptions = computed(() => SERVICES[carrier.value] || []);
+const selectedCarrier = computed(() => CARRIERS.find((c) => c.value === carrier.value) || CARRIERS[0]);
 
 watch(
   () => props.open,
   (isOpen) => {
     if (!isOpen) return;
+    carrierMenuOpen.value = false;
     const s = props.shipping || {};
     const c = String(s.carrier || "").toUpperCase();
     carrier.value = CARRIERS.some((x) => x.value === c) ? c : "UPS";
@@ -48,6 +52,11 @@ watch(carrier, (c) => {
   const opts = SERVICES[c] || [];
   if (!opts.includes(service.value)) service.value = opts[0] || "";
 });
+
+function pickCarrier(value) {
+  carrier.value = value;
+  carrierMenuOpen.value = false;
+}
 
 function onClose() {
   if (props.busy) return;
@@ -72,33 +81,42 @@ function onConfirm() {
         <h2 class="so-modal__title mb-1">Edit Shipping Method</h2>
         <p class="so-modal__lead">Update the shipping method for Order #{{ orderLabel }}</p>
 
-        <label class="form-label">Carrier</label>
-        <select v-model="carrier" class="form-select mb-3" :disabled="busy">
-          <option v-for="c in CARRIERS" :key="c.value" :value="c.value">{{ c.label }}</option>
-        </select>
-
-        <div class="so-carrier-icons mb-3">
+        <label class="form-label fw-semibold">Carrier</label>
+        <div class="position-relative mb-3">
           <button
-            v-for="c in CARRIERS"
-            :key="c.value"
             type="button"
-            class="so-carrier-chip"
-            :class="{ 'is-active': carrier === c.value }"
+            class="so-carrier-select"
             :disabled="busy"
-            @click="carrier = c.value"
+            @click="carrierMenuOpen = !carrierMenuOpen"
           >
-            <span class="so-carrier-chip__icon" :style="{ background: c.color }">{{ c.label.slice(0, 1) }}</span>
-            <span>{{ c.label }}</span>
+            <ShopifyCarrierLogo :carrier="selectedCarrier.value" :size="24" />
+            <span class="fw-semibold">{{ selectedCarrier.label }}</span>
+            <svg class="ms-auto" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
           </button>
+          <div v-if="carrierMenuOpen" class="so-carrier-menu">
+            <button
+              v-for="c in CARRIERS"
+              :key="c.value"
+              type="button"
+              class="so-carrier-menu__item"
+              :class="{ 'is-active': carrier === c.value }"
+              @click="pickCarrier(c.value)"
+            >
+              <ShopifyCarrierLogo :carrier="c.value" :size="24" />
+              <span>{{ c.label }}</span>
+            </button>
+          </div>
         </div>
 
-        <label class="form-label">Service</label>
-        <select v-model="service" class="form-select mb-3" :disabled="busy">
+        <label class="form-label fw-semibold">Service</label>
+        <select v-model="service" class="form-select mb-4" :disabled="busy">
           <option v-for="s in serviceOptions" :key="s" :value="s">{{ s }}</option>
         </select>
 
         <footer class="so-modal__foot">
-          <button type="button" class="btn btn-outline-secondary orders-toolbar-outline-btn" :disabled="busy" @click="onClose">Cancel</button>
+          <button type="button" class="btn btn-outline-primary fw-semibold" :disabled="busy" @click="onClose">Cancel</button>
           <button type="button" class="btn btn-primary staff-page-primary fw-semibold" :disabled="busy" @click="onConfirm">
             {{ busy ? "Updating…" : "Update Shipping Method" }}
           </button>
@@ -137,31 +155,44 @@ function onConfirm() {
   color: #9ca3af;
   font-size: 1.4rem;
 }
-.so-modal__title { margin: 0; font-size: 1.2rem; font-weight: 700; }
-.so-modal__lead { margin: 0 0 1rem; color: #4b5563; font-size: 0.95rem; }
+.so-modal__title { margin: 0; font-size: 1.25rem; font-weight: 700; color: #111827; }
+.so-modal__lead { margin: 0 0 1.15rem; color: #6b7280; font-size: 0.92rem; }
 .so-modal__foot { display: flex; justify-content: flex-end; gap: 0.55rem; }
-.so-carrier-icons { display: flex; flex-wrap: wrap; gap: 0.45rem; }
-.so-carrier-chip {
-  display: inline-flex;
+.so-carrier-select {
+  width: 100%;
+  display: flex;
   align-items: center;
-  gap: 0.4rem;
-  border: 1px solid #e5e7eb;
+  gap: 0.65rem;
+  border: 1px solid #d1d5db;
   background: #fff;
   border-radius: 0.5rem;
-  padding: 0.35rem 0.55rem;
-  font-size: 0.85rem;
-  font-weight: 600;
+  padding: 0.55rem 0.75rem;
+  text-align: left;
 }
-.so-carrier-chip.is-active { border-color: #3b82f6; background: #eff6ff; }
-.so-carrier-chip__icon {
-  width: 1.35rem;
-  height: 1.35rem;
-  border-radius: 0.25rem;
-  color: #fff;
-  font-size: 0.7rem;
-  font-weight: 800;
-  display: inline-flex;
+.so-carrier-select:hover { border-color: #93c5fd; }
+.so-carrier-menu {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  overflow: hidden;
+}
+.so-carrier-menu__item {
+  width: 100%;
+  display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 0.65rem;
+  border: 0;
+  background: #fff;
+  padding: 0.6rem 0.75rem;
+  font-weight: 600;
+  text-align: left;
 }
+.so-carrier-menu__item:hover,
+.so-carrier-menu__item.is-active { background: #eff6ff; }
 </style>

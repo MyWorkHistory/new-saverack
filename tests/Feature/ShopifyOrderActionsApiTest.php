@@ -580,4 +580,45 @@ class ShopifyOrderActionsApiTest extends TestCase
             ->assertStatus(422)
             ->assertJsonPath('message', 'Cannot change cancelled order status.');
     }
+
+    public function test_shipping_method_from_rest_shipping_lines(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder([
+            'raw_json' => [
+                'shipping_lines' => [
+                    ['title' => 'Express Overnight', 'code' => 'EXPRESS'],
+                ],
+            ],
+        ]);
+
+        $this->getJson('/api/shopify/orders?q=Jane')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $order->id)
+            ->assertJsonPath('data.0.shipping_method', 'Express Overnight');
+
+        $this->getJson('/api/shopify/orders?shipping_method=Express')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $order->id);
+    }
+
+    public function test_on_hold_filter_excludes_fulfilled_orders_with_stale_holds(): void
+    {
+        $this->actingAsAdmin();
+        [, , $held] = $this->seedOrder([
+            'name' => '#still-held',
+            'crm_hold_reasons' => ['Admin Hold'],
+            'fulfillment_status' => 'unfulfilled',
+        ]);
+        $this->seedOrder([
+            'name' => '#fulfilled-with-stale-hold',
+            'crm_hold_reasons' => ['Admin Hold'],
+            'fulfillment_status' => 'fulfilled',
+        ]);
+
+        $this->getJson('/api/shopify/orders?status=on_hold')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $held->id);
+    }
 }

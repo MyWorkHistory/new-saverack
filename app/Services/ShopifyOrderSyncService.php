@@ -68,6 +68,7 @@ query OpenOrders($cursor: String) {
         createdAt
         updatedAt
         cancelledAt
+        shippingLine { title code source }
         shippingAddress {
           name firstName lastName address1 address2 city province country zip phone
         }
@@ -392,6 +393,7 @@ query OrderById($id: ID!) {
     createdAt
     updatedAt
     cancelledAt
+    shippingLine { title code source }
     shippingAddress {
       name firstName lastName address1 address2 city province country zip phone
     }
@@ -649,7 +651,14 @@ GQL
         }
 
         return DB::transaction(function () use ($connection, $node, $orderId) {
+            $existing = ShopifyOrder::query()
+                ->where('connection_id', $connection->id)
+                ->where('shopify_order_id', $orderId)
+                ->first();
+
+            $rawJson = $this->prepareOrderRawJson($node, $existing);
             $total = $node['totalPriceSet']['shopMoney']['amount'] ?? $node['total_price'] ?? null;
+            $fulfillmentStatus = strtolower((string) ($node['displayFulfillmentStatus'] ?? $node['fulfillment_status'] ?? 'unfulfilled'));
 
             /** @var ShopifyOrder $order */
             $order = ShopifyOrder::query()->updateOrCreate(
@@ -661,7 +670,7 @@ GQL
                     'name' => (string) ($node['name'] ?? ''),
                     'email' => (string) ($node['email'] ?? ''),
                     'financial_status' => strtolower((string) ($node['displayFinancialStatus'] ?? $node['financial_status'] ?? '')),
-                    'fulfillment_status' => strtolower((string) ($node['displayFulfillmentStatus'] ?? $node['fulfillment_status'] ?? 'unfulfilled')),
+                    'fulfillment_status' => $fulfillmentStatus,
                     'currency' => (string) ($node['currencyCode'] ?? $node['currency'] ?? ''),
                     'total_price' => $total !== null && $total !== '' ? (float) $total : null,
                     'shopify_created_at' => $this->parseTime($node['createdAt'] ?? $node['created_at'] ?? null),
@@ -671,10 +680,18 @@ GQL
                     'shipping_address_json' => is_array($node['shippingAddress'] ?? $node['shipping_address'] ?? null)
                         ? ($node['shippingAddress'] ?? $node['shipping_address'])
                         : null,
-                    'payload_hash' => hash('sha256', json_encode($node)),
-                    'raw_json' => $node,
+                    'payload_hash' => hash('sha256', json_encode($rawJson)),
+                    'raw_json' => $rawJson,
                 ]
             );
+
+            if ($fulfillmentStatus === 'fulfilled') {
+                $holds = is_array($order->crm_hold_reasons) ? $order->crm_hold_reasons : [];
+                if ($holds !== []) {
+                    $order->crm_hold_reasons = [];
+                    $order->save();
+                }
+            }
 
             $lineNodes = $this->extractLineItemNodes($node);
             $hasLineSnapshot = array_key_exists('lineItems', $node) || array_key_exists('line_items', $node);
@@ -1082,6 +1099,77 @@ GQL
         }
 
         return $count;
+    }
+
+    /**
+     * Normalize shipping onto shippingLine and preserve prior shipping when the
+     * incoming GraphQL/REST payload omits it (refresh must not blank the method).
+     *
+     * @param  array<string, mixed>  $node
+     * @return array<string, mixed>
+     */
+    private function prepareOrderRawJson(array $node, ?ShopifyOrder $existing): array
+    {
+        $raw = $node;
+        $title = $this->shippingTitleFromPayload($raw);
+
+        if ($title === '' && $existing !== null) {
+            $prev = is_array($existing->raw_json) ? $existing->raw_json : [];
+            foreach (['shippingLine', 'shipping_lines', 'shippingLines'] as $key) {
+                if (! isset($raw[$key]) && isset($prev[$key])) {
+                    $raw[$key] = $prev[$key];
+                }
+            }
+            $title = $this->shippingTitleFromPayload($raw);
+        }
+
+        if ($title !== '') {
+            $line = is_array($raw['shippingLine'] ?? null) ? $raw['shippingLine'] : [];
+            if (trim((string) ($line['title'] ?? '')) === '') {
+                $line['title'] = $title;
+                $raw['shippingLine'] = $line;
+            }
+        }
+
+        return $raw;
+    }
+
+    /**
+     * @param  array<string, mixed>  $raw
+     */
+    private function shippingTitleFromPayload(array $raw): string
+    {
+        $line = is_array($raw['shippingLine'] ?? null) ? $raw['shippingLine'] : [];
+        $title = trim((string) ($line['title'] ?? ''));
+        if ($title !== '') {
+            return $title;
+        }
+
+        $code = trim((string) ($line['code'] ?? ''));
+        if ($code !== '') {
+            return $code;
+        }
+
+        foreach (['shipping_lines', 'shippingLines'] as $key) {
+            $lines = $raw[$key] ?? null;
+            if (! is_array($lines)) {
+                continue;
+            }
+            $first = isset($lines['edges']) ? ($lines['edges'][0]['node'] ?? null) : ($lines[0] ?? null);
+            if (! is_array($first)) {
+                continue;
+            }
+            $t = trim((string) ($first['title'] ?? ''));
+            if ($t !== '') {
+                return $t;
+            }
+            $c = trim((string) ($first['code'] ?? ''));
+            if ($c !== '') {
+                return $c;
+            }
+        }
+
+        return '';
     }
 
     /**

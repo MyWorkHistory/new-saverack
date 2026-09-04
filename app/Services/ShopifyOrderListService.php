@@ -106,11 +106,25 @@ class ShopifyOrderListService
         }
 
         if ($shippingMethod !== '') {
-            $like = '%'.$shippingMethod.'%';
-            $query->whereRaw(
-                "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_json, '$.shippingLine.title')), '')) LIKE ?",
-                [strtolower($like)]
-            );
+            $like = '%'.strtolower($shippingMethod).'%';
+            $query->where(function (Builder $b) use ($like) {
+                $b->whereRaw(
+                    "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_json, '$.shippingLine.title')), '')) LIKE ?",
+                    [$like]
+                )->orWhereRaw(
+                    "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_json, '$.shippingLine.code')), '')) LIKE ?",
+                    [$like]
+                )->orWhereRaw(
+                    "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_json, '$.shipping_lines[0].title')), '')) LIKE ?",
+                    [$like]
+                )->orWhereRaw(
+                    "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_json, '$.shipping_lines[0].code')), '')) LIKE ?",
+                    [$like]
+                )->orWhereRaw(
+                    "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_json, '$.shippingLines[0].title')), '')) LIKE ?",
+                    [$like]
+                );
+            });
         }
 
         if ($status !== '' && $status !== 'all' && in_array($status, self::DISPLAY_STATUSES, true)) {
@@ -123,7 +137,7 @@ class ShopifyOrderListService
     private function applyDisplayStatusFilter(Builder $query, string $status): void
     {
         if ($status === self::DISPLAY_FULFILLED) {
-            $query->where('fulfillment_status', 'fulfilled');
+            $query->whereRaw("LOWER(COALESCE(fulfillment_status, '')) = 'fulfilled'");
 
             return;
         }
@@ -133,10 +147,7 @@ class ShopifyOrderListService
                 ->whereRaw('JSON_LENGTH(crm_hold_reasons) > 0')
                 ->whereNull('cancelled_at')
                 ->whereNull('crm_fulfillment_cancelled_at')
-                ->where(function (Builder $b) {
-                    $b->whereNull('fulfillment_status')
-                        ->orWhere('fulfillment_status', '!=', 'fulfilled');
-                });
+                ->whereRaw("LOWER(COALESCE(fulfillment_status, '')) != 'fulfilled'");
 
             return;
         }
@@ -333,6 +344,10 @@ class ShopifyOrderListService
         if ($title !== '') {
             return $title;
         }
+        $code = trim((string) ($line['code'] ?? ''));
+        if ($code !== '') {
+            return $code;
+        }
         $lines = $raw['shipping_lines'] ?? $raw['shippingLines'] ?? null;
         if (is_array($lines)) {
             $first = isset($lines['edges']) ? ($lines['edges'][0]['node'] ?? null) : ($lines[0] ?? null);
@@ -340,6 +355,10 @@ class ShopifyOrderListService
                 $t = trim((string) ($first['title'] ?? ''));
                 if ($t !== '') {
                     return $t;
+                }
+                $c = trim((string) ($first['code'] ?? ''));
+                if ($c !== '') {
+                    return $c;
                 }
             }
         }

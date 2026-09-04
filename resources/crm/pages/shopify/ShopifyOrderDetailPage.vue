@@ -399,9 +399,9 @@ onUnmounted(() => {
 
       <div class="so-detail-grid">
         <div class="so-detail-main">
-          <section class="so-card mb-3">
+          <section class="so-card so-card--items mb-3">
             <h2 class="so-card__title">Items ({{ lineItems.length }})</h2>
-            <div class="table-responsive">
+            <div class="table-responsive so-items-wrap">
               <table class="table align-middle mb-0 so-items-table">
                 <thead>
                   <tr>
@@ -515,7 +515,7 @@ onUnmounted(() => {
               <div>
                 <dt>Carrier</dt>
                 <dd class="d-inline-flex align-items-center gap-2">
-                  <ShopifyCarrierLogo v-if="shipping?.carrier" :carrier="shipping.carrier" :size="20" />
+                  <ShopifyCarrierLogo v-if="shipping?.carrier" :carrier="shipping.carrier" :size="26" />
                   <span>{{ carrierLabel(shipping?.carrier) }}</span>
                 </dd>
               </div>
@@ -666,13 +666,46 @@ onUnmounted(() => {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 .so-card__title { font-size: 1.05rem; font-weight: 700; margin: 0 0 0.85rem; color: #111827; }
+/* Items: white card, light-gray header band matching mockup */
+.so-card--items {
+  background: #fff;
+  padding: 1.15rem 0 0;
+  overflow: hidden;
+}
+.so-card--items .so-card__title {
+  padding: 0 1.25rem;
+  margin-bottom: 0.75rem;
+}
+.so-items-wrap {
+  background: #fff;
+}
+.so-items-table {
+  --bs-table-bg: #fff;
+  --bs-table-striped-bg: #fff;
+  --bs-table-hover-bg: #fff;
+  background: #fff;
+}
+.so-items-table > :not(caption) > * > * {
+  background-color: #fff;
+}
 .so-items-table thead th {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #9ca3af;
-  border-bottom-color: #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
   font-weight: 600;
+  background: #f4f5f6 !important;
+  padding: 0.65rem 1.25rem;
+}
+.so-items-table tbody td {
+  background: #fff !important;
+  border-bottom-color: #f1f2f4;
+  padding: 0.85rem 1.25rem;
+  vertical-align: middle;
+}
+.so-items-table tbody tr:last-child td {
+  border-bottom: 0;
 }
 .so-item-link {
   display: inline-flex;

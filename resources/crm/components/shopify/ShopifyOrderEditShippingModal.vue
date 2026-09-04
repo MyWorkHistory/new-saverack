@@ -89,7 +89,7 @@ function onConfirm() {
             :disabled="busy"
             @click="carrierMenuOpen = !carrierMenuOpen"
           >
-            <ShopifyCarrierLogo :carrier="selectedCarrier.value" :size="24" />
+            <ShopifyCarrierLogo :carrier="selectedCarrier.value" :size="28" />
             <span class="fw-semibold">{{ selectedCarrier.label }}</span>
             <svg class="ms-auto" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
@@ -104,7 +104,7 @@ function onConfirm() {
               :class="{ 'is-active': carrier === c.value }"
               @click="pickCarrier(c.value)"
             >
-              <ShopifyCarrierLogo :carrier="c.value" :size="24" />
+              <ShopifyCarrierLogo :carrier="c.value" :size="28" />
               <span>{{ c.label }}</span>
             </button>
           </div>

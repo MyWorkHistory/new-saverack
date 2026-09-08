@@ -631,8 +631,9 @@ function formatFileSize(bytes) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-async function load() {
-  loading.value = true;
+async function load(opts = {}) {
+  const silent = Boolean(opts?.silent);
+  if (!silent) loading.value = true;
   try {
     const { data } = await api.get(`/admin/wholesale-orders/${orderId.value}`);
     applyOrderData(data);
@@ -641,10 +642,12 @@ async function load() {
       description: "Wholesale order detail.",
     });
   } catch (e) {
-    toast.errorFrom(e, "Could not load wholesale order.");
-    router.push({ name: listRouteName.value });
+    if (!silent) {
+      toast.errorFrom(e, "Could not load wholesale order.");
+      router.push({ name: listRouteName.value });
+    }
   } finally {
-    loading.value = false;
+    if (!silent) loading.value = false;
   }
 }
 
@@ -755,38 +758,35 @@ async function submitCsvImport({ file }) {
       formData,
       {
         headers: { "Content-Type": "multipart/form-data" },
-        timeout: 180000,
+        timeout: 60000,
       },
     );
-    if (data?.order) {
-      applyOrderData(data.order);
-    }
-    const imported = Number(data?.imported ?? 0);
-    const updated = Number(data?.updated ?? 0);
+    csvImportOpen.value = false;
+    const queued = Number(data?.queued ?? 0);
+    const skipped = Number(data?.skipped ?? 0);
     const errors = Array.isArray(data?.errors) ? data.errors : [];
-    if (imported > 0) {
-      toast.success(`Imported ${imported} product${imported === 1 ? "" : "s"}.`);
-    }
-    if (updated > 0) {
-      toast.success(`Updated ${updated} line${updated === 1 ? "" : "s"}.`);
-    }
-    if (imported === 0 && updated === 0 && errors.length === 0) {
-      toast.warning("No products were imported.");
-    }
-    if (errors.length > 0) {
+    toast.success(data?.message || "Upload received. Importing in the background.");
+    if (skipped > 0 && errors.length > 0) {
       const sample = errors
-        .slice(0, 5)
+        .slice(0, 3)
         .map((err) => {
           const sku = String(err?.sku || "").trim();
           const row = err?.row != null ? `Row ${err.row}` : "Row ?";
-          const msg = String(err?.message || "Could not import row.").trim();
+          const msg = String(err?.message || "Skipped.").trim();
           return sku ? `${row}: ${sku} — ${msg}` : `${row}: ${msg}`;
         })
         .join(" ");
-      const more = errors.length > 5 ? ` (+${errors.length - 5} more)` : "";
-      toast.warning(`${errors.length} row${errors.length === 1 ? "" : "s"} skipped. ${sample}${more}`);
+      toast.warning(`${skipped} row${skipped === 1 ? "" : "s"} skipped. ${sample}`);
     }
-    csvImportOpen.value = false;
+    if (queued > 0) {
+      // Background job finishes quickly (local catalog only); refresh a couple times.
+      window.setTimeout(() => {
+        load({ silent: true });
+      }, 1500);
+      window.setTimeout(() => {
+        load({ silent: true });
+      }, 4000);
+    }
   } catch (e) {
     toast.errorFrom(e, "Could not import products.");
   } finally {
@@ -1261,7 +1261,7 @@ onUnmounted(() => {
             <div v-if="canManageLineItems" class="d-flex flex-wrap align-items-center gap-2">
               <button
                 type="button"
-                class="btn btn-sm btn-outline-secondary"
+                class="btn btn-sm btn-outline-primary"
                 :disabled="lineBusy || csvImportBusy"
                 @click="csvImportOpen = true"
               >

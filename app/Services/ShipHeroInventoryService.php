@@ -2098,7 +2098,8 @@ GQL;
     public function resolveProductsForAsnCsvImport(
         int $clientAccountId,
         ?string $customerAccountId,
-        array $skus
+        array $skus,
+        bool $allowRemote = true
     ): array {
         $out = [];
         if ($clientAccountId < 1 || $skus === []) {
@@ -2141,6 +2142,10 @@ GQL;
 
         if ($missing !== []) {
             $this->hydrateAsnCsvProductsFromDetailCache($clientAccountId, $missing, $inputByKey, $out);
+        }
+
+        if (! $allowRemote) {
+            return $out;
         }
 
         $missing = [];

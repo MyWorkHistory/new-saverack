@@ -1576,10 +1576,20 @@ class WholesaleOrderWorkflowTest extends TestCase
             'Accept' => 'application/json',
         ]);
 
-        $response->assertOk()
-            ->assertJsonPath('imported', 2)
-            ->assertJsonPath('updated', 1)
+        $response->assertStatus(202)
+            ->assertJsonPath('queued', 3)
             ->assertJsonPath('skipped', 1);
+
+        $parsed = app(\App\Services\WholesaleOrderLinesCsvImportService::class)->parse(
+            $file->getRealPath()
+        );
+        $result = app(\App\Services\WholesaleOrderLinesCsvImportService::class)->apply(
+            $order->fresh(['lines', 'clientAccount']),
+            $parsed['rows']
+        );
+
+        $this->assertSame(2, $result['imported']);
+        $this->assertSame(1, $result['updated']);
 
         $order->refresh();
         $lines = WholesaleOrderLine::query()
@@ -1622,9 +1632,17 @@ class WholesaleOrderWorkflowTest extends TestCase
             'file' => $file,
         ], [
             'Accept' => 'application/json',
-        ])->assertOk()
-            ->assertJsonPath('imported', 2)
-            ->assertJsonPath('updated', 0);
+        ])->assertStatus(202)
+            ->assertJsonPath('queued', 2)
+            ->assertJsonPath('skipped', 0);
+
+        $parsed = app(\App\Services\WholesaleOrderLinesCsvImportService::class)->parse(
+            $file->getRealPath()
+        );
+        app(\App\Services\WholesaleOrderLinesCsvImportService::class)->apply(
+            $order->fresh(['lines', 'clientAccount']),
+            $parsed['rows']
+        );
 
         $this->assertSame(2, WholesaleOrderLine::query()->where('wholesale_order_id', $order->id)->count());
         $this->assertSame(233, (int) $order->fresh()->items_count);

@@ -16,9 +16,15 @@ class WholesaleOrderLinesCsvImportService
     /** @var ShipHeroInventoryService */
     private $inventory;
 
-    public function __construct(ShipHeroInventoryService $inventory)
-    {
+    /** @var InventoryProductDetailCacheService */
+    private $detailCache;
+
+    public function __construct(
+        ShipHeroInventoryService $inventory,
+        InventoryProductDetailCacheService $detailCache
+    ) {
         $this->inventory = $inventory;
+        $this->detailCache = $detailCache;
     }
 
     /**
@@ -168,6 +174,36 @@ class WholesaleOrderLinesCsvImportService
             false
         );
 
+        $weightBySkuKey = [];
+        $pairs = [];
+        foreach ($skuList as $sku) {
+            $sku = trim((string) $sku);
+            if ($sku === '') {
+                continue;
+            }
+            $pairs[] = [
+                'client_account_id' => $clientAccountId,
+                'sku' => $sku,
+            ];
+        }
+        if ($pairs !== [] && $clientAccountId > 0) {
+            $cachedProducts = $this->detailCache->getCachedProductsForPairs($pairs);
+            foreach ($cachedProducts as $mapKey => $product) {
+                if (! is_array($product)) {
+                    continue;
+                }
+                $raw = $product['dimensions']['weight'] ?? null;
+                if ($raw === null || $raw === '' || ! is_numeric($raw)) {
+                    continue;
+                }
+                $parts = explode('|', (string) $mapKey, 2);
+                $norm = isset($parts[1]) ? (string) $parts[1] : '';
+                if ($norm !== '') {
+                    $weightBySkuKey[$norm] = (float) $raw;
+                }
+            }
+        }
+
         /** @var array<string, WholesaleOrderLine> $linesBySku */
         $linesBySku = [];
         foreach ($order->lines as $existingLine) {
@@ -186,6 +222,7 @@ class WholesaleOrderLinesCsvImportService
             $order,
             $rows,
             $productCache,
+            $weightBySkuKey,
             &$linesBySku,
             &$maxSort,
             &$imported,
@@ -254,7 +291,8 @@ class WholesaleOrderLinesCsvImportService
                 $line->barcode_mode = WholesaleOrderLine::BARCODE_SHIP_AS_IS;
                 $line->syncStatusFromBarcodeMode();
                 $line->sort_order = ++$maxSort;
-                $line->weight = null;
+                $normKey = $this->detailCache->normalizeSku($canonicalSku);
+                $line->weight = $weightBySkuKey[$normKey] ?? $weightBySkuKey[$skuKey] ?? null;
                 $line->save();
 
                 $linesBySku[$skuKey] = $line;

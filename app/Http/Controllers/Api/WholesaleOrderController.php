@@ -302,7 +302,7 @@ class WholesaleOrderController extends Controller
     private function totalWeightLbs(WholesaleOrder $order): ?float
     {
         $order->loadMissing(['lines', 'clientAccount']);
-        $this->hydrateMissingLineWeights($order);
+        $this->hydrateMissingLineWeightsFromCache($order);
 
         $total = 0.0;
         $hasAny = false;
@@ -317,22 +317,58 @@ class WholesaleOrderController extends Controller
         return $hasAny ? round($total, 4) : null;
     }
 
-    private function hydrateMissingLineWeights(WholesaleOrder $order): void
+    /**
+     * Fill missing line weights from the local product detail cache only.
+     * Never calls ShipHero — that was making 40-line CSV orders take minutes to open.
+     */
+    private function hydrateMissingLineWeightsFromCache(WholesaleOrder $order): void
     {
         $clientAccountId = (int) $order->client_account_id;
-        $customerId = $order->clientAccount
-            ? trim((string) ($order->clientAccount->shiphero_customer_account_id ?? ''))
-            : '';
+        if ($clientAccountId <= 0) {
+            return;
+        }
+
+        $pairs = [];
+        foreach ($order->lines as $line) {
+            if ($line->weight !== null) {
+                continue;
+            }
+            $sku = trim((string) $line->sku);
+            if ($sku === '') {
+                continue;
+            }
+            $pairs[] = [
+                'client_account_id' => $clientAccountId,
+                'sku' => $sku,
+            ];
+        }
+        if ($pairs === []) {
+            return;
+        }
+
+        $cached = $this->detailCache->getCachedProductsForPairs($pairs);
+        if ($cached === []) {
+            return;
+        }
 
         foreach ($order->lines as $line) {
             if ($line->weight !== null) {
                 continue;
             }
-            $weight = $this->resolveSkuWeight($clientAccountId, $customerId, (string) $line->sku);
-            if ($weight === null) {
+            $sku = trim((string) $line->sku);
+            if ($sku === '') {
                 continue;
             }
-            $line->weight = $weight;
+            $key = $clientAccountId.'|'.$this->detailCache->normalizeSku($sku);
+            $product = $cached[$key] ?? null;
+            if (! is_array($product)) {
+                continue;
+            }
+            $raw = $product['dimensions']['weight'] ?? null;
+            if ($raw === null || $raw === '' || ! is_numeric($raw)) {
+                continue;
+            }
+            $line->weight = (float) $raw;
             $line->saveQuietly();
         }
     }
@@ -537,9 +573,8 @@ class WholesaleOrderController extends Controller
             'wholesaleBill',
         ]);
         $imageBySku = $this->resolveLineImageUrls($order);
-        $this->hydrateMissingLineWeights($order);
-        $order->unsetRelation('lines');
-        $order->load(['lines.boxes']);
+        // Cache-only weight fill — never call ShipHero on page load (CSV imports left weight null).
+        $this->hydrateMissingLineWeightsFromCache($order);
 
         $totalWeight = null;
         $weightSum = 0.0;

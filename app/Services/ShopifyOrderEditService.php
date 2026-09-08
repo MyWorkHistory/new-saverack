@@ -205,7 +205,7 @@ GQL
 mutation OrderEditAddShippingLine($id: ID!, $shippingLine: OrderEditAddShippingLineInput!) {
   orderEditAddShippingLine(id: $id, shippingLine: $shippingLine) {
     calculatedOrder { id }
-    userErrors { field message code }
+    userErrors { field message }
   }
 }
 GQL
@@ -449,7 +449,7 @@ GQL
 mutation OrderEditSetQuantity($id: ID!, $lineItemId: ID!, $quantity: Int!) {
   orderEditSetQuantity(id: $id, lineItemId: $lineItemId, quantity: $quantity) {
     calculatedOrder { id }
-    userErrors { field message code }
+    userErrors { field message }
   }
 }
 GQL
@@ -483,7 +483,7 @@ GQL
 mutation OrderEditAddVariant($id: ID!, $variantId: ID!, $quantity: Int!) {
   orderEditAddVariant(id: $id, variantId: $variantId, quantity: $quantity) {
     calculatedOrder { id }
-    userErrors { field message code }
+    userErrors { field message }
   }
 }
 GQL

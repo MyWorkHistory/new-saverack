@@ -61,17 +61,26 @@ class ShopifyOrderEditService
         $firstName = trim((string) ($parts[0] ?? ''));
         $lastName = trim((string) ($parts[1] ?? ''));
 
+        $address1 = trim((string) ($input['address1'] ?? ''));
+        $address2 = trim((string) ($input['address2'] ?? ''));
+        $city = trim((string) ($input['city'] ?? ''));
+        $province = trim((string) ($input['province'] ?? ''));
+        $zip = trim((string) ($input['zip'] ?? ''));
+        $countryRaw = trim((string) ($input['country'] ?? ''));
+        $phone = trim((string) ($input['phone'] ?? ''));
+        $countryCode = $this->mailingAddressCountryCode($countryRaw, $order);
+
+        // MailingAddressInput: firstName/lastName/countryCode only — no `name` or `country`.
         $shippingAddress = array_filter([
-            'address1' => trim((string) ($input['address1'] ?? '')),
-            'address2' => trim((string) ($input['address2'] ?? '')),
-            'city' => trim((string) ($input['city'] ?? '')),
-            'province' => trim((string) ($input['province'] ?? '')),
-            'zip' => trim((string) ($input['zip'] ?? '')),
-            'country' => trim((string) ($input['country'] ?? '')),
+            'address1' => $address1 !== '' ? $address1 : null,
+            'address2' => $address2 !== '' ? $address2 : null,
+            'city' => $city !== '' ? $city : null,
+            'province' => $province !== '' ? $province : null,
+            'zip' => $zip !== '' ? $zip : null,
+            'countryCode' => $countryCode !== '' ? $countryCode : null,
             'firstName' => $firstName !== '' ? $firstName : null,
             'lastName' => $lastName !== '' ? $lastName : null,
-            'name' => $fullName !== '' ? $fullName : null,
-            'phone' => trim((string) ($input['phone'] ?? '')) ?: null,
+            'phone' => $phone !== '' ? $phone : null,
         ], static fn ($v) => $v !== null && $v !== '');
 
         $orderInput = [
@@ -111,13 +120,14 @@ GQL
             'name' => $fullName,
             'firstName' => $firstName,
             'lastName' => $lastName,
-            'address1' => $shippingAddress['address1'] ?? '',
-            'address2' => $shippingAddress['address2'] ?? '',
-            'city' => $shippingAddress['city'] ?? '',
-            'province' => $shippingAddress['province'] ?? '',
-            'zip' => $shippingAddress['zip'] ?? '',
-            'country' => $shippingAddress['country'] ?? '',
-            'phone' => $shippingAddress['phone'] ?? null,
+            'address1' => $address1,
+            'address2' => $address2,
+            'city' => $city,
+            'province' => $province,
+            'zip' => $zip,
+            'country' => $countryRaw !== '' ? $countryRaw : ($countryCode !== '' ? $countryCode : ''),
+            'countryCodeV2' => $countryCode !== '' ? $countryCode : ($localShip['countryCodeV2'] ?? null),
+            'phone' => $phone !== '' ? $phone : null,
         ]);
         $target->shipping_address_json = $localShip;
         if ($email !== '') {
@@ -242,6 +252,42 @@ GQL
         return strpos($m, 'write_order_edits') !== false
             || (strpos($m, 'access denied') !== false && strpos($m, 'orderedit') !== false)
             || (strpos($m, 'access denied') !== false && strpos($m, 'order edit') !== false);
+    }
+
+    /**
+     * Map CRM country text / ISO code to Shopify MailingAddressInput.countryCode.
+     */
+    private function mailingAddressCountryCode(string $countryRaw, ShopifyOrder $order): string
+    {
+        $raw = trim($countryRaw);
+        if ($raw !== '' && preg_match('/^[A-Za-z]{2}$/', $raw)) {
+            return strtoupper($raw);
+        }
+
+        $aliases = [
+            'united states' => 'US',
+            'united states of america' => 'US',
+            'usa' => 'US',
+            'u.s.' => 'US',
+            'u.s.a.' => 'US',
+            'canada' => 'CA',
+            'mexico' => 'MX',
+            'united kingdom' => 'GB',
+            'great britain' => 'GB',
+            'england' => 'GB',
+        ];
+        $key = strtolower($raw);
+        if ($key !== '' && isset($aliases[$key])) {
+            return $aliases[$key];
+        }
+
+        $existing = is_array($order->shipping_address_json) ? $order->shipping_address_json : [];
+        $fromOrder = strtoupper(trim((string) ($existing['countryCodeV2'] ?? $existing['country_code'] ?? '')));
+        if ($fromOrder !== '' && preg_match('/^[A-Z]{2}$/', $fromOrder)) {
+            return $fromOrder;
+        }
+
+        return '';
     }
 
     private function persistLocalShippingMethod(

@@ -220,6 +220,11 @@ async function confirmEditItems(payload) {
 
 async function confirmEditAddress(payload) {
   if (!orderId.value) return;
+  if (isFulfilledStatus(order.value?.display_status)) {
+    toast.error("You can't update the address on a fulfilled order.");
+    editAddressOpen.value = false;
+    return;
+  }
   const result = await actions.updateShippingAddress(orderId.value, payload);
   if (result) {
     editAddressOpen.value = false;
@@ -479,9 +484,21 @@ onUnmounted(() => {
           <section class="so-card mb-3">
             <div class="d-flex justify-content-between align-items-center mb-3">
               <h2 class="so-card__title mb-0">Recipient</h2>
-              <button type="button" class="btn btn-sm so-btn-outline fw-semibold" @click="editAddressOpen = true">
+              <button
+                v-if="!isFulfilledStatus(order.display_status)"
+                type="button"
+                class="btn btn-sm so-btn-outline fw-semibold"
+                @click="editAddressOpen = true"
+              >
                 Edit
               </button>
+              <span
+                v-else
+                class="small text-secondary"
+                title="You can't update the address on a fulfilled order."
+              >
+                Fulfilled
+              </span>
             </div>
             <div class="fw-bold mb-1 text-body">{{ recipient?.name || order.recipient_name || "—" }}</div>
             <p class="mb-3 text-body so-recipient-addr">{{ formatAddress(recipient) || "—" }}</p>

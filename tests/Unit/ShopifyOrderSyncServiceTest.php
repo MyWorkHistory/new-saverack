@@ -307,6 +307,74 @@ class ShopifyOrderSyncServiceTest extends TestCase
         $this->assertSame([], $order->crm_hold_reasons ?? []);
     }
 
+    public function test_should_import_order_when_location_unknown_but_store_has_import_enabled(): void
+    {
+        $connection = $this->connection();
+        $service = app(ShopifyOrderSyncService::class);
+
+        $this->assertTrue($service->shouldImportOrder($connection, [
+            'id' => 5001,
+            'name' => '#5001',
+            'location_id' => null,
+            'line_items' => [],
+        ]));
+    }
+
+    public function test_should_not_import_order_for_non_enabled_location(): void
+    {
+        $connection = $this->connection();
+        ShopifyLocation::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_location_id' => '99',
+            'name' => 'Other',
+            'import_orders' => false,
+            'sync_inventory' => false,
+        ]);
+        $service = app(ShopifyOrderSyncService::class);
+
+        $this->assertFalse($service->shouldImportOrder($connection, [
+            'id' => 5002,
+            'name' => '#5002',
+            'location_id' => 99,
+            'line_items' => [],
+        ]));
+    }
+
+    public function test_upserts_online_order_without_location_id(): void
+    {
+        $connection = $this->connection();
+        $service = app(ShopifyOrderSyncService::class);
+
+        $ok = $service->upsertOrderFromShopifyNode($connection, [
+            'id' => 5003,
+            'admin_graphql_api_id' => 'gid://shopify/Order/5003',
+            'name' => '#5003',
+            'email' => 'online@example.com',
+            'financial_status' => 'paid',
+            'fulfillment_status' => null,
+            'currency' => 'USD',
+            'total_price' => '15.00',
+            'location_id' => null,
+            'line_items' => [
+                [
+                    'id' => 51,
+                    'sku' => 'SKU-ONLINE',
+                    'title' => 'Online Item',
+                    'quantity' => 1,
+                    'fulfillable_quantity' => 1,
+                    'price' => '15.00',
+                ],
+            ],
+        ]);
+
+        $this->assertTrue($ok);
+        $this->assertDatabaseHas('shopify_orders', [
+            'connection_id' => $connection->id,
+            'shopify_order_id' => '5003',
+            'name' => '#5003',
+        ]);
+    }
+
     private function connection(): ClientAccountShopifyConnection
     {
         $connection = ClientAccountShopifyConnection::query()->create([

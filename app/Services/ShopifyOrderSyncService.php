@@ -477,6 +477,7 @@ GQL
         if ($node === null) {
             return null;
         }
+        $node = $this->enrichOrderNodeWithFulfillmentOrders($connection, $node);
         if (! $this->upsertOrderFromShopifyNode($connection, $node)) {
             return null;
         }
@@ -543,8 +544,16 @@ GQL
             || (isset($restNode['name']) && ! isset($payload['order_edit']));
 
         if ($hasOrderBody) {
+            $restNode = $this->enrichOrderNodeWithFulfillmentOrders($connection, $restNode);
             $assigned = $this->assignedShopifyLocationIds($restNode);
             if ($assigned !== [] && ! $this->shouldImportOrder($connection, $restNode)) {
+                Log::info('shopify.order.skipped_location', [
+                    'connection_id' => $connection->id,
+                    'shopify_order_id' => $orderId,
+                    'topic' => $topic,
+                    'assigned' => $assigned,
+                ]);
+
                 return null;
             }
             if ($this->upsertOrderFromShopifyNode($connection, $restNode)) {
@@ -1300,8 +1309,10 @@ GQL
         }
 
         $assigned = $this->assignedShopifyLocationIds($node);
+        // Online Store create webhooks often omit location_id / FOs. If we still cannot
+        // resolve a location after FO enrichment, import when the store has any enabled location.
         if ($assigned === []) {
-            return false;
+            return true;
         }
 
         foreach ($assigned as $id) {
@@ -1311,6 +1322,63 @@ GQL
         }
 
         return false;
+    }
+
+    /**
+     * Attach REST fulfillment_orders when the order payload has no location assignment yet.
+     *
+     * @param  array<string, mixed>  $node
+     * @return array<string, mixed>
+     */
+    public function enrichOrderNodeWithFulfillmentOrders(
+        ClientAccountShopifyConnection $connection,
+        array $node
+    ): array {
+        if ($this->assignedShopifyLocationIds($node) !== []) {
+            return $node;
+        }
+
+        $existing = $node['fulfillment_orders'] ?? null;
+        if (is_array($existing) && $existing !== []) {
+            return $node;
+        }
+
+        $orderId = $this->extractShopifyOrderId($node);
+        if ($orderId === '') {
+            return $node;
+        }
+
+        $api = $this->client->forConnection($connection);
+        try {
+            $response = $api->restGet('orders/'.$orderId.'/fulfillment_orders.json');
+        } catch (Throwable $e) {
+            Log::warning('shopify.order.fo_enrich_failed', [
+                'connection_id' => $connection->id,
+                'order_id' => $orderId,
+                'message' => $e->getMessage(),
+            ]);
+
+            return $node;
+        }
+
+        if (($response['status'] ?? 0) < 200 || ($response['status'] ?? 0) >= 300) {
+            Log::warning('shopify.order.fo_enrich_http', [
+                'connection_id' => $connection->id,
+                'order_id' => $orderId,
+                'status' => $response['status'] ?? null,
+            ]);
+
+            return $node;
+        }
+
+        $list = $response['json']['fulfillment_orders'] ?? null;
+        if (! is_array($list) || $list === []) {
+            return $node;
+        }
+
+        $node['fulfillment_orders'] = $list;
+
+        return $node;
     }
 
     /**

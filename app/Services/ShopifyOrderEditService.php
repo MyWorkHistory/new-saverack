@@ -96,11 +96,16 @@ class ShopifyOrderEditService
             throw new RuntimeException('Postal / Zip Code looks invalid. Use a 5-digit US ZIP (e.g. 33811).');
         }
 
+        $email = trim((string) ($input['email'] ?? ''));
+
+        if ($this->orderShippingAddressLockedInShopify($order)) {
+            throw new RuntimeException('You can\'t update the address on a fulfilled order.');
+        }
+
         $orderInput = [
             'id' => ShopifyGid::of('Order', (string) $order->shopify_order_id),
             'shippingAddress' => $shippingAddress,
         ];
-        $email = trim((string) ($input['email'] ?? ''));
         if ($email !== '') {
             $orderInput['email'] = $email;
         }
@@ -121,7 +126,11 @@ GQL
 
         $errors = is_array($data['orderUpdate']['userErrors'] ?? null) ? $data['orderUpdate']['userErrors'] : [];
         if ($errors !== []) {
-            throw new RuntimeException((string) ($errors[0]['message'] ?? 'Could not update shipping address in Shopify.'));
+            $shopifyMessage = (string) ($errors[0]['message'] ?? 'Could not update shipping address in Shopify.');
+            if ($this->isShopifyAddressLockedError($shopifyMessage)) {
+                throw new RuntimeException('You can\'t update the address on a fulfilled order.');
+            }
+            throw new RuntimeException($shopifyMessage);
         }
 
         $refreshed = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
@@ -137,6 +146,7 @@ GQL
             'address2' => $address2,
             'city' => $city,
             'province' => $province,
+            'provinceCode' => $provinceCode !== '' ? $provinceCode : ($localShip['provinceCode'] ?? null),
             'zip' => $zip,
             'country' => $countryRaw !== '' ? $countryRaw : ($countryCode !== '' ? $countryCode : ''),
             'countryCodeV2' => $countryCode !== '' ? $countryCode : ($localShip['countryCodeV2'] ?? null),
@@ -265,6 +275,29 @@ GQL
         return strpos($m, 'write_order_edits') !== false
             || (strpos($m, 'access denied') !== false && strpos($m, 'orderedit') !== false)
             || (strpos($m, 'access denied') !== false && strpos($m, 'order edit') !== false);
+    }
+
+    private function orderShippingAddressLockedInShopify(ShopifyOrder $order): bool
+    {
+        $fulfillment = strtolower(trim((string) ($order->fulfillment_status ?? '')));
+
+        return $fulfillment === 'fulfilled';
+    }
+
+    private function isShopifyAddressLockedError(string $message): bool
+    {
+        $m = strtolower($message);
+
+        return (strpos($m, 'fulfill') !== false && strpos($m, 'address') !== false)
+            || (strpos($m, 'shipping address') !== false && (
+                strpos($m, 'fulfill') !== false
+                || strpos($m, 'closed') !== false
+                || strpos($m, 'cannot') !== false
+                || strpos($m, "can't") !== false
+                || strpos($m, 'can not') !== false
+            ))
+            || (strpos($m, 'order is closed') !== false)
+            || (strpos($m, 'already fulfilled') !== false);
     }
 
     /**

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, watch } from "vue";
+import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -12,7 +12,6 @@ const toast = useToast();
 const loading = ref(false);
 const q = ref("");
 const rows = ref([]);
-let searchTimer = null;
 
 async function load() {
   loading.value = true;
@@ -34,15 +33,14 @@ async function load() {
   }
 }
 
+function applySearch() {
+  void load();
+}
+
 function openLog(row) {
   if (!row?.id) return;
   router.push({ name: "shopify-inventory-log", params: { id: String(row.id) } });
 }
-
-watch(q, () => {
-  if (searchTimer) clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => void load(), 250);
-});
 
 onMounted(() => {
   setCrmPageMeta({
@@ -54,130 +52,115 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="staff-page staff-page--wide sil-hub">
-    <header class="mb-3">
-      <h1 class="sil-hub__title">Inventory Log</h1>
-      <p class="text-secondary mb-0">Select a product to view location inventory changes.</p>
-    </header>
-
-    <div class="sil-hub__search mb-3">
-      <svg class="sil-hub__search-icon" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-      </svg>
-      <input
-        v-model="q"
-        type="search"
-        class="form-control"
-        placeholder="Search by product name or SKU…"
-        aria-label="Search products"
-      >
+  <div class="staff-page staff-page--wide">
+    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
+      <div class="min-w-0">
+        <h1 class="h4 mb-1 fw-semibold text-body">Inventory Log</h1>
+        <p class="small text-secondary mb-0">Select a product to view location inventory changes.</p>
+      </div>
     </div>
 
-    <div v-if="loading" class="p-5 d-flex justify-content-center">
-      <CrmLoadingSpinner message="Loading…" />
-    </div>
-
-    <div v-else class="table-responsive sil-hub__table-wrap">
-      <table class="table align-middle mb-0 sil-hub__table">
-        <thead>
-          <tr>
-            <th>Product</th>
-            <th>SKU</th>
-            <th class="text-end">On Hand</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="rows.length === 0">
-            <td colspan="4" class="text-secondary text-center py-4">No products found.</td>
-          </tr>
-          <tr
-            v-for="row in rows"
-            :key="row.id"
-            class="sil-hub__row"
-            @click="openLog(row)"
-          >
-            <td>
-              <div class="sil-hub__product">
-                <img
-                  v-if="row.image_url"
-                  :src="row.image_url"
-                  :alt="row.product_title || row.sku || 'Product'"
-                  class="sil-hub__thumb"
-                >
-                <div v-else class="sil-hub__thumb sil-hub__thumb--empty" />
-                <span class="fw-semibold">{{ row.product_title || row.title || "—" }}</span>
-              </div>
-            </td>
-            <td class="text-secondary">{{ row.sku || "—" }}</td>
-            <td class="text-end fw-semibold">{{ Number(row.on_hand || 0).toLocaleString() }}</td>
-            <td class="text-end">
-              <button type="button" class="btn btn-sm btn-outline-primary" @click.stop="openLog(row)">
-                View Log
+    <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
+      <div class="staff-table-toolbar">
+        <div class="staff-table-toolbar--row">
+          <div class="flex-grow-1" style="max-width: 28rem">
+            <div class="input-group orders-toolbar-search-group">
+              <span class="input-group-text bg-white border-end-0 text-secondary">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                </svg>
+              </span>
+              <input
+                v-model="q"
+                type="search"
+                class="form-control border-start-0"
+                placeholder="Search by product name or SKU…"
+                autocomplete="off"
+                aria-label="Search products"
+                :disabled="loading"
+                @keydown.enter.prevent="applySearch"
+              >
+              <button
+                type="button"
+                class="btn btn-primary staff-page-primary orders-toolbar-search-btn fw-semibold"
+                :disabled="loading"
+                @click="applySearch"
+              >
+                Search
               </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="loading" class="p-5 d-flex justify-content-center">
+        <CrmLoadingSpinner message="Loading…" />
+      </div>
+
+      <div v-else class="table-responsive staff-table-wrap">
+        <table class="table table-hover align-middle mb-0 staff-data-table">
+          <thead class="table-light staff-table-head">
+            <tr>
+              <th class="staff-table-head__th">Product</th>
+              <th class="staff-table-head__th">SKU</th>
+              <th class="staff-table-head__th text-end">On Hand</th>
+              <th class="staff-table-head__th text-end"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="rows.length === 0">
+              <td colspan="4" class="text-secondary text-center py-4">No products found.</td>
+            </tr>
+            <tr
+              v-for="row in rows"
+              :key="row.id"
+              class="sil-hub-row"
+              @click="openLog(row)"
+            >
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <img
+                    v-if="row.image_url"
+                    :src="row.image_url"
+                    :alt="row.product_title || row.sku || 'Product'"
+                    class="sil-hub-thumb"
+                  >
+                  <div v-else class="sil-hub-thumb sil-hub-thumb--empty" />
+                  <span class="fw-semibold">{{ row.product_title || row.title || "—" }}</span>
+                </div>
+              </td>
+              <td class="text-secondary">{{ row.sku || "—" }}</td>
+              <td class="text-end fw-semibold">{{ Number(row.on_hand || 0).toLocaleString() }}</td>
+              <td class="text-end">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-primary staff-toolbar-btn"
+                  @click.stop="openLog(row)"
+                >
+                  View Log
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.sil-hub__title {
-  margin: 0 0 0.25rem;
-  font-size: 1.65rem;
-  font-weight: 700;
-  color: #0f172a;
-}
-.sil-hub__search {
-  position: relative;
-  max-width: 28rem;
-}
-.sil-hub__search-icon {
-  position: absolute;
-  left: 0.75rem;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #94a3b8;
-  pointer-events: none;
-}
-.sil-hub__search .form-control {
-  padding-left: 2.25rem;
-}
-.sil-hub__table-wrap {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.75rem;
-  overflow: hidden;
-}
-.sil-hub__table thead th {
-  background: #f8fafc;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: #64748b;
-  border-bottom: 1px solid #e5e7eb;
-}
-.sil-hub__row {
+.sil-hub-row {
   cursor: pointer;
 }
-.sil-hub__row:hover {
-  background: #f8fafc;
-}
-.sil-hub__product {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-}
-.sil-hub__thumb {
+.sil-hub-thumb {
   width: 36px;
   height: 36px;
   border-radius: 0.4rem;
   object-fit: cover;
   background: #f3f4f6;
+  flex-shrink: 0;
 }
-.sil-hub__thumb--empty {
+.sil-hub-thumb--empty {
   border: 1px solid #e5e7eb;
 }
 </style>

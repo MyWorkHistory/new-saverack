@@ -78,7 +78,7 @@ async function submit() {
       available: qty,
       reason: form.reason,
     });
-    toast.success("Item added to location.");
+    toast.success("Item added to location. Shopify inventory will update in the background.");
     emit("saved");
     close();
   } catch (e) {

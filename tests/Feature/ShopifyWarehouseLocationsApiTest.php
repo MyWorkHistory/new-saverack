@@ -2,9 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\PushShopifyVariantInventoryJob;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountShopifyConnection;
 use App\Models\Role;
+use App\Models\ShopifyInventoryLevel;
+use App\Models\ShopifyLocation;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
 use App\Models\ShopifyWarehouseLocation;
@@ -12,6 +15,7 @@ use App\Models\ShopifyWarehouseLocationItem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Bus;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -44,14 +48,239 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
     {
         $this->actingAsAdmin();
 
-        $this->getJson('/api/shopify/locations/meta')
-            ->assertOk()
-            ->assertJsonFragment(['Large Shelf', 'Medium Shelf', 'Small Shelf'])
-            ->assertJsonFragment(['Cycle Count', 'Receiving Discrepancy', 'Return']);
+        $response = $this->getJson('/api/shopify/locations/meta')->assertOk();
+
+        $types = $response->json('types');
+        $this->assertIsArray($types);
+        $this->assertContains('Large Shelf', $types);
+        $this->assertContains('Medium Shelf', $types);
+        $this->assertContains('Small Shelf', $types);
+
+        $reasons = $response->json('add_item_reasons');
+        $this->assertIsArray($reasons);
+        $this->assertSame(config('inventory.adjustment_reasons'), $reasons);
+        $this->assertContains('Amazon Return', $reasons);
+        $this->assertContains('Order Fulfilment', $reasons);
+        $this->assertSame(
+            config('inventory.default_add_location_reason'),
+            $response->json('default_add_item_reason')
+        );
+    }
+
+    public function test_store_item_rejects_unknown_reason(): void
+    {
+        $this->actingAsAdmin();
+
+        $location = ShopifyWarehouseLocation::query()->create([
+            'name' => 'A-01-100',
+            'type' => 'Large Shelf',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        $variant = $this->makeVariant();
+
+        $this->postJson("/api/shopify/locations/{$location->id}/items", [
+            'client_account_id' => $variant->connection->client_account_id,
+            'shopify_variant_id' => $variant->id,
+            'available' => 5,
+            'reason' => 'Not A Real Reason',
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['reason']);
+    }
+
+    public function test_store_item_rolls_up_to_sync_inventory_level_and_dispatches_push(): void
+    {
+        Bus::fake([PushShopifyVariantInventoryJob::class]);
+        $this->actingAsAdmin();
+
+        $location = ShopifyWarehouseLocation::query()->create([
+            'name' => 'A-01-100',
+            'type' => 'Large Shelf',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        $variant = $this->makeVariant('ROLL-1');
+        ShopifyLocation::query()->create([
+            'connection_id' => $variant->connection_id,
+            'shopify_location_id' => '9001',
+            'name' => 'Main Warehouse',
+            'active' => true,
+            'sync_inventory' => true,
+        ]);
+        ShopifyLocation::query()->create([
+            'connection_id' => $variant->connection_id,
+            'shopify_location_id' => '9002',
+            'name' => 'Inactive Sync Off',
+            'active' => true,
+            'sync_inventory' => false,
+        ]);
+
+        $this->postJson("/api/shopify/locations/{$location->id}/items", [
+            'client_account_id' => $variant->connection->client_account_id,
+            'shopify_variant_id' => $variant->id,
+            'available' => 5,
+            'reason' => 'Restock',
+        ])->assertCreated()
+            ->assertJsonPath('item.available', 5);
+
+        $this->assertDatabaseHas('shopify_inventory_levels', [
+            'connection_id' => $variant->connection_id,
+            'shopify_inventory_item_id' => (string) $variant->shopify_inventory_item_id,
+            'shopify_location_id' => '9001',
+            'available' => 5,
+        ]);
+
+        // Only sync_inventory=true location should get a level row.
+        $this->assertSame(
+            1,
+            ShopifyInventoryLevel::query()->where('connection_id', $variant->connection_id)->count()
+        );
+
+        // Second add increments both warehouse item and Shopify level.
+        $this->postJson("/api/shopify/locations/{$location->id}/items", [
+            'client_account_id' => $variant->connection->client_account_id,
+            'shopify_variant_id' => $variant->id,
+            'available' => 3,
+            'reason' => 'Restock',
+        ])->assertCreated()
+            ->assertJsonPath('item.available', 8);
+
+        $this->assertSame(
+            8,
+            (int) ShopifyInventoryLevel::query()
+                ->where('connection_id', $variant->connection_id)
+                ->where('shopify_location_id', '9001')
+                ->value('available')
+        );
+
+        Bus::assertDispatched(PushShopifyVariantInventoryJob::class, function ($job) use ($variant) {
+            return (int) $job->variantId === (int) $variant->id;
+        });
+    }
+
+    public function test_apply_available_delta_dispatches_push_after_response(): void
+    {
+        Bus::fake([PushShopifyVariantInventoryJob::class]);
+        $variant = $this->makeVariant('PUSH-1');
+        ShopifyLocation::query()->create([
+            'connection_id' => $variant->connection_id,
+            'shopify_location_id' => '6100',
+            'name' => 'Main',
+            'active' => true,
+            'sync_inventory' => true,
+        ]);
+
+        app(\App\Services\ShopifyWarehouseInventorySyncService::class)
+            ->applyAvailableDelta($variant, 2);
+
+        Bus::assertDispatched(PushShopifyVariantInventoryJob::class, function ($job) use ($variant) {
+            return (int) $job->variantId === (int) $variant->id;
+        });
+    }
+
+    public function test_update_item_qty_applies_delta_to_sync_level(): void
+    {
+        Bus::fake([PushShopifyVariantInventoryJob::class]);
+        $this->actingAsAdmin();
+
+        $location = ShopifyWarehouseLocation::query()->create([
+            'name' => 'A-01-200',
+            'type' => 'Large Bin',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        $variant = $this->makeVariant('ROLL-2');
+        ShopifyLocation::query()->create([
+            'connection_id' => $variant->connection_id,
+            'shopify_location_id' => '8001',
+            'name' => 'Main',
+            'active' => true,
+            'sync_inventory' => true,
+        ]);
+        ShopifyInventoryLevel::query()->create([
+            'connection_id' => $variant->connection_id,
+            'shopify_inventory_item_id' => (string) $variant->shopify_inventory_item_id,
+            'shopify_location_id' => '8001',
+            'available' => 10,
+            'crm_set_at' => now(),
+        ]);
+        $item = ShopifyWarehouseLocationItem::query()->create([
+            'location_id' => $location->id,
+            'shopify_variant_id' => $variant->id,
+            'available' => 10,
+        ]);
+
+        $this->patchJson("/api/shopify/locations/{$location->id}/items/{$item->id}", [
+            'available' => 4,
+        ])->assertOk()
+            ->assertJsonPath('item.available', 4);
+
+        $this->assertSame(
+            4,
+            (int) ShopifyInventoryLevel::query()
+                ->where('connection_id', $variant->connection_id)
+                ->where('shopify_location_id', '8001')
+                ->value('available')
+        );
+    }
+
+    public function test_transfer_does_not_change_inventory_levels_or_dispatch_push(): void
+    {
+        Bus::fake([PushShopifyVariantInventoryJob::class]);
+        $this->actingAsAdmin();
+
+        $from = ShopifyWarehouseLocation::query()->create([
+            'name' => 'FROM-1',
+            'type' => 'Large Bin',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        $to = ShopifyWarehouseLocation::query()->create([
+            'name' => 'TO-1',
+            'type' => 'Large Bin',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        $variant = $this->makeVariant('XFER-1');
+        ShopifyLocation::query()->create([
+            'connection_id' => $variant->connection_id,
+            'shopify_location_id' => '7001',
+            'name' => 'Main',
+            'active' => true,
+            'sync_inventory' => true,
+        ]);
+        ShopifyInventoryLevel::query()->create([
+            'connection_id' => $variant->connection_id,
+            'shopify_inventory_item_id' => (string) $variant->shopify_inventory_item_id,
+            'shopify_location_id' => '7001',
+            'available' => 50,
+            'crm_set_at' => now(),
+        ]);
+        $item = ShopifyWarehouseLocationItem::query()->create([
+            'location_id' => $from->id,
+            'shopify_variant_id' => $variant->id,
+            'available' => 50,
+        ]);
+
+        $this->postJson("/api/shopify/locations/{$from->id}/transfer", [
+            'item_id' => $item->id,
+            'to_location_id' => $to->id,
+            'quantity' => 20,
+        ])->assertOk();
+
+        $this->assertSame(
+            50,
+            (int) ShopifyInventoryLevel::query()
+                ->where('connection_id', $variant->connection_id)
+                ->where('shopify_location_id', '7001')
+                ->value('available')
+        );
+        Bus::assertNotDispatched(PushShopifyVariantInventoryJob::class);
     }
 
     public function test_can_add_item_to_location_with_reason(): void
     {
+        Bus::fake([PushShopifyVariantInventoryJob::class]);
         $this->actingAsAdmin();
 
         $location = ShopifyWarehouseLocation::query()->create([

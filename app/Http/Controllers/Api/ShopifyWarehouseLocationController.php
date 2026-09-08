@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ShopifyProductVariant;
 use App\Models\ShopifyWarehouseLocation;
 use App\Models\ShopifyWarehouseLocationItem;
+use App\Services\ShopifyWarehouseInventorySyncService;
 use App\Support\ShopifyProductImage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,6 +18,14 @@ use Throwable;
 
 class ShopifyWarehouseLocationController extends Controller
 {
+    /** @var ShopifyWarehouseInventorySyncService */
+    private $warehouseInventorySync;
+
+    public function __construct(ShopifyWarehouseInventorySyncService $warehouseInventorySync)
+    {
+        $this->warehouseInventorySync = $warehouseInventorySync;
+    }
+
     private function assertAdmin(Request $request): void
     {
         $user = $request->user();
@@ -31,7 +40,8 @@ class ShopifyWarehouseLocationController extends Controller
 
         return response()->json([
             'types' => ShopifyWarehouseLocation::TYPES,
-            'add_item_reasons' => ShopifyWarehouseLocation::ADD_ITEM_REASONS,
+            'add_item_reasons' => ShopifyWarehouseLocation::addItemReasons(),
+            'default_add_item_reason' => ShopifyWarehouseLocation::defaultAddItemReason(),
         ]);
     }
 
@@ -258,7 +268,7 @@ class ShopifyWarehouseLocationController extends Controller
             'shopify_variant_id' => ['nullable', 'integer', 'exists:shopify_product_variants,id'],
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
             'available' => ['required', 'integer', 'min:1'],
-            'reason' => ['required', 'string', Rule::in(ShopifyWarehouseLocation::ADD_ITEM_REASONS)],
+            'reason' => ['required', 'string', Rule::in(ShopifyWarehouseLocation::addItemReasons())],
         ]);
 
         $variantId = isset($validated['shopify_variant_id']) ? (int) $validated['shopify_variant_id'] : 0;
@@ -296,14 +306,18 @@ class ShopifyWarehouseLocationController extends Controller
                     .($accountId > 0 ? ' on the selected account.' : '.')],
             ]);
         }
+
+        $qty = (int) $validated['available'];
         /** @var ShopifyWarehouseLocationItem $item */
         $item = ShopifyWarehouseLocationItem::query()->firstOrNew([
             'location_id' => $shopifyWarehouseLocation->id,
             'shopify_variant_id' => $variant->id,
         ]);
-        $item->available = (int) $item->available + (int) $validated['available'];
+        $item->available = (int) $item->available + $qty;
         $item->save();
         $item->load(['variant.product', 'variant.connection.clientAccount']);
+
+        $this->warehouseInventorySync->applyAvailableDelta($variant, $qty);
 
         return response()->json(['item' => $this->serializeItem($item)], 201);
     }
@@ -321,13 +335,24 @@ class ShopifyWarehouseLocationController extends Controller
             'available' => ['required', 'integer', 'min:0'],
         ]);
         $qty = (int) $validated['available'];
+        $oldQty = (int) $shopifyWarehouseLocationItem->available;
+        $variant = ShopifyProductVariant::query()->find((int) $shopifyWarehouseLocationItem->shopify_variant_id);
+
         if ($qty <= 0) {
             $shopifyWarehouseLocationItem->delete();
+            if ($variant !== null && $oldQty !== 0) {
+                $this->warehouseInventorySync->applyAvailableDelta($variant, -$oldQty);
+            }
 
             return response()->json(['deleted' => true]);
         }
         $shopifyWarehouseLocationItem->available = $qty;
         $shopifyWarehouseLocationItem->save();
+
+        $delta = $qty - $oldQty;
+        if ($variant !== null && $delta !== 0) {
+            $this->warehouseInventorySync->applyAvailableDelta($variant, $delta);
+        }
 
         return response()->json([
             'item' => $this->serializeItem($shopifyWarehouseLocationItem->fresh([
@@ -346,7 +371,12 @@ class ShopifyWarehouseLocationController extends Controller
         if ((int) $shopifyWarehouseLocationItem->location_id !== (int) $shopifyWarehouseLocation->id) {
             abort(404);
         }
+        $oldQty = (int) $shopifyWarehouseLocationItem->available;
+        $variant = ShopifyProductVariant::query()->find((int) $shopifyWarehouseLocationItem->shopify_variant_id);
         $shopifyWarehouseLocationItem->delete();
+        if ($variant !== null && $oldQty !== 0) {
+            $this->warehouseInventorySync->applyAvailableDelta($variant, -$oldQty);
+        }
 
         return response()->json(['message' => 'Item removed from location.']);
     }

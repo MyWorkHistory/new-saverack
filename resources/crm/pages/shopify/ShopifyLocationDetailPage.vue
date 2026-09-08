@@ -348,7 +348,7 @@ async function saveQty() {
     await api.patch(`/shopify/locations/${locationId.value}/items/${activeItem.value.id}`, {
       available: Number(qtyForm.available || 0),
     });
-    toast.success("Quantity updated.");
+    toast.success("Quantity updated. Shopify inventory will update in the background.");
     qtyOpen.value = false;
     await load();
   } catch (e) {
@@ -498,7 +498,7 @@ async function addItem() {
       available: Number(addItemForm.available || 0),
       reason: addItemForm.reason,
     });
-    toast.success("Item added.");
+    toast.success("Item added. Shopify inventory will update in the background.");
     addItemOpen.value = false;
     await load();
   } catch (e) {
@@ -536,16 +536,22 @@ onMounted(async () => {
     ];
     addItemReasons.value = [
       "Account Setup",
-      "Client Request",
-      "Cycle Count",
-      "Expired",
+      "Amazon Return",
+      "Client-Requested Adjustments",
+      "Cycle Counts / Physical Counts",
+      "Damaged Inventory",
+      "Expiration or Obsolescence",
+      "Inbound Receiving Adjustments",
+      "Inventory Reclassification",
       "Kitting / Bundling",
-      "Order Fulfillment",
-      "Picking Error",
-      "Putaway Error",
-      "Receiving Discrepancy",
+      "Lost or Missing Units",
+      "Order Fulfilment",
+      "Quality Control Holds",
       "Restock",
       "Return",
+      "Returns Processing",
+      "Shipped via Shipstation",
+      "System Sync or Integration Corrections",
     ];
   }
   void loadAccounts();

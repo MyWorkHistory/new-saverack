@@ -19,19 +19,35 @@ class ShopifyWarehouseLocation extends Model
         'Small Shelf',
     ];
 
-    public const ADD_ITEM_REASONS = [
-        'Account Setup',
-        'Client Request',
-        'Cycle Count',
-        'Expired',
-        'Kitting / Bundling',
-        'Order Fulfillment',
-        'Picking Error',
-        'Putaway Error',
-        'Receiving Discrepancy',
-        'Restock',
-        'Return',
-    ];
+    /**
+     * CRM 2.0 inventory adjustment reasons (config/inventory.php).
+     *
+     * @return list<string>
+     */
+    public static function addItemReasons(): array
+    {
+        $reasons = config('inventory.adjustment_reasons', []);
+        if (! is_array($reasons)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($reasons as $reason) {
+            $reason = trim((string) $reason);
+            if ($reason !== '') {
+                $out[] = $reason;
+            }
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    public static function defaultAddItemReason(): string
+    {
+        $default = trim((string) config('inventory.default_add_location_reason', 'Account Setup'));
+
+        return $default !== '' ? $default : 'Account Setup';
+    }
 
     protected $table = 'shopify_warehouse_locations';
 

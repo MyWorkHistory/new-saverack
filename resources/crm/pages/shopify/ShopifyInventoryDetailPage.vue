@@ -420,16 +420,22 @@ onMounted(async () => {
   } catch {
     addItemReasons.value = [
       "Account Setup",
-      "Client Request",
-      "Cycle Count",
-      "Expired",
+      "Amazon Return",
+      "Client-Requested Adjustments",
+      "Cycle Counts / Physical Counts",
+      "Damaged Inventory",
+      "Expiration or Obsolescence",
+      "Inbound Receiving Adjustments",
+      "Inventory Reclassification",
       "Kitting / Bundling",
-      "Order Fulfillment",
-      "Picking Error",
-      "Putaway Error",
-      "Receiving Discrepancy",
+      "Lost or Missing Units",
+      "Order Fulfilment",
+      "Quality Control Holds",
       "Restock",
       "Return",
+      "Returns Processing",
+      "Shipped via Shipstation",
+      "System Sync or Integration Corrections",
     ];
   }
   void load();

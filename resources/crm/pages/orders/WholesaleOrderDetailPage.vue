@@ -8,6 +8,7 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmNoteAuthorAvatar from "../../components/common/CrmNoteAuthorAvatar.vue";
 import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
 import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
+import ShopifyCsvUploadModal from "../../components/shopify/ShopifyCsvUploadModal.vue";
 import WholesaleBarcodeUploadModal from "../../components/orders/WholesaleBarcodeUploadModal.vue";
 import WholesaleLineBoxBreakdown from "../../components/orders/WholesaleLineBoxBreakdown.vue";
 import WholesalePackageInfoModal from "../../components/orders/WholesalePackageInfoModal.vue";
@@ -50,7 +51,14 @@ const LINE_MENU_H = 132;
 const loading = ref(true);
 const lineBusy = ref(false);
 const addPanelOpen = ref(false);
+const csvImportOpen = ref(false);
+const csvImportBusy = ref(false);
 const order = ref(null);
+
+const CSV_IMPORT_COLUMNS = [
+  { label: "SKU", required: true },
+  { label: "QTY", required: true },
+];
 
 const statusSaving = ref(false);
 const statusModalOpen = ref(false);
@@ -732,6 +740,60 @@ async function addFromCatalog({ product, quantity }) {
   }
 }
 
+async function submitCsvImport({ file }) {
+  if (!order.value?.id || !canManageLineItems.value || csvImportBusy.value) return;
+  if (!file) {
+    toast.error("Choose a CSV file to upload.");
+    return;
+  }
+  csvImportBusy.value = true;
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    const { data } = await api.post(
+      `/admin/wholesale-orders/${order.value.id}/lines/import-csv`,
+      formData,
+      {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 180000,
+      },
+    );
+    if (data?.order) {
+      applyOrderData(data.order);
+    }
+    const imported = Number(data?.imported ?? 0);
+    const updated = Number(data?.updated ?? 0);
+    const errors = Array.isArray(data?.errors) ? data.errors : [];
+    if (imported > 0) {
+      toast.success(`Imported ${imported} product${imported === 1 ? "" : "s"}.`);
+    }
+    if (updated > 0) {
+      toast.success(`Updated ${updated} line${updated === 1 ? "" : "s"}.`);
+    }
+    if (imported === 0 && updated === 0 && errors.length === 0) {
+      toast.warning("No products were imported.");
+    }
+    if (errors.length > 0) {
+      const sample = errors
+        .slice(0, 5)
+        .map((err) => {
+          const sku = String(err?.sku || "").trim();
+          const row = err?.row != null ? `Row ${err.row}` : "Row ?";
+          const msg = String(err?.message || "Could not import row.").trim();
+          return sku ? `${row}: ${sku} — ${msg}` : `${row}: ${msg}`;
+        })
+        .join(" ");
+      const more = errors.length > 5 ? ` (+${errors.length - 5} more)` : "";
+      toast.warning(`${errors.length} row${errors.length === 1 ? "" : "s"} skipped. ${sample}${more}`);
+    }
+    csvImportOpen.value = false;
+  } catch (e) {
+    toast.errorFrom(e, "Could not import products.");
+  } finally {
+    csvImportBusy.value = false;
+  }
+}
+
 async function saveLineQty(line, rawQty) {
   if (!order.value?.id || !canManageLineItems.value || !line?.id) return;
   const qty = Math.max(1, Number(rawQty) || 1);
@@ -1196,15 +1258,24 @@ onUnmounted(() => {
               </span>
               <h2 class="h6 mb-0 fw-semibold">Items</h2>
             </div>
-            <button
-              v-if="canManageLineItems"
-              type="button"
-              class="btn btn-sm btn-primary staff-page-primary"
-              :disabled="lineBusy"
-              @click="addPanelOpen = !addPanelOpen"
-            >
-              {{ addPanelOpen ? "Hide Add Products" : "Add Products" }}
-            </button>
+            <div v-if="canManageLineItems" class="d-flex flex-wrap align-items-center gap-2">
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                :disabled="lineBusy || csvImportBusy"
+                @click="csvImportOpen = true"
+              >
+                Import Products
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-primary"
+                :disabled="lineBusy || csvImportBusy"
+                @click="addPanelOpen = !addPanelOpen"
+              >
+                {{ addPanelOpen ? "Hide Add Products" : "Add Products" }}
+              </button>
+            </div>
           </div>
 
           <div v-if="canManageLineItems && addPanelOpen" class="border-bottom">
@@ -1212,7 +1283,7 @@ onUnmounted(() => {
               :client-account-id="clientAccountId"
               :wholesale-order-id="orderId"
               :active="addPanelOpen"
-              :busy="lineBusy"
+              :busy="lineBusy || csvImportBusy"
               qty-label="Quantity"
               search-input-id="wholesale-order-catalog-search"
               @add="addFromCatalog"
@@ -1818,6 +1889,18 @@ onUnmounted(() => {
       :line-label="barcodeLine ? `${barcodeLine.sku} — ${barcodeLine.name}` : ''"
       @close="closeBarcodeModal"
       @upload="uploadBarcode"
+    />
+
+    <ShopifyCsvUploadModal
+      :open="csvImportOpen"
+      title="Import Products"
+      subtitle="Upload a CSV with SKU and QTY columns to add items to this wholesale order."
+      :columns="CSV_IMPORT_COLUMNS"
+      template-name="wholesale-order-products.csv"
+      submit-label="Import Products"
+      :busy="csvImportBusy"
+      @update:open="csvImportOpen = $event"
+      @submit="submitCsvImport"
     />
 
     <Teleport to="body">

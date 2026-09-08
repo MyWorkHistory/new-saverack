@@ -1535,4 +1535,98 @@ class WholesaleOrderWorkflowTest extends TestCase
             'order_number' => '881437467',
         ])->assertForbidden();
     }
+
+    public function test_import_lines_csv_uses_sku_and_qty_and_merges_existing_sku(): void
+    {
+        $account = $this->account('csv');
+        $staff = $this->staffUser();
+        Sanctum::actingAs($staff);
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'created_by_user_id' => $staff->id,
+            'order_number' => 'CSV-1',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_PENDING,
+            'items_count' => 2,
+        ]);
+        WholesaleOrderLine::query()->create([
+            'wholesale_order_id' => $order->id,
+            'sku' => 'BCLM',
+            'name' => 'Existing Polo M',
+            'quantity' => 2,
+            'barcode_mode' => WholesaleOrderLine::BARCODE_SHIP_AS_IS,
+            'status' => WholesaleOrderLine::STATUS_SHIP_AS_IS,
+            'sort_order' => 1,
+        ]);
+
+        $csv = implode("\n", [
+            'SKU,QTY',
+            'BCLM,18',
+            'BCLL,24',
+            'ZERO1,0',
+            'CRK-SOCKS,67',
+        ])."\n";
+
+        $file = UploadedFile::fake()->createWithContent('wholesale-products.csv', $csv);
+
+        $response = $this->post('/api/admin/wholesale-orders/'.$order->id.'/lines/import-csv', [
+            'file' => $file,
+        ], [
+            'Accept' => 'application/json',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('imported', 2)
+            ->assertJsonPath('updated', 1)
+            ->assertJsonPath('skipped', 1);
+
+        $order->refresh();
+        $lines = WholesaleOrderLine::query()
+            ->where('wholesale_order_id', $order->id)
+            ->orderBy('sku')
+            ->get()
+            ->keyBy(function ($line) {
+                return strtoupper((string) $line->sku);
+            });
+
+        $this->assertCount(3, $lines);
+        $this->assertSame(20, (int) $lines['BCLM']->quantity); // 2 + 18
+        $this->assertSame(24, (int) $lines['BCLL']->quantity);
+        $this->assertSame(67, (int) $lines['CRK-SOCKS']->quantity);
+        $this->assertSame(111, (int) $order->items_count);
+    }
+
+    public function test_import_lines_csv_accepts_tab_delimited_sku_qty(): void
+    {
+        $account = $this->account('tsv');
+        $staff = $this->staffUser();
+        Sanctum::actingAs($staff);
+
+        $order = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'created_by_user_id' => $staff->id,
+            'order_number' => 'CSV-2',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_DRAFT,
+            'items_count' => 0,
+        ]);
+
+        $tsv = "SKU\tQTY\n"
+            ."BCLS\t4\n"
+            ."ELLBL\t229\n";
+
+        $file = UploadedFile::fake()->createWithContent('inventory.tsv.csv', $tsv);
+
+        $this->post('/api/admin/wholesale-orders/'.$order->id.'/lines/import-csv', [
+            'file' => $file,
+        ], [
+            'Accept' => 'application/json',
+        ])->assertOk()
+            ->assertJsonPath('imported', 2)
+            ->assertJsonPath('updated', 0);
+
+        $this->assertSame(2, WholesaleOrderLine::query()->where('wholesale_order_id', $order->id)->count());
+        $this->assertSame(233, (int) $order->fresh()->items_count);
+    }
 }

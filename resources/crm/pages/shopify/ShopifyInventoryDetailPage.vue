@@ -482,6 +482,13 @@ onUnmounted(() => {
             </svg>
             {{ printBusy ? "Generating Label… Please Wait" : "Print Barcode" }}
           </button>
+          <button
+            type="button"
+            class="staff-outline-action-btn"
+            @click="router.push({ name: 'shopify-inventory-log', params: { id: String(variant.id) } })"
+          >
+            Inventory Log
+          </button>
           <div ref="actionsRoot" class="sid-actions-wrap">
             <button
               type="button"

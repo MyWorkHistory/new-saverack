@@ -306,7 +306,10 @@ function navActive(mode) {
   if (mode === "webmaster") return p.startsWith("/admin/webmaster");
   if (mode === "shopify") return p.startsWith("/admin/shopify");
   if (mode === "shopify-orders") return p.startsWith("/admin/shopify/orders");
-  if (mode === "shopify-inventory") return p.startsWith("/admin/shopify/inventory");
+  if (mode === "shopify-inventory-log") return p.startsWith("/admin/shopify/inventory-log");
+  if (mode === "shopify-inventory") {
+    return p.startsWith("/admin/shopify/inventory") && !p.startsWith("/admin/shopify/inventory-log");
+  }
   if (mode === "shopify-locations") return p.startsWith("/admin/shopify/locations");
   if (mode === "email") return p === "/admin/email" || p.startsWith("/admin/email/");
   if (mode === "clients") return p.startsWith("/admin/clients");
@@ -1523,6 +1526,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Locations
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/shopify/inventory-log"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('shopify-inventory-log') }"
+                    @click="closeMobile"
+                  >
+                    Inventory Log
                   </RouterLink>
                 </li>
               </ul>

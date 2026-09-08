@@ -53,7 +53,12 @@ class RouteServiceProvider extends ServiceProvider
     protected function configureRateLimiting()
     {
         RateLimiter::for('api', function (Request $request) {
-            return Limit::perMinute(60)->by(optional($request->user())->id ?: $request->ip());
+            // CRM SPA pages fire many parallel requests; 60/min blocks staff mid-edit.
+            if ($request->user()) {
+                return Limit::perMinute(300)->by((string) $request->user()->id);
+            }
+
+            return Limit::perMinute(60)->by((string) $request->ip());
         });
 
         RateLimiter::for('public-invoice', function (Request $request) {

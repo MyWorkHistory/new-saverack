@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\ShopifyProductVariant;
 use App\Models\ShopifyWarehouseLocation;
 use App\Models\ShopifyWarehouseLocationItem;
+use App\Models\User;
+use App\Services\ShopifyWarehouseInventoryLogService;
 use App\Services\ShopifyWarehouseInventorySyncService;
 use App\Support\ShopifyProductImage;
 use Illuminate\Http\JsonResponse;
@@ -21,9 +23,15 @@ class ShopifyWarehouseLocationController extends Controller
     /** @var ShopifyWarehouseInventorySyncService */
     private $warehouseInventorySync;
 
-    public function __construct(ShopifyWarehouseInventorySyncService $warehouseInventorySync)
-    {
+    /** @var ShopifyWarehouseInventoryLogService */
+    private $inventoryLogs;
+
+    public function __construct(
+        ShopifyWarehouseInventorySyncService $warehouseInventorySync,
+        ShopifyWarehouseInventoryLogService $inventoryLogs
+    ) {
         $this->warehouseInventorySync = $warehouseInventorySync;
+        $this->inventoryLogs = $inventoryLogs;
     }
 
     private function assertAdmin(Request $request): void
@@ -395,12 +403,13 @@ class ShopifyWarehouseLocationController extends Controller
         );
 
         try {
-            DB::transaction(function () use ($validated, $shopifyWarehouseLocation, $to) {
+            DB::transaction(function () use ($validated, $shopifyWarehouseLocation, $to, $request) {
                 $this->performTransfer(
                     $shopifyWarehouseLocation,
                     $to,
                     (int) $validated['item_id'],
-                    (int) $validated['quantity']
+                    (int) $validated['quantity'],
+                    $request->user()
                 );
             });
         } catch (ValidationException $e) {
@@ -430,11 +439,17 @@ class ShopifyWarehouseLocationController extends Controller
         $transferred = 0;
         $skipped = [];
         try {
-            DB::transaction(function () use ($validated, $shopifyWarehouseLocation, $to, &$transferred, &$skipped) {
+            DB::transaction(function () use ($validated, $shopifyWarehouseLocation, $to, $request, &$transferred, &$skipped) {
                 foreach ($validated['item_ids'] as $itemId) {
                     $itemId = (int) $itemId;
                     try {
-                        $this->performTransfer($shopifyWarehouseLocation, $to, $itemId, null);
+                        $this->performTransfer(
+                            $shopifyWarehouseLocation,
+                            $to,
+                            $itemId,
+                            null,
+                            $request->user()
+                        );
                         $transferred++;
                     } catch (ValidationException $e) {
                         $skipped[] = $itemId;
@@ -506,7 +521,8 @@ class ShopifyWarehouseLocationController extends Controller
         ShopifyWarehouseLocation $from,
         ShopifyWarehouseLocation $to,
         int $itemId,
-        ?int $quantity
+        ?int $quantity,
+        ?User $actor = null
     ): void {
         /** @var ShopifyWarehouseLocationItem|null $fromItem */
         $fromItem = ShopifyWarehouseLocationItem::query()
@@ -532,20 +548,47 @@ class ShopifyWarehouseLocationController extends Controller
             ]);
         }
 
-        $fromItem->available -= $qty;
+        $variantId = (int) $fromItem->shopify_variant_id;
+        $fromOld = (int) $fromItem->available;
+        $fromNew = $fromOld - $qty;
+
+        $fromItem->available = $fromNew;
         if ($fromItem->available <= 0) {
             $fromItem->delete();
+            $fromNew = 0;
         } else {
             $fromItem->save();
         }
 
         /** @var ShopifyWarehouseLocationItem $toItem */
-        $toItem = ShopifyWarehouseLocationItem::query()->firstOrNew([
-            'location_id' => $to->id,
-            'shopify_variant_id' => $fromItem->shopify_variant_id,
-        ]);
-        $toItem->available = (int) $toItem->available + $qty;
+        $toItem = ShopifyWarehouseLocationItem::query()
+            ->where('location_id', $to->id)
+            ->where('shopify_variant_id', $variantId)
+            ->lockForUpdate()
+            ->first();
+        $toOld = $toItem !== null ? (int) $toItem->available : 0;
+        if ($toItem === null) {
+            $toItem = new ShopifyWarehouseLocationItem([
+                'location_id' => $to->id,
+                'shopify_variant_id' => $variantId,
+                'available' => 0,
+            ]);
+        }
+        $toNew = $toOld + $qty;
+        $toItem->available = $toNew;
         $toItem->save();
+
+        $this->inventoryLogs->recordTransfer(
+            $variantId,
+            $from,
+            $to,
+            $qty,
+            $fromOld,
+            $fromNew,
+            $toOld,
+            $toNew,
+            $actor
+        );
     }
 
     /**

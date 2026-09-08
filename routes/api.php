@@ -56,6 +56,7 @@ use App\Http\Controllers\Api\SupplyOrderController;
 use App\Http\Controllers\Api\WholesaleOrderController;
 use App\Http\Controllers\Api\WholesaleBillController;
 use App\Http\Controllers\Api\ShopifyIntegrationController;
+use App\Http\Controllers\Api\ShopifyWarehouseInventoryLogController;
 use App\Http\Controllers\Api\ShopifyWarehouseLocationController;
 use App\Http\Controllers\ShipHeroWebhookController;
 use App\Http\Controllers\ShopifyWebhookController;
@@ -741,6 +742,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/inventory/accounts', [ShopifyIntegrationController::class, 'inventoryAccounts']);
         Route::post('/inventory/import', [ShopifyIntegrationController::class, 'importProductsCsv']);
         Route::post('/inventory/bulk-edit', [ShopifyIntegrationController::class, 'bulkEditProductsCsv']);
+        Route::get('/inventory/logs/meta', [ShopifyWarehouseInventoryLogController::class, 'meta']);
+        Route::get('/inventory/{shopifyVariant}/logs', [ShopifyWarehouseInventoryLogController::class, 'index']);
         Route::get('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'inventoryShow']);
         Route::patch('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'updateVariant']);
         Route::patch('/inventory/{shopifyVariant}/settings', [ShopifyIntegrationController::class, 'updateProductSettings']);

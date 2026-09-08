@@ -70,18 +70,31 @@ class ShopifyOrderEditService
         $phone = trim((string) ($input['phone'] ?? ''));
         $countryCode = $this->mailingAddressCountryCode($countryRaw, $order);
 
-        // MailingAddressInput: firstName/lastName/countryCode only — no `name` or `country`.
+        [$province, $zip, $provinceCode] = $this->normalizeMailingRegion($countryCode, $province, $zip);
+
+        // MailingAddressInput: firstName/lastName/countryCode — no `name` or `country`.
         $shippingAddress = array_filter([
             'address1' => $address1 !== '' ? $address1 : null,
             'address2' => $address2 !== '' ? $address2 : null,
             'city' => $city !== '' ? $city : null,
             'province' => $province !== '' ? $province : null,
+            'provinceCode' => $provinceCode !== '' ? $provinceCode : null,
             'zip' => $zip !== '' ? $zip : null,
             'countryCode' => $countryCode !== '' ? $countryCode : null,
             'firstName' => $firstName !== '' ? $firstName : null,
             'lastName' => $lastName !== '' ? $lastName : null,
             'phone' => $phone !== '' ? $phone : null,
         ], static fn ($v) => $v !== null && $v !== '');
+
+        if ($countryCode === 'US' && $provinceCode === '' && $province === '' && $zip !== '') {
+            throw new RuntimeException('State / Province is required for United States addresses (e.g. FL).');
+        }
+        if ($countryCode === 'US' && $provinceCode !== '' && ! $this->isUsStateCode($provinceCode)) {
+            throw new RuntimeException('State / Province looks invalid. Use a US state code (e.g. FL) or full name (Florida).');
+        }
+        if ($countryCode === 'US' && $zip !== '' && ! preg_match('/^\d{5}(-\d{4})?$/', $zip)) {
+            throw new RuntimeException('Postal / Zip Code looks invalid. Use a 5-digit US ZIP (e.g. 33811).');
+        }
 
         $orderInput = [
             'id' => ShopifyGid::of('Order', (string) $order->shopify_order_id),
@@ -288,6 +301,88 @@ GQL
         }
 
         return '';
+    }
+
+    /**
+     * Normalize province/zip for Shopify (swap common UI mixups; map US names → codes).
+     *
+     * @return array{0:string,1:string,2:string} [province, zip, provinceCode]
+     */
+    private function normalizeMailingRegion(string $countryCode, string $province, string $zip): array
+    {
+        $province = trim($province);
+        $zip = trim($zip);
+
+        // Common form mixup: ZIP typed into State, state code typed into ZIP.
+        if (
+            preg_match('/^\d{5}(-\d{4})?$/', $province)
+            && preg_match('/^[A-Za-z]{2}$/', $zip)
+        ) {
+            $tmp = $province;
+            $province = strtoupper($zip);
+            $zip = $tmp;
+        }
+
+        $provinceCode = '';
+        if ($countryCode === 'US') {
+            if (preg_match('/^[A-Za-z]{2}$/', $province)) {
+                $provinceCode = strtoupper($province);
+                $province = $provinceCode;
+            } else {
+                $provinceCode = $this->usStateCodeFromName($province);
+                if ($provinceCode !== '') {
+                    $province = $provinceCode;
+                }
+            }
+        } elseif (preg_match('/^[A-Za-z]{2}$/', $province)) {
+            $provinceCode = strtoupper($province);
+        }
+
+        return [$province, $zip, $provinceCode];
+    }
+
+    private function usStateCodeFromName(string $name): string
+    {
+        $key = strtolower(trim($name));
+        if ($key === '') {
+            return '';
+        }
+
+        $map = $this->usStateNameMap();
+
+        return $map[$key] ?? '';
+    }
+
+    private function isUsStateCode(string $code): bool
+    {
+        $code = strtoupper(trim($code));
+        if ($code === '') {
+            return false;
+        }
+
+        return in_array($code, array_values($this->usStateNameMap()), true);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function usStateNameMap(): array
+    {
+        return [
+            'alabama' => 'AL', 'alaska' => 'AK', 'arizona' => 'AZ', 'arkansas' => 'AR',
+            'california' => 'CA', 'colorado' => 'CO', 'connecticut' => 'CT', 'delaware' => 'DE',
+            'district of columbia' => 'DC', 'florida' => 'FL', 'georgia' => 'GA', 'hawaii' => 'HI',
+            'idaho' => 'ID', 'illinois' => 'IL', 'indiana' => 'IN', 'iowa' => 'IA',
+            'kansas' => 'KS', 'kentucky' => 'KY', 'louisiana' => 'LA', 'maine' => 'ME',
+            'maryland' => 'MD', 'massachusetts' => 'MA', 'michigan' => 'MI', 'minnesota' => 'MN',
+            'mississippi' => 'MS', 'missouri' => 'MO', 'montana' => 'MT', 'nebraska' => 'NE',
+            'nevada' => 'NV', 'new hampshire' => 'NH', 'new jersey' => 'NJ', 'new mexico' => 'NM',
+            'new york' => 'NY', 'north carolina' => 'NC', 'north dakota' => 'ND', 'ohio' => 'OH',
+            'oklahoma' => 'OK', 'oregon' => 'OR', 'pennsylvania' => 'PA', 'rhode island' => 'RI',
+            'south carolina' => 'SC', 'south dakota' => 'SD', 'tennessee' => 'TN', 'texas' => 'TX',
+            'utah' => 'UT', 'vermont' => 'VT', 'virginia' => 'VA', 'washington' => 'WA',
+            'west virginia' => 'WV', 'wisconsin' => 'WI', 'wyoming' => 'WY',
+        ];
     }
 
     private function persistLocalShippingMethod(

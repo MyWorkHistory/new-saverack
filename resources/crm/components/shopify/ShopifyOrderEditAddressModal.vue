@@ -72,14 +72,26 @@ function onConfirm() {
           </div>
           <div class="col-6">
             <label class="form-label">State / Province</label>
-            <input v-model="form.province" type="text" class="form-control" :disabled="busy">
+            <input
+              v-model="form.province"
+              type="text"
+              class="form-control"
+              placeholder="FL"
+              :disabled="busy"
+            >
           </div>
         </div>
 
         <div class="row g-2 mb-3">
           <div class="col-6">
             <label class="form-label">Postal / Zip Code</label>
-            <input v-model="form.zip" type="text" class="form-control" :disabled="busy">
+            <input
+              v-model="form.zip"
+              type="text"
+              class="form-control"
+              placeholder="33811"
+              :disabled="busy"
+            >
           </div>
           <div class="col-6">
             <label class="form-label">Country</label>

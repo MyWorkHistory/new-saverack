@@ -29,6 +29,8 @@ const emit = defineEmits(["update:modelValue"]);
 
 const root = ref(null);
 const triggerRef = ref(null);
+const searchInputRef = ref(null);
+const searchInputTeleportRef = ref(null);
 const open = ref(false);
 const filter = ref("");
 const panelStyle = ref({});
@@ -85,6 +87,15 @@ function unbindPanelPositionListeners() {
   window.removeEventListener("resize", updatePanelPosition);
 }
 
+async function focusSearchInput() {
+  await nextTick();
+  const el = props.teleportPanel ? searchInputTeleportRef.value : searchInputRef.value;
+  if (el instanceof HTMLInputElement) {
+    el.focus();
+    el.select?.();
+  }
+}
+
 async function toggle() {
   if (props.disabled) return;
   const willOpen = !open.value;
@@ -96,6 +107,7 @@ async function toggle() {
       updatePanelPosition();
       bindPanelPositionListeners();
     }
+    await focusSearchInput();
   } else if (props.teleportPanel) {
     unbindPanelPositionListeners();
   }
@@ -117,6 +129,24 @@ function selectNone() {
 function selectOption(opt) {
   emit("update:modelValue", String(opt.id));
   close();
+}
+
+/**
+ * Scanner / keyboard: Enter selects an exact name match, else the sole filtered option.
+ */
+function selectFromFilterOnEnter() {
+  const q = filter.value.trim();
+  if (!q) return;
+  const qLower = q.toLowerCase();
+  const exact = props.options.find((o) => String(o.name ?? "").trim().toLowerCase() === qLower);
+  if (exact) {
+    selectOption(exact);
+    return;
+  }
+  const matches = filteredOptions.value;
+  if (matches.length === 1) {
+    selectOption(matches[0]);
+  }
 }
 
 watch(
@@ -210,12 +240,14 @@ onUnmounted(() => {
       >
         <div class="border-b border-gray-100 p-2 dark:border-gray-800 shrink-0">
           <input
+            ref="searchInputTeleportRef"
             v-model="filter"
             type="search"
             autocomplete="off"
             :placeholder="searchPlaceholder"
             class="h-10 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 dark:border-gray-600 dark:bg-gray-800/80 dark:text-white dark:placeholder:text-gray-500"
             @click.stop
+            @keydown.enter.prevent.stop="selectFromFilterOnEnter"
           />
         </div>
         <ul
@@ -239,7 +271,7 @@ onUnmounted(() => {
           </li>
           <li v-if="!options.length">
             <p class="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
-              No people in directory yet.
+              No options available.
             </p>
           </li>
           <li v-for="opt in filteredOptions" :key="opt.id">
@@ -268,12 +300,14 @@ onUnmounted(() => {
     >
       <div class="border-b border-gray-100 p-2 dark:border-gray-800">
         <input
+          ref="searchInputRef"
           v-model="filter"
           type="search"
           autocomplete="off"
           :placeholder="searchPlaceholder"
           class="h-10 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-[#2563eb] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 dark:border-gray-600 dark:bg-gray-800/80 dark:text-white dark:placeholder:text-gray-500"
           @click.stop
+          @keydown.enter.prevent.stop="selectFromFilterOnEnter"
         />
       </div>
       <ul class="max-h-56 overflow-y-auto py-1 bg-white dark:bg-gray-900" role="presentation">
@@ -294,7 +328,7 @@ onUnmounted(() => {
         </li>
         <li v-if="!options.length">
           <p class="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
-            No people in directory yet.
+            No options available.
           </p>
         </li>
         <li v-for="opt in filteredOptions" :key="opt.id">

@@ -9,7 +9,8 @@ import ShopifyInventoryAddLocationModal from "../../components/shopify/ShopifyIn
 import ShopifyInventoryEditProductModal from "../../components/shopify/ShopifyInventoryEditProductModal.vue";
 import ShopifyInventoryProductSettingsModal from "../../components/shopify/ShopifyInventoryProductSettingsModal.vue";
 import ShopifyInventoryBundleItemsModal from "../../components/shopify/ShopifyInventoryBundleItemsModal.vue";
-import ShopifyLocationTransferModal from "../../components/shopify/ShopifyLocationTransferModal.vue";
+import ShopifyProductLocationEditQtyModal from "../../components/shopify/ShopifyProductLocationEditQtyModal.vue";
+import ShopifyProductLocationTransferModal from "../../components/shopify/ShopifyProductLocationTransferModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 
@@ -51,11 +52,13 @@ const locMenuRect = ref({ top: 0, left: 0 });
 const locBusy = ref(false);
 const transferOpen = ref(false);
 const transferToId = ref("");
-const transferQty = ref("0");
+const transferQty = ref("1");
+const transferReason = ref("");
 const destLocations = ref([]);
 const activeLocRow = ref(null);
 const locQtyOpen = ref(false);
-const locQtyValue = ref(0);
+const locQtyValue = ref("");
+const locQtyReason = ref("");
 
 const defaultLocationGroups = () => [
   { key: "pick", label: "Pick Locations", icon: "cart", count: 0, locations: [] },
@@ -417,12 +420,6 @@ function openAddLocation() {
   addLocationOpen.value = true;
 }
 
-function formatLocationQty(loc) {
-  const name = String(loc?.name || "—");
-  const qty = Number(loc?.available || 0);
-  return `${name} (${qty.toLocaleString("en-US")})`;
-}
-
 function locRowKey(loc) {
   return String(loc?.item_id || `${loc?.location_id || ""}-${loc?.name || ""}`);
 }
@@ -457,7 +454,10 @@ async function toggleLocMenu(loc, e) {
 async function openLocTransfer(loc) {
   activeLocRow.value = loc;
   transferToId.value = "";
-  transferQty.value = "0";
+  transferQty.value = "1";
+  transferReason.value = addItemReasons.value.includes("Restock")
+    ? "Restock"
+    : (addItemReasons.value[0] || "");
   locMenuOpenKey.value = null;
   try {
     const { data } = await api.get("/shopify/locations/options", {
@@ -482,12 +482,17 @@ async function submitLocTransfer() {
     toast.error("Enter a quantity to transfer.");
     return;
   }
+  if (!String(transferReason.value || "").trim()) {
+    toast.error("Select a reason.");
+    return;
+  }
   locBusy.value = true;
   try {
     await api.post(`/shopify/locations/${activeLocRow.value.location_id}/transfer`, {
       item_id: activeLocRow.value.item_id,
       to_location_id: Number(transferToId.value),
       quantity: qty,
+      reason: transferReason.value,
     });
     toast.success("Inventory transferred.");
     transferOpen.value = false;
@@ -501,19 +506,30 @@ async function submitLocTransfer() {
 
 function openLocQtyEdit(loc) {
   activeLocRow.value = loc;
-  locQtyValue.value = Number(loc?.available || 0);
+  locQtyValue.value = "";
+  locQtyReason.value = addItemReasons.value.includes("Cycle Counts / Physical Counts")
+    ? "Cycle Counts / Physical Counts"
+    : (addItemReasons.value[0] || "");
   locMenuOpenKey.value = null;
   locQtyOpen.value = true;
 }
 
 async function saveLocQty() {
   if (!activeLocRow.value) return;
+  if (locQtyValue.value === "" || locQtyValue.value == null) {
+    toast.error("Enter a new quantity.");
+    return;
+  }
   const qty = Math.max(0, Number(locQtyValue.value) || 0);
+  if (!String(locQtyReason.value || "").trim()) {
+    toast.error("Select a reason.");
+    return;
+  }
   locBusy.value = true;
   try {
     await api.patch(
       `/shopify/locations/${activeLocRow.value.location_id}/items/${activeLocRow.value.item_id}`,
-      { available: qty },
+      { available: qty, reason: locQtyReason.value },
     );
     toast.success("Quantity updated. Shopify inventory will update in the background.");
     locQtyOpen.value = false;
@@ -978,13 +994,15 @@ onUnmounted(() => {
                 v-for="group in locationGroups"
                 :key="group.key"
                 class="sid-loc-wrap"
+                :class="{ 'sid-loc-wrap--open': expandedLocationGroup === group.key && group.locations.length }"
               >
                 <button
                   type="button"
                   class="sid-loc"
-                  :class="{ 'sid-loc--expanded': expandedLocationGroup === group.key }"
-                  :aria-expanded="expandedLocationGroup === group.key"
-                  @click="toggleLocationGroup(group.key)"
+                  :class="{ 'sid-loc--expanded': expandedLocationGroup === group.key && group.locations.length }"
+                  :aria-expanded="expandedLocationGroup === group.key && group.locations.length ? 'true' : 'false'"
+                  :disabled="!group.locations.length"
+                  @click="group.locations.length && toggleLocationGroup(group.key)"
                 >
                   <span class="sid-loc__icon" :class="`sid-loc__icon--${group.key}`" aria-hidden="true">
                     <svg v-if="group.icon === 'cart'" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
@@ -1000,33 +1018,33 @@ onUnmounted(() => {
                   <div class="sid-loc__body">
                     <div class="sid-loc__title-row">
                       <span class="sid-loc__title">{{ group.label }}</span>
-                      <span class="sid-loc__badge">{{ Number(group.count || 0).toLocaleString("en-US") }}</span>
-                    </div>
-                    <div v-if="!group.locations.length" class="sid-loc__empty">No locations yet</div>
-                    <div v-else-if="expandedLocationGroup !== group.key" class="sid-loc__preview">
-                      {{ group.locations.map(formatLocationQty).join(", ") }}
+                      <span v-if="group.locations.length" class="sid-loc__badge">
+                        {{ Number(group.count || 0).toLocaleString("en-US") }}
+                      </span>
+                      <span v-if="group.locations.length" class="sid-loc__units">total units</span>
                     </div>
                   </div>
-                  <svg
-                    class="sid-loc__chevron"
-                    :class="{ 'sid-loc__chevron--open': expandedLocationGroup === group.key }"
-                    width="16"
-                    height="16"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  >
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                  </svg>
+                  <span v-if="!group.locations.length" class="sid-loc__empty-right">No locations</span>
                 </button>
                 <div v-if="expandedLocationGroup === group.key && group.locations.length" class="sid-loc__list">
+                  <div class="sid-loc__cols" aria-hidden="true">
+                    <span>Location</span>
+                    <span>Qty</span>
+                  </div>
                   <div
                     v-for="loc in group.locations"
                     :key="locRowKey(loc)"
                     class="sid-loc__item"
                   >
-                    <span class="sid-loc__item-name">{{ loc.name }}</span>
+                    <div class="sid-loc__item-left">
+                      <span class="sid-loc__item-pin" aria-hidden="true">
+                        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                        </svg>
+                      </span>
+                      <span class="sid-loc__item-name">{{ loc.name }}</span>
+                    </div>
                     <div class="sid-loc__item-right">
                       <span class="sid-loc__item-qty">{{ Number(loc.available || 0).toLocaleString("en-US") }}</span>
                       <button
@@ -1078,22 +1096,37 @@ onUnmounted(() => {
       @saved="load"
     />
 
-    <ShopifyLocationTransferModal
+    <ShopifyProductLocationTransferModal
       :open="transferOpen"
       :busy="locBusy"
-      :product-title="variant?.product_title || variant?.title || ''"
-      :sku="variant?.sku || ''"
-      :image-url="variant?.image_url || ''"
       :from-name="activeLocRow?.name || ''"
+      :from-location-id="activeLocRow?.location_id || ''"
       :available="Number(activeLocRow?.available || 0)"
       :to-location-id="transferToId"
       :quantity="transferQty"
+      :reason="transferReason"
       :locations="destLocations"
+      :reasons="addItemReasons"
       @close="transferOpen = false"
       @submit="submitLocTransfer"
       @all="transferQty = String(activeLocRow?.available || 0)"
       @update:to-location-id="transferToId = $event"
       @update:quantity="transferQty = $event"
+      @update:reason="transferReason = $event"
+    />
+
+    <ShopifyProductLocationEditQtyModal
+      :open="locQtyOpen"
+      :busy="locBusy"
+      :location-name="activeLocRow?.name || ''"
+      :current-qty="Number(activeLocRow?.available || 0)"
+      :quantity="locQtyValue"
+      :reason="locQtyReason"
+      :reasons="addItemReasons"
+      @close="locQtyOpen = false"
+      @submit="saveLocQty"
+      @update:quantity="locQtyValue = $event"
+      @update:reason="locQtyReason = $event"
     />
 
     <Teleport to="body">
@@ -1121,59 +1154,6 @@ onUnmounted(() => {
         >
           Edit
         </button>
-      </div>
-    </Teleport>
-
-    <Teleport to="body">
-      <div v-if="locQtyOpen" class="crm-vx-modal-overlay" @click.self="locQtyOpen = false">
-        <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
-          <button
-            type="button"
-            class="crm-vx-modal__close"
-            aria-label="Close"
-            :disabled="locBusy"
-            @click="locQtyOpen = false"
-          >
-            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-          <header class="crm-vx-modal__head" style="text-align: left">
-            <h2 class="crm-vx-modal__title">Edit QTY</h2>
-            <p class="crm-vx-modal__sub small text-secondary mb-0">
-              {{ activeLocRow?.name || "Location" }}
-            </p>
-          </header>
-          <div class="crm-vx-modal__body">
-            <label class="form-label" for="sid-loc-edit-qty">Quantity</label>
-            <input
-              id="sid-loc-edit-qty"
-              v-model.number="locQtyValue"
-              type="number"
-              min="0"
-              class="form-control"
-              :disabled="locBusy"
-            >
-          </div>
-          <footer class="crm-vx-modal__footer justify-content-end">
-            <button
-              type="button"
-              class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
-              :disabled="locBusy"
-              @click="locQtyOpen = false"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              class="crm-vx-modal-btn crm-vx-modal-btn--primary"
-              :disabled="locBusy"
-              @click="saveLocQty"
-            >
-              {{ locBusy ? "Please Wait…" : "Save" }}
-            </button>
-          </footer>
-        </div>
       </div>
     </Teleport>
 
@@ -1703,59 +1683,80 @@ onUnmounted(() => {
 .sid-locs {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 0;
 }
 .sid-loc-wrap {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  border-top: 1px solid #eef2f7;
+}
+.sid-loc-wrap:first-child {
+  border-top: 0;
 }
 .sid-loc {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   width: 100%;
-  padding: 0.9rem 0.95rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.65rem;
-  background: #fff;
+  padding: 0.95rem 0.15rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   text-align: left;
   cursor: pointer;
 }
-.sid-loc:hover {
-  background: #f9fafb;
+.sid-loc:disabled {
+  cursor: default;
+}
+.sid-loc:not(:disabled):hover {
+  background: transparent;
 }
 .sid-loc--expanded {
-  background: #f9fafb;
-  border-color: #dbeafe;
-}
-.sid-loc__preview {
-  margin-top: 0.15rem;
-  font-size: 0.78rem;
-  color: #6b7280;
-  line-height: 1.35;
+  background: transparent;
 }
 .sid-loc__list {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  padding: 0 0.35rem 0.15rem;
+  gap: 0.15rem;
+  padding: 0 0.15rem 0.85rem 2.65rem;
+}
+.sid-loc__cols {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.15rem 2.6rem 0.35rem 1.55rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
 }
 .sid-loc__item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.55rem 0.75rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.5rem;
-  background: #fff;
+  padding: 0.55rem 0.15rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: inherit;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
 }
 .sid-loc__item:hover {
-  background: #f8fafc;
-  border-color: #e2e8f0;
+  background: transparent;
+}
+.sid-loc__item-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+.sid-loc__item-pin {
+  display: inline-flex;
+  color: #2563eb;
+  flex-shrink: 0;
 }
 .sid-loc__item-name {
   font-weight: 600;
@@ -1765,13 +1766,81 @@ onUnmounted(() => {
 .sid-loc__item-right {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.55rem;
   flex-shrink: 0;
 }
 .sid-loc__item-qty {
   font-weight: 700;
-  color: #2563eb;
+  color: #0f172a;
+  min-width: 1.5rem;
+  text-align: right;
+}
+.sid-loc__icon {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+}
+.sid-loc__icon svg {
+  display: block;
+}
+.sid-loc__icon--pick,
+.sid-loc__icon--backstock,
+.sid-loc__icon--other {
+  background: #eff6ff;
+  color: #2563eb;
+}
+.sid-loc__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.sid-loc__title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.sid-loc__title {
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 0.95rem;
+}
+.sid-loc__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.45rem;
+  height: 1.45rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.sid-loc__units {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  font-weight: 500;
+}
+.sid-loc__empty-right {
+  margin-left: auto;
+  font-size: 0.8125rem;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+.sid-loc__empty {
+  display: none;
+}
+.sid-loc__preview {
+  display: none;
+}
+.sid-loc__chevron {
+  display: none;
 }
 .sid-loc__icon {
   display: inline-flex;

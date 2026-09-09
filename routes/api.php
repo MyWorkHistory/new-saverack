@@ -745,6 +745,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/inventory/logs/meta', [ShopifyWarehouseInventoryLogController::class, 'meta']);
         Route::get('/inventory/{shopifyVariant}/logs', [ShopifyWarehouseInventoryLogController::class, 'index']);
         Route::get('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'inventoryShow']);
+        Route::post('/inventory/{shopifyVariant}/push-inventory', [ShopifyIntegrationController::class, 'pushVariantInventory']);
         Route::patch('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'updateVariant']);
         Route::patch('/inventory/{shopifyVariant}/settings', [ShopifyIntegrationController::class, 'updateProductSettings']);
         Route::post('/inventory/{shopifyVariant}/image', [ShopifyIntegrationController::class, 'uploadVariantImage']);

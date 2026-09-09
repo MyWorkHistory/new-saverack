@@ -106,7 +106,7 @@ return [
     ],
 
     'shopify' => [
-        'api_version' => env('SHOPIFY_API_VERSION', '2025-01'),
+        'api_version' => env('SHOPIFY_API_VERSION', '2026-04'),
         'webhook_url' => env('SHOPIFY_WEBHOOK_URL'),
         /** Fallback HMAC secret when connection.webhook_secret is empty (custom app). */
         'webhook_secret' => env('SHOPIFY_WEBHOOK_SECRET'),

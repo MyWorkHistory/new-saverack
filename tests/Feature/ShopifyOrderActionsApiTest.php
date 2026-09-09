@@ -343,7 +343,8 @@ class ShopifyOrderActionsApiTest extends TestCase
             'cancel_in_shopify' => false,
         ])
             ->assertOk()
-            ->assertJsonPath('order.display_status', 'cancelled');
+            // Mixed cancelled + fulfilled (no pending) is treated as fulfilled.
+            ->assertJsonPath('order.display_status', 'fulfilled');
 
         $this->assertSame(0, (int) $pending->fresh()->fulfillable_quantity);
         $this->assertSame(
@@ -444,6 +445,190 @@ class ShopifyOrderActionsApiTest extends TestCase
         $this->getJson('/api/shopify/orders/meta')
             ->assertOk()
             ->assertJsonFragment(['value' => 'cancelled', 'label' => 'Cancelled']);
+    }
+
+    public function test_partial_fulfill_only_fulfills_selected_lines_and_logs_timeline(): void
+    {
+        $this->actingAsAdmin();
+        [, $connection, $order] = $this->seedOrder();
+
+        $selected = \App\Models\ShopifyOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => '9301',
+            'sku' => 'SKU-SEL',
+            'title' => 'Selected Item',
+            'quantity' => 1,
+            'fulfillable_quantity' => 1,
+            'fulfilled_quantity' => 0,
+            'price' => 10,
+        ]);
+        $unchecked = \App\Models\ShopifyOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => '9302',
+            'sku' => 'SKU-SKIP',
+            'title' => 'Unchecked Item',
+            'quantity' => 1,
+            'fulfillable_quantity' => 1,
+            'fulfilled_quantity' => 0,
+            'price' => 10,
+        ]);
+        $fo = \App\Models\ShopifyFulfillmentOrder::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_fulfillment_order_id' => '7301',
+            'status' => 'open',
+        ]);
+        \App\Models\ShopifyFulfillmentOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_fulfillment_order_id' => $fo->id,
+            'shopify_order_line_item_id' => $selected->id,
+            'shopify_fo_line_item_id' => '8301',
+            'shopify_line_item_id' => '9301',
+            'total_quantity' => 1,
+            'remaining_quantity' => 1,
+        ]);
+        \App\Models\ShopifyFulfillmentOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_fulfillment_order_id' => $fo->id,
+            'shopify_order_line_item_id' => $unchecked->id,
+            'shopify_fo_line_item_id' => '8302',
+            'shopify_line_item_id' => '9302',
+            'total_quantity' => 1,
+            'remaining_quantity' => 1,
+        ]);
+
+        $sync = Mockery::mock(\App\Services\ShopifyOrderSyncService::class);
+        $sync->shouldReceive('refreshOrderByShopifyId')
+            ->andReturn($order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']));
+        $sync->shouldReceive('syncFulfillmentOrdersFromRestApi')->never();
+        $this->app->instance(\App\Services\ShopifyOrderSyncService::class, $sync);
+
+        $fulfillments = Mockery::mock(\App\Services\ShopifyFulfillmentService::class);
+        $fulfillments->shouldReceive('markShipped')
+            ->once()
+            ->withArgs(function ($o, array $items) use ($selected) {
+                if (count($items) !== 1) {
+                    return false;
+                }
+                $item = $items[0];
+
+                return (string) ($item['fo_line_item_id'] ?? '') === '8301'
+                    && (int) ($item['order_line_item_id'] ?? 0) === (int) $selected->id
+                    && (int) ($item['quantity'] ?? 0) === 1;
+            })
+            ->andReturnUsing(function (ShopifyOrder $o) {
+                return [
+                    'fulfillment' => null,
+                    'order' => $o->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']),
+                ];
+            });
+        $this->app->instance(\App\Services\ShopifyFulfillmentService::class, $fulfillments);
+        $this->app->forgetInstance(ShopifyOrderActionService::class);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/fulfill-all', [
+            'deduct_line_ids' => [$selected->id],
+            'tracking_number' => '1Z999',
+        ])
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'ready_to_ship');
+
+        $this->assertSame(1, (int) $selected->fresh()->fulfilled_quantity);
+        $this->assertSame(0, (int) $selected->fresh()->fulfillable_quantity);
+        $this->assertSame(0, (int) $unchecked->fresh()->fulfilled_quantity);
+        $this->assertSame(1, (int) $unchecked->fresh()->fulfillable_quantity);
+        $this->assertSame(
+            0,
+            (int) \App\Models\ShopifyFulfillmentOrderLineItem::query()
+                ->where('shopify_fo_line_item_id', '8301')
+                ->value('remaining_quantity')
+        );
+        $this->assertSame(
+            1,
+            (int) \App\Models\ShopifyFulfillmentOrderLineItem::query()
+                ->where('shopify_fo_line_item_id', '8302')
+                ->value('remaining_quantity')
+        );
+
+        $detail = $this->getJson('/api/shopify/orders/'.$order->id)->assertOk()->json('order');
+        $byId = collect($detail['line_items'] ?? [])->keyBy('id');
+        $this->assertSame('fulfilled', $byId[$selected->id]['line_status'] ?? null);
+        $this->assertSame('pending', $byId[$unchecked->id]['line_status'] ?? null);
+        $this->assertSame('ready_to_ship', $detail['display_status'] ?? null);
+
+        $timelineTypes = collect($detail['timeline'] ?? [])->pluck('type')->all();
+        $this->assertContains(\App\Models\ShopifyOrderActivity::TYPE_FULFILL, $timelineTypes);
+    }
+
+    public function test_display_status_fulfilled_when_no_pending_lines_remain(): void
+    {
+        $this->actingAsAdmin();
+        [, $connection, $order] = $this->seedOrder([
+            'fulfillment_status' => 'partial',
+        ]);
+
+        \App\Models\ShopifyOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => '9401',
+            'sku' => 'SKU-A',
+            'title' => 'Done',
+            'quantity' => 1,
+            'fulfillable_quantity' => 0,
+            'fulfilled_quantity' => 1,
+            'price' => 10,
+        ]);
+        \App\Models\ShopifyOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => '9402',
+            'sku' => 'SKU-B',
+            'title' => 'Cancelled',
+            'quantity' => 1,
+            'fulfillable_quantity' => 0,
+            'fulfilled_quantity' => 0,
+            'price' => 10,
+        ]);
+
+        $this->getJson('/api/shopify/orders/'.$order->id)
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'fulfilled');
+    }
+
+    public function test_display_status_not_fulfilled_while_pending_line_exists(): void
+    {
+        $this->actingAsAdmin();
+        [, $connection, $order] = $this->seedOrder([
+            'fulfillment_status' => 'fulfilled',
+        ]);
+
+        \App\Models\ShopifyOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => '9501',
+            'sku' => 'SKU-DONE',
+            'title' => 'Done',
+            'quantity' => 1,
+            'fulfillable_quantity' => 0,
+            'fulfilled_quantity' => 1,
+            'price' => 10,
+        ]);
+        \App\Models\ShopifyOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => '9502',
+            'sku' => 'SKU-PEND',
+            'title' => 'Still Pending',
+            'quantity' => 1,
+            'fulfillable_quantity' => 1,
+            'fulfilled_quantity' => 0,
+            'price' => 10,
+        ]);
+
+        $this->getJson('/api/shopify/orders/'.$order->id)
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'ready_to_ship');
     }
 
     public function test_shopify_cancel_uses_refund_method_payload(): void

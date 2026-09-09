@@ -620,17 +620,26 @@ GQL
                 'inventoryItemId' => ShopifyGid::of('InventoryItem', $itemId),
                 'locationId' => ShopifyGid::of('Location', $locationId),
                 'quantity' => (int) $level['available'],
+                // CRM is source of truth — opt out of compare-and-swap (API 2026-01+).
+                'changeFromQuantity' => null,
             ];
         }
         if ($quantities === []) {
             return 0;
         }
 
+        $idempotencyKey = sprintf(
+            'crm-inv-push-%d-%s-%s',
+            (int) $variant->id,
+            substr(hash('sha256', json_encode($quantities)), 0, 16),
+            bin2hex(random_bytes(8))
+        );
+
         $api = $this->client->forConnection($connection);
         $data = $api->graphql(
             <<<'GQL'
-mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
-  inventorySetQuantities(input: $input) {
+mutation inventorySetQuantities($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
+  inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
     userErrors { field message }
   }
 }
@@ -640,9 +649,9 @@ GQL
                 'input' => [
                     'name' => 'available',
                     'reason' => 'correction',
-                    'ignoreCompareQuantity' => true,
                     'quantities' => $quantities,
                 ],
+                'idempotencyKey' => $idempotencyKey,
             ]
         );
         $this->assertNoUserErrors($data['inventorySetQuantities'] ?? null);

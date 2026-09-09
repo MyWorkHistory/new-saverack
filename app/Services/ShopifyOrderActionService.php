@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ShopifyInventoryLevel;
 use App\Models\ShopifyLocation;
 use App\Models\ShopifyOrder;
+use App\Models\ShopifyOrderActivity;
 use App\Models\ShopifyOrderLineItem;
 use App\Models\ShopifyProductVariant;
 use App\Models\User;
@@ -32,18 +33,23 @@ class ShopifyOrderActionService
     /** @var ShopifyProductSyncService */
     private $products;
 
+    /** @var ShopifyOrderActivityService */
+    private $activities;
+
     public function __construct(
         ShopifyClient $client,
         ShopifyOrderSyncService $sync,
         ShopifyFulfillmentService $fulfillments,
         ShopifyOrderListService $list,
-        ShopifyProductSyncService $products
+        ShopifyProductSyncService $products,
+        ShopifyOrderActivityService $activities
     ) {
         $this->client = $client;
         $this->sync = $sync;
         $this->fulfillments = $fulfillments;
         $this->list = $list;
         $this->products = $products;
+        $this->activities = $activities;
     }
 
     public function assertNotShipped(ShopifyOrder $order): void
@@ -244,7 +250,7 @@ GQL
     }
 
     /**
-     * @param  list<int>|null  $deductLineItemIds  Order line item IDs to deduct inventory for (null = all remaining)
+     * @param  list<int>|null  $deductLineItemIds  Order line item IDs to fulfill + deduct (null = all remaining)
      * @return array{fulfillment:\App\Models\ShopifyFulfillment|null, order:ShopifyOrder}
      */
     public function fulfillAllRemaining(
@@ -278,7 +284,15 @@ GQL
 
         $order->loadMissing(['lineItems', 'fulfillmentOrders.lineItems', 'connection']);
 
-        $items = $this->collectFulfillableFoItems($order);
+        $selectedIds = null;
+        if ($deductLineItemIds !== null) {
+            $selectedIds = array_values(array_unique(array_filter(array_map('intval', $deductLineItemIds))));
+            if ($selectedIds === []) {
+                throw new RuntimeException('Select at least one item to fulfill.');
+            }
+        }
+
+        $items = $this->collectFulfillableFoItems($order, $selectedIds);
         if ($items === [] && $connection !== null && $connection->hasCredentials()) {
             try {
                 $this->sync->syncFulfillmentOrdersFromRestApi($connection, $order);
@@ -286,7 +300,7 @@ GQL
                 report($e);
             }
             $order->load(['fulfillmentOrders.lineItems']);
-            $items = $this->collectFulfillableFoItems($order);
+            $items = $this->collectFulfillableFoItems($order, $selectedIds);
         }
 
         if ($items === []) {
@@ -305,15 +319,30 @@ GQL
         );
 
         $orderFresh = $result['order'];
+        $this->applyLocalFulfillmentProgress($orderFresh, $items);
         $orderFresh->crm_fulfillment_cancelled_at = null;
         $orderFresh->crm_hold_reasons = [];
         $orderFresh->save();
 
-        $this->deductInventoryForOrder($orderFresh, $deductLineItemIds);
+        $this->deductInventoryForOrder($orderFresh, $selectedIds);
+
+        $orderOut = $orderFresh->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
+        $lineCount = $selectedIds !== null ? count($selectedIds) : count($items);
+        $detailParts = [$lineCount.' item'.($lineCount === 1 ? '' : 's').' fulfilled'];
+        if ($tracking !== '') {
+            $detailParts[] = 'Tracking '.$tracking;
+        }
+        $this->activities->record(
+            $orderOut,
+            ShopifyOrderActivity::TYPE_FULFILL,
+            'Order marked fulfilled',
+            implode(' · ', $detailParts),
+            $actor
+        );
 
         return [
             'fulfillment' => $result['fulfillment'],
-            'order' => $orderFresh->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']),
+            'order' => $orderOut->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']),
         ];
     }
 
@@ -450,10 +479,16 @@ GQL
     }
 
     /**
-     * @return list<array{fo_line_item_id:string, quantity:int}>
+     * @param  list<int>|null  $onlyOrderLineItemIds
+     * @return list<array{fo_line_item_id:string, quantity:int, order_line_item_id:?int}>
      */
-    private function collectFulfillableFoItems(ShopifyOrder $order): array
+    private function collectFulfillableFoItems(ShopifyOrder $order, ?array $onlyOrderLineItemIds = null): array
     {
+        $allowed = null;
+        if ($onlyOrderLineItemIds !== null) {
+            $allowed = array_fill_keys(array_map('intval', $onlyOrderLineItemIds), true);
+        }
+
         $items = [];
         foreach ($order->fulfillmentOrders as $fo) {
             $status = strtolower(trim((string) ($fo->status ?? '')));
@@ -465,14 +500,99 @@ GQL
                 if ($remaining <= 0) {
                     continue;
                 }
+                $orderLineId = (int) ($line->shopify_order_line_item_id ?? 0);
+                if ($allowed !== null) {
+                    if ($orderLineId <= 0 || ! isset($allowed[$orderLineId])) {
+                        continue;
+                    }
+                }
                 $items[] = [
                     'fo_line_item_id' => (string) $line->shopify_fo_line_item_id,
                     'quantity' => $remaining,
+                    'order_line_item_id' => $orderLineId > 0 ? $orderLineId : null,
                 ];
             }
         }
 
         return $items;
+    }
+
+    /**
+     * Keep CRM line/FO qty in sync after a (possibly partial) fulfill.
+     * Idempotent when Shopify refresh already applied the same progress.
+     *
+     * @param  list<array{fo_line_item_id:string, quantity:int, order_line_item_id?:?int}>  $fulfilledItems
+     */
+    private function applyLocalFulfillmentProgress(ShopifyOrder $order, array $fulfilledItems): void
+    {
+        $order->loadMissing(['lineItems', 'fulfillmentOrders.lineItems']);
+
+        $qtyByFoLine = [];
+        $qtyByOrderLine = [];
+        foreach ($fulfilledItems as $item) {
+            $foId = trim((string) ($item['fo_line_item_id'] ?? ''));
+            $qty = (int) ($item['quantity'] ?? 0);
+            if ($foId === '' || $qty <= 0) {
+                continue;
+            }
+            $qtyByFoLine[$foId] = ($qtyByFoLine[$foId] ?? 0) + $qty;
+            $orderLineId = (int) ($item['order_line_item_id'] ?? 0);
+            if ($orderLineId > 0) {
+                $qtyByOrderLine[$orderLineId] = ($qtyByOrderLine[$orderLineId] ?? 0) + $qty;
+            }
+        }
+
+        foreach ($order->fulfillmentOrders as $fo) {
+            foreach ($fo->lineItems as $foLine) {
+                $foShopifyId = trim((string) ($foLine->shopify_fo_line_item_id ?? ''));
+                if ($foShopifyId === '' || ! isset($qtyByFoLine[$foShopifyId])) {
+                    continue;
+                }
+                $fulfilledQty = (int) $qtyByFoLine[$foShopifyId];
+                $remaining = (int) $foLine->remaining_quantity;
+                if ($remaining <= 0) {
+                    // Already synced from Shopify.
+                    continue;
+                }
+                $foLine->remaining_quantity = max(0, $remaining - $fulfilledQty);
+                $foLine->save();
+
+                $orderLineId = (int) ($foLine->shopify_order_line_item_id ?? 0);
+                if ($orderLineId > 0 && ! isset($qtyByOrderLine[$orderLineId])) {
+                    $qtyByOrderLine[$orderLineId] = $fulfilledQty;
+                }
+            }
+        }
+
+        foreach ($order->lineItems as $lineItem) {
+            $lineId = (int) $lineItem->id;
+            if (! isset($qtyByOrderLine[$lineId])) {
+                continue;
+            }
+            if ($this->list->rawLineStatus($lineItem) === 'fulfilled') {
+                continue;
+            }
+            $add = (int) $qtyByOrderLine[$lineId];
+            $qty = max(0, (int) $lineItem->quantity);
+            if ($add <= 0) {
+                continue;
+            }
+            $fulfilled = min($qty, (int) $lineItem->fulfilled_quantity + $add);
+            $lineItem->fulfilled_quantity = $fulfilled;
+            $lineItem->fulfillable_quantity = max(0, $qty - $fulfilled);
+            $lineItem->save();
+        }
+
+        $order->unsetRelation('lineItems');
+        $order->load('lineItems');
+        if ($this->list->hasNoPendingLines($order)) {
+            $order->fulfillment_status = 'fulfilled';
+        } else {
+            $status = strtolower(trim((string) $order->fulfillment_status));
+            if ($status === '' || $status === 'unfulfilled' || $status === 'fulfilled') {
+                $order->fulfillment_status = 'partial';
+            }
+        }
     }
 
     /**

@@ -1535,6 +1535,64 @@ class ShopifyIntegrationController extends Controller
         ]);
     }
 
+    public function pushVariantInventory(
+        Request $request,
+        ShopifyProductVariant $shopifyVariant,
+        ShopifyProductSyncService $productSync
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $shopifyVariant->loadMissing('connection');
+        $connection = $shopifyVariant->connection;
+        if ($connection === null) {
+            return response()->json(['message' => 'Shopify connection is missing for this product.'], 422);
+        }
+        if (! $connection->hasCredentials()) {
+            return response()->json(['message' => 'Connect Shopify credentials first.'], 422);
+        }
+
+        $itemId = trim((string) ($shopifyVariant->shopify_inventory_item_id ?? ''));
+        if ($itemId === '') {
+            return response()->json([
+                'message' => 'This product is missing a Shopify inventory item id — re-sync products.',
+                'pushed' => 0,
+                'reason' => 'missing_inventory_item_id',
+            ], 422);
+        }
+
+        $hasSyncLocation = ShopifyLocation::query()
+            ->where('connection_id', (int) $connection->id)
+            ->where('sync_inventory', true)
+            ->exists();
+        if (! $hasSyncLocation) {
+            return response()->json([
+                'message' => 'Enable Sync Inventory on a store location under Account → Stores.',
+                'pushed' => 0,
+                'reason' => 'no_sync_inventory_locations',
+            ], 422);
+        }
+
+        try {
+            $pushed = $productSync->pushInventoryToShopify($shopifyVariant);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        if ($pushed === 0) {
+            return response()->json([
+                'message' => 'No CRM inventory levels to push for this product. Add or update warehouse qty first.',
+                'pushed' => 0,
+                'reason' => 'no_crm_levels',
+            ], 422);
+        }
+
+        return response()->json([
+            'message' => 'Pushed inventory for '.$pushed.' location'.($pushed === 1 ? '' : 's').'.',
+            'pushed' => $pushed,
+        ]);
+    }
+
     public function inventoryShow(Request $request, ShopifyProductVariant $shopifyVariant): JsonResponse
     {
         $this->assertAdmin($request);

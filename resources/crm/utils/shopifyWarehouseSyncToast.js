@@ -1,10 +1,21 @@
 /**
  * Toast copy for warehouse → Shopify inventory sync status from the API.
- * @param {{ status?: string, reason?: string|null }|null|undefined} sync
+ * @param {{ status?: string, reason?: string|null, pushed?: number }|null|undefined} sync
  * @param {string} successWhenQueued
  */
 export function toastShopifyWarehouseSync(toast, sync, successWhenQueued) {
   const status = String(sync?.status || "");
+  if (status === "pushed") {
+    const count = Number(sync?.pushed);
+    if (Number.isFinite(count) && count > 0) {
+      toast.success(
+        `Saved in CRM and pushed inventory to ${count} Shopify location${count === 1 ? "" : "s"}.`,
+      );
+      return;
+    }
+    toast.success("Saved in CRM and pushed inventory to Shopify.");
+    return;
+  }
   if (status === "queued") {
     toast.success(successWhenQueued);
     return;

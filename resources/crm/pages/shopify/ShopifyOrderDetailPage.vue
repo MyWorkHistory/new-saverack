@@ -405,7 +405,14 @@ onUnmounted(() => {
       <div class="so-detail-grid">
         <div class="so-detail-main">
           <section class="so-card so-card--items mb-3">
-            <h2 class="so-card__title">Items ({{ lineItems.length }})</h2>
+            <h2 class="so-card__title so-card__title--with-icon">
+              <span class="so-section-icon so-section-icon--items" aria-hidden="true">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              </span>
+              <span>Items ({{ lineItems.length }})</span>
+            </h2>
             <div class="table-responsive so-items-wrap">
               <table class="table align-middle mb-0 so-items-table">
                 <thead>
@@ -443,7 +450,14 @@ onUnmounted(() => {
           </section>
 
           <section class="so-card">
-            <h2 class="so-card__title">Timeline</h2>
+            <h2 class="so-card__title so-card__title--with-icon">
+              <span class="so-section-icon so-section-icon--timeline" aria-hidden="true">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </span>
+              <span>Timeline</span>
+            </h2>
             <ul v-if="timeline.length" class="so-timeline list-unstyled mb-0">
               <li v-for="ev in timeline" :key="ev.id" class="so-timeline__item">
                 <span class="so-timeline__icon" :class="timelineIconClass(ev.type)" aria-hidden="true">
@@ -483,7 +497,14 @@ onUnmounted(() => {
         <aside class="so-detail-side">
           <section class="so-card mb-3">
             <div class="d-flex justify-content-between align-items-center mb-3">
-              <h2 class="so-card__title mb-0">Recipient</h2>
+              <h2 class="so-card__title so-card__title--with-icon mb-0">
+                <span class="so-section-icon so-section-icon--recipient" aria-hidden="true">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </span>
+                <span>Recipient</span>
+              </h2>
               <button
                 v-if="!isFulfilledStatus(order.display_status)"
                 type="button"
@@ -492,13 +513,6 @@ onUnmounted(() => {
               >
                 Edit
               </button>
-              <span
-                v-else
-                class="small text-secondary"
-                title="You can't update the address on a fulfilled order."
-              >
-                Fulfilled
-              </span>
             </div>
             <div class="fw-bold mb-1 text-body">{{ recipient?.name || order.recipient_name || "—" }}</div>
             <p class="mb-3 text-body so-recipient-addr">{{ formatAddress(recipient) || "—" }}</p>
@@ -519,7 +533,14 @@ onUnmounted(() => {
 
           <section class="so-card">
             <div class="d-flex justify-content-between align-items-center mb-3">
-              <h2 class="so-card__title mb-0">Shipping Method</h2>
+              <h2 class="so-card__title so-card__title--with-icon mb-0">
+                <span class="so-section-icon so-section-icon--shipping" aria-hidden="true">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m6 0a2 2 0 104 0" />
+                  </svg>
+                </span>
+                <span>Shipping Method</span>
+              </h2>
               <button type="button" class="btn btn-sm so-btn-outline fw-semibold" @click="editShippingOpen = true">
                 Edit
               </button>
@@ -683,6 +704,27 @@ onUnmounted(() => {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 .so-card__title { font-size: 1.05rem; font-weight: 700; margin: 0 0 0.85rem; color: #111827; }
+.so-card__title--with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.so-section-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  flex-shrink: 0;
+}
+.so-section-icon--items,
+.so-section-icon--shipping,
+.so-section-icon--recipient,
+.so-section-icon--timeline {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
+}
 /* Items: white card, light-gray header band matching mockup */
 .so-card--items {
   background: #fff;

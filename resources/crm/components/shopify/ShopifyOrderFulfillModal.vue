@@ -87,7 +87,7 @@ function onSubmit() {
           </div>
         </div>
 
-        <p class="so-modal__lead">This will mark all items in this order as fulfilled.</p>
+        <p class="so-modal__lead">Confirm which items to mark fulfilled. Unchecked items stay pending.</p>
 
         <label class="form-label fw-semibold" for="so-tracking">Tracking number (optional)</label>
         <div class="so-tracking-wrap mb-1">

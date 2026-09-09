@@ -54,7 +54,11 @@ class ShopifyOrderListService
         $createdTo = trim((string) $request->query('created_to', ''));
 
         $query = ShopifyOrder::query()
-            ->with(['connection.clientAccount:id,company_name', 'connection:id,shop_domain,client_account_id']);
+            ->with([
+                'connection.clientAccount:id,company_name',
+                'connection:id,shop_domain,client_account_id',
+                'lineItems:id,shopify_order_id,quantity,fulfillable_quantity,fulfilled_quantity',
+            ]);
 
         if ($accountId > 0) {
             $query->whereHas('connection', fn (Builder $b) => $b->where('client_account_id', $accountId));
@@ -251,9 +255,35 @@ class ShopifyOrderListService
 
     public function displayStatus(ShopifyOrder $order): string
     {
-        $fulfillment = strtolower(trim((string) $order->fulfillment_status));
-        if ($fulfillment === 'fulfilled') {
-            return self::DISPLAY_FULFILLED;
+        $order->loadMissing('lineItems');
+
+        // Prefer line outcomes: fulfilled only when nothing is pending.
+        // Cancelled + fulfilled (no pending) counts as fulfilled.
+        if ($order->lineItems->isNotEmpty()) {
+            $hasPending = false;
+            $hasFulfilled = false;
+            $allCancelled = true;
+            foreach ($order->lineItems as $line) {
+                $lineStatus = $this->rawLineStatus($line);
+                if ($lineStatus === 'pending') {
+                    $hasPending = true;
+                    $allCancelled = false;
+                } elseif ($lineStatus === 'fulfilled') {
+                    $hasFulfilled = true;
+                    $allCancelled = false;
+                }
+            }
+            if (! $hasPending && $hasFulfilled) {
+                return self::DISPLAY_FULFILLED;
+            }
+            if ($allCancelled && ($order->cancelled_at !== null || $order->crm_fulfillment_cancelled_at !== null)) {
+                return self::DISPLAY_CANCELLED;
+            }
+        } else {
+            $fulfillment = strtolower(trim((string) $order->fulfillment_status));
+            if ($fulfillment === 'fulfilled') {
+                return self::DISPLAY_FULFILLED;
+            }
         }
 
         if ($order->cancelled_at !== null || $order->crm_fulfillment_cancelled_at !== null) {
@@ -283,9 +313,27 @@ class ShopifyOrderListService
     }
 
     /**
-     * Line badge for order detail: pending / fulfilled / cancelled.
+     * True when every line is fulfilled or cancelled (no pending remain).
      */
-    public function lineDisplayStatus(ShopifyOrder $order, ShopifyOrderLineItem $line): string
+    public function hasNoPendingLines(ShopifyOrder $order): bool
+    {
+        $order->loadMissing('lineItems');
+        if ($order->lineItems->isEmpty()) {
+            return strtolower(trim((string) $order->fulfillment_status)) === 'fulfilled';
+        }
+        foreach ($order->lineItems as $line) {
+            if ($this->rawLineStatus($line) === 'pending') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Line status from qty fields only (ignores order-level cancel flags).
+     */
+    public function rawLineStatus(ShopifyOrderLineItem $line): string
     {
         $qty = (int) $line->quantity;
         $fulfilled = (int) ($line->fulfilled_quantity ?? 0);
@@ -300,10 +348,26 @@ class ShopifyOrderListService
         if ($fulfillable <= 0 && $fulfilled > 0) {
             return 'fulfilled';
         }
-        if ($order->cancelled_at !== null || $order->crm_fulfillment_cancelled_at !== null) {
+        if ($fulfillable <= 0 && $fulfilled <= 0) {
             return 'cancelled';
         }
-        if ($fulfillable <= 0 && $fulfilled <= 0) {
+
+        return 'pending';
+    }
+
+    /**
+     * Line badge for order detail: pending / fulfilled / cancelled.
+     */
+    public function lineDisplayStatus(ShopifyOrder $order, ShopifyOrderLineItem $line): string
+    {
+        $raw = $this->rawLineStatus($line);
+        if ($raw === 'fulfilled') {
+            return 'fulfilled';
+        }
+        if ($raw === 'cancelled') {
+            return 'cancelled';
+        }
+        if ($order->cancelled_at !== null || $order->crm_fulfillment_cancelled_at !== null) {
             return 'cancelled';
         }
 

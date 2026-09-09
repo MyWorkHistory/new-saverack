@@ -70,7 +70,7 @@ class ShopifyClient
             throw new RuntimeException('Shopify connection credentials are incomplete.');
         }
 
-        $version = trim((string) ($connection->api_version ?: config('services.shopify.api_version', '2025-01')));
+        $version = trim((string) ($connection->api_version ?: config('services.shopify.api_version', '2026-04')));
         $url = 'https://'.$domain.'/admin/api/'.$version.'/graphql.json';
 
         try {
@@ -199,7 +199,7 @@ class ShopifyClient
             throw new RuntimeException('Shopify connection credentials are incomplete.');
         }
 
-        $version = trim((string) ($connection->api_version ?: config('services.shopify.api_version', '2025-01')));
+        $version = trim((string) ($connection->api_version ?: config('services.shopify.api_version', '2026-04')));
         $url = 'https://'.$domain.'/admin/api/'.$version.'/'.ltrim($path, '/');
 
         try {

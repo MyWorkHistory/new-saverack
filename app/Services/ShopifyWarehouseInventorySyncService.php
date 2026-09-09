@@ -9,18 +9,27 @@ use App\Models\ShopifyProductVariant;
 use App\Support\ShopifyGid;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Roll CRM warehouse bin qty deltas into Shopify store inventory levels
- * (sync_inventory=true), then queue a background Shopify Admin push.
+ * (sync_inventory=true), then push to Shopify Admin (inline with queued retry).
  */
 class ShopifyWarehouseInventorySyncService
 {
+    /** @var ShopifyProductSyncService */
+    private $productSync;
+
+    public function __construct(ShopifyProductSyncService $productSync)
+    {
+        $this->productSync = $productSync;
+    }
+
     /**
      * Apply a sellable available delta for a variant across synced Shopify locations.
-     * Does not call Shopify Admin inline — queues a background push.
+     * Attempts an inline Shopify Admin push; queues a retry job on failure.
      *
-     * @return array{status: string, reason: ?string}
+     * @return array{status: string, reason: ?string, pushed?: int}
      */
     public function applyAvailableDelta(ShopifyProductVariant $variant, int $delta): array
     {
@@ -89,8 +98,23 @@ class ShopifyWarehouseInventorySyncService
             $level->save();
         }
 
-        PushShopifyVariantInventoryJob::dispatch((int) $variant->id);
+        try {
+            $pushed = $this->productSync->pushInventoryToShopify($variant->fresh('connection'));
 
-        return ['status' => 'queued', 'reason' => null];
+            return [
+                'status' => 'pushed',
+                'reason' => null,
+                'pushed' => (int) $pushed,
+            ];
+        } catch (Throwable $e) {
+            report($e);
+            Log::warning('shopify.inventory.warehouse_delta_inline_push_failed', [
+                'variant_id' => (int) $variant->id,
+                'message' => $e->getMessage(),
+            ]);
+            PushShopifyVariantInventoryJob::dispatch((int) $variant->id);
+
+            return ['status' => 'queued', 'reason' => null];
+        }
     }
 }

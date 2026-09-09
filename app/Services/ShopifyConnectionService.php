@@ -138,7 +138,7 @@ class ShopifyConnectionService
                 'status_label' => 'Disconnected',
                 'shop_domain' => null,
                 'shop_name' => null,
-                'api_version' => (string) config('services.shopify.api_version', '2025-01'),
+                'api_version' => (string) config('services.shopify.api_version', '2026-04'),
                 'has_token' => false,
                 'connected_at' => null,
                 'last_sync_at' => null,
@@ -214,8 +214,8 @@ class ShopifyConnectionService
         }
         $connection->client_account_id = (int) $account->id;
         $connection->shop_domain = $domain;
-        $connection->api_version = trim((string) ($input['api_version'] ?? config('services.shopify.api_version', '2025-01')))
-            ?: '2025-01';
+        $connection->api_version = trim((string) ($input['api_version'] ?? config('services.shopify.api_version', '2026-04')))
+            ?: '2026-04';
 
         $token = isset($input['admin_api_access_token']) ? trim((string) $input['admin_api_access_token']) : '';
         if ($token !== '') {

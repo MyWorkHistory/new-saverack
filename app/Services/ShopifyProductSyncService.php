@@ -10,6 +10,7 @@ use App\Models\ShopifyProductVariant;
 use App\Support\ShopifyGid;
 use Carbon\Carbon;
 use RuntimeException;
+use Throwable;
 
 class ShopifyProductSyncService
 {
@@ -288,6 +289,14 @@ GQL
 
         // crm_locked_at is set only when CRM pushes edits (see pushVariantToShopify).
         $variant->save();
+
+        if ($isNew) {
+            try {
+                app(ShopifyProductVariantActivityService::class)->recordCreated($variant);
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }
 
         return true;
     }

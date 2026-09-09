@@ -1643,6 +1643,8 @@ class ShopifyIntegrationController extends Controller
         }
 
         $warehouseSummary = $this->warehouseLocationSummary($shopifyVariant);
+        $timeline = app(\App\Services\ShopifyProductVariantActivityService::class)
+            ->timelineFor($shopifyVariant);
 
         return response()->json([
             'variant' => array_merge([
@@ -1672,6 +1674,7 @@ class ShopifyIntegrationController extends Controller
                 'bundle' => $kind === \App\Models\ShopifyProduct::KIND_BUNDLE,
                 'bundle_components' => $components,
                 'inventory' => $inventory,
+                'timeline' => $timeline,
             ], $warehouseSummary),
         ]);
     }
@@ -1700,6 +1703,16 @@ class ShopifyIntegrationController extends Controller
 
         // Persist CRM copy immediately so the request finishes under Cloudflare.
         $shopifyVariant->loadMissing('product');
+        $before = [
+            'product_title' => $shopifyVariant->product->title ?? null,
+            'barcode' => $shopifyVariant->barcode,
+            'weight' => $shopifyVariant->weight,
+            'weight_unit' => $shopifyVariant->weight_unit,
+            'length' => $shopifyVariant->length,
+            'width' => $shopifyVariant->width,
+            'height' => $shopifyVariant->height,
+            'dimension_unit' => $shopifyVariant->dimension_unit,
+        ];
         $labelFieldsChanged = false;
         if (array_key_exists('sku', $validated) && $validated['sku'] !== null) {
             $newSku = trim((string) $validated['sku']);
@@ -1772,6 +1785,27 @@ class ShopifyIntegrationController extends Controller
             }
             $shopifyVariant->product->title = $newTitle;
             $shopifyVariant->product->save();
+        }
+
+        $after = [
+            'product_title' => $shopifyVariant->product->title ?? null,
+            'barcode' => $shopifyVariant->barcode,
+            'weight' => $shopifyVariant->weight,
+            'weight_unit' => $shopifyVariant->weight_unit,
+            'length' => $shopifyVariant->length,
+            'width' => $shopifyVariant->width,
+            'height' => $shopifyVariant->height,
+            'dimension_unit' => $shopifyVariant->dimension_unit,
+        ];
+        try {
+            app(\App\Services\ShopifyProductVariantActivityService::class)->recordFieldChanges(
+                $shopifyVariant,
+                $before,
+                $after,
+                $request->user()
+            );
+        } catch (Throwable $e) {
+            report($e);
         }
 
         \App\Jobs\PushShopifyVariantJob::dispatch((int) $shopifyVariant->id, $validated);
@@ -2229,6 +2263,8 @@ class ShopifyIntegrationController extends Controller
             'bundle_components' => $kind === \App\Models\ShopifyProduct::KIND_BUNDLE
                 ? $this->serializeBundleComponents($shopifyVariant)
                 : [],
+            'timeline' => app(\App\Services\ShopifyProductVariantActivityService::class)
+                ->timelineFor($shopifyVariant),
         ];
     }
 

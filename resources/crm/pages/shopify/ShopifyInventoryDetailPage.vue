@@ -170,6 +170,10 @@ const bundleComponents = computed(() =>
   Array.isArray(variant.value?.bundle_components) ? variant.value.bundle_components : [],
 );
 
+const timeline = computed(() =>
+  Array.isArray(variant.value?.timeline) ? variant.value.timeline : [],
+);
+
 const bundleMenuRow = computed(
   () => bundleComponents.value.find((row) => row.id === rowMenuOpenId.value) ?? null,
 );
@@ -178,6 +182,42 @@ const productTypeLabel = computed(() => {
   if (variant.value?.product_type_label) return variant.value.product_type_label;
   return isBundle.value ? "Bundle" : "Standard Product";
 });
+
+function timelineGlyph(type) {
+  if (type === "product_created") return "gear";
+  if (type === "barcode_updated") return "barcode";
+  if (type === "weight_updated") return "weight";
+  if (type === "dimensions_updated") return "ruler";
+  return "pencil";
+}
+
+function timelineIconClass(type) {
+  if (type === "product_created") return "sid-timeline__icon--create";
+  if (type === "barcode_updated") return "sid-timeline__icon--barcode";
+  if (type === "weight_updated") return "sid-timeline__icon--weight";
+  if (type === "dimensions_updated") return "sid-timeline__icon--dims";
+  return "sid-timeline__icon--edit";
+}
+
+function formatTimelineWhen(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatTimelineDim(value) {
+  if (value == null || value === "") return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  return String(n);
+}
 
 function openEdit() {
   actionsOpen.value = false;
@@ -722,9 +762,6 @@ onUnmounted(() => {
                   <div class="sid-field__label">Barcode</div>
                   <div class="sid-field__barcode">
                     <span>{{ variant.barcode || "—" }}</span>
-                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-                      <path stroke-linecap="round" d="M3.75 5.25v13.5M7.5 5.25v13.5M10.5 5.25v13.5M14.25 5.25v13.5M17.25 5.25v13.5M20.25 5.25v13.5" />
-                    </svg>
                   </div>
                 </div>
 
@@ -737,7 +774,18 @@ onUnmounted(() => {
                     </span>
                     <div>
                       <div class="sid-field__label">Account</div>
-                      <div class="sid-meta__value">{{ variant.account_name || "—" }}</div>
+                      <div class="sid-meta__value">
+                        <RouterLink
+                          v-if="variant.client_account_id"
+                          class="sid-account-link"
+                          :to="{ name: 'client-account-detail', params: { id: String(variant.client_account_id) } }"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {{ variant.account_name || "—" }}
+                        </RouterLink>
+                        <template v-else>{{ variant.account_name || "—" }}</template>
+                      </div>
                     </div>
                   </div>
                   <div class="sid-meta">
@@ -892,6 +940,63 @@ onUnmounted(() => {
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <!-- Timeline (product field changes only) -->
+          <section class="sid-card">
+            <div class="sid-card__head">
+              <div>
+                <div class="sid-card__head-title">
+                  <span class="sid-card__head-icon" aria-hidden="true">
+                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.55">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </span>
+                  <h2>Timeline</h2>
+                </div>
+              </div>
+            </div>
+            <ul v-if="timeline.length" class="sid-timeline list-unstyled mb-0">
+              <li v-for="ev in timeline" :key="ev.id" class="sid-timeline__item">
+                <span class="sid-timeline__icon" :class="timelineIconClass(ev.type)" aria-hidden="true">
+                  <svg v-if="timelineGlyph(ev.type) === 'gear'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <svg v-else-if="timelineGlyph(ev.type) === 'barcode'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">
+                    <path stroke-linecap="round" d="M3.75 5.25v13.5M7.5 5.25v13.5M10.5 5.25v13.5M14.25 5.25v13.5M17.25 5.25v13.5M20.25 5.25v13.5" />
+                  </svg>
+                  <svg v-else-if="timelineGlyph(ev.type) === 'weight'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v3m0 0a3 3 0 013 3v1.5H9V9a3 3 0 013-3zm-6.75 7.5h13.5c.75 0 1.35.72 1.2 1.44l-1.2 5.76A2.25 2.25 0 0116.56 21H7.44a2.25 2.25 0 01-2.19-1.8l-1.2-5.76c-.15-.72.45-1.44 1.2-1.44z" />
+                  </svg>
+                  <svg v-else-if="timelineGlyph(ev.type) === 'ruler'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 7.5L7.5 3l13.5 13.5-4.5 4.5L3 7.5z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 7.5l1.5-1.5M10.5 10.5l1.5-1.5M13.5 13.5l1.5-1.5" />
+                  </svg>
+                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
+                  </svg>
+                </span>
+                <div class="sid-timeline__body">
+                  <div class="sid-timeline__row">
+                    <div class="min-w-0">
+                      <div class="sid-timeline__title">{{ ev.title }}</div>
+                      <div
+                        v-if="ev.type === 'dimensions_updated' && ev.meta"
+                        class="sid-timeline__chips"
+                      >
+                        <span class="sid-timeline__chip">Length: {{ formatTimelineDim(ev.meta.length) }}</span>
+                        <span class="sid-timeline__chip">Width: {{ formatTimelineDim(ev.meta.width) }}</span>
+                        <span class="sid-timeline__chip">Height: {{ formatTimelineDim(ev.meta.height) }}</span>
+                      </div>
+                      <div class="sid-timeline__when">{{ formatTimelineWhen(ev.created_at) }}</div>
+                    </div>
+                    <div class="sid-timeline__actor">{{ ev.actor_label || "System" }}</div>
+                  </div>
+                </div>
+              </li>
+            </ul>
+            <p v-else class="text-secondary mb-0 small">No timeline events yet.</p>
           </section>
         </div>
 
@@ -1446,9 +1551,93 @@ onUnmounted(() => {
   color: #111827;
   word-break: break-all;
 }
-.sid-field__barcode svg {
-  color: #3b82f6;
+.sid-account-link {
+  color: #2563eb;
+  font-weight: 700;
+  text-decoration: none;
+}
+.sid-account-link:hover {
+  text-decoration: underline;
+}
+.sid-timeline {
+  margin: 0;
+  padding: 0;
+}
+.sid-timeline__item {
+  display: flex;
+  gap: 0.85rem;
+  position: relative;
+  padding-bottom: 1.15rem;
+}
+.sid-timeline__item:last-child {
+  padding-bottom: 0;
+}
+.sid-timeline__item:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: 32px;
+  bottom: 0;
+  width: 2px;
+  background: #dbeafe;
+}
+.sid-timeline__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+.sid-timeline__icon--create { background: #64748b; }
+.sid-timeline__icon--edit { background: #8b5cf6; }
+.sid-timeline__icon--barcode { background: #3b82f6; }
+.sid-timeline__icon--weight { background: #0ea5e9; }
+.sid-timeline__icon--dims { background: #14b8a6; }
+.sid-timeline__body {
+  flex: 1;
+  min-width: 0;
+  padding-top: 0.15rem;
+}
+.sid-timeline__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.sid-timeline__title {
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.35;
+}
+.sid-timeline__when {
+  margin-top: 0.2rem;
+  font-size: 0.8125rem;
+  color: #94a3b8;
+}
+.sid-timeline__actor {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.sid-timeline__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+.sid-timeline__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.35rem;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 .sid-product__meta {
   display: grid;

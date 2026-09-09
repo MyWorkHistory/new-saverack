@@ -56,12 +56,14 @@ class InventoryProductDetailCacheService
     }
 
     /**
-     * Batch-read fresh product JSON for list enrichment (one query per account).
+     * Batch-read product JSON for list enrichment (one query per account).
+     * By default only returns rows within CACHE_TTL_MINUTES; pass $allowStale for
+     * pick-list style pages that must not fall back to live ShipHero per SKU.
      *
      * @param  list<array{client_account_id:int, sku:string}>  $pairs
      * @return array<string, array<string, mixed>> Map key "{accountId}|{normalizedSku}" => product_json
      */
-    public function getCachedProductsForPairs(array $pairs): array
+    public function getCachedProductsForPairs(array $pairs, bool $allowStale = false): array
     {
         $byAccount = [];
         foreach ($pairs as $pair) {
@@ -92,7 +94,7 @@ class InventoryProductDetailCacheService
                 if (! is_array($row->product_json)) {
                     continue;
                 }
-                if (! $this->isFresh($this->productSyncedAt($row))) {
+                if (! $allowStale && ! $this->isFresh($this->productSyncedAt($row))) {
                     continue;
                 }
                 $key = ((int) $row->client_account_id).'|'.(string) $row->sku_search;

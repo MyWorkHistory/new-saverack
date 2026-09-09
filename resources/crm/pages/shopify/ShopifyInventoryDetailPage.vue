@@ -9,6 +9,7 @@ import ShopifyInventoryAddLocationModal from "../../components/shopify/ShopifyIn
 import ShopifyInventoryEditProductModal from "../../components/shopify/ShopifyInventoryEditProductModal.vue";
 import ShopifyInventoryProductSettingsModal from "../../components/shopify/ShopifyInventoryProductSettingsModal.vue";
 import ShopifyInventoryBundleItemsModal from "../../components/shopify/ShopifyInventoryBundleItemsModal.vue";
+import ShopifyLocationTransferModal from "../../components/shopify/ShopifyLocationTransferModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 
@@ -18,6 +19,8 @@ const toast = useToast();
 
 const BUNDLE_MENU_W = 160;
 const BUNDLE_MENU_H = 88;
+const LOC_MENU_W = 160;
+const LOC_MENU_H = 96;
 
 const loading = ref(true);
 const saveBusy = ref(false);
@@ -39,9 +42,20 @@ const qtyEditOpen = ref(false);
 const qtyEditBusy = ref(false);
 const qtyEditComponent = ref(null);
 const qtyEditValue = ref(1);
-const expandedLocationGroup = ref(null);
+const expandedLocationGroup = ref("pick");
 const addLocationOpen = ref(false);
 const addItemReasons = ref([]);
+
+const locMenuOpenKey = ref(null);
+const locMenuRect = ref({ top: 0, left: 0 });
+const locBusy = ref(false);
+const transferOpen = ref(false);
+const transferToId = ref("");
+const transferQty = ref("0");
+const destLocations = ref([]);
+const activeLocRow = ref(null);
+const locQtyOpen = ref(false);
+const locQtyValue = ref(0);
 
 const defaultLocationGroups = () => [
   { key: "pick", label: "Pick Locations", icon: "cart", count: 0, locations: [] },
@@ -71,6 +85,16 @@ const locationGroups = computed(() => {
     count: Number(group.count || 0),
     locations: Array.isArray(group.locations) ? group.locations : [],
   }));
+});
+
+const locMenuRow = computed(() => {
+  const key = locMenuOpenKey.value;
+  if (!key) return null;
+  for (const group of locationGroups.value) {
+    const found = (group.locations || []).find((loc) => locRowKey(loc) === key);
+    if (found) return found;
+  }
+  return null;
 });
 
 const dimUnitLabel = computed(() =>
@@ -399,12 +423,117 @@ function formatLocationQty(loc) {
   return `${name} (${qty.toLocaleString("en-US")})`;
 }
 
+function locRowKey(loc) {
+  return String(loc?.item_id || `${loc?.location_id || ""}-${loc?.name || ""}`);
+}
+
+function placeLocMenu(btn) {
+  if (!(btn instanceof HTMLElement)) return;
+  const r = btn.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - LOC_MENU_W;
+  left = Math.max(8, Math.min(left, window.innerWidth - LOC_MENU_W - 8));
+  if (top + LOC_MENU_H > window.innerHeight - 8) {
+    top = Math.max(8, r.top - LOC_MENU_H - 4);
+  }
+  locMenuRect.value = { top, left };
+}
+
+async function toggleLocMenu(loc, e) {
+  e?.stopPropagation?.();
+  const key = locRowKey(loc);
+  if (locMenuOpenKey.value === key) {
+    locMenuOpenKey.value = null;
+    return;
+  }
+  const btn = e?.currentTarget;
+  locMenuOpenKey.value = key;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (btn instanceof HTMLElement) placeLocMenu(btn);
+  });
+}
+
+async function openLocTransfer(loc) {
+  activeLocRow.value = loc;
+  transferToId.value = "";
+  transferQty.value = "0";
+  locMenuOpenKey.value = null;
+  try {
+    const { data } = await api.get("/shopify/locations/options", {
+      params: { exclude: loc.location_id },
+    });
+    destLocations.value = Array.isArray(data?.data) ? data.data : [];
+  } catch (e) {
+    destLocations.value = [];
+    toast.errorFrom(e, "Could not load destination locations.");
+  }
+  transferOpen.value = true;
+}
+
+async function submitLocTransfer() {
+  if (!activeLocRow.value) return;
+  const qty = Number(transferQty.value || 0);
+  if (!transferToId.value) {
+    toast.error("Select a destination location.");
+    return;
+  }
+  if (qty < 1) {
+    toast.error("Enter a quantity to transfer.");
+    return;
+  }
+  locBusy.value = true;
+  try {
+    await api.post(`/shopify/locations/${activeLocRow.value.location_id}/transfer`, {
+      item_id: activeLocRow.value.item_id,
+      to_location_id: Number(transferToId.value),
+      quantity: qty,
+    });
+    toast.success("Inventory transferred.");
+    transferOpen.value = false;
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not transfer inventory.");
+  } finally {
+    locBusy.value = false;
+  }
+}
+
+function openLocQtyEdit(loc) {
+  activeLocRow.value = loc;
+  locQtyValue.value = Number(loc?.available || 0);
+  locMenuOpenKey.value = null;
+  locQtyOpen.value = true;
+}
+
+async function saveLocQty() {
+  if (!activeLocRow.value) return;
+  const qty = Math.max(0, Number(locQtyValue.value) || 0);
+  locBusy.value = true;
+  try {
+    await api.patch(
+      `/shopify/locations/${activeLocRow.value.location_id}/items/${activeLocRow.value.item_id}`,
+      { available: qty },
+    );
+    toast.success("Quantity updated. Shopify inventory will update in the background.");
+    locQtyOpen.value = false;
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update quantity.");
+  } finally {
+    locBusy.value = false;
+  }
+}
+
 function onDocClick(event) {
   if (!actionsRoot.value?.contains?.(event.target)) {
     actionsOpen.value = false;
   }
   if (!event.target?.closest?.("[data-sid-bundle-row-actions]")) {
     rowMenuOpenId.value = null;
+  }
+  if (!event.target?.closest?.("[data-sid-loc-row-actions]")) {
+    locMenuOpenKey.value = null;
   }
 }
 
@@ -832,11 +961,15 @@ onUnmounted(() => {
                 </div>
                 <p class="sid-card__sub">Manage inventory by location.</p>
               </div>
-              <button type="button" class="staff-outline-action-btn staff-outline-action-btn--sm" @click="openAddLocation">
+              <button
+                type="button"
+                class="btn btn-primary staff-page-primary btn-sm fw-semibold d-inline-flex align-items-center gap-1"
+                @click="openAddLocation"
+              >
                 <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
-                Add Location
+                Add Inventory
               </button>
             </div>
 
@@ -867,7 +1000,7 @@ onUnmounted(() => {
                   <div class="sid-loc__body">
                     <div class="sid-loc__title-row">
                       <span class="sid-loc__title">{{ group.label }}</span>
-                      <span class="sid-loc__badge">{{ group.count }}</span>
+                      <span class="sid-loc__badge">{{ Number(group.count || 0).toLocaleString("en-US") }}</span>
                     </div>
                     <div v-if="!group.locations.length" class="sid-loc__empty">No locations yet</div>
                     <div v-else-if="expandedLocationGroup !== group.key" class="sid-loc__preview">
@@ -888,25 +1021,30 @@ onUnmounted(() => {
                   </svg>
                 </button>
                 <div v-if="expandedLocationGroup === group.key && group.locations.length" class="sid-loc__list">
-                  <RouterLink
+                  <div
                     v-for="loc in group.locations"
-                    :key="loc.location_id"
-                    :to="{ name: 'shopify-location-detail', params: { id: String(loc.location_id) } }"
+                    :key="locRowKey(loc)"
                     class="sid-loc__item"
                   >
                     <span class="sid-loc__item-name">{{ loc.name }}</span>
-                    <span class="sid-loc__item-qty">{{ Number(loc.available || 0).toLocaleString("en-US") }}</span>
-                  </RouterLink>
+                    <div class="sid-loc__item-right">
+                      <span class="sid-loc__item-qty">{{ Number(loc.available || 0).toLocaleString("en-US") }}</span>
+                      <button
+                        type="button"
+                        class="staff-action-btn staff-action-btn--more"
+                        data-sid-loc-row-actions
+                        :class="{ 'is-open': locMenuOpenKey === locRowKey(loc) }"
+                        :aria-expanded="locMenuOpenKey === locRowKey(loc) ? 'true' : 'false'"
+                        aria-label="Location actions"
+                        @click="toggleLocMenu(loc, $event)"
+                      >
+                        <CrmIconRowActions variant="horizontal" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-
-            <button type="button" class="sid-view-all" @click="router.push({ name: 'shopify-locations' })">
-              View All Locations
-              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-              </svg>
-            </button>
           </section>
         </div>
       </div>
@@ -939,6 +1077,105 @@ onUnmounted(() => {
       :add-item-reasons="addItemReasons"
       @saved="load"
     />
+
+    <ShopifyLocationTransferModal
+      :open="transferOpen"
+      :busy="locBusy"
+      :product-title="variant?.product_title || variant?.title || ''"
+      :sku="variant?.sku || ''"
+      :image-url="variant?.image_url || ''"
+      :from-name="activeLocRow?.name || ''"
+      :available="Number(activeLocRow?.available || 0)"
+      :to-location-id="transferToId"
+      :quantity="transferQty"
+      :locations="destLocations"
+      @close="transferOpen = false"
+      @submit="submitLocTransfer"
+      @all="transferQty = String(activeLocRow?.available || 0)"
+      @update:to-location-id="transferToId = $event"
+      @update:quantity="transferQty = $event"
+    />
+
+    <Teleport to="body">
+      <div
+        v-if="locMenuRow"
+        data-sid-loc-row-actions
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
+        :style="{ top: `${locMenuRect.top}px`, left: `${locMenuRect.left}px` }"
+        @click.stop
+      >
+        <button
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openLocTransfer(locMenuRow)"
+        >
+          Transfer
+        </button>
+        <button
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openLocQtyEdit(locMenuRow)"
+        >
+          Edit
+        </button>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="locQtyOpen" class="crm-vx-modal-overlay" @click.self="locQtyOpen = false">
+        <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+          <button
+            type="button"
+            class="crm-vx-modal__close"
+            aria-label="Close"
+            :disabled="locBusy"
+            @click="locQtyOpen = false"
+          >
+            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <header class="crm-vx-modal__head" style="text-align: left">
+            <h2 class="crm-vx-modal__title">Edit QTY</h2>
+            <p class="crm-vx-modal__sub small text-secondary mb-0">
+              {{ activeLocRow?.name || "Location" }}
+            </p>
+          </header>
+          <div class="crm-vx-modal__body">
+            <label class="form-label" for="sid-loc-edit-qty">Quantity</label>
+            <input
+              id="sid-loc-edit-qty"
+              v-model.number="locQtyValue"
+              type="number"
+              min="0"
+              class="form-control"
+              :disabled="locBusy"
+            >
+          </div>
+          <footer class="crm-vx-modal__footer justify-content-end">
+            <button
+              type="button"
+              class="crm-vx-modal-btn crm-vx-modal-btn--secondary"
+              :disabled="locBusy"
+              @click="locQtyOpen = false"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="crm-vx-modal-btn crm-vx-modal-btn--primary"
+              :disabled="locBusy"
+              @click="saveLocQty"
+            >
+              {{ locBusy ? "Please Wait…" : "Save" }}
+            </button>
+          </footer>
+        </div>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div
@@ -1513,17 +1750,23 @@ onUnmounted(() => {
   border: 1px solid #e5e7eb;
   border-radius: 0.5rem;
   background: #fff;
-  text-decoration: none;
   color: inherit;
   font-size: 0.85rem;
 }
 .sid-loc__item:hover {
-  background: #eff6ff;
-  border-color: #bfdbfe;
+  background: #f8fafc;
+  border-color: #e2e8f0;
 }
 .sid-loc__item-name {
   font-weight: 600;
   color: #111827;
+  min-width: 0;
+}
+.sid-loc__item-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
 }
 .sid-loc__item-qty {
   font-weight: 700;

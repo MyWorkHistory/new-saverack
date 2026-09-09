@@ -1210,6 +1210,47 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonPath('orders.0.lines.1.backstock_location', null);
     }
 
+    public function test_pick_list_uses_stale_cache_and_never_calls_shiphero(): void
+    {
+        $account = $this->account('pick-stale');
+        Sanctum::actingAs($this->staffUser());
+        $order = $this->seedInProgressOrder($account);
+
+        ShipHeroInventoryProductDetailCache::query()->create([
+            'client_account_id' => $account->id,
+            'sku' => 'SKU-PICK-A',
+            'sku_search' => 'sku-pick-a',
+            'product_json' => [
+                'sku' => 'SKU-PICK-A',
+                'warehouses' => [
+                    [
+                        'warehouse_id' => 'wh-1',
+                        'locations' => [
+                            [
+                                'location_id' => 'pick-1',
+                                'location_name' => 'B-99',
+                                'quantity' => 7,
+                                'pickable' => true,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            // Older than CACHE_TTL_MINUTES — must still be used for pick list.
+            'product_synced_at' => now()->subHours(6),
+            'synced_at' => now()->subHours(6),
+        ]);
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('getProductDetailBySku')->never();
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $this->getJson('/api/admin/wholesale-orders/pick-list?client_account_id='.$account->id)
+            ->assertOk()
+            ->assertJsonPath('orders.0.lines.0.pick_location', 'B-99 (7)')
+            ->assertJsonPath('orders.0.lines.0.pick_locations.0', 'B-99 (7)');
+    }
+
     public function test_update_line_pick_rejects_over_quantity(): void
     {
         $account = $this->account('pick-reject');

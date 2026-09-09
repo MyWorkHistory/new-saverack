@@ -2055,6 +2055,7 @@ class ShopifyIntegrationController extends Controller
             $qty = (int) $item->available;
             $totalOnHand += $qty;
             $entry = [
+                'item_id' => (int) $item->id,
                 'location_id' => (int) $location->id,
                 'name' => (string) $location->name,
                 'available' => $qty,
@@ -2080,10 +2081,14 @@ class ShopifyIntegrationController extends Controller
         $locationGroups = [];
         foreach ($labels as $key => $label) {
             $locations = $grouped[$key];
+            $qtyTotal = 0;
+            foreach ($locations as $loc) {
+                $qtyTotal += (int) ($loc['available'] ?? 0);
+            }
             $locationGroups[] = [
                 'key' => $key,
                 'label' => $label,
-                'count' => count($locations),
+                'count' => $qtyTotal,
                 'locations' => $locations,
             ];
         }

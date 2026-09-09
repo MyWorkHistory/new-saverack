@@ -109,7 +109,7 @@ watch(
           </svg>
         </button>
         <header class="crm-vx-modal__head" style="text-align: left">
-          <h2 class="crm-vx-modal__title">Add Location</h2>
+          <h2 class="crm-vx-modal__title">Add Inventory</h2>
           <p class="crm-vx-modal__sub small text-secondary mb-0">Add inventory for this product at a warehouse location.</p>
         </header>
         <div class="crm-vx-modal__body">

@@ -2388,6 +2388,9 @@ class WholesaleOrderController extends Controller
     }
 
     /**
+     * Resolve pick/backstock labels from the local product detail cache only.
+     * Never calls ShipHero — per-SKU live fetches made large pick lists take minutes.
+     *
      * @return array<string, array{pick_location: ?string, backstock_location: ?string, pick_locations: list<string>}>
      */
     private function resolvePickListLocationsBySku(WholesaleOrder $order): array
@@ -2397,10 +2400,6 @@ class WholesaleOrderController extends Controller
         if ($clientAccountId <= 0) {
             return [];
         }
-
-        $customerId = $order->clientAccount !== null
-            ? trim((string) $order->clientAccount->shiphero_customer_account_id)
-            : '';
 
         $skuKeys = [];
         foreach ($order->lines as $line) {
@@ -2413,10 +2412,22 @@ class WholesaleOrderController extends Controller
             return [];
         }
 
+        $pairs = [];
+        foreach ($skuKeys as $sku) {
+            $pairs[] = [
+                'client_account_id' => $clientAccountId,
+                'sku' => $sku,
+            ];
+        }
+
+        // Allow stale cache so expired rows still show locations without live API.
+        $cached = $this->detailCache->getCachedProductsForPairs($pairs, true);
+
         $out = [];
         foreach ($skuKeys as $key => $sku) {
-            $product = $this->resolveProductDetailForPickList($clientAccountId, $customerId, $sku);
-            if ($product === null) {
+            $cacheKey = $clientAccountId.'|'.$this->detailCache->normalizeSku($sku);
+            $product = $cached[$cacheKey] ?? null;
+            if (! is_array($product)) {
                 $out[$key] = [
                     'pick_location' => null,
                     'backstock_location' => null,
@@ -2434,33 +2445,6 @@ class WholesaleOrderController extends Controller
         }
 
         return $out;
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function resolveProductDetailForPickList(int $clientAccountId, string $customerId, string $sku): ?array
-    {
-        $sku = trim($sku);
-        if ($sku === '') {
-            return null;
-        }
-
-        $product = $this->detailCache->getCachedProduct($clientAccountId, $sku);
-        if ($product !== null) {
-            return $product;
-        }
-
-        if ($customerId === '') {
-            return null;
-        }
-
-        $product = $this->inventory->getProductDetailBySku($sku, null, $customerId, false);
-        if ($product !== null) {
-            $this->detailCache->putProduct($clientAccountId, $sku, $product);
-        }
-
-        return $product;
     }
 
     /**

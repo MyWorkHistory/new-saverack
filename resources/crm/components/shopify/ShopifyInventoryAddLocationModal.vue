@@ -3,6 +3,7 @@ import { reactive, ref, watch } from "vue";
 import api from "../../services/api";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import { useToast } from "../../composables/useToast";
+import { toastShopifyWarehouseSync } from "../../utils/shopifyWarehouseSyncToast.js";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -72,13 +73,17 @@ async function submit() {
 
   submitBusy.value = true;
   try {
-    await api.post(`/shopify/locations/${locationId}/items`, {
+    const { data } = await api.post(`/shopify/locations/${locationId}/items`, {
       client_account_id: accountId,
       shopify_variant_id: variantId,
       available: qty,
       reason: form.reason,
     });
-    toast.success("Item added to location. Shopify inventory will update in the background.");
+    toastShopifyWarehouseSync(
+      toast,
+      data?.shopify_sync,
+      "Item added to location. Shopify inventory will update in the background.",
+    );
     emit("saved");
     close();
   } catch (e) {

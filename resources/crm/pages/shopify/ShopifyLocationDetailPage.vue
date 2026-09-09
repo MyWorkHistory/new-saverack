@@ -11,6 +11,7 @@ import ShopifyLocationTransferModal from "../../components/shopify/ShopifyLocati
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 import { crmIsAdmin } from "../../utils/crmUser.js";
+import { toastShopifyWarehouseSync } from "../../utils/shopifyWarehouseSyncToast.js";
 
 const MENU_W = 168;
 const MENU_H = 148;
@@ -345,10 +346,14 @@ async function saveQty() {
   if (!activeItem.value) return;
   busy.value = true;
   try {
-    await api.patch(`/shopify/locations/${locationId.value}/items/${activeItem.value.id}`, {
+    const { data } = await api.patch(`/shopify/locations/${locationId.value}/items/${activeItem.value.id}`, {
       available: Number(qtyForm.available || 0),
     });
-    toast.success("Quantity updated. Shopify inventory will update in the background.");
+    toastShopifyWarehouseSync(
+      toast,
+      data?.shopify_sync,
+      "Quantity updated. Shopify inventory will update in the background.",
+    );
     qtyOpen.value = false;
     await load();
   } catch (e) {
@@ -491,14 +496,18 @@ async function addItem() {
   }
   busy.value = true;
   try {
-    await api.post(`/shopify/locations/${locationId.value}/items`, {
+    const { data } = await api.post(`/shopify/locations/${locationId.value}/items`, {
       client_account_id: accountId,
       shopify_variant_id: variantId > 0 ? variantId : undefined,
       sku: sku || undefined,
       available: Number(addItemForm.available || 0),
       reason: addItemForm.reason,
     });
-    toast.success("Item added. Shopify inventory will update in the background.");
+    toastShopifyWarehouseSync(
+      toast,
+      data?.shopify_sync,
+      "Item added. Shopify inventory will update in the background.",
+    );
     addItemOpen.value = false;
     await load();
   } catch (e) {

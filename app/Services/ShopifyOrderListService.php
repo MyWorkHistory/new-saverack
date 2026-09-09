@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ClientAccountShopifyConnection;
 use App\Models\ShopifyOrder;
+use App\Models\ShopifyOrderLineItem;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 
@@ -279,6 +280,34 @@ class ShopifyOrderListService
     public function isCancelled(ShopifyOrder $order): bool
     {
         return $this->displayStatus($order) === self::DISPLAY_CANCELLED;
+    }
+
+    /**
+     * Line badge for order detail: pending / fulfilled / cancelled.
+     */
+    public function lineDisplayStatus(ShopifyOrder $order, ShopifyOrderLineItem $line): string
+    {
+        $qty = (int) $line->quantity;
+        $fulfilled = (int) ($line->fulfilled_quantity ?? 0);
+        $fulfillable = (int) ($line->fulfillable_quantity ?? 0);
+
+        if ($qty <= 0) {
+            return 'cancelled';
+        }
+        if ($fulfilled >= $qty) {
+            return 'fulfilled';
+        }
+        if ($fulfillable <= 0 && $fulfilled > 0) {
+            return 'fulfilled';
+        }
+        if ($order->cancelled_at !== null || $order->crm_fulfillment_cancelled_at !== null) {
+            return 'cancelled';
+        }
+        if ($fulfillable <= 0 && $fulfilled <= 0) {
+            return 'cancelled';
+        }
+
+        return 'pending';
     }
 
     public function displayStatusLabel(string $status): string

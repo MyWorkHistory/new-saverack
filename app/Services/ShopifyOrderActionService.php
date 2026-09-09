@@ -200,6 +200,7 @@ GQL
             $refreshed->crm_fulfillment_cancelled_at = now();
             $refreshed->crm_hold_reasons = [];
             $refreshed->save();
+            $this->zeroCrmFulfillableQuantities($refreshed);
 
             return $refreshed->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
         }
@@ -214,6 +215,20 @@ GQL
     {
         $this->assertNotShipped($order);
 
+        $this->zeroCrmFulfillableQuantities($order);
+
+        $order->crm_fulfillment_cancelled_at = now();
+        $order->crm_hold_reasons = [];
+        $order->save();
+
+        return $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
+    }
+
+    /**
+     * Zero FO remaining + line fulfillable qty so all unfulfilled lines show Cancelled.
+     */
+    private function zeroCrmFulfillableQuantities(ShopifyOrder $order): void
+    {
         $order->loadMissing(['lineItems', 'fulfillmentOrders.lineItems']);
 
         foreach ($order->fulfillmentOrders as $fo) {
@@ -226,12 +241,6 @@ GQL
             $lineItem->fulfillable_quantity = 0;
             $lineItem->save();
         }
-
-        $order->crm_fulfillment_cancelled_at = now();
-        $order->crm_hold_reasons = [];
-        $order->save();
-
-        return $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
     }
 
     /**

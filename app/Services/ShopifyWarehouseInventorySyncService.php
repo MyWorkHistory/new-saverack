@@ -8,32 +8,47 @@ use App\Models\ShopifyLocation;
 use App\Models\ShopifyProductVariant;
 use App\Support\ShopifyGid;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Roll CRM warehouse bin qty deltas into Shopify store inventory levels
- * (sync_inventory=true), then push to Shopify Admin after the HTTP response.
+ * (sync_inventory=true), then queue a background Shopify Admin push.
  */
 class ShopifyWarehouseInventorySyncService
 {
     /**
      * Apply a sellable available delta for a variant across synced Shopify locations.
-     * Does not call Shopify Admin inline — schedules a background push.
+     * Does not call Shopify Admin inline — queues a background push.
+     *
+     * @return array{status: string, reason: ?string}
      */
-    public function applyAvailableDelta(ShopifyProductVariant $variant, int $delta): void
+    public function applyAvailableDelta(ShopifyProductVariant $variant, int $delta): array
     {
         if ($delta === 0) {
-            return;
+            return ['status' => 'noop', 'reason' => null];
         }
 
         $variant->loadMissing('connection');
         $connection = $variant->connection;
         if ($connection === null) {
-            return;
+            Log::info('shopify.inventory.warehouse_delta_skipped', [
+                'variant_id' => (int) $variant->id,
+                'reason' => 'no_connection',
+                'delta' => $delta,
+            ]);
+
+            return ['status' => 'skipped', 'reason' => 'no_connection'];
         }
 
         $itemId = ShopifyGid::toId(trim((string) ($variant->shopify_inventory_item_id ?? '')));
         if ($itemId === '') {
-            return;
+            Log::info('shopify.inventory.warehouse_delta_skipped', [
+                'variant_id' => (int) $variant->id,
+                'reason' => 'missing_inventory_item_id',
+                'delta' => $delta,
+            ]);
+
+            return ['status' => 'skipped', 'reason' => 'missing_inventory_item_id'];
         }
 
         $locationIds = ShopifyLocation::query()
@@ -51,7 +66,13 @@ class ShopifyWarehouseInventorySyncService
             ->all();
 
         if ($locationIds === []) {
-            return;
+            Log::info('shopify.inventory.warehouse_delta_skipped', [
+                'variant_id' => (int) $variant->id,
+                'reason' => 'no_sync_inventory_locations',
+                'delta' => $delta,
+            ]);
+
+            return ['status' => 'skipped', 'reason' => 'no_sync_inventory_locations'];
         }
 
         $now = Carbon::now();
@@ -68,6 +89,8 @@ class ShopifyWarehouseInventorySyncService
             $level->save();
         }
 
-        PushShopifyVariantInventoryJob::dispatchAfterResponse((int) $variant->id);
+        PushShopifyVariantInventoryJob::dispatch((int) $variant->id);
+
+        return ['status' => 'queued', 'reason' => null];
     }
 }

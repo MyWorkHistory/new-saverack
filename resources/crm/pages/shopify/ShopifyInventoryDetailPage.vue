@@ -13,6 +13,7 @@ import ShopifyProductLocationEditQtyModal from "../../components/shopify/Shopify
 import ShopifyProductLocationTransferModal from "../../components/shopify/ShopifyProductLocationTransferModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
+import { toastShopifyWarehouseSync } from "../../utils/shopifyWarehouseSyncToast.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -527,11 +528,15 @@ async function saveLocQty() {
   }
   locBusy.value = true;
   try {
-    await api.patch(
+    const { data } = await api.patch(
       `/shopify/locations/${activeLocRow.value.location_id}/items/${activeLocRow.value.item_id}`,
       { available: qty, reason: locQtyReason.value },
     );
-    toast.success("Quantity updated. Shopify inventory will update in the background.");
+    toastShopifyWarehouseSync(
+      toast,
+      data?.shopify_sync,
+      "Quantity updated. Shopify inventory will update in the background.",
+    );
     locQtyOpen.value = false;
     await load();
   } catch (e) {

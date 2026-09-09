@@ -325,9 +325,12 @@ class ShopifyWarehouseLocationController extends Controller
         $item->save();
         $item->load(['variant.product', 'variant.connection.clientAccount']);
 
-        $this->warehouseInventorySync->applyAvailableDelta($variant, $qty);
+        $shopifySync = $this->warehouseInventorySync->applyAvailableDelta($variant, $qty);
 
-        return response()->json(['item' => $this->serializeItem($item)], 201);
+        return response()->json([
+            'item' => $this->serializeItem($item),
+            'shopify_sync' => $shopifySync,
+        ], 201);
     }
 
     public function updateItemQty(
@@ -348,18 +351,23 @@ class ShopifyWarehouseLocationController extends Controller
 
         if ($qty <= 0) {
             $shopifyWarehouseLocationItem->delete();
+            $shopifySync = ['status' => 'noop', 'reason' => null];
             if ($variant !== null && $oldQty !== 0) {
-                $this->warehouseInventorySync->applyAvailableDelta($variant, -$oldQty);
+                $shopifySync = $this->warehouseInventorySync->applyAvailableDelta($variant, -$oldQty);
             }
 
-            return response()->json(['deleted' => true]);
+            return response()->json([
+                'deleted' => true,
+                'shopify_sync' => $shopifySync,
+            ]);
         }
         $shopifyWarehouseLocationItem->available = $qty;
         $shopifyWarehouseLocationItem->save();
 
         $delta = $qty - $oldQty;
+        $shopifySync = ['status' => 'noop', 'reason' => null];
         if ($variant !== null && $delta !== 0) {
-            $this->warehouseInventorySync->applyAvailableDelta($variant, $delta);
+            $shopifySync = $this->warehouseInventorySync->applyAvailableDelta($variant, $delta);
         }
 
         return response()->json([
@@ -367,6 +375,7 @@ class ShopifyWarehouseLocationController extends Controller
                 'variant.product',
                 'variant.connection.clientAccount',
             ])),
+            'shopify_sync' => $shopifySync,
         ]);
     }
 
@@ -382,11 +391,15 @@ class ShopifyWarehouseLocationController extends Controller
         $oldQty = (int) $shopifyWarehouseLocationItem->available;
         $variant = ShopifyProductVariant::query()->find((int) $shopifyWarehouseLocationItem->shopify_variant_id);
         $shopifyWarehouseLocationItem->delete();
+        $shopifySync = ['status' => 'noop', 'reason' => null];
         if ($variant !== null && $oldQty !== 0) {
-            $this->warehouseInventorySync->applyAvailableDelta($variant, -$oldQty);
+            $shopifySync = $this->warehouseInventorySync->applyAvailableDelta($variant, -$oldQty);
         }
 
-        return response()->json(['message' => 'Item removed from location.']);
+        return response()->json([
+            'message' => 'Item removed from location.',
+            'shopify_sync' => $shopifySync,
+        ]);
     }
 
     public function transfer(Request $request, ShopifyWarehouseLocation $shopifyWarehouseLocation): JsonResponse

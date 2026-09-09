@@ -566,7 +566,8 @@ GQL
         if ($connection === null || ! $connection->hasCredentials()) {
             throw new RuntimeException('Shopify connection credentials missing.');
         }
-        $itemId = trim((string) $variant->shopify_inventory_item_id);
+        $rawItemId = trim((string) $variant->shopify_inventory_item_id);
+        $itemId = ShopifyGid::toId($rawItemId);
         if ($itemId === '') {
             return 0;
         }
@@ -576,17 +577,25 @@ GQL
             ->where('sync_inventory', true)
             ->pluck('shopify_location_id')
             ->map(static function ($id) {
-                return (string) $id;
+                return ShopifyGid::toId((string) $id);
             })
+            ->filter(static function ($id) {
+                return $id !== '';
+            })
+            ->unique()
+            ->values()
             ->all();
         if ($enabled === []) {
             return 0;
         }
 
         if ($levels === null) {
+            $itemIds = array_values(array_unique(array_filter([$itemId, $rawItemId], static function ($id) {
+                return $id !== '';
+            })));
             $rows = ShopifyInventoryLevel::query()
                 ->where('connection_id', $connection->id)
-                ->where('shopify_inventory_item_id', $itemId)
+                ->whereIn('shopify_inventory_item_id', $itemIds)
                 ->whereNotNull('crm_set_at')
                 ->get();
             $levels = [];

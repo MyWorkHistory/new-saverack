@@ -296,6 +296,146 @@ class ShopifyOrderActionsApiTest extends TestCase
         $this->assertNull($order->cancelled_at);
     }
 
+    public function test_crm_only_cancel_marks_unfulfilled_lines_cancelled_on_detail(): void
+    {
+        $this->actingAsAdmin();
+        [, $connection, $order] = $this->seedOrder();
+
+        $pending = \App\Models\ShopifyOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => '9101',
+            'sku' => 'SKU-PENDING',
+            'title' => 'Pending Item',
+            'quantity' => 1,
+            'fulfillable_quantity' => 1,
+            'fulfilled_quantity' => 0,
+            'price' => 10,
+        ]);
+        $fulfilled = \App\Models\ShopifyOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => '9102',
+            'sku' => 'SKU-DONE',
+            'title' => 'Fulfilled Item',
+            'quantity' => 1,
+            'fulfillable_quantity' => 0,
+            'fulfilled_quantity' => 1,
+            'price' => 10,
+        ]);
+        $fo = \App\Models\ShopifyFulfillmentOrder::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_fulfillment_order_id' => '7101',
+            'status' => 'open',
+        ]);
+        \App\Models\ShopifyFulfillmentOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_fulfillment_order_id' => $fo->id,
+            'shopify_order_line_item_id' => $pending->id,
+            'shopify_fo_line_item_id' => '8101',
+            'shopify_line_item_id' => '9101',
+            'total_quantity' => 1,
+            'remaining_quantity' => 1,
+        ]);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/cancel', [
+            'cancel_in_shopify' => false,
+        ])
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'cancelled');
+
+        $this->assertSame(0, (int) $pending->fresh()->fulfillable_quantity);
+        $this->assertSame(
+            0,
+            (int) \App\Models\ShopifyFulfillmentOrderLineItem::query()
+                ->where('shopify_order_line_item_id', $pending->id)
+                ->value('remaining_quantity')
+        );
+
+        $detail = $this->getJson('/api/shopify/orders/'.$order->id)->assertOk()->json('order');
+        $byId = collect($detail['line_items'] ?? [])->keyBy('id');
+        $this->assertSame('cancelled', $byId[$pending->id]['line_status'] ?? null);
+        $this->assertSame('fulfilled', $byId[$fulfilled->id]['line_status'] ?? null);
+    }
+
+    public function test_shopify_cancel_zeros_crm_line_fulfillable_quantities(): void
+    {
+        $this->actingAsAdmin();
+        [, $connection, $order] = $this->seedOrder();
+
+        $line = \App\Models\ShopifyOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => '9201',
+            'sku' => 'SKU-X',
+            'title' => 'Cancel Me',
+            'quantity' => 2,
+            'fulfillable_quantity' => 2,
+            'fulfilled_quantity' => 0,
+            'price' => 10,
+        ]);
+        $fo = \App\Models\ShopifyFulfillmentOrder::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_fulfillment_order_id' => '7201',
+            'status' => 'open',
+        ]);
+        \App\Models\ShopifyFulfillmentOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_fulfillment_order_id' => $fo->id,
+            'shopify_order_line_item_id' => $line->id,
+            'shopify_fo_line_item_id' => '8201',
+            'shopify_line_item_id' => '9201',
+            'total_quantity' => 2,
+            'remaining_quantity' => 2,
+        ]);
+
+        $api = Mockery::mock(\App\Services\ShopifyClient::class);
+        $api->shouldReceive('graphql')
+            ->once()
+            ->andReturn([
+                'orderCancel' => [
+                    'job' => ['id' => 'gid://shopify/Job/2', 'done' => true],
+                    'orderCancelUserErrors' => [],
+                    'userErrors' => [],
+                ],
+            ]);
+        $client = Mockery::mock(\App\Services\ShopifyClient::class);
+        $client->shouldReceive('forConnection')->andReturn($api);
+        $this->app->instance(\App\Services\ShopifyClient::class, $client);
+
+        $sync = Mockery::mock(\App\Services\ShopifyOrderSyncService::class);
+        $sync->shouldReceive('refreshOrderByShopifyId')
+            ->atLeast()
+            ->once()
+            ->andReturnUsing(function () use ($order) {
+                $order->cancelled_at = now();
+                $order->save();
+
+                return $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
+            });
+        $this->app->instance(\App\Services\ShopifyOrderSyncService::class, $sync);
+        $this->app->forgetInstance(ShopifyOrderActionService::class);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/cancel', [
+            'cancel_in_shopify' => true,
+        ])
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'cancelled');
+
+        $this->assertSame(0, (int) $line->fresh()->fulfillable_quantity);
+        $this->assertSame(
+            0,
+            (int) \App\Models\ShopifyFulfillmentOrderLineItem::query()
+                ->where('shopify_order_line_item_id', $line->id)
+                ->value('remaining_quantity')
+        );
+
+        $detail = $this->getJson('/api/shopify/orders/'.$order->id)->assertOk()->json('order');
+        $this->assertSame('cancelled', $detail['line_items'][0]['line_status'] ?? null);
+    }
+
     public function test_orders_meta_includes_cancelled_status(): void
     {
         $this->actingAsAdmin();

@@ -2293,15 +2293,7 @@ class ShopifyIntegrationController extends Controller
                 $qty = (int) $line->quantity;
                 $fulfilled = (int) ($line->fulfilled_quantity ?? 0);
                 $fulfillable = (int) ($line->fulfillable_quantity ?? 0);
-                if ($qty <= 0) {
-                    $lineStatus = 'cancelled';
-                } elseif ($fulfilled >= $qty && $qty > 0) {
-                    $lineStatus = 'fulfilled';
-                } elseif ($fulfillable <= 0 && $fulfilled > 0) {
-                    $lineStatus = 'fulfilled';
-                } else {
-                    $lineStatus = 'pending';
-                }
+                $lineStatus = $orders->lineDisplayStatus($order, $line);
 
                 $location = '—';
                 if ($crmVariantId && isset($locationsByVariantPk[(int) $crmVariantId])) {

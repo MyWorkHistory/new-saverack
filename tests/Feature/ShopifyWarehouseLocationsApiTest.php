@@ -121,7 +121,8 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
             'available' => 5,
             'reason' => 'Restock',
         ])->assertCreated()
-            ->assertJsonPath('item.available', 5);
+            ->assertJsonPath('item.available', 5)
+            ->assertJsonPath('shopify_sync.status', 'queued');
 
         $this->assertDatabaseHas('shopify_inventory_levels', [
             'connection_id' => $variant->connection_id,
@@ -158,7 +159,7 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
         });
     }
 
-    public function test_apply_available_delta_dispatches_push_after_response(): void
+    public function test_apply_available_delta_dispatches_push_job(): void
     {
         Bus::fake([PushShopifyVariantInventoryJob::class]);
         $variant = $this->makeVariant('PUSH-1');
@@ -170,12 +171,93 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
             'sync_inventory' => true,
         ]);
 
-        app(\App\Services\ShopifyWarehouseInventorySyncService::class)
+        $result = app(\App\Services\ShopifyWarehouseInventorySyncService::class)
             ->applyAvailableDelta($variant, 2);
 
+        $this->assertSame('queued', $result['status']);
         Bus::assertDispatched(PushShopifyVariantInventoryJob::class, function ($job) use ($variant) {
             return (int) $job->variantId === (int) $variant->id;
         });
+    }
+
+    public function test_store_item_skips_shopify_sync_without_sync_inventory_location(): void
+    {
+        Bus::fake([PushShopifyVariantInventoryJob::class]);
+        $this->actingAsAdmin();
+
+        $location = ShopifyWarehouseLocation::query()->create([
+            'name' => 'A-SKIP',
+            'type' => 'Large Shelf',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        $variant = $this->makeVariant('SKIP-1');
+        ShopifyLocation::query()->create([
+            'connection_id' => $variant->connection_id,
+            'shopify_location_id' => '9100',
+            'name' => 'No Sync',
+            'active' => true,
+            'sync_inventory' => false,
+        ]);
+
+        $this->postJson("/api/shopify/locations/{$location->id}/items", [
+            'client_account_id' => $variant->connection->client_account_id,
+            'shopify_variant_id' => $variant->id,
+            'available' => 2,
+            'reason' => 'Restock',
+        ])->assertCreated()
+            ->assertJsonPath('item.available', 2)
+            ->assertJsonPath('shopify_sync.status', 'skipped')
+            ->assertJsonPath('shopify_sync.reason', 'no_sync_inventory_locations');
+
+        Bus::assertNotDispatched(PushShopifyVariantInventoryJob::class);
+    }
+
+    public function test_push_inventory_matches_gid_and_numeric_location_ids(): void
+    {
+        $variant = $this->makeVariant('GID-1');
+        $connection = $variant->connection;
+
+        ShopifyLocation::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_location_id' => 'gid://shopify/Location/7777',
+            'name' => 'GID Loc',
+            'active' => true,
+            'sync_inventory' => true,
+        ]);
+        ShopifyInventoryLevel::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_inventory_item_id' => (string) $variant->shopify_inventory_item_id,
+            'shopify_location_id' => '7777',
+            'available' => 9,
+            'crm_set_at' => now(),
+        ]);
+
+        $api = \Mockery::mock(\App\Services\ShopifyClient::class);
+        $api->shouldReceive('graphql')
+            ->once()
+            ->withArgs(function (string $query, array $vars) use ($variant) {
+                $qty = $vars['input']['quantities'][0] ?? null;
+
+                return str_contains($query, 'inventorySetQuantities')
+                    && is_array($qty)
+                    && ($qty['locationId'] ?? null) === 'gid://shopify/Location/7777'
+                    && ($qty['inventoryItemId'] ?? null) === 'gid://shopify/InventoryItem/'.$variant->shopify_inventory_item_id
+                    && (int) ($qty['quantity'] ?? 0) === 9;
+            })
+            ->andReturn([
+                'inventorySetQuantities' => ['userErrors' => []],
+            ]);
+
+        $client = \Mockery::mock(\App\Services\ShopifyClient::class);
+        $client->shouldReceive('forConnection')->andReturn($api);
+        $this->app->instance(\App\Services\ShopifyClient::class, $client);
+        $this->app->forgetInstance(\App\Services\ShopifyProductSyncService::class);
+
+        $pushed = app(\App\Services\ShopifyProductSyncService::class)
+            ->pushInventoryToShopify($variant->fresh('connection'));
+
+        $this->assertSame(1, $pushed);
     }
 
     public function test_update_item_qty_applies_delta_to_sync_level(): void

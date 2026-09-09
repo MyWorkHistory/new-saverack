@@ -11,6 +11,8 @@ class ShopifyWarehouseInventoryLog extends Model
 
     public const TYPE_TRANSFER_IN = 'transfer_in';
 
+    public const TYPE_ADJUSTMENT = 'adjustment';
+
     public const TYPE_LABEL_TRANSFER = 'Transfer';
 
     protected $table = 'shopify_warehouse_inventory_logs';

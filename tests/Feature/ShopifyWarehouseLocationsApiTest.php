@@ -400,6 +400,7 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
 
         $this->patchJson("/api/shopify/locations/{$location->id}/items/{$item->id}", [
             'available' => 4,
+            'reason' => 'Cycle Counts / Physical Counts',
         ])->assertOk()
             ->assertJsonPath('item.available', 4)
             ->assertJsonPath('shopify_sync.status', 'pushed');
@@ -455,6 +456,7 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
             'item_id' => $item->id,
             'to_location_id' => $to->id,
             'quantity' => 20,
+            'reason' => 'Restock',
         ])->assertOk();
 
         $this->assertSame(
@@ -559,6 +561,7 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
             'item_id' => $item->id,
             'to_location_id' => $to->id,
             'quantity' => 40,
+            'reason' => 'Restock',
         ])->assertOk();
 
         $this->assertSame(80, (int) ShopifyWarehouseLocationItem::query()->where('id', $item->id)->value('available'));
@@ -642,6 +645,7 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
         $this->postJson("/api/shopify/locations/{$from->id}/bulk-transfer", [
             'item_ids' => [$itemA->id, $itemB->id],
             'to_location_id' => $to->id,
+            'reason' => 'Restock',
         ])->assertOk()
             ->assertJsonPath('transferred', 2)
             ->assertJsonPath('skipped', 0);
@@ -678,6 +682,7 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
         $this->postJson("/api/shopify/locations/{$from->id}/bulk-transfer", [
             'item_ids' => [$item->id],
             'to_location_id' => $from->id,
+            'reason' => 'Restock',
         ])->assertUnprocessable()
             ->assertJsonValidationErrors(['to_location_id']);
     }

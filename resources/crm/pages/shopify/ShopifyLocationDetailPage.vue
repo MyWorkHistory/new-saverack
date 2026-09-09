@@ -60,16 +60,18 @@ const skuSearchResults = ref([]);
 let skuSearchTimer = null;
 
 const form = reactive({ name: "", type: "", pickable: true, sellable: true });
-const qtyForm = reactive({ available: 0 });
+const qtyForm = reactive({ available: 0, reason: "" });
 const activeItem = ref(null);
 const transferToId = ref("");
 const transferQty = ref("0");
+const transferReason = ref("");
 
 const headerActionsOpen = ref(false);
 const filterMenuOpen = ref(false);
 const selectedIds = ref([]);
 const bulkTransferOpen = ref(false);
 const bulkTransferToId = ref("");
+const bulkTransferReason = ref("");
 const deleteLocationOpen = ref(false);
 const deleteLocationBusy = ref(false);
 const deleteItemOpen = ref(false);
@@ -297,6 +299,9 @@ async function confirmDeleteItem() {
 async function openBulkTransfer() {
   if (!selectedIds.value.length) return;
   bulkTransferToId.value = "";
+  bulkTransferReason.value = addItemReasons.value.includes("Restock")
+    ? "Restock"
+    : (addItemReasons.value[0] || "");
   try {
     const { data } = await api.get("/shopify/locations/options", { params: { exclude: locationId.value } });
     destLocations.value = Array.isArray(data?.data) ? data.data : [];
@@ -314,11 +319,16 @@ async function submitBulkTransfer() {
     toast.error("Select a destination location.");
     return;
   }
+  if (!String(bulkTransferReason.value || "").trim()) {
+    toast.error("Select a reason.");
+    return;
+  }
   busy.value = true;
   try {
     const { data } = await api.post(`/shopify/locations/${locationId.value}/bulk-transfer`, {
       item_ids: selectedIds.value,
       to_location_id: Number(bulkTransferToId.value),
+      reason: bulkTransferReason.value,
     });
     const transferred = Number(data?.transferred || 0);
     const skipped = Number(data?.skipped || 0);
@@ -338,16 +348,24 @@ async function submitBulkTransfer() {
 function openQty(row) {
   activeItem.value = row;
   qtyForm.available = Number(row.available || 0);
+  qtyForm.reason = addItemReasons.value.includes("Cycle Counts / Physical Counts")
+    ? "Cycle Counts / Physical Counts"
+    : (addItemReasons.value[0] || "");
   qtyOpen.value = true;
   manageOpenId.value = null;
 }
 
 async function saveQty() {
   if (!activeItem.value) return;
+  if (!String(qtyForm.reason || "").trim()) {
+    toast.error("Select a reason.");
+    return;
+  }
   busy.value = true;
   try {
     const { data } = await api.patch(`/shopify/locations/${locationId.value}/items/${activeItem.value.id}`, {
       available: Number(qtyForm.available || 0),
+      reason: qtyForm.reason,
     });
     toastShopifyWarehouseSync(
       toast,
@@ -367,6 +385,9 @@ async function openTransfer(row) {
   activeItem.value = row;
   transferToId.value = "";
   transferQty.value = "0";
+  transferReason.value = addItemReasons.value.includes("Restock")
+    ? "Restock"
+    : (addItemReasons.value[0] || "");
   manageOpenId.value = null;
   try {
     const { data } = await api.get("/shopify/locations/options", { params: { exclude: locationId.value } });
@@ -389,12 +410,17 @@ async function submitTransfer() {
     toast.error("Enter a quantity to transfer.");
     return;
   }
+  if (!String(transferReason.value || "").trim()) {
+    toast.error("Select a reason.");
+    return;
+  }
   busy.value = true;
   try {
     await api.post(`/shopify/locations/${locationId.value}/transfer`, {
       item_id: activeItem.value.id,
       to_location_id: Number(transferToId.value),
       quantity: qty,
+      reason: transferReason.value,
     });
     toast.success("Inventory transferred.");
     transferOpen.value = false;
@@ -955,7 +981,12 @@ onUnmounted(() => {
           </header>
           <div class="crm-vx-modal__body">
             <label class="form-label" for="edit-qty">Quantity</label>
-            <input id="edit-qty" v-model="qtyForm.available" type="number" min="0" class="form-control" />
+            <input id="edit-qty" v-model="qtyForm.available" type="number" min="0" class="form-control mb-3" />
+            <label class="form-label" for="edit-qty-reason">Reason</label>
+            <select id="edit-qty-reason" v-model="qtyForm.reason" class="form-select">
+              <option value="">Select reason</option>
+              <option v-for="reason in addItemReasons" :key="reason" :value="reason">{{ reason }}</option>
+            </select>
           </div>
           <footer class="crm-vx-modal__footer justify-content-end">
             <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" :disabled="busy" @click="qtyOpen = false">Cancel</button>
@@ -1099,12 +1130,15 @@ onUnmounted(() => {
       :available="Number(activeItem?.available || 0)"
       :to-location-id="transferToId"
       :quantity="transferQty"
+      :reason="transferReason"
       :locations="destLocations"
+      :reasons="addItemReasons"
       @close="transferOpen = false"
       @submit="submitTransfer"
       @all="transferQty = String(activeItem?.available || 0)"
       @update:to-location-id="transferToId = $event"
       @update:quantity="transferQty = $event"
+      @update:reason="transferReason = $event"
     />
 
     <ShopifyLocationBulkTransferModal
@@ -1113,10 +1147,13 @@ onUnmounted(() => {
       :items="selectedItems"
       :from-name="location?.name || ''"
       :to-location-id="bulkTransferToId"
+      :reason="bulkTransferReason"
       :locations="destLocations"
+      :reasons="addItemReasons"
       @close="bulkTransferOpen = false"
       @submit="submitBulkTransfer"
       @update:to-location-id="bulkTransferToId = $event"
+      @update:reason="bulkTransferReason = $event"
     />
 
     <ConfirmModal

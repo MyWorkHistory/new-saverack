@@ -321,9 +321,20 @@ class ShopifyWarehouseLocationController extends Controller
             'location_id' => $shopifyWarehouseLocation->id,
             'shopify_variant_id' => $variant->id,
         ]);
-        $item->available = (int) $item->available + $qty;
+        $oldQty = (int) $item->available;
+        $item->available = $oldQty + $qty;
         $item->save();
         $item->load(['variant.product', 'variant.connection.clientAccount']);
+
+        $this->inventoryLogs->recordAdjustment(
+            (int) $variant->id,
+            $shopifyWarehouseLocation,
+            $oldQty,
+            (int) $item->available,
+            (string) $validated['reason'],
+            $request->user(),
+            sprintf('Added %d', $qty)
+        );
 
         $shopifySync = $this->warehouseInventorySync->applyAvailableDelta($variant, $qty);
 
@@ -344,15 +355,26 @@ class ShopifyWarehouseLocationController extends Controller
         }
         $validated = $request->validate([
             'available' => ['required', 'integer', 'min:0'],
+            'reason' => ['required', 'string', Rule::in(ShopifyWarehouseLocation::addItemReasons())],
         ]);
         $qty = (int) $validated['available'];
         $oldQty = (int) $shopifyWarehouseLocationItem->available;
+        $reason = (string) $validated['reason'];
         $variant = ShopifyProductVariant::query()->find((int) $shopifyWarehouseLocationItem->shopify_variant_id);
 
         if ($qty <= 0) {
             $shopifyWarehouseLocationItem->delete();
             $shopifySync = ['status' => 'noop', 'reason' => null];
             if ($variant !== null && $oldQty !== 0) {
+                $this->inventoryLogs->recordAdjustment(
+                    (int) $variant->id,
+                    $shopifyWarehouseLocation,
+                    $oldQty,
+                    0,
+                    $reason,
+                    $request->user(),
+                    sprintf('Removed %d', $oldQty)
+                );
                 $shopifySync = $this->warehouseInventorySync->applyAvailableDelta($variant, -$oldQty);
             }
 
@@ -367,6 +389,14 @@ class ShopifyWarehouseLocationController extends Controller
         $delta = $qty - $oldQty;
         $shopifySync = ['status' => 'noop', 'reason' => null];
         if ($variant !== null && $delta !== 0) {
+            $this->inventoryLogs->recordAdjustment(
+                (int) $variant->id,
+                $shopifyWarehouseLocation,
+                $oldQty,
+                $qty,
+                $reason,
+                $request->user()
+            );
             $shopifySync = $this->warehouseInventorySync->applyAvailableDelta($variant, $delta);
         }
 
@@ -393,6 +423,15 @@ class ShopifyWarehouseLocationController extends Controller
         $shopifyWarehouseLocationItem->delete();
         $shopifySync = ['status' => 'noop', 'reason' => null];
         if ($variant !== null && $oldQty !== 0) {
+            $this->inventoryLogs->recordAdjustment(
+                (int) $variant->id,
+                $shopifyWarehouseLocation,
+                $oldQty,
+                0,
+                'Client-Requested Adjustments',
+                $request->user(),
+                'Removed from location'
+            );
             $shopifySync = $this->warehouseInventorySync->applyAvailableDelta($variant, -$oldQty);
         }
 
@@ -409,6 +448,7 @@ class ShopifyWarehouseLocationController extends Controller
             'item_id' => ['required', 'integer'],
             'to_location_id' => ['required', 'integer'],
             'quantity' => ['required', 'integer', 'min:1'],
+            'reason' => ['required', 'string', Rule::in(ShopifyWarehouseLocation::addItemReasons())],
         ]);
         $to = $this->resolveTransferDestination(
             $shopifyWarehouseLocation,
@@ -422,7 +462,8 @@ class ShopifyWarehouseLocationController extends Controller
                     $to,
                     (int) $validated['item_id'],
                     (int) $validated['quantity'],
-                    $request->user()
+                    $request->user(),
+                    (string) $validated['reason']
                 );
             });
         } catch (ValidationException $e) {
@@ -443,6 +484,7 @@ class ShopifyWarehouseLocationController extends Controller
             'item_ids' => ['required', 'array', 'min:1'],
             'item_ids.*' => ['integer', 'distinct'],
             'to_location_id' => ['required', 'integer'],
+            'reason' => ['required', 'string', Rule::in(ShopifyWarehouseLocation::addItemReasons())],
         ]);
         $to = $this->resolveTransferDestination(
             $shopifyWarehouseLocation,
@@ -461,7 +503,8 @@ class ShopifyWarehouseLocationController extends Controller
                             $to,
                             $itemId,
                             null,
-                            $request->user()
+                            $request->user(),
+                            (string) $validated['reason']
                         );
                         $transferred++;
                     } catch (ValidationException $e) {
@@ -535,7 +578,8 @@ class ShopifyWarehouseLocationController extends Controller
         ShopifyWarehouseLocation $to,
         int $itemId,
         ?int $quantity,
-        ?User $actor = null
+        ?User $actor = null,
+        ?string $reason = null
     ): void {
         /** @var ShopifyWarehouseLocationItem|null $fromItem */
         $fromItem = ShopifyWarehouseLocationItem::query()
@@ -600,7 +644,8 @@ class ShopifyWarehouseLocationController extends Controller
             $fromNew,
             $toOld,
             $toNew,
-            $actor
+            $actor,
+            $reason
         );
     }
 

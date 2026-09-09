@@ -1,4 +1,7 @@
 <script setup>
+import { computed, watch } from "vue";
+import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
+
 const props = defineProps({
   open: { type: Boolean, default: false },
   busy: { type: Boolean, default: false },
@@ -9,17 +12,48 @@ const props = defineProps({
   available: { type: Number, default: 0 },
   toLocationId: { type: [String, Number], default: "" },
   quantity: { type: [String, Number], default: "0" },
+  reason: { type: String, default: "" },
   locations: { type: Array, default: () => [] },
+  reasons: { type: Array, default: () => [] },
 });
 
-const emit = defineEmits(["close", "submit", "update:toLocationId", "update:quantity", "all"]);
+const emit = defineEmits([
+  "close",
+  "submit",
+  "all",
+  "update:toLocationId",
+  "update:quantity",
+  "update:reason",
+]);
+
+const locationOptions = computed(() =>
+  (props.locations || []).map((loc) => ({
+    id: Number(loc.id),
+    name: String(loc.name || loc.id),
+  })),
+);
+
+const toModel = computed({
+  get: () => (props.toLocationId === "" || props.toLocationId == null ? "" : String(props.toLocationId)),
+  set: (v) => emit("update:toLocationId", v == null ? "" : String(v)),
+});
+
+watch(
+  () => props.open,
+  (isOpen) => {
+    if (isOpen && !String(props.reason || "").trim() && props.reasons.length) {
+      const restock = props.reasons.find((r) => r === "Restock");
+      emit("update:reason", String(restock || props.reasons[0]));
+    }
+  },
+);
 </script>
 
 <template>
   <Teleport to="body">
     <div v-if="open" class="crm-vx-modal-overlay" @click.self="emit('close')">
       <div class="crm-vx-modal crm-vx-modal--sm shopify-xfer-modal" @click.stop>
-        <button type="button" class="crm-vx-modal__close" aria-label="Close" @click="emit('close')">
+        <button type="button" class="crm-vx-modal__close" aria-label="Close" :disabled="busy" @click="emit('close')">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
           </svg>
@@ -39,24 +73,23 @@ const emit = defineEmits(["close", "submit", "update:toLocationId", "update:quan
             </div>
           </div>
 
-          <section class="shopify-xfer-card">
-            <div class="shopify-xfer-card__icon shopify-xfer-card__icon--from" aria-hidden="true">
-              <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 21V8.25L12 3l8.25 5.25V21M9 21v-6h6v6" />
-              </svg>
-            </div>
-            <div class="min-w-0 flex-grow-1">
-              <h3 class="shopify-xfer-card__title">Transfer From</h3>
-              <p class="shopify-xfer-card__sub">Current location and quantity</p>
-              <div class="shopify-xfer-card__grid">
-                <div>
-                  <div class="shopify-xfer-card__label">Location</div>
-                  <div class="shopify-xfer-card__value">{{ fromName || "—" }}</div>
+          <section class="shopify-xfer-from">
+            <h3 class="shopify-xfer-from__title">Transfer From</h3>
+            <p class="shopify-xfer-from__sub">Current location and quantity</p>
+            <div class="shopify-xfer-from__info">
+              <div>
+                <div class="shopify-xfer-from__info-label">Location</div>
+                <div class="shopify-xfer-from__info-loc">
+                  <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                  </svg>
+                  <span>{{ fromName || "—" }}</span>
                 </div>
-                <div>
-                  <div class="shopify-xfer-card__label">Quantity Available</div>
-                  <div class="shopify-xfer-card__value">{{ available }}</div>
-                </div>
+              </div>
+              <div class="shopify-xfer-from__info-right">
+                <div class="shopify-xfer-from__info-label">Current QTY</div>
+                <div class="shopify-xfer-from__info-qty">{{ Number(available || 0).toLocaleString("en-US") }}</div>
               </div>
             </div>
           </section>
@@ -77,21 +110,22 @@ const emit = defineEmits(["close", "submit", "update:toLocationId", "update:quan
             <div class="min-w-0 flex-grow-1">
               <h3 class="shopify-xfer-card__title">Transfer To</h3>
               <p class="shopify-xfer-card__sub">Select a new location and quantity</p>
-              <label class="shopify-xfer-card__label" for="shopify-xfer-to">Location</label>
-              <select
-                id="shopify-xfer-to"
-                class="form-select mb-3"
-                :value="toLocationId"
+              <label class="shopify-xfer-card__label">Location</label>
+              <CrmSearchableSelect
+                v-model="toModel"
+                class="mb-3"
+                appearance="staff"
+                aria-label="Select destination location"
+                :options="locationOptions"
                 :disabled="busy"
-                @change="emit('update:toLocationId', $event.target.value)"
-              >
-                <option value="">Select location</option>
-                <option v-for="loc in locations" :key="loc.id" :value="String(loc.id)">
-                  {{ loc.name }}
-                </option>
-              </select>
+                :allow-empty="true"
+                placeholder="Select location"
+                empty-label="Select location"
+                search-placeholder="Search locations…"
+                teleport-panel
+              />
               <label class="shopify-xfer-card__label" for="shopify-xfer-qty">Quantity</label>
-              <div class="d-flex gap-2">
+              <div class="d-flex gap-2 mb-3">
                 <input
                   id="shopify-xfer-qty"
                   class="form-control"
@@ -113,6 +147,17 @@ const emit = defineEmits(["close", "submit", "update:toLocationId", "update:quan
                   All
                 </button>
               </div>
+              <label class="shopify-xfer-card__label" for="shopify-xfer-reason">Reason</label>
+              <select
+                id="shopify-xfer-reason"
+                class="form-select"
+                :value="reason"
+                :disabled="busy"
+                @change="emit('update:reason', $event.target.value)"
+              >
+                <option value="">Select reason</option>
+                <option v-for="r in reasons" :key="r" :value="r">{{ r }}</option>
+              </select>
             </div>
           </section>
         </div>
@@ -179,6 +224,58 @@ const emit = defineEmits(["close", "submit", "update:toLocationId", "update:quan
   font-size: 0.8125rem;
   color: #64748b;
 }
+.shopify-xfer-from {
+  margin-bottom: 0.25rem;
+}
+.shopify-xfer-from__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.shopify-xfer-from__sub {
+  margin: 0.15rem 0 0.65rem;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+.shopify-xfer-from__info {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 0.65rem;
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+}
+.shopify-xfer-from__info-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  margin-bottom: 0.35rem;
+}
+.shopify-xfer-from__info-loc {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.shopify-xfer-from__info-loc svg {
+  color: #2563eb;
+  flex-shrink: 0;
+}
+.shopify-xfer-from__info-right {
+  text-align: right;
+}
+.shopify-xfer-from__info-qty {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.1;
+}
 .shopify-xfer-card {
   display: flex;
   gap: 0.75rem;
@@ -196,9 +293,6 @@ const emit = defineEmits(["close", "submit", "update:toLocationId", "update:quan
   justify-content: center;
   flex-shrink: 0;
   color: #fff;
-}
-.shopify-xfer-card__icon--from {
-  background: #2563eb;
 }
 .shopify-xfer-card__icon--to {
   background: #16a34a;
@@ -219,15 +313,6 @@ const emit = defineEmits(["close", "submit", "update:toLocationId", "update:quan
   color: #64748b;
   margin-bottom: 0.2rem;
   display: block;
-}
-.shopify-xfer-card__value {
-  font-weight: 700;
-  color: #0f172a;
-}
-.shopify-xfer-card__grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
 }
 .shopify-xfer-arrow {
   width: 36px;

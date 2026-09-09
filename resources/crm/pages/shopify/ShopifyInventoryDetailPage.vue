@@ -10,7 +10,7 @@ import ShopifyInventoryEditProductModal from "../../components/shopify/ShopifyIn
 import ShopifyInventoryProductSettingsModal from "../../components/shopify/ShopifyInventoryProductSettingsModal.vue";
 import ShopifyInventoryBundleItemsModal from "../../components/shopify/ShopifyInventoryBundleItemsModal.vue";
 import ShopifyProductLocationEditQtyModal from "../../components/shopify/ShopifyProductLocationEditQtyModal.vue";
-import ShopifyProductLocationTransferModal from "../../components/shopify/ShopifyProductLocationTransferModal.vue";
+import ShopifyLocationTransferModal from "../../components/shopify/ShopifyLocationTransferModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 import { toastShopifyWarehouseSync } from "../../utils/shopifyWarehouseSyncToast.js";
@@ -1100,11 +1100,13 @@ onUnmounted(() => {
       @saved="load"
     />
 
-    <ShopifyProductLocationTransferModal
+    <ShopifyLocationTransferModal
       :open="transferOpen"
       :busy="locBusy"
+      :product-title="variant?.product_title || variant?.title || ''"
+      :sku="variant?.sku || ''"
+      :image-url="variant?.image_url || ''"
       :from-name="activeLocRow?.name || ''"
-      :from-location-id="activeLocRow?.location_id || ''"
       :available="Number(activeLocRow?.available || 0)"
       :to-location-id="transferToId"
       :quantity="transferQty"

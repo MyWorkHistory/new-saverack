@@ -64,6 +64,7 @@ class ShopifyWarehouseInventoryLogApiTest extends TestCase
             'item_id' => $item->id,
             'to_location_id' => $to->id,
             'quantity' => 50,
+            'reason' => 'Restock',
         ])->assertOk();
 
         $logs = ShopifyWarehouseInventoryLog::query()
@@ -78,7 +79,7 @@ class ShopifyWarehouseInventoryLogApiTest extends TestCase
         $this->assertNotNull($in);
         $this->assertSame($out->transfer_group, $in->transfer_group);
         $this->assertStringStartsWith('TRF-', (string) $out->transfer_group);
-        $this->assertSame('Transfer From A-01-005 to B-03-022 - QTY: 50', $out->note);
+        $this->assertSame('Transfer From A-01-005 to B-03-022 - QTY: 50 - Restock', $out->note);
         $this->assertSame($out->note, $in->note);
         $this->assertSame(100, (int) $out->old_on_hand);
         $this->assertSame(50, (int) $out->new_on_hand);
@@ -122,6 +123,7 @@ class ShopifyWarehouseInventoryLogApiTest extends TestCase
         $this->postJson("/api/shopify/locations/{$from->id}/bulk-transfer", [
             'item_ids' => [$itemA->id, $itemB->id],
             'to_location_id' => $to->id,
+            'reason' => 'Restock',
         ])->assertOk()
             ->assertJsonPath('transferred', 2);
 
@@ -129,7 +131,7 @@ class ShopifyWarehouseInventoryLogApiTest extends TestCase
         $this->assertSame(2, ShopifyWarehouseInventoryLog::query()->where('shopify_variant_id', $variantB->id)->count());
     }
 
-    public function test_store_item_does_not_create_inventory_log(): void
+    public function test_store_item_creates_adjustment_inventory_log(): void
     {
         Bus::fake([PushShopifyVariantInventoryJob::class]);
         $this->actingAsAdmin();
@@ -140,7 +142,12 @@ class ShopifyWarehouseInventoryLogApiTest extends TestCase
             'pickable' => true,
             'sellable' => true,
         ]);
-        $variant = $this->makeVariant('NO-LOG');
+        $variant = $this->makeVariant('ADD-LOG');
+
+        $sync = \Mockery::mock(\App\Services\ShopifyProductSyncService::class);
+        $sync->shouldReceive('pushInventoryToShopify')->andReturn(0);
+        $this->app->instance(\App\Services\ShopifyProductSyncService::class, $sync);
+        $this->app->forgetInstance(\App\Services\ShopifyWarehouseInventorySyncService::class);
 
         $this->postJson("/api/shopify/locations/{$location->id}/items", [
             'client_account_id' => $variant->connection->client_account_id,
@@ -149,7 +156,82 @@ class ShopifyWarehouseInventoryLogApiTest extends TestCase
             'reason' => 'Account Setup',
         ])->assertCreated();
 
-        $this->assertSame(0, ShopifyWarehouseInventoryLog::query()->count());
+        $log = ShopifyWarehouseInventoryLog::query()->first();
+        $this->assertNotNull($log);
+        $this->assertSame(ShopifyWarehouseInventoryLog::TYPE_ADJUSTMENT, $log->type);
+        $this->assertSame('Account Setup', $log->type_label);
+        $this->assertSame(5, (int) $log->quantity_delta);
+        $this->assertSame(0, (int) $log->old_on_hand);
+        $this->assertSame(5, (int) $log->new_on_hand);
+        $this->assertSame('Added 5', $log->note);
+    }
+
+    public function test_update_item_qty_creates_adjustment_inventory_log(): void
+    {
+        Bus::fake([PushShopifyVariantInventoryJob::class]);
+        $this->actingAsAdmin();
+
+        $location = ShopifyWarehouseLocation::query()->create([
+            'name' => 'EDIT-LOC',
+            'type' => 'Large Shelf',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        $variant = $this->makeVariant('EDIT-LOG');
+        $item = ShopifyWarehouseLocationItem::query()->create([
+            'location_id' => $location->id,
+            'shopify_variant_id' => $variant->id,
+            'available' => 10,
+        ]);
+
+        $sync = \Mockery::mock(\App\Services\ShopifyProductSyncService::class);
+        $sync->shouldReceive('pushInventoryToShopify')->once()->andReturn(1);
+        $this->app->instance(\App\Services\ShopifyProductSyncService::class, $sync);
+        $this->app->forgetInstance(\App\Services\ShopifyWarehouseInventorySyncService::class);
+
+        $this->patchJson("/api/shopify/locations/{$location->id}/items/{$item->id}", [
+            'available' => 4,
+            'reason' => 'Cycle Counts / Physical Counts',
+        ])->assertOk();
+
+        $log = ShopifyWarehouseInventoryLog::query()->first();
+        $this->assertNotNull($log);
+        $this->assertSame(ShopifyWarehouseInventoryLog::TYPE_ADJUSTMENT, $log->type);
+        $this->assertSame('Cycle Counts / Physical Counts', $log->type_label);
+        $this->assertSame(-6, (int) $log->quantity_delta);
+        $this->assertSame(10, (int) $log->old_on_hand);
+        $this->assertSame(4, (int) $log->new_on_hand);
+    }
+
+    public function test_transfer_requires_reason(): void
+    {
+        $this->actingAsAdmin();
+
+        $from = ShopifyWarehouseLocation::query()->create([
+            'name' => 'A-REQ',
+            'type' => 'Large Bin',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        $to = ShopifyWarehouseLocation::query()->create([
+            'name' => 'B-REQ',
+            'type' => 'Large Bin',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        $variant = $this->makeVariant('REQ-1');
+        $item = ShopifyWarehouseLocationItem::query()->create([
+            'location_id' => $from->id,
+            'shopify_variant_id' => $variant->id,
+            'available' => 5,
+        ]);
+
+        $this->postJson("/api/shopify/locations/{$from->id}/transfer", [
+            'item_id' => $item->id,
+            'to_location_id' => $to->id,
+            'quantity' => 2,
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['reason']);
     }
 
     public function test_logs_meta_includes_transfer_and_adjustment_reasons(): void
@@ -193,6 +275,7 @@ class ShopifyWarehouseInventoryLogApiTest extends TestCase
             'item_id' => $item->id,
             'to_location_id' => $to->id,
             'quantity' => 10,
+            'reason' => 'Restock',
         ])->assertOk();
 
         $this->getJson("/api/shopify/inventory/{$variant->id}/logs?q=B-03")

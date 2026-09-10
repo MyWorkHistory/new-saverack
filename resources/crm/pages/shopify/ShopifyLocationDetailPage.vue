@@ -10,11 +10,12 @@ import ShopifyLocationBulkTransferModal from "../../components/shopify/ShopifyLo
 import ShopifyLocationTransferModal from "../../components/shopify/ShopifyLocationTransferModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
+import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
 import { crmIsAdmin } from "../../utils/crmUser.js";
 import { toastShopifyWarehouseSync } from "../../utils/shopifyWarehouseSyncToast.js";
 
 const MENU_W = 168;
-const MENU_H = 148;
+const MENU_H = 188;
 
 const props = defineProps({
   id: { type: String, default: "" },
@@ -311,6 +312,66 @@ async function openBulkTransfer() {
     return;
   }
   bulkTransferOpen.value = true;
+}
+
+async function printLocationSheet() {
+  if (!locationId.value) return;
+  busy.value = true;
+  try {
+    const params = {};
+    const q = searchQuery.value.trim();
+    if (q) params.q = q;
+    const accountId = Number(filterAccountId.value || 0);
+    if (accountId > 0) params.client_account_id = accountId;
+    await openApiPdfBlob(api, `/shopify/locations/${locationId.value}/print.pdf`, { params });
+  } catch (e) {
+    toast.error(e?.message || "Could not print location.");
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function printItemBarcode(row) {
+  const variantId = Number(row?.variant_id || 0);
+  if (variantId <= 0) {
+    toast.error("This item has no product barcode to print.");
+    return;
+  }
+  manageOpenId.value = null;
+  busy.value = true;
+  try {
+    await openApiPdfBlob(api, `/shopify/inventory/${variantId}/barcode-label.pdf`);
+  } catch (e) {
+    toast.error(e?.message || "Could not print barcode.");
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function printSelectedBarcodes() {
+  const variantIds = [];
+  const seen = new Set();
+  for (const row of selectedItems.value) {
+    const id = Number(row?.variant_id || 0);
+    if (id <= 0 || seen.has(id)) continue;
+    seen.add(id);
+    variantIds.push(id);
+  }
+  if (!variantIds.length) {
+    toast.error("Select items with a product barcode to print.");
+    return;
+  }
+  busy.value = true;
+  try {
+    await openApiPdfBlob(api, "/shopify/inventory/barcode-labels.pdf", {
+      method: "post",
+      data: { ids: variantIds },
+    });
+  } catch (e) {
+    toast.error(e?.message || "Could not print barcodes.");
+  } finally {
+    busy.value = false;
+  }
 }
 
 async function submitBulkTransfer() {
@@ -618,6 +679,17 @@ onUnmounted(() => {
 
     <template v-else-if="location">
       <div class="d-flex flex-wrap align-items-center justify-content-end gap-2 mb-3">
+        <button
+          type="button"
+          class="btn btn-sm btn-primary staff-page-primary d-inline-flex align-items-center gap-2"
+          :disabled="busy"
+          @click="printLocationSheet"
+        >
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.76v5.12a1.2 1.2 0 001.2 1.2h8.16a1.2 1.2 0 001.2-1.2v-5.12M6.72 13.76H4.8A1.2 1.2 0 013.6 12.56V8.48A1.2 1.2 0 014.8 7.28h14.4a1.2 1.2 0 011.2 1.2v4.08a1.2 1.2 0 01-1.2 1.2h-1.92M6.72 13.76h10.56M8.16 7.28V4.4A.8.8 0 018.96 3.6h6.08a.8.8 0 01.8.8v2.88" />
+          </svg>
+          Print
+        </button>
         <button type="button" class="btn btn-sm btn-primary staff-page-primary" @click="openAddItem">
           Add Item
         </button>
@@ -766,6 +838,9 @@ onUnmounted(() => {
             {{ selectedIds.length }} item{{ selectedIds.length === 1 ? "" : "s" }} selected
           </span>
           <button type="button" class="btn btn-sm staff-page-primary" @click="openBulkTransfer">Bulk Transfer</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" :disabled="busy" @click="printSelectedBarcodes">
+            Print Barcodes
+          </button>
           <button
             type="button"
             class="btn btn-link btn-sm staff-bulk-clear-link ms-auto text-decoration-none"
@@ -900,6 +975,12 @@ onUnmounted(() => {
             <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897z" />
           </svg>
           Edit
+        </button>
+        <button type="button" class="staff-row-menu__item shopify-loc-menu-item" role="menuitem" @click="printItemBarcode(manageMenuItem)">
+          <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.76v5.12a1.2 1.2 0 001.2 1.2h8.16a1.2 1.2 0 001.2-1.2v-5.12M6.72 13.76H4.8A1.2 1.2 0 013.6 12.56V8.48A1.2 1.2 0 014.8 7.28h14.4a1.2 1.2 0 011.2 1.2v4.08a1.2 1.2 0 01-1.2 1.2h-1.92M6.72 13.76h10.56M8.16 7.28V4.4A.8.8 0 018.96 3.6h6.08a.8.8 0 01.8.8v2.88" />
+          </svg>
+          Print Barcode
         </button>
         <button type="button" class="staff-row-menu__item shopify-loc-menu-item" role="menuitem" @click="openTransfer(manageMenuItem)">
           <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">

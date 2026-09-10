@@ -749,6 +749,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'updateVariant']);
         Route::patch('/inventory/{shopifyVariant}/settings', [ShopifyIntegrationController::class, 'updateProductSettings']);
         Route::post('/inventory/{shopifyVariant}/image', [ShopifyIntegrationController::class, 'uploadVariantImage']);
+        Route::post('/inventory/barcode-labels.pdf', [ShopifyIntegrationController::class, 'barcodeLabelsBulkPdf']);
         Route::get('/inventory/{shopifyVariant}/barcode-label.pdf', [ShopifyIntegrationController::class, 'barcodeLabelPdf']);
         Route::get('/inventory/{shopifyVariant}/barcode-label', [ShopifyIntegrationController::class, 'barcodeLabel']);
         Route::get('/inventory/{shopifyVariant}/bundle-components', [ShopifyIntegrationController::class, 'bundleComponents']);
@@ -764,6 +765,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/locations', [ShopifyWarehouseLocationController::class, 'index']);
         Route::post('/locations', [ShopifyWarehouseLocationController::class, 'store']);
         Route::get('/locations/{shopify_warehouse_location}', [ShopifyWarehouseLocationController::class, 'show']);
+        Route::get('/locations/{shopify_warehouse_location}/print.pdf', [ShopifyWarehouseLocationController::class, 'printInventory']);
         Route::patch('/locations/{shopify_warehouse_location}', [ShopifyWarehouseLocationController::class, 'update']);
         Route::delete('/locations/{shopify_warehouse_location}', [ShopifyWarehouseLocationController::class, 'destroy']);
         Route::post('/locations/{shopify_warehouse_location}/transfer', [ShopifyWarehouseLocationController::class, 'transfer']);

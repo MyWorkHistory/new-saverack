@@ -687,6 +687,48 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
             ->assertJsonValidationErrors(['to_location_id']);
     }
 
+    public function test_location_print_pdf_returns_pdf(): void
+    {
+        $this->actingAsAdmin();
+
+        $location = ShopifyWarehouseLocation::query()->create([
+            'name' => 'A-01-02',
+            'type' => 'Medium Pallet',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        $variant = $this->makeVariant('aaaa');
+        ShopifyWarehouseLocationItem::query()->create([
+            'location_id' => $location->id,
+            'shopify_variant_id' => $variant->id,
+            'available' => 160,
+        ]);
+
+        $response = $this->get("/api/shopify/locations/{$location->id}/print.pdf");
+        $response->assertOk();
+        $this->assertStringContainsString('application/pdf', (string) $response->headers->get('content-type'));
+        $this->assertStringStartsWith('%PDF', $response->getContent());
+    }
+
+    public function test_bulk_barcode_labels_pdf_returns_pdf(): void
+    {
+        $this->actingAsAdmin();
+
+        $variantA = $this->makeVariant('sku-a');
+        $variantA->barcode = 'bc-a';
+        $variantA->save();
+        $variantB = $this->makeVariant('sku-b');
+        $variantB->barcode = 'bc-b';
+        $variantB->save();
+
+        $response = $this->postJson('/api/shopify/inventory/barcode-labels.pdf', [
+            'ids' => [$variantA->id, $variantB->id],
+        ]);
+        $response->assertOk();
+        $this->assertStringContainsString('application/pdf', (string) $response->headers->get('content-type'));
+        $this->assertStringStartsWith('%PDF', $response->getContent());
+    }
+
     private function makeVariant(string $sku = 'TIN'): ShopifyProductVariant
     {
         static $variantCounter = 0;

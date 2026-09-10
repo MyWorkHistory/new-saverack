@@ -78,7 +78,7 @@ const inventoryReasons = ref([
   "Returns Processing",
 ]);
 
-/** SKU → optimistic location/status until snapshot catch-up after background transfer. */
+/** SKU → temporary from/to display until snapshot matches after a transfer. */
 const transferOverridesBySku = ref({});
 
 let enrichPollTimer = null;
@@ -712,7 +712,8 @@ async function submitTransfer() {
     from_location_id: fromLoc.location_id,
     quantity: qty,
     reason: transferForm.reason,
-    background: 1,
+    // Wait for ShipHero so Restock never shows Complete unless the move landed.
+    background: 0,
     restock_from_location_name: fromName,
     restock_source_kind:
       transferMode.value === RESTOCK_STATUS_TRANSFER_CART ? "cart" : "backstock",
@@ -772,7 +773,6 @@ async function submitTransfer() {
   }
 
   const row = transferRow.value;
-  // Apply CRM status only after ShipHero transfer succeeds (job or sync).
   body.restock_next_status = nextStatus;
 
   transferBusy.value = true;
@@ -780,28 +780,10 @@ async function submitTransfer() {
     await api.post("/inventory/transfer", body);
   } catch (e) {
     transferBusy.value = false;
-    toast.errorFrom(e, "Could not transfer quantity.");
+    toast.errorFrom(e, "Could not transfer quantity in ShipHero.");
     return;
   }
 
-  // Close after queue/accept; keep prior status until job applies next status.
-  const previousStatus = rowStatus(row);
-  const previousLabel = row.status_label;
-  const previousSnapshot = {
-    backstock_locations: row.backstock_locations,
-    backstock_qty: row.backstock_qty,
-    pick_location: row.pick_location,
-    pickable_qty: row.pickable_qty,
-  };
-  transferModalOpen.value = false;
-  transferBusy.value = false;
-  toast.success(
-    nextStatus === RESTOCK_STATUS_TRANSFER_CART
-      ? "Transfer queued to cart. Status updates when ShipHero finishes."
-      : "Transfer queued. Marked complete when ShipHero finishes.",
-  );
-
-  // Immediate UI update for from + to (snapshot polls then confirm persisted values).
   const toQtyBefore =
     destinationKind === "pick"
       ? Number(
@@ -810,6 +792,7 @@ async function submitTransfer() {
           )?.quantity ?? 0,
         )
       : 0;
+
   applyOptimisticTransferToRow(row, {
     fromName,
     toName,
@@ -821,45 +804,29 @@ async function submitTransfer() {
     nextStatus,
   });
 
+  // Drop any stale override — server already persisted status on sync success.
   const skuKey = String(row.sku || "")
     .trim()
     .toLowerCase();
-  if (skuKey) {
-    transferOverridesBySku.value = {
-      ...transferOverridesBySku.value,
-      [skuKey]: {
-        backstock_locations: row.backstock_locations,
-        backstock_qty: row.backstock_qty,
-        pick_location: row.pick_location,
-        pickable_qty: row.pickable_qty,
-        status: row.status,
-        status_label: row.status_label,
-      },
-    };
+  if (skuKey && transferOverridesBySku.value[skuKey]) {
+    const next = { ...transferOverridesBySku.value };
+    delete next[skuKey];
+    transferOverridesBySku.value = next;
   }
 
-  // Refresh soon so the page picks up persisted snapshot fields after the job.
-  loadSnapshot({ showSpinner: false }).catch(() => {});
-  const pollMs = [2500, 6000, 12000, 25000];
-  pollMs.forEach((ms, index) => {
-    window.setTimeout(() => {
-      loadSnapshot({ showSpinner: false }).catch(() => {
-        if (index === pollMs.length - 1) {
-          row.status = previousStatus;
-          row.status_label = previousLabel;
-          row.backstock_locations = previousSnapshot.backstock_locations;
-          row.backstock_qty = previousSnapshot.backstock_qty;
-          row.pick_location = previousSnapshot.pick_location;
-          row.pickable_qty = previousSnapshot.pickable_qty;
-          if (skuKey) {
-            const next = { ...transferOverridesBySku.value };
-            delete next[skuKey];
-            transferOverridesBySku.value = next;
-          }
-        }
-      });
-    }, ms);
-  });
+  transferModalOpen.value = false;
+  transferBusy.value = false;
+  toast.success(
+    nextStatus === RESTOCK_STATUS_TRANSFER_CART
+      ? "Transferred to cart in ShipHero."
+      : "Transferred in ShipHero.",
+  );
+
+  try {
+    await loadSnapshot({ showSpinner: false });
+  } catch {
+    /* row already updated from successful transfer */
+  }
 }
 
 function adjustLocationListQuantity(list, locationName, delta, knownQtyBefore = null) {

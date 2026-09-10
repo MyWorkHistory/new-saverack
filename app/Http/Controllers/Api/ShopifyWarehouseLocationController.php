@@ -9,12 +9,14 @@ use App\Models\ShopifyWarehouseLocationItem;
 use App\Models\User;
 use App\Services\ShopifyWarehouseInventoryLogService;
 use App\Services\ShopifyWarehouseInventorySyncService;
+use App\Services\ShopifyWarehouseLocationPrintService;
 use App\Support\ShopifyProductImage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
@@ -140,6 +142,32 @@ class ShopifyWarehouseLocationController extends Controller
                 'total' => $itemsPage->total(),
             ],
         ]);
+    }
+
+    /**
+     * @return Response|JsonResponse
+     */
+    public function printInventory(Request $request, ShopifyWarehouseLocation $shopifyWarehouseLocation)
+    {
+        $this->assertAdmin($request);
+
+        try {
+            return app(ShopifyWarehouseLocationPrintService::class)->streamInventoryPdf(
+                $shopifyWarehouseLocation,
+                [
+                    'q' => trim((string) $request->query('q', '')),
+                    'client_account_id' => (int) $request->query('client_account_id', 0),
+                ]
+            );
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not generate location print sheet.',
+            ], 500);
+        }
     }
 
     public function update(Request $request, ShopifyWarehouseLocation $shopifyWarehouseLocation): JsonResponse

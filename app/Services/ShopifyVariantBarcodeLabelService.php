@@ -147,21 +147,16 @@ class ShopifyVariantBarcodeLabelService
      */
     public function streamPdf(ShopifyProductVariant $variant): Response
     {
-        $qrPayload = $this->qrPayloadForVariant($variant);
-        $displayCode = $this->displayCodeForVariant($variant);
-        if ($qrPayload === '' && $displayCode === '') {
-            throw new \RuntimeException('Add a barcode or SKU before printing a label.');
-        }
-        if ($qrPayload === '') {
-            $qrPayload = $displayCode;
-        }
+        return $this->streamBulkPdf([$variant], 'barcode-label-'.$variant->id.'.pdf');
+    }
 
-        $productName = $this->productNameForVariant($variant);
-        if (mb_strlen($productName) > 52) {
-            $productName = rtrim(mb_substr($productName, 0, 49)).'…';
-        }
-
-        // 4in x 1.5in at 72 dpi.
+    /**
+     * Stream one label page per variant (4in x 1.5in).
+     *
+     * @param  iterable<int, ShopifyProductVariant>  $variants
+     */
+    public function streamBulkPdf(iterable $variants, ?string $filename = null): Response
+    {
         $pageW = (int) round(self::LABEL_WIDTH_IN * 72);
         $pageH = (int) round(self::LABEL_HEIGHT_IN * 72);
         $qrSize = 86;
@@ -172,10 +167,39 @@ class ShopifyVariantBarcodeLabelService
         $codeTop = round($pageH * 0.38, 1);
         $nameTop = round($pageH * 0.58, 1);
 
-        $pdf = Pdf::loadView('pdf.shopify.variant-barcode-label', [
-            'qrDataUri' => QrCodeSvg::dataUri($qrPayload, 200),
-            'displayCode' => $displayCode,
-            'productName' => $productName,
+        $labels = [];
+        foreach ($variants as $variant) {
+            if (! $variant instanceof ShopifyProductVariant) {
+                continue;
+            }
+            $variant->loadMissing('product');
+            $qrPayload = $this->qrPayloadForVariant($variant);
+            $displayCode = $this->displayCodeForVariant($variant);
+            if ($qrPayload === '' && $displayCode === '') {
+                continue;
+            }
+            if ($qrPayload === '') {
+                $qrPayload = $displayCode;
+            }
+
+            $productName = $this->productNameForVariant($variant);
+            if (mb_strlen($productName) > 52) {
+                $productName = rtrim(mb_substr($productName, 0, 49)).'…';
+            }
+
+            $labels[] = [
+                'qrDataUri' => QrCodeSvg::dataUri($qrPayload, 200),
+                'displayCode' => $displayCode,
+                'productName' => $productName,
+            ];
+        }
+
+        if ($labels === []) {
+            throw new \RuntimeException('Add a barcode or SKU before printing a label.');
+        }
+
+        $pdf = Pdf::loadView('pdf.shopify.variant-barcode-labels', [
+            'labels' => $labels,
             'pageW' => $pageW,
             'pageH' => $pageH,
             'qrSize' => $qrSize,
@@ -189,11 +213,14 @@ class ShopifyVariantBarcodeLabelService
             'nameFont' => 9,
         ])->setPaper([0, 0, $pageW, $pageH]);
 
-        $filename = 'barcode-label-'.$variant->id.'.pdf';
+        $safeName = trim((string) ($filename ?: 'barcode-labels.pdf'));
+        if ($safeName === '') {
+            $safeName = 'barcode-labels.pdf';
+        }
 
         return response($pdf->output(), 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="'.$filename.'"',
+            'Content-Disposition' => 'inline; filename="'.$safeName.'"',
             'Cache-Control' => 'private, max-age=0, must-revalidate',
         ]);
     }

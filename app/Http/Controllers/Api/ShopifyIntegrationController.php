@@ -1969,6 +1969,46 @@ class ShopifyIntegrationController extends Controller
         }
     }
 
+    /**
+     * Print one barcode label page per Shopify variant id.
+     *
+     * @return \Symfony\Component\HttpFoundation\Response|JsonResponse
+     */
+    public function barcodeLabelsBulkPdf(Request $request)
+    {
+        $this->assertAdmin($request);
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:200'],
+            'ids.*' => ['integer', 'distinct', 'exists:shopify_product_variants,id'],
+        ]);
+
+        $ids = array_values(array_unique(array_map('intval', $validated['ids'])));
+        $variants = ShopifyProductVariant::query()
+            ->with('product')
+            ->whereIn('id', $ids)
+            ->get()
+            ->sortBy(function (ShopifyProductVariant $variant) use ($ids) {
+                return array_search((int) $variant->id, $ids, true);
+            })
+            ->values();
+
+        try {
+            return app(\App\Services\ShopifyVariantBarcodeLabelService::class)
+                ->streamBulkPdf($variants, 'barcode-labels.pdf');
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Could not generate barcode labels.',
+            ], 500);
+        }
+    }
+
     public function bundleComponents(Request $request, ShopifyProductVariant $shopifyVariant): JsonResponse
     {
         $this->assertAdmin($request);

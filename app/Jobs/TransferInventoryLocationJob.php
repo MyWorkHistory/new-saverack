@@ -24,7 +24,7 @@ class TransferInventoryLocationJob implements ShouldQueue
 
     public $timeout = 300;
 
-    public $tries = 1;
+    public $tries = 3;
 
     /** @var string */
     public $sku;

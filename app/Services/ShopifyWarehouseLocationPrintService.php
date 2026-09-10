@@ -57,9 +57,13 @@ class ShopifyWarehouseLocationPrintService
             $available = (int) $item->available;
             $totalQty += $available;
 
-            $title = trim((string) ($product?->title ?? $variant?->title ?? ''));
-            $sku = trim((string) ($variant?->sku ?? ''));
-            $accountName = trim((string) ($account?->company_name ?? ''));
+            $title = trim((string) (
+                ($product ? ($product->title ?? '') : null)
+                ?? ($variant ? ($variant->title ?? '') : null)
+                ?? ''
+            ));
+            $sku = trim((string) ($variant ? ($variant->sku ?? '') : ''));
+            $accountName = trim((string) ($account ? ($account->company_name ?? '') : ''));
 
             $items[] = [
                 'product_title' => $title !== '' ? $title : '—',

@@ -6,6 +6,7 @@ import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import ShopifyOrderCancelConfirmModal from "../../components/shopify/ShopifyOrderCancelConfirmModal.vue";
+import ShopifyOrderCreateDrawer from "../../components/shopify/ShopifyOrderCreateDrawer.vue";
 import ShopifyOrderFulfillModal from "../../components/shopify/ShopifyOrderFulfillModal.vue";
 import ShopifyOrderHoldModal from "../../components/shopify/ShopifyOrderHoldModal.vue";
 import ShopifyOrderReprocessModal from "../../components/shopify/ShopifyOrderReprocessModal.vue";
@@ -30,6 +31,7 @@ const router = useRouter();
 const toast = useToast();
 const loading = ref(false);
 const metaLoading = ref(false);
+const createOpen = ref(false);
 const rows = ref([]);
 const meta = reactive({
   countries: [],
@@ -161,8 +163,18 @@ function onCustomDateChange() {
   draftFilters.date_preset = "custom";
 }
 
-function stubCreateOrder() {
-  toast.warning("Create Order is coming soon.");
+function openCreateOrder() {
+  createOpen.value = true;
+}
+
+function onOrderCreated(order) {
+  toast.success("Draft order created.");
+  createOpen.value = false;
+  if (order?.id) {
+    router.push({ name: "shopify-order-detail", params: { id: String(order.id) } });
+    return;
+  }
+  void load();
 }
 
 function mergeUpdatedRow(updated) {
@@ -600,7 +612,7 @@ onUnmounted(() => {
       <button
         type="button"
         class="btn btn-primary staff-page-primary fw-semibold d-inline-flex align-items-center gap-2 flex-shrink-0"
-        @click="stubCreateOrder"
+        @click="openCreateOrder"
       >
         <span aria-hidden="true">+</span>
         Create Order
@@ -1239,6 +1251,13 @@ onUnmounted(() => {
       @close="statusPickerOpen = false"
       @pick="onStatusPicked"
     />
+    <ShopifyOrderCreateDrawer
+      v-model:open="createOpen"
+      :accounts="meta.accounts || []"
+      :accounts-loading="metaLoading"
+      :initial-account-id="selectedAccountId"
+      @created="onOrderCreated"
+    />
   </div>
 </template>
 
@@ -1397,6 +1416,11 @@ onUnmounted(() => {
 .shopify-order-status--ready {
   background: #dcfce7;
   color: #166534;
+}
+
+.shopify-order-status--draft {
+  background: #f1f5f9;
+  color: #475569;
 }
 
 .shopify-order-status--hold {

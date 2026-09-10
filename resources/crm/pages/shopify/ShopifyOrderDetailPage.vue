@@ -305,7 +305,7 @@ onUnmounted(() => {
                 {{ createdLabel }}
               </span>
               <span v-if="createdLabel" class="so-detail-meta__sep">|</span>
-              <span class="so-detail-meta__item">Sales Channel: Shopify</span>
+              <span class="so-detail-meta__item">Sales Channel: {{ order.sales_channel || (order.source === 'crm' ? 'CRM' : 'Shopify') }}</span>
             </p>
           </div>
           <div class="d-flex flex-wrap gap-2">
@@ -648,6 +648,10 @@ onUnmounted(() => {
 .so-status-pill.shopify-order-status--ready {
   background: #d1fae5;
   color: #047857;
+}
+.so-status-pill.shopify-order-status--draft {
+  background: #f1f5f9;
+  color: #475569;
 }
 .so-status-pill.shopify-order-status--hold {
   background: #ffedd5;

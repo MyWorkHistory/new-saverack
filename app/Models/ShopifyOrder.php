@@ -12,6 +12,7 @@ class ShopifyOrder extends Model
 
     protected $fillable = [
         'connection_id',
+        'source',
         'shopify_order_id',
         'name',
         'email',
@@ -30,6 +31,10 @@ class ShopifyOrder extends Model
         'raw_json',
     ];
 
+    public const SOURCE_SHOPIFY = 'shopify';
+
+    public const SOURCE_CRM = 'crm';
+
     protected $casts = [
         'connection_id' => 'integer',
         'total_price' => 'decimal:2',
@@ -42,6 +47,11 @@ class ShopifyOrder extends Model
         'shipping_address_json' => 'array',
         'raw_json' => 'array',
     ];
+
+    public function isCrmSource(): bool
+    {
+        return strtolower(trim((string) ($this->source ?? self::SOURCE_SHOPIFY))) === self::SOURCE_CRM;
+    }
 
     public function connection(): BelongsTo
     {

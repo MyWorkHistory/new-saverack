@@ -464,6 +464,17 @@ GQL
             return $order->fresh(['connection.clientAccount', 'lineItems']);
         }
 
+        if ($status === ShopifyOrderListService::DISPLAY_DRAFT) {
+            $order->crm_hold_reasons = [];
+            $order->crm_fulfillment_cancelled_at = null;
+            $raw = is_array($order->raw_json) ? $order->raw_json : [];
+            $raw['crm_display_hint'] = 'draft';
+            $order->raw_json = $raw;
+            $order->save();
+
+            return $order->fresh(['connection.clientAccount', 'lineItems']);
+        }
+
         if ($status === ShopifyOrderListService::DISPLAY_BACKORDER) {
             $order->crm_hold_reasons = [];
             $order->crm_fulfillment_cancelled_at = null;

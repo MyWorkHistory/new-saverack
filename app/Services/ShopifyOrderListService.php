@@ -23,8 +23,11 @@ class ShopifyOrderListService
 
     public const DISPLAY_CANCELLED = 'cancelled';
 
+    public const DISPLAY_DRAFT = 'draft';
+
     /** @var list<string> */
     public const DISPLAY_STATUSES = [
+        self::DISPLAY_DRAFT,
         self::DISPLAY_READY,
         self::DISPLAY_ON_HOLD,
         self::DISPLAY_BACKORDER,
@@ -186,6 +189,23 @@ class ShopifyOrderListService
             return;
         }
 
+        if ($status === self::DISPLAY_DRAFT) {
+            $query->whereRaw(
+                "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_json, '$.crm_display_hint')), '')) = 'draft'"
+            )->whereNull('cancelled_at')
+                ->whereNull('crm_fulfillment_cancelled_at')
+                ->where(function (Builder $b) {
+                    $b->whereNull('crm_hold_reasons')
+                        ->orWhereRaw('JSON_LENGTH(crm_hold_reasons) = 0');
+                })
+                ->where(function (Builder $b) {
+                    $b->whereNull('fulfillment_status')
+                        ->orWhere('fulfillment_status', '!=', 'fulfilled');
+                });
+
+            return;
+        }
+
         $query->where(function (Builder $b) {
             $b->whereNull('fulfillment_status')
                 ->orWhereIn('fulfillment_status', ['unfulfilled', 'partial', 'partially_fulfilled', '']);
@@ -195,7 +215,7 @@ class ShopifyOrderListService
         })->whereNull('cancelled_at')
             ->whereNull('crm_fulfillment_cancelled_at')
             ->whereRaw(
-                "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_json, '$.crm_display_hint')), '')) != 'backorder'"
+                "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_json, '$.crm_display_hint')), '')) NOT IN ('backorder', 'draft')"
             );
     }
 
@@ -207,9 +227,11 @@ class ShopifyOrderListService
         $connection = $order->connection;
         $shopDomain = $connection !== null ? trim((string) $connection->shop_domain) : '';
         $shopifyId = trim((string) $order->shopify_order_id);
-        $adminUrl = ($shopDomain !== '' && $shopifyId !== '')
-            ? 'https://'.$shopDomain.'/admin/orders/'.$shopifyId
-            : null;
+        $isCrm = $order->isCrmSource();
+        $adminUrl = null;
+        if (! $isCrm && $shopDomain !== '' && $shopifyId !== '' && strpos($shopifyId, 'crm-') !== 0) {
+            $adminUrl = 'https://'.$shopDomain.'/admin/orders/'.$shopifyId;
+        }
 
         $accountName = null;
         $clientAccountId = null;
@@ -228,6 +250,8 @@ class ShopifyOrderListService
             'shopify_order_id' => $order->shopify_order_id,
             'display_status' => $this->displayStatus($order),
             'recipient_name' => $this->recipientName($order),
+            'source' => strtolower(trim((string) ($order->source ?? 'shopify'))) ?: 'shopify',
+            'sales_channel' => $order->isCrmSource() ? 'CRM' : 'Shopify',
             'shopify_created_at' => optional($order->shopify_created_at)->toIso8601String(),
             'country' => $this->countryCode($order),
             'shipping_method' => $this->shippingMethod($order),
@@ -293,6 +317,10 @@ class ShopifyOrderListService
         $holds = is_array($order->crm_hold_reasons) ? $order->crm_hold_reasons : [];
         if ($holds !== []) {
             return self::DISPLAY_ON_HOLD;
+        }
+
+        if ($this->looksLikeDraft($order)) {
+            return self::DISPLAY_DRAFT;
         }
 
         if ($this->looksLikeBackorder($order)) {
@@ -387,6 +415,8 @@ class ShopifyOrderListService
                 return 'On Hold';
             case self::DISPLAY_BACKORDER:
                 return 'Backorder';
+            case self::DISPLAY_DRAFT:
+                return 'Draft';
             case self::DISPLAY_FULFILLED:
                 return 'Fulfilled';
             case self::DISPLAY_CANCELLED:
@@ -394,6 +424,14 @@ class ShopifyOrderListService
             default:
                 return ucwords(str_replace('_', ' ', $status));
         }
+    }
+
+    private function looksLikeDraft(ShopifyOrder $order): bool
+    {
+        $raw = is_array($order->raw_json) ? $order->raw_json : [];
+        $hint = strtolower(trim((string) ($raw['crm_display_hint'] ?? '')));
+
+        return $hint === 'draft';
     }
 
     private function looksLikeBackorder(ShopifyOrder $order): bool

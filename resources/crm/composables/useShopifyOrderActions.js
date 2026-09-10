@@ -10,6 +10,7 @@ export const SHOPIFY_ORDER_HOLD_REASONS = [
 ];
 
 export const SHOPIFY_DISPLAY_STATUS_LABELS = {
+  draft: "Draft",
   ready_to_ship: "Ready to Ship",
   on_hold: "On Hold",
   backorder: "Backorder",
@@ -29,6 +30,7 @@ export function displayStatusLabel(status) {
 
 export function displayStatusClass(status) {
   const key = String(status || "").trim();
+  if (key === "draft") return "shopify-order-status--draft";
   if (key === "ready_to_ship") return "shopify-order-status--ready";
   if (key === "on_hold") return "shopify-order-status--hold";
   if (key === "backorder") return "shopify-order-status--backorder";

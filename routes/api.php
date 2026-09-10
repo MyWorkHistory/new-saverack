@@ -725,6 +725,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/orders/bulk/cancel', [ShopifyIntegrationController::class, 'ordersBulkCancel']);
         Route::post('/orders/bulk/fulfill', [ShopifyIntegrationController::class, 'ordersBulkFulfill']);
         Route::post('/orders/bulk/display-status', [ShopifyIntegrationController::class, 'ordersBulkDisplayStatus']);
+        Route::post('/orders', [ShopifyIntegrationController::class, 'ordersStore']);
         Route::get('/orders/{shopifyOrder}', [ShopifyIntegrationController::class, 'ordersShow']);
         Route::get('/orders/{shopifyOrder}/packing-slip.pdf', [ShopifyIntegrationController::class, 'orderPackingSlip']);
         Route::post('/orders/{shopifyOrder}/sync', [ShopifyIntegrationController::class, 'orderSync']);

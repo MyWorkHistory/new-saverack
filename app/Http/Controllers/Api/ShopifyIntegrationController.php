@@ -776,6 +776,12 @@ class ShopifyIntegrationController extends Controller
     {
         $this->assertAdmin($request);
 
+        if ($shopifyOrder->isCrmSource()) {
+            return response()->json([
+                'message' => 'CRM manual orders are not synced from Shopify.',
+            ], 422);
+        }
+
         try {
             $order = $actions->syncOrder($shopifyOrder);
         } catch (RuntimeException $e) {
@@ -1089,6 +1095,50 @@ class ShopifyIntegrationController extends Controller
         $name = preg_replace('/[^a-zA-Z0-9_-]+/', '-', (string) ($shopifyOrder->name ?? 'order')) ?: 'order';
 
         return $pdf->stream('shopify-'.$name.'-packing-slip.pdf');
+    }
+
+    public function ordersStore(Request $request, \App\Services\ShopifyOrderManualCreateService $create): JsonResponse
+    {
+        $this->assertAdmin($request);
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'order_number' => ['nullable', 'string', 'max:64'],
+            'email' => ['nullable', 'email', 'max:191'],
+            'shipping_address' => ['nullable', 'array'],
+            'shipping_address.first_name' => ['nullable', 'string', 'max:100'],
+            'shipping_address.last_name' => ['nullable', 'string', 'max:100'],
+            'shipping_address.company' => ['nullable', 'string', 'max:191'],
+            'shipping_address.address1' => ['nullable', 'string', 'max:191'],
+            'shipping_address.address2' => ['nullable', 'string', 'max:191'],
+            'shipping_address.city' => ['nullable', 'string', 'max:128'],
+            'shipping_address.state' => ['nullable', 'string', 'max:128'],
+            'shipping_address.province' => ['nullable', 'string', 'max:128'],
+            'shipping_address.zip' => ['nullable', 'string', 'max:32'],
+            'shipping_address.country' => ['nullable', 'string', 'max:128'],
+            'shipping_address.phone' => ['nullable', 'string', 'max:64'],
+            'shipping_address.email' => ['nullable', 'email', 'max:191'],
+        ]);
+
+        try {
+            $order = $create->create($validated, $request->user());
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => config('app.debug') ? $e->getMessage() : 'Could not create order.',
+            ], 500);
+        }
+
+        $order->load([
+            'connection.clientAccount:id,company_name',
+            'lineItems',
+            'fulfillmentOrders.lineItems',
+            'fulfillments',
+        ]);
+
+        return response()->json(['order' => $this->orderDetail($order)], 201);
     }
 
     public function ordersShow(Request $request, ShopifyOrder $shopifyOrder, ShopifyOrderListService $orders): JsonResponse

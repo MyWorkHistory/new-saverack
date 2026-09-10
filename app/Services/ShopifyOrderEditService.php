@@ -51,6 +51,10 @@ class ShopifyOrderEditService
      */
     public function updateShippingAddress(ShopifyOrder $order, array $input, ?User $actor = null): ShopifyOrder
     {
+        if ($order->isCrmSource()) {
+            return $this->updateShippingAddressLocal($order, $input, $actor);
+        }
+
         $connection = $order->connection;
         if ($connection === null || ! $connection->hasCredentials()) {
             throw new RuntimeException('Shopify connection credentials missing.');
@@ -174,11 +178,6 @@ GQL
      */
     public function updateShippingMethod(ShopifyOrder $order, array $input, ?User $actor = null): ShopifyOrder
     {
-        $connection = $order->connection;
-        if ($connection === null || ! $connection->hasCredentials()) {
-            throw new RuntimeException('Shopify connection credentials missing.');
-        }
-
         $carrier = strtoupper(trim((string) ($input['carrier'] ?? '')));
         $service = trim((string) ($input['service'] ?? ''));
         if ($carrier === '' || $service === '') {
@@ -196,6 +195,15 @@ GQL
         }
         $amount = number_format((float) $price, 2, '.', '');
         $currency = strtoupper(trim((string) ($order->currency ?: 'USD'))) ?: 'USD';
+
+        if ($order->isCrmSource()) {
+            return $this->persistLocalShippingMethod($order, $carrier, $service, $title, $amount, $currency, $actor, false);
+        }
+
+        $connection = $order->connection;
+        if ($connection === null || ! $connection->hasCredentials()) {
+            throw new RuntimeException('Shopify connection credentials missing.');
+        }
 
         $shopifySynced = false;
         try {
@@ -472,6 +480,10 @@ GQL
      */
     public function updateItems(ShopifyOrder $order, array $payload, ?User $actor = null): ShopifyOrder
     {
+        if ($order->isCrmSource()) {
+            return $this->updateItemsLocal($order, $payload, $actor);
+        }
+
         $connection = $order->connection;
         if ($connection === null || ! $connection->hasCredentials()) {
             throw new RuntimeException('Shopify connection credentials missing.');
@@ -740,5 +752,180 @@ GQL
         }
 
         return 0.0;
+    }
+
+    /**
+     * @param  array{
+     *   full_name?:string,
+     *   address1?:string,
+     *   address2?:string,
+     *   city?:string,
+     *   province?:string,
+     *   zip?:string,
+     *   country?:string,
+     *   email?:string,
+     *   phone?:string
+     * }  $input
+     */
+    private function updateShippingAddressLocal(ShopifyOrder $order, array $input, ?User $actor = null): ShopifyOrder
+    {
+        $fullName = trim((string) ($input['full_name'] ?? ''));
+        $parts = preg_split('/\s+/', $fullName, 2) ?: [];
+        $firstName = trim((string) ($parts[0] ?? ''));
+        $lastName = trim((string) ($parts[1] ?? ''));
+        $email = trim((string) ($input['email'] ?? ''));
+        $phone = trim((string) ($input['phone'] ?? ''));
+        $country = trim((string) ($input['country'] ?? 'United States'));
+        $countryCode = preg_match('/^[A-Za-z]{2}$/', $country) ? strtoupper($country) : '';
+        if ($countryCode === '' && stripos($country, 'united states') !== false) {
+            $countryCode = 'US';
+        }
+
+        $order->shipping_address_json = [
+            'name' => $fullName,
+            'first_name' => $firstName,
+            'last_name' => $lastName,
+            'firstName' => $firstName,
+            'lastName' => $lastName,
+            'address1' => trim((string) ($input['address1'] ?? '')),
+            'address2' => trim((string) ($input['address2'] ?? '')),
+            'city' => trim((string) ($input['city'] ?? '')),
+            'province' => trim((string) ($input['province'] ?? '')),
+            'zip' => trim((string) ($input['zip'] ?? '')),
+            'country' => $country !== '' ? $country : 'United States',
+            'countryCodeV2' => $countryCode !== '' ? $countryCode : 'US',
+            'phone' => $phone,
+        ];
+        if ($email !== '') {
+            $order->email = $email;
+        }
+        $customer = is_array($order->customer_json) ? $order->customer_json : [];
+        $customer['firstName'] = $firstName;
+        $customer['lastName'] = $lastName;
+        if ($email !== '') {
+            $customer['email'] = $email;
+        }
+        if ($phone !== '') {
+            $customer['phone'] = $phone;
+        }
+        $order->customer_json = $customer;
+        $order->shopify_updated_at = now();
+        $order->save();
+
+        $this->activities->record(
+            $order,
+            'address_updated',
+            'Shipping address updated.',
+            null,
+            $actor
+        );
+
+        return $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems', 'fulfillments']);
+    }
+
+    /**
+     * @param  array{lines?:list<array<string,mixed>>, add?:list<array<string,mixed>>}  $payload
+     */
+    private function updateItemsLocal(ShopifyOrder $order, array $payload, ?User $actor = null): ShopifyOrder
+    {
+        $order->loadMissing('lineItems');
+        $lines = is_array($payload['lines'] ?? null) ? $payload['lines'] : [];
+        $adds = is_array($payload['add'] ?? null) ? $payload['add'] : [];
+        $changes = [];
+
+        foreach ($lines as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $lineId = (int) ($row['id'] ?? 0);
+            $action = strtolower(trim((string) ($row['action'] ?? '')));
+            $qty = (int) ($row['quantity'] ?? 0);
+            /** @var ShopifyOrderLineItem|null $line */
+            $line = $lineId > 0 ? $order->lineItems->firstWhere('id', $lineId) : null;
+            if ($line === null) {
+                continue;
+            }
+            if ($action === 'cancel' || $qty <= 0) {
+                $oldQty = (int) $line->quantity;
+                $line->delete();
+                $changes[] = 'Removed '.$line->sku.' (was '.$oldQty.')';
+                continue;
+            }
+            if ($action === 'fulfilled') {
+                $line->fulfilled_quantity = (int) $line->quantity;
+                $line->fulfillable_quantity = 0;
+                $line->save();
+                $changes[] = 'Marked '.$line->sku.' fulfilled';
+                continue;
+            }
+            $oldQty = (int) $line->quantity;
+            if ($qty === $oldQty) {
+                continue;
+            }
+            $line->quantity = $qty;
+            $line->fulfillable_quantity = max(0, $qty - (int) $line->fulfilled_quantity);
+            $line->save();
+            $changes[] = 'Updated '.$line->sku.' qty '.$oldQty.' → '.$qty;
+        }
+
+        foreach ($adds as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $variantKey = trim((string) ($row['shopify_variant_id'] ?? ''));
+            $qty = max(1, (int) ($row['quantity'] ?? 1));
+            if ($variantKey === '') {
+                continue;
+            }
+            $variant = ShopifyProductVariant::query()
+                ->with('product')
+                ->where('connection_id', $order->connection_id)
+                ->where(function ($q) use ($variantKey) {
+                    $q->where('id', (int) $variantKey)
+                        ->orWhere('shopify_variant_id', $variantKey);
+                })
+                ->first();
+            if ($variant === null) {
+                throw new RuntimeException('Product variant not found for this account.');
+            }
+
+            $line = new ShopifyOrderLineItem();
+            $line->connection_id = (int) $order->connection_id;
+            $line->shopify_order_id = (int) $order->id;
+            $line->shopify_line_item_id = 'crm-line-'.str_replace('.', '', uniqid('', true));
+            $line->shopify_variant_id = (string) $variant->shopify_variant_id;
+            $line->shopify_product_id = $variant->product ? (string) $variant->product->shopify_product_id : null;
+            $line->sku = (string) ($variant->sku ?? '');
+            $line->title = (string) ($variant->product->title ?? $variant->title ?? 'Product');
+            $line->variant_title = (string) ($variant->title ?? '');
+            $line->quantity = $qty;
+            $line->fulfillable_quantity = $qty;
+            $line->fulfilled_quantity = 0;
+            $line->price = 0;
+            $line->raw_json = ['crm_source' => 'crm'];
+            $line->save();
+            $changes[] = 'Added '.$line->sku.' x'.$qty;
+        }
+
+        $order->load('lineItems');
+        $total = 0.0;
+        foreach ($order->lineItems as $line) {
+            $total += ((float) $line->price) * (int) $line->quantity;
+        }
+        $order->total_price = $total;
+        $order->shopify_updated_at = now();
+        $order->save();
+
+        if ($changes !== []) {
+            $this->activities->record(
+                $order,
+                'items_updated',
+                'Order items updated.',
+                implode('; ', array_slice($changes, 0, 8)),
+                $actor
+            );
+        }
+
+        return $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems', 'fulfillments']);
     }
 }

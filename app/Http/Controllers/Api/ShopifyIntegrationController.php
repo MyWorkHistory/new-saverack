@@ -2404,7 +2404,7 @@ class ShopifyIntegrationController extends Controller
                 'phone' => $phone !== '' ? $phone : null,
             ],
             'shipping' => $shipping,
-            'line_items' => $order->lineItems->map(function ($line) use ($crmVariants, $locationsByVariantPk, $order) {
+            'line_items' => $order->lineItems->map(function ($line) use ($crmVariants, $locationsByVariantPk, $order, $orders) {
                 $shopifyVariantId = trim((string) ($line->shopify_variant_id ?? ''));
                 /** @var ShopifyProductVariant|null $crmVariant */
                 $crmVariant = $shopifyVariantId !== '' ? ($crmVariants[$shopifyVariantId] ?? null) : null;

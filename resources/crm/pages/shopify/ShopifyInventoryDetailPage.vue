@@ -875,7 +875,12 @@ onUnmounted(() => {
                 </div>
                 <p class="sid-card__sub">Items included in this bundle</p>
               </div>
-              <button type="button" class="staff-outline-action-btn staff-outline-action-btn--sm" :disabled="bundleBusy" @click="openBundleItems">
+              <button
+                type="button"
+                class="btn btn-primary staff-page-primary btn-sm fw-semibold d-inline-flex align-items-center gap-1"
+                :disabled="bundleBusy"
+                @click="openBundleItems"
+              >
                 <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>

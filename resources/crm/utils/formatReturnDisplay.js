@@ -29,6 +29,34 @@ export function returnStatusBadgeClass(status) {
   return "bg-body-secondary text-body-secondary";
 }
 
+/**
+ * Line disposition after process: restock=true → Restocked, restock=false → Disposed of.
+ * @param {boolean|null|undefined} restock
+ * @param {{ processed?: boolean }} [opts]
+ */
+export function returnDispositionLabel(restock, opts = {}) {
+  const processed = opts.processed !== false;
+  if (!processed) return "—";
+  return restock === false ? "Disposed of" : "Restocked";
+}
+
+/**
+ * @param {boolean|null|undefined} restock
+ * @param {{ processed?: boolean }} [opts]
+ */
+export function returnDispositionBadgeClass(restock, opts = {}) {
+  const processed = opts.processed !== false;
+  if (!processed) return "bg-secondary-subtle text-secondary-emphasis";
+  return restock === false
+    ? "bg-danger-subtle text-danger-emphasis"
+    : "bg-success-subtle text-success-emphasis";
+}
+
+export function isReturnProcessedStatus(status) {
+  const s = String(status || "").toLowerCase();
+  return s === "received" || s === "completed";
+}
+
     /** Admin process page display status (not_returned | pending | returned | non_compliant_return | third_party_return). */
 export function processDisplayStatusLabel(displayStatus) {
   const s = String(displayStatus || "").toLowerCase();

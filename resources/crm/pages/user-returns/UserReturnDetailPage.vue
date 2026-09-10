@@ -7,6 +7,9 @@ import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import {
   formatRmaLabel,
+  isReturnProcessedStatus,
+  returnDispositionBadgeClass,
+  returnDispositionLabel,
   returnStatusBadgeClass,
   returnStatusLabel,
 } from "../../utils/formatReturnDisplay.js";
@@ -32,6 +35,15 @@ const warehouseLines = computed(() => {
 const returnedLines = computed(() =>
   (ret.value?.lines || []).filter((l) => Number(l.return_qty) > 0),
 );
+const returnIsProcessed = computed(() => isReturnProcessedStatus(ret.value?.status));
+
+function lineDispositionLabel(line) {
+  return returnDispositionLabel(line?.restock, { processed: returnIsProcessed.value });
+}
+
+function lineDispositionBadgeClass(line) {
+  return returnDispositionBadgeClass(line?.restock, { processed: returnIsProcessed.value });
+}
 
 async function load() {
   loading.value = true;
@@ -201,11 +213,12 @@ onMounted(() => {
                   <th class="staff-table-head__th order-detail-page__items-col" scope="col">Item</th>
                   <th class="staff-table-head__th text-center" scope="col">Return Qty</th>
                   <th class="staff-table-head__th" scope="col">Reason</th>
+                  <th class="staff-table-head__th text-center" scope="col">Status</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="!returnedLines.length">
-                  <td colspan="3" class="text-center text-secondary py-4">No items on this return.</td>
+                  <td colspan="4" class="text-center text-secondary py-4">No items on this return.</td>
                 </tr>
                 <tr v-for="line in returnedLines" :key="line.id">
                   <td>
@@ -234,6 +247,16 @@ onMounted(() => {
                   </td>
                   <td class="text-center">{{ line.return_qty }}</td>
                   <td class="small">{{ line.return_reason_label || "—" }}</td>
+                  <td class="text-center">
+                    <span
+                      v-if="returnIsProcessed"
+                      class="badge rounded-pill fw-medium"
+                      :class="lineDispositionBadgeClass(line)"
+                    >
+                      {{ lineDispositionLabel(line) }}
+                    </span>
+                    <span v-else class="text-secondary">—</span>
+                  </td>
                 </tr>
               </tbody>
             </table>

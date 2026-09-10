@@ -7,7 +7,13 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
-import { returnStatusBadgeClass, returnStatusLabel } from "../../utils/formatReturnDisplay.js";
+import {
+  isReturnProcessedStatus,
+  returnDispositionBadgeClass,
+  returnDispositionLabel,
+  returnStatusBadgeClass,
+  returnStatusLabel,
+} from "../../utils/formatReturnDisplay.js";
 
 const toast = useToast();
 const router = useRouter();
@@ -49,6 +55,20 @@ watch(search, (v) => {
 function returnDetailHref(r) {
   if (!r?.return_id) return "";
   return router.resolve({ name: "user-return-detail", params: { id: String(r.return_id) } }).href;
+}
+
+function itemStatusLabel(r) {
+  if (isReturnProcessedStatus(r?.status)) {
+    return returnDispositionLabel(r?.restock, { processed: true });
+  }
+  return returnStatusLabel(r?.status);
+}
+
+function itemStatusBadgeClass(r) {
+  if (isReturnProcessedStatus(r?.status)) {
+    return returnDispositionBadgeClass(r?.restock, { processed: true });
+  }
+  return returnStatusBadgeClass(r?.status);
 }
 
 function goCreate() {
@@ -231,8 +251,8 @@ onUnmounted(() => {
             </tr>
             <tr v-for="r in rows" v-else :key="r.id" class="align-middle">
               <td class="text-center">
-                <span class="badge rounded-pill fw-medium" :class="returnStatusBadgeClass(r.status)">
-                  {{ returnStatusLabel(r.status) }}
+                <span class="badge rounded-pill fw-medium" :class="itemStatusBadgeClass(r)">
+                  {{ itemStatusLabel(r) }}
                 </span>
               </td>
               <td class="text-center">

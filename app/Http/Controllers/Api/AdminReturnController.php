@@ -877,6 +877,7 @@ class AdminReturnController extends Controller
                     'return_type' => $ret !== null ? $ret->return_type : null,
                     'return_reason' => $line->return_reason,
                     'return_reason_label' => $reasonLabel,
+                    'restock' => (bool) $line->restock,
                     'client_account_id' => $ret !== null ? $ret->client_account_id : null,
                     'client_account_company_name' => $companyName,
                     'created_at' => $ret !== null ? optional($ret->created_at)->toIso8601String() : null,

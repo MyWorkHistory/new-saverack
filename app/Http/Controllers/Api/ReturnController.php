@@ -430,6 +430,7 @@ class ReturnController extends Controller
                 'return_type' => $ret->return_type,
                 'return_reason' => $line->return_reason,
                 'return_reason_label' => $reasonLabel,
+                'restock' => (bool) $line->restock,
                 'created_at' => optional($ret->created_at)->toIso8601String(),
                 'processed_at' => optional($ret->processed_at)->toIso8601String(),
             ];

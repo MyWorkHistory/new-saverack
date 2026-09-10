@@ -2043,16 +2043,30 @@ class ShopifyIntegrationController extends Controller
         $parentId = (int) $shopifyVariant->id;
         $seen = [];
         $rows = [];
+        $rejectedBundles = [];
         foreach ($validated['items'] as $item) {
             $componentId = (int) $item['component_variant_id'];
             if ($componentId === $parentId || isset($seen[$componentId])) {
                 continue;
             }
-            $exists = ShopifyProductVariant::query()
+            $component = ShopifyProductVariant::query()
+                ->with('product')
                 ->where('id', $componentId)
                 ->where('connection_id', $connectionId)
-                ->exists();
-            if (! $exists) {
+                ->first();
+            if ($component === null) {
+                continue;
+            }
+            $product = $component->product;
+            $componentKind = \App\Models\ShopifyProduct::normalizeCrmProductKind(
+                $product ? $product->crm_product_kind : null
+            );
+            if ($componentKind === \App\Models\ShopifyProduct::KIND_BUNDLE) {
+                $label = trim((string) ($component->sku ?? ''));
+                if ($label === '') {
+                    $label = trim((string) ($product ? ($product->title ?? '') : ''));
+                }
+                $rejectedBundles[] = $label !== '' ? $label : (string) $componentId;
                 continue;
             }
             $seen[$componentId] = true;
@@ -2065,6 +2079,12 @@ class ShopifyIntegrationController extends Controller
             ];
         }
 
+        if ($rejectedBundles !== [] && $rows === []) {
+            return response()->json([
+                'message' => 'Bundle SKUs cannot be added to a bundle. Choose Standard Products only.',
+            ], 422);
+        }
+
         \App\Models\ShopifyVariantBundleComponent::query()
             ->where('parent_variant_id', $parentId)
             ->delete();
@@ -2073,8 +2093,13 @@ class ShopifyIntegrationController extends Controller
             \App\Models\ShopifyVariantBundleComponent::query()->insert($rows);
         }
 
+        $message = 'Bundle components saved.';
+        if ($rejectedBundles !== []) {
+            $message = 'Bundle components saved. Skipped bundle SKUs: '.implode(', ', array_slice($rejectedBundles, 0, 5)).'.';
+        }
+
         return response()->json([
-            'message' => 'Bundle components saved.',
+            'message' => $message,
             'components' => $this->serializeBundleComponents($shopifyVariant->fresh()),
         ]);
     }
@@ -2134,6 +2159,12 @@ class ShopifyIntegrationController extends Controller
             ->with(['product'])
             ->where('connection_id', $shopifyVariant->connection_id)
             ->whereNotIn('id', $exclude)
+            ->whereHas('product', function ($productQuery) {
+                $productQuery->where(function ($builder) {
+                    $builder->whereNull('crm_product_kind')
+                        ->orWhere('crm_product_kind', '!=', \App\Models\ShopifyProduct::KIND_BUNDLE);
+                });
+            })
             ->orderByDesc('id')
             ->limit(40);
 

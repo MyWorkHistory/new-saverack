@@ -68,6 +68,7 @@ class ShopifyWarehouseLocationController extends Controller
         }
 
         $query = $this->filteredQuery($request);
+        $query->withSum('items', 'available');
         $query->orderBy($sort, $dir)->orderBy('id');
 
         $page = $query->paginate($perPage);
@@ -746,10 +747,15 @@ class ShopifyWarehouseLocationController extends Controller
     }
 
     /**
-     * @return array{id: int, name: string, type: ?string, pickable: bool, sellable: bool, active: bool}
+     * @return array{id: int, name: string, type: ?string, pickable: bool, sellable: bool, active: bool, total_qty: int}
      */
     private function serializeLocation(ShopifyWarehouseLocation $location): array
     {
+        $totalQty = $location->getAttribute('items_sum_available');
+        if ($totalQty === null) {
+            $totalQty = $location->items()->sum('available');
+        }
+
         return [
             'id' => $location->id,
             'name' => $location->name,
@@ -757,6 +763,7 @@ class ShopifyWarehouseLocationController extends Controller
             'pickable' => (bool) $location->pickable,
             'sellable' => (bool) $location->sellable,
             'active' => (bool) $location->active,
+            'total_qty' => (int) $totalQty,
         ];
     }
 

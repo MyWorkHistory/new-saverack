@@ -506,19 +506,20 @@ onUnmounted(() => {
               <th class="staff-table-head__th">
                 <button type="button" class="staff-sort-btn" @click="toggleSort('sellable')">Sellable</button>
               </th>
+              <th class="staff-table-head__th">QTY</th>
               <th class="staff-table-head__th staff-actions-col text-center">Action</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="6" class="py-5">
+              <td colspan="7" class="py-5">
                 <div class="d-flex justify-content-center py-3">
                   <CrmLoadingSpinner message="Loading Locations…" />
                 </div>
               </td>
             </tr>
             <tr v-else-if="!rows.length">
-              <td colspan="6" class="px-4 py-5 text-center text-secondary">No locations yet. Add a location or import a CSV.</td>
+              <td colspan="7" class="px-4 py-5 text-center text-secondary">No locations yet. Add a location or import a CSV.</td>
             </tr>
             <tr
               v-for="row in rows"
@@ -560,6 +561,7 @@ onUnmounted(() => {
                   <span class="inventory-detail__toggle-track"><span class="inventory-detail__toggle-thumb" /></span>
                 </button>
               </td>
+              <td class="fw-semibold text-body">{{ Number(row.total_qty || 0) }}</td>
               <td class="staff-actions-cell text-center" @click.stop>
                 <div data-shopify-loc-row-actions class="staff-actions-inner staff-actions-inner--single justify-content-center">
                   <button

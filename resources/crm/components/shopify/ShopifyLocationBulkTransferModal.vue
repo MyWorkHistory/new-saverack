@@ -19,7 +19,9 @@ const totalQty = computed(() =>
   (props.items || []).reduce((sum, row) => sum + Number(row?.available || 0), 0),
 );
 
-const showDropdown = computed(() => (props.items || []).length > 2);
+const selectedCount = computed(() => (props.items || []).length);
+const showItemList = computed(() => selectedCount.value > 0 && selectedCount.value <= 2);
+const showSelectedCount = computed(() => selectedCount.value > 2);
 
 const locationOptions = computed(() =>
   (props.locations || []).map((loc) => ({
@@ -28,9 +30,21 @@ const locationOptions = computed(() =>
   })),
 );
 
+const reasonOptions = computed(() =>
+  (props.reasons || []).map((r) => ({
+    id: String(r),
+    name: String(r),
+  })),
+);
+
 const toModel = computed({
   get: () => (props.toLocationId === "" || props.toLocationId == null ? "" : String(props.toLocationId)),
   set: (v) => emit("update:toLocationId", v == null ? "" : String(v)),
+});
+
+const reasonModel = computed({
+  get: () => (props.reason == null ? "" : String(props.reason)),
+  set: (v) => emit("update:reason", v == null ? "" : String(v)),
 });
 
 watch(
@@ -57,17 +71,10 @@ watch(
           <h2 class="crm-vx-modal__title shopify-xfer-modal__title">Transfer Inventory</h2>
         </header>
         <div class="crm-vx-modal__body shopify-xfer-modal__body">
-          <div v-if="showDropdown" class="shopify-xfer-product mb-3">
-            <label class="shopify-xfer-card__label mb-2" for="shopify-bulk-xfer-skus">
-              Selected items ({{ items.length }})
-            </label>
-            <select id="shopify-bulk-xfer-skus" class="form-select" disabled>
-              <option v-for="row in items" :key="row.id" :value="row.id">
-                {{ row.product_title || "—" }} — {{ row.sku || "—" }} ({{ row.available }})
-              </option>
-            </select>
+          <div v-if="showSelectedCount" class="shopify-xfer-selected-count mb-3">
+            {{ selectedCount }} items selected
           </div>
-          <div v-else class="d-flex flex-column gap-2 mb-3">
+          <div v-else-if="showItemList" class="d-flex flex-column gap-2 mb-3">
             <div
               v-for="row in items"
               :key="row.id"
@@ -130,22 +137,24 @@ watch(
                 :options="locationOptions"
                 :disabled="busy"
                 :allow-empty="true"
-                placeholder="Select location"
-                empty-label="Select location"
-                search-placeholder="Search locations…"
+                placeholder="Select Location"
+                empty-label="Select Location"
+                search-placeholder="Search Locations…"
                 teleport-panel
               />
-              <label class="shopify-xfer-card__label" for="shopify-bulk-xfer-reason">Reason</label>
-              <select
-                id="shopify-bulk-xfer-reason"
-                class="form-select"
-                :value="reason"
+              <label class="shopify-xfer-card__label">Reason</label>
+              <CrmSearchableSelect
+                v-model="reasonModel"
+                appearance="staff"
+                aria-label="Select reason"
+                :options="reasonOptions"
                 :disabled="busy"
-                @change="emit('update:reason', $event.target.value)"
-              >
-                <option value="">Select reason</option>
-                <option v-for="r in reasons" :key="r" :value="r">{{ r }}</option>
-              </select>
+                :allow-empty="true"
+                placeholder="Select Reason"
+                empty-label="Select Reason"
+                search-placeholder="Search Reasons…"
+                teleport-panel
+              />
             </div>
           </section>
         </div>
@@ -174,6 +183,18 @@ watch(
 }
 .shopify-xfer-modal__body {
   padding: 0.75rem 1.5rem 0.5rem;
+}
+.shopify-xfer-selected-count {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #0f172a;
+  text-align: center;
+  padding: 0.85rem 0.75rem;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 0.75rem;
+  background: #f8fafc;
 }
 .shopify-xfer-product {
   display: flex;

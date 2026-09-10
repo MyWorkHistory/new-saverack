@@ -765,7 +765,7 @@ onUnmounted(() => {
           <span class="small staff-bulk-selection-bar__count">
             {{ selectedIds.length }} item{{ selectedIds.length === 1 ? "" : "s" }} selected
           </span>
-          <button type="button" class="btn btn-sm staff-page-primary" @click="openBulkTransfer">Bulk Edit</button>
+          <button type="button" class="btn btn-sm staff-page-primary" @click="openBulkTransfer">Bulk Transfer</button>
           <button
             type="button"
             class="btn btn-link btn-sm staff-bulk-clear-link ms-auto text-decoration-none"

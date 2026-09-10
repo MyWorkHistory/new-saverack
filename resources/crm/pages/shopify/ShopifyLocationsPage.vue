@@ -150,10 +150,15 @@ function toggleSelect(id) {
   selectedIds.value = [...selectedIds.value, id];
 }
 
+function locationDetailHref(row) {
+  if (!row?.id) return "#";
+  return router.resolve({ name: "shopify-location-detail", params: { id: String(row.id) } }).href;
+}
+
 function openRow(row) {
   if (!row?.id) return;
   manageOpenId.value = null;
-  router.push({ name: "shopify-location-detail", params: { id: String(row.id) } });
+  window.open(locationDetailHref(row), "_blank", "noopener,noreferrer");
 }
 
 function placeManageMenu(btn) {

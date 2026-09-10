@@ -617,13 +617,9 @@ onUnmounted(() => {
     </div>
 
     <template v-else-if="location">
-      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-        <button
-          type="button"
-          class="btn btn-link text-decoration-none px-0 shopify-loc-back"
-          @click="router.push({ name: 'shopify-locations' })"
-        >
-          ← Back to Locations
+      <div class="d-flex flex-wrap align-items-center justify-content-end gap-2 mb-3">
+        <button type="button" class="btn btn-sm btn-primary staff-page-primary" @click="openAddItem">
+          Add Item
         </button>
         <div class="position-relative flex-shrink-0" data-shopify-loc-header-actions>
           <button
@@ -693,31 +689,8 @@ onUnmounted(() => {
       </div>
 
       <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
-        <div class="px-3 px-md-4 pt-4 pb-2 d-flex flex-wrap align-items-start justify-content-between gap-2">
-          <div>
-            <h2 class="shopify-loc-inv-title mb-1">Inventory at this location</h2>
-            <p class="shopify-loc-inv-sub mb-0">All inventory items currently stored at this location.</p>
-          </div>
-          <button type="button" class="btn btn-sm btn-primary staff-page-primary" @click="openAddItem">
-            Add Item
-          </button>
-        </div>
-
         <div class="staff-table-toolbar px-3 px-md-4">
           <div class="staff-table-toolbar--row shopify-loc-toolbar-row">
-            <div class="shopify-loc-toolbar-account">
-              <CrmSearchableSelect
-                v-model="filterAccountId"
-                class="staff-toolbar-search staff-toolbar-search--inline w-100"
-                appearance="staff"
-                aria-label="Filter by account"
-                :options="accountOptions"
-                :disabled="accountsLoading || loading"
-                placeholder="All Accounts"
-                empty-label="All Accounts"
-                search-placeholder="Search accounts…"
-              />
-            </div>
             <div class="shopify-loc-toolbar-search shopify-loc-search">
               <div class="input-group orders-toolbar-search-group">
                 <span class="input-group-text bg-white">
@@ -737,6 +710,19 @@ onUnmounted(() => {
                   @keydown.enter.prevent="applyFilters"
                 />
               </div>
+            </div>
+            <div class="shopify-loc-toolbar-account">
+              <CrmSearchableSelect
+                v-model="filterAccountId"
+                class="staff-toolbar-search staff-toolbar-search--inline w-100"
+                appearance="staff"
+                aria-label="Filter by account"
+                :options="accountOptions"
+                :disabled="accountsLoading || loading"
+                placeholder="All Accounts"
+                empty-label="All Accounts"
+                search-placeholder="Search Accounts…"
+              />
             </div>
             <div class="position-relative flex-shrink-0" data-shopify-loc-filters>
               <button
@@ -1189,10 +1175,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.shopify-loc-back {
-  color: #2563eb;
-  font-weight: 600;
-}
 .shopify-loc-summary {
   display: flex;
   flex-wrap: wrap;
@@ -1351,18 +1333,6 @@ onUnmounted(() => {
   flex-shrink: 0;
   opacity: 0.85;
 }
-.shopify-loc-inv-title {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: #0f172a;
-  line-height: 1.3;
-}
-.shopify-loc-inv-sub {
-  font-size: 0.875rem;
-  color: #64748b;
-  line-height: 1.4;
-}
 .shopify-loc-toolbar-row {
   display: flex;
   flex-wrap: wrap;
@@ -1370,7 +1340,9 @@ onUnmounted(() => {
   gap: 0.5rem;
 }
 .shopify-loc-search {
+  flex: 1 1 14rem;
   width: min(22rem, 100%);
+  min-width: min(100%, 12rem);
 }
 .shopify-loc-toolbar-account {
   flex: 0 0 auto;

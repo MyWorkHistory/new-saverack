@@ -838,7 +838,14 @@ class ShopifyIntegrationController extends Controller
             return response()->json(['message' => 'Could not cancel order.'], 500);
         }
 
-        return response()->json(['order' => app(ShopifyOrderListService::class)->listRow($order)]);
+        $order->load([
+            'connection.clientAccount',
+            'lineItems',
+            'fulfillmentOrders.lineItems',
+            'fulfillments',
+        ]);
+
+        return response()->json(['order' => $this->orderDetail($order)]);
     }
 
     public function orderFulfillAll(Request $request, ShopifyOrder $shopifyOrder, ShopifyOrderActionService $actions): JsonResponse

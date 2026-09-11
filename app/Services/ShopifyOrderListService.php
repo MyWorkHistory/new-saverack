@@ -281,8 +281,30 @@ class ShopifyOrderListService
     {
         $order->loadMissing('lineItems');
 
+        // Explicit CRM / Shopify cancel always wins for the order badge.
+        if ($order->cancelled_at !== null || $order->crm_fulfillment_cancelled_at !== null) {
+            // Prefer line outcomes only when cancel left some lines fulfilled and none pending.
+            if ($order->lineItems->isNotEmpty()) {
+                $hasPending = false;
+                $hasFulfilled = false;
+                foreach ($order->lineItems as $line) {
+                    $lineStatus = $this->lineDisplayStatus($order, $line);
+                    if ($lineStatus === 'pending') {
+                        $hasPending = true;
+                    } elseif ($lineStatus === 'fulfilled') {
+                        $hasFulfilled = true;
+                    }
+                }
+                if (! $hasPending && $hasFulfilled) {
+                    // Mixed fulfilled + cancelled with no pending → Fulfilled.
+                    return self::DISPLAY_FULFILLED;
+                }
+            }
+
+            return self::DISPLAY_CANCELLED;
+        }
+
         // Prefer line outcomes: fulfilled only when nothing is pending.
-        // Cancelled + fulfilled (no pending) counts as fulfilled.
         if ($order->lineItems->isNotEmpty()) {
             $hasPending = false;
             $hasFulfilled = false;
@@ -300,7 +322,7 @@ class ShopifyOrderListService
             if (! $hasPending && $hasFulfilled) {
                 return self::DISPLAY_FULFILLED;
             }
-            if ($allCancelled && ($order->cancelled_at !== null || $order->crm_fulfillment_cancelled_at !== null)) {
+            if ($allCancelled) {
                 return self::DISPLAY_CANCELLED;
             }
         } else {
@@ -308,10 +330,6 @@ class ShopifyOrderListService
             if ($fulfillment === 'fulfilled') {
                 return self::DISPLAY_FULFILLED;
             }
-        }
-
-        if ($order->cancelled_at !== null || $order->crm_fulfillment_cancelled_at !== null) {
-            return self::DISPLAY_CANCELLED;
         }
 
         $holds = is_array($order->crm_hold_reasons) ? $order->crm_hold_reasons : [];

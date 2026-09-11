@@ -203,12 +203,8 @@ GQL
                 throw new RuntimeException('Order cancelled in Shopify but local sync failed.');
             }
 
-            $refreshed->crm_fulfillment_cancelled_at = now();
-            $refreshed->crm_hold_reasons = [];
-            $refreshed->save();
-            $this->zeroCrmFulfillableQuantities($refreshed);
-
-            return $refreshed->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
+            // Always zero CRM lines after Shopify cancel (sync can restore fulfillable qty).
+            return $this->finalizeCrmCancel($refreshed, true);
         }
 
         return $this->cancelFulfillmentInCrm($order);
@@ -221,11 +217,34 @@ GQL
     {
         $this->assertNotShipped($order);
 
+        return $this->finalizeCrmCancel($order, false);
+    }
+
+    /**
+     * Zero all unfulfilled line qtys, mark CRM cancel, and record timeline activity.
+     */
+    private function finalizeCrmCancel(ShopifyOrder $order, bool $cancelledInShopify): ShopifyOrder
+    {
         $this->zeroCrmFulfillableQuantities($order);
 
         $order->crm_fulfillment_cancelled_at = now();
         $order->crm_hold_reasons = [];
         $order->save();
+
+        try {
+            $actor = auth()->user();
+            $this->activities->record(
+                $order,
+                ShopifyOrderActivity::TYPE_CANCEL,
+                $cancelledInShopify
+                    ? 'Order canceled in CRM and Shopify'
+                    : 'Order canceled in CRM (fulfillment canceled for all items)',
+                null,
+                $actor instanceof User ? $actor : null
+            );
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         return $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
     }

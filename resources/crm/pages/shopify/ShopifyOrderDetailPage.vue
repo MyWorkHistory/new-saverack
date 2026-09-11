@@ -71,9 +71,21 @@ function canChangeOrderActions(status) {
 
 const actions = useShopifyOrderActions({
   onUpdated: (updated) => {
-    if (updated?.id) {
-      order.value = { ...order.value, ...updated };
+    if (!updated?.id) return;
+    // Cancel (and other detail payloads) include line_items — replace fully.
+    if (Array.isArray(updated.line_items)) {
+      order.value = updated;
+      return;
     }
+    // List-row patches must not wipe detail line statuses.
+    order.value = {
+      ...order.value,
+      ...updated,
+      line_items: order.value?.line_items,
+      fulfillment_orders: order.value?.fulfillment_orders,
+      fulfillments: order.value?.fulfillments,
+      timeline: order.value?.timeline,
+    };
   },
 });
 
@@ -117,6 +129,7 @@ function lineStatusLabel(status) {
 
 function timelineIconClass(type) {
   if (type === "order_hold") return "so-timeline__icon--hold";
+  if (type === "order_cancel") return "so-timeline__icon--hold";
   if (type === "order_edited" || type === "address_updated" || type === "shipping_updated" || type === "items_updated" || type === "shopify_edit") {
     return "so-timeline__icon--edit";
   }
@@ -126,6 +139,7 @@ function timelineIconClass(type) {
 
 function timelineGlyph(type) {
   if (type === "order_hold") return "pause";
+  if (type === "order_cancel") return "pause";
   if (type === "order_fulfill" || type === "ready_to_ship") return "check";
   if (type === "order_imported" || type === "order_created") return "plus";
   return "edit";

@@ -60,20 +60,7 @@ class ShopifyWarehouseInventorySyncService
             return ['status' => 'skipped', 'reason' => 'missing_inventory_item_id'];
         }
 
-        $locationIds = ShopifyLocation::query()
-            ->where('connection_id', (int) $connection->id)
-            ->where('sync_inventory', true)
-            ->pluck('shopify_location_id')
-            ->map(static function ($id) {
-                return ShopifyGid::toId((string) $id);
-            })
-            ->filter(static function ($id) {
-                return $id !== '';
-            })
-            ->unique()
-            ->values()
-            ->all();
-
+        $locationIds = $this->syncLocationIds((int) $connection->id);
         if ($locationIds === []) {
             Log::info('shopify.inventory.warehouse_delta_skipped', [
                 'variant_id' => (int) $variant->id,
@@ -100,6 +87,15 @@ class ShopifyWarehouseInventorySyncService
 
         try {
             $pushed = $this->productSync->pushInventoryToShopify($variant->fresh('connection'));
+            if ((int) $pushed <= 0) {
+                Log::warning('shopify.inventory.warehouse_delta_push_zero', [
+                    'variant_id' => (int) $variant->id,
+                    'delta' => $delta,
+                ]);
+                PushShopifyVariantInventoryJob::dispatch((int) $variant->id);
+
+                return ['status' => 'queued', 'reason' => 'push_returned_zero'];
+            }
 
             return [
                 'status' => 'pushed',
@@ -116,5 +112,44 @@ class ShopifyWarehouseInventorySyncService
 
             return ['status' => 'queued', 'reason' => null];
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function syncLocationIds(int $connectionId): array
+    {
+        $ids = ShopifyLocation::query()
+            ->where('connection_id', $connectionId)
+            ->where('sync_inventory', true)
+            ->pluck('shopify_location_id')
+            ->map(static function ($id) {
+                return ShopifyGid::toId((string) $id);
+            })
+            ->filter(static function ($id) {
+                return $id !== '';
+            })
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($ids !== []) {
+            return $ids;
+        }
+
+        // No Sync Inventory toggle — still push to every known Shopify location so
+        // warehouse Add Inventory updates Shopify Admin (e.g. "Shop location").
+        return ShopifyLocation::query()
+            ->where('connection_id', $connectionId)
+            ->pluck('shopify_location_id')
+            ->map(static function ($id) {
+                return ShopifyGid::toId((string) $id);
+            })
+            ->filter(static function ($id) {
+                return $id !== '';
+            })
+            ->unique()
+            ->values()
+            ->all();
     }
 }

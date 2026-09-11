@@ -720,6 +720,8 @@ GQL
             $hasLineSnapshot = array_key_exists('lineItems', $node) || array_key_exists('line_items', $node);
 
             $seenLineIds = [];
+            $preserveCancelQtys = $order->crm_fulfillment_cancelled_at !== null
+                || $order->cancelled_at !== null;
             foreach ($lineNodes as $lineNode) {
                 $lineId = ShopifyGid::toId((string) ($lineNode['admin_graphql_api_id'] ?? $lineNode['id'] ?? ''));
                 if ($lineId === '') {
@@ -736,6 +738,10 @@ GQL
                     ?? 0);
                 $unfulfilled = (int) ($lineNode['unfulfilledQuantity'] ?? $lineNode['fulfillable_quantity'] ?? $qty);
                 $fulfilled = max(0, $qty - $unfulfilled);
+                if ($preserveCancelQtys) {
+                    // Keep CRM cancel: do not restore fulfillable qty from Shopify sync.
+                    $unfulfilled = 0;
+                }
                 ShopifyOrderLineItem::query()->updateOrCreate(
                     [
                         'connection_id' => $connection->id,

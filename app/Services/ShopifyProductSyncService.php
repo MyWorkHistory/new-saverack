@@ -594,6 +594,22 @@ GQL
             ->unique()
             ->values()
             ->all();
+        // Fall back to every Shopify location when none are flagged for sync —
+        // otherwise CRM warehouse edits never reach Shopify Admin.
+        if ($enabled === []) {
+            $enabled = ShopifyLocation::query()
+                ->where('connection_id', $connection->id)
+                ->pluck('shopify_location_id')
+                ->map(static function ($id) {
+                    return ShopifyGid::toId((string) $id);
+                })
+                ->filter(static function ($id) {
+                    return $id !== '';
+                })
+                ->unique()
+                ->values()
+                ->all();
+        }
         if ($enabled === []) {
             return 0;
         }
@@ -637,6 +653,17 @@ GQL
             return 0;
         }
 
+        $api = $this->client->forConnection($connection);
+        $inventoryItemGid = ShopifyGid::of('InventoryItem', $itemId);
+        foreach ($quantities as $quantity) {
+            $this->ensureInventoryActivatedAtLocation(
+                $api,
+                $inventoryItemGid,
+                (string) $quantity['locationId'],
+                (int) $quantity['quantity']
+            );
+        }
+
         $idempotencyKey = sprintf(
             'crm-inv-push-%d-%s-%s',
             (int) $variant->id,
@@ -644,28 +671,105 @@ GQL
             bin2hex(random_bytes(8))
         );
 
-        $api = $this->client->forConnection($connection);
-        $data = $api->graphql(
-            <<<'GQL'
+        $input = [
+            'name' => 'available',
+            'reason' => 'correction',
+            'ignoreCompareQuantity' => true,
+            'quantities' => $quantities,
+        ];
+
+        try {
+            $data = $api->graphql(
+                <<<'GQL'
 mutation inventorySetQuantities($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
   inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
     userErrors { field message }
   }
 }
 GQL
-            ,
-            [
-                'input' => [
-                    'name' => 'available',
-                    'reason' => 'correction',
-                    'quantities' => $quantities,
-                ],
-                'idempotencyKey' => $idempotencyKey,
-            ]
-        );
-        $this->assertNoUserErrors($data['inventorySetQuantities'] ?? null);
+                ,
+                [
+                    'input' => $input,
+                    'idempotencyKey' => $idempotencyKey,
+                ]
+            );
+            $this->assertNoUserErrors($data['inventorySetQuantities'] ?? null);
+        } catch (Throwable $e) {
+            // Older API versions reject ignoreCompareQuantity — retry without it.
+            if (stripos($e->getMessage(), 'ignoreCompareQuantity') === false
+                && stripos($e->getMessage(), 'ignored') === false
+            ) {
+                throw $e;
+            }
+            unset($input['ignoreCompareQuantity']);
+            $data = $api->graphql(
+                <<<'GQL'
+mutation inventorySetQuantities($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
+  inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
+    userErrors { field message }
+  }
+}
+GQL
+                ,
+                [
+                    'input' => $input,
+                    'idempotencyKey' => $idempotencyKey.'-fallback',
+                ]
+            );
+            $this->assertNoUserErrors($data['inventorySetQuantities'] ?? null);
+        }
 
         return count($quantities);
+    }
+
+    /**
+     * Stock the inventory item at a Shopify location so inventorySetQuantities can succeed.
+     */
+    private function ensureInventoryActivatedAtLocation($api, string $inventoryItemGid, string $locationGid, int $available): void
+    {
+        try {
+            $data = $api->graphql(
+                <<<'GQL'
+mutation inventoryActivate($inventoryItemId: ID!, $locationId: ID!, $available: Int) {
+  inventoryActivate(inventoryItemId: $inventoryItemId, locationId: $locationId, available: $available) {
+    userErrors { field message }
+  }
+}
+GQL
+                ,
+                [
+                    'inventoryItemId' => $inventoryItemGid,
+                    'locationId' => $locationGid,
+                    'available' => max(0, $available),
+                ]
+            );
+            $errors = is_array($data['inventoryActivate']['userErrors'] ?? null)
+                ? $data['inventoryActivate']['userErrors']
+                : [];
+            foreach ($errors as $error) {
+                $message = strtolower((string) ($error['message'] ?? ''));
+                // Already stocked / already activated is fine — continue to set quantities.
+                if (
+                    strpos($message, 'already') !== false
+                    || strpos($message, 'stocked') !== false
+                    || strpos($message, 'activated') !== false
+                ) {
+                    continue;
+                }
+                if ($message !== '') {
+                    // Non-fatal: setQuantities may still succeed if level exists.
+                    \Illuminate\Support\Facades\Log::info('shopify.inventory.activate_user_error', [
+                        'message' => $error['message'] ?? null,
+                        'location' => $locationGid,
+                    ]);
+                }
+            }
+        } catch (Throwable $e) {
+            \Illuminate\Support\Facades\Log::info('shopify.inventory.activate_failed', [
+                'message' => $e->getMessage(),
+                'location' => $locationGid,
+            ]);
+        }
     }
 
     /**

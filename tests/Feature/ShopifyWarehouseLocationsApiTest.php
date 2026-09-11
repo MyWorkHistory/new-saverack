@@ -217,7 +217,49 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
         });
     }
 
-    public function test_store_item_skips_shopify_sync_without_sync_inventory_location(): void
+    public function test_store_item_pushes_when_sync_inventory_flag_off_but_location_exists(): void
+    {
+        Bus::fake([PushShopifyVariantInventoryJob::class]);
+        $this->actingAsAdmin();
+
+        $location = ShopifyWarehouseLocation::query()->create([
+            'name' => 'A-FALLBACK',
+            'type' => 'Large Shelf',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        $variant = $this->makeVariant('FALLBACK-1');
+        ShopifyLocation::query()->create([
+            'connection_id' => $variant->connection_id,
+            'shopify_location_id' => '9100',
+            'name' => 'Shop location',
+            'active' => true,
+            'sync_inventory' => false,
+        ]);
+
+        $sync = \Mockery::mock(\App\Services\ShopifyProductSyncService::class);
+        $sync->shouldReceive('pushInventoryToShopify')->once()->andReturn(1);
+        $this->app->instance(\App\Services\ShopifyProductSyncService::class, $sync);
+        $this->app->forgetInstance(\App\Services\ShopifyWarehouseInventorySyncService::class);
+
+        $this->postJson("/api/shopify/locations/{$location->id}/items", [
+            'client_account_id' => $variant->connection->client_account_id,
+            'shopify_variant_id' => $variant->id,
+            'available' => 2,
+            'reason' => 'Restock',
+        ])->assertCreated()
+            ->assertJsonPath('item.available', 2)
+            ->assertJsonPath('shopify_sync.status', 'pushed');
+
+        $this->assertDatabaseHas('shopify_inventory_levels', [
+            'connection_id' => $variant->connection_id,
+            'shopify_inventory_item_id' => (string) $variant->shopify_inventory_item_id,
+            'shopify_location_id' => '9100',
+            'available' => 2,
+        ]);
+    }
+
+    public function test_store_item_skips_shopify_sync_without_any_shopify_location(): void
     {
         Bus::fake([PushShopifyVariantInventoryJob::class]);
         $this->actingAsAdmin();
@@ -229,13 +271,6 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
             'sellable' => true,
         ]);
         $variant = $this->makeVariant('SKIP-1');
-        ShopifyLocation::query()->create([
-            'connection_id' => $variant->connection_id,
-            'shopify_location_id' => '9100',
-            'name' => 'No Sync',
-            'active' => true,
-            'sync_inventory' => false,
-        ]);
 
         $this->postJson("/api/shopify/locations/{$location->id}/items", [
             'client_account_id' => $variant->connection->client_account_id,
@@ -273,6 +308,14 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
         $api = \Mockery::mock(\App\Services\ShopifyClient::class);
         $api->shouldReceive('graphql')
             ->once()
+            ->withArgs(function (string $query) {
+                return str_contains($query, 'inventoryActivate');
+            })
+            ->andReturn([
+                'inventoryActivate' => ['userErrors' => []],
+            ]);
+        $api->shouldReceive('graphql')
+            ->once()
             ->withArgs(function (string $query, array $vars) use ($variant) {
                 $qty = $vars['input']['quantities'][0] ?? null;
                 $input = $vars['input'] ?? [];
@@ -281,7 +324,7 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
                     && str_contains($query, '@idempotent')
                     && is_string($vars['idempotencyKey'] ?? null)
                     && ($vars['idempotencyKey'] ?? '') !== ''
-                    && ! array_key_exists('ignoreCompareQuantity', $input)
+                    && ($input['ignoreCompareQuantity'] ?? null) === true
                     && is_array($qty)
                     && ($qty['locationId'] ?? null) === 'gid://shopify/Location/7777'
                     && ($qty['inventoryItemId'] ?? null) === 'gid://shopify/InventoryItem/'.$variant->shopify_inventory_item_id

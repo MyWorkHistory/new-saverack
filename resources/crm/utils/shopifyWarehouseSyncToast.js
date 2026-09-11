@@ -24,7 +24,7 @@ export function toastShopifyWarehouseSync(toast, sync, successWhenQueued) {
     const reason = String(sync?.reason || "");
     if (reason === "no_sync_inventory_locations") {
       toast.warning(
-        "Saved in CRM, but Shopify was not updated. Enable Sync Inventory on a store location under Account → Stores.",
+        "Saved in CRM, but Shopify was not updated. No Shopify store location found for this product’s account — sync store locations under Account → Stores.",
       );
       return;
     }

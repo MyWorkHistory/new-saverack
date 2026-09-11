@@ -6,6 +6,7 @@ use App\Jobs\PushShopifyVariantInventoryJob;
 use App\Models\ShopifyInventoryLevel;
 use App\Models\ShopifyLocation;
 use App\Models\ShopifyProductVariant;
+use App\Models\ShopifyWarehouseLocationItem;
 use App\Support\ShopifyGid;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -85,12 +86,69 @@ class ShopifyWarehouseInventorySyncService
             $level->save();
         }
 
+        return $this->pushAfterLevelWrite($variant);
+    }
+
+    /**
+     * Set CRM Shopify inventory levels from warehouse bin totals (source of truth).
+     *
+     * @return array{status: string, reason: ?string, total?: int, location_id?: string}
+     */
+    public function hydrateCrmLevelsFromWarehouse(ShopifyProductVariant $variant): array
+    {
+        $variant->loadMissing('connection');
+        $connection = $variant->connection;
+        if ($connection === null) {
+            return ['status' => 'skipped', 'reason' => 'no_connection'];
+        }
+
+        $itemId = ShopifyGid::toId(trim((string) ($variant->shopify_inventory_item_id ?? '')));
+        if ($itemId === '') {
+            return ['status' => 'skipped', 'reason' => 'missing_inventory_item_id'];
+        }
+
+        $locationIds = $this->syncLocationIds((int) $connection->id);
+        if ($locationIds === []) {
+            return ['status' => 'skipped', 'reason' => 'no_sync_inventory_locations'];
+        }
+
+        $total = (int) ShopifyWarehouseLocationItem::query()
+            ->where('shopify_variant_id', (int) $variant->id)
+            ->sum('available');
+        $total = max(0, $total);
+
+        // Put warehouse total on the primary sync location only (avoid multiplying
+        // inventory across every Shopify location).
+        $primaryLocationId = $locationIds[0];
+        $now = Carbon::now();
+        /** @var ShopifyInventoryLevel $level */
+        $level = ShopifyInventoryLevel::query()->firstOrNew([
+            'connection_id' => (int) $connection->id,
+            'shopify_inventory_item_id' => $itemId,
+            'shopify_location_id' => $primaryLocationId,
+        ]);
+        $level->available = $total;
+        $level->crm_set_at = $now;
+        $level->save();
+
+        return [
+            'status' => 'ok',
+            'reason' => null,
+            'total' => $total,
+            'location_id' => $primaryLocationId,
+        ];
+    }
+
+    /**
+     * @return array{status: string, reason: ?string, pushed?: int}
+     */
+    private function pushAfterLevelWrite(ShopifyProductVariant $variant): array
+    {
         try {
             $pushed = $this->productSync->pushInventoryToShopify($variant->fresh('connection'));
             if ((int) $pushed <= 0) {
                 Log::warning('shopify.inventory.warehouse_delta_push_zero', [
                     'variant_id' => (int) $variant->id,
-                    'delta' => $delta,
                 ]);
                 PushShopifyVariantInventoryJob::dispatch((int) $variant->id);
 
@@ -117,7 +175,7 @@ class ShopifyWarehouseInventorySyncService
     /**
      * @return list<string>
      */
-    private function syncLocationIds(int $connectionId): array
+    public function syncLocationIds(int $connectionId): array
     {
         $ids = ShopifyLocation::query()
             ->where('connection_id', $connectionId)
@@ -137,8 +195,6 @@ class ShopifyWarehouseInventorySyncService
             return $ids;
         }
 
-        // No Sync Inventory toggle — still push to every known Shopify location so
-        // warehouse Add Inventory updates Shopify Admin (e.g. "Shop location").
         return ShopifyLocation::query()
             ->where('connection_id', $connectionId)
             ->pluck('shopify_location_id')

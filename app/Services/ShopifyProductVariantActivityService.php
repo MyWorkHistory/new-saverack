@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
 use App\Models\ShopifyProductVariantActivity;
 use App\Models\User;
@@ -55,8 +56,8 @@ class ShopifyProductVariantActivityService
     /**
      * Compare before/after snapshots and write product-field timeline events.
      *
-     * @param  array{product_title?:string|null, barcode?:string|null, weight?:float|null, weight_unit?:string|null, length?:float|null, width?:float|null, height?:float|null, dimension_unit?:string|null}  $before
-     * @param  array{product_title?:string|null, barcode?:string|null, weight?:float|null, weight_unit?:string|null, length?:float|null, width?:float|null, height?:float|null, dimension_unit?:string|null}  $after
+     * @param  array{sku?:string|null, product_title?:string|null, barcode?:string|null, weight?:float|null, weight_unit?:string|null, length?:float|null, width?:float|null, height?:float|null, dimension_unit?:string|null}  $before
+     * @param  array{sku?:string|null, product_title?:string|null, barcode?:string|null, weight?:float|null, weight_unit?:string|null, length?:float|null, width?:float|null, height?:float|null, dimension_unit?:string|null}  $after
      */
     public function recordFieldChanges(
         ShopifyProductVariant $variant,
@@ -64,6 +65,19 @@ class ShopifyProductVariantActivityService
         array $after,
         ?User $actor = null
     ): void {
+        $beforeSku = trim((string) ($before['sku'] ?? ''));
+        $afterSku = trim((string) ($after['sku'] ?? ''));
+        if ($beforeSku !== $afterSku) {
+            $label = $afterSku !== '' ? $afterSku : '—';
+            $this->record(
+                $variant,
+                ShopifyProductVariantActivity::TYPE_SKU,
+                'SKU Updated to: '.$label,
+                null,
+                $actor
+            );
+        }
+
         $beforeTitle = trim((string) ($before['product_title'] ?? ''));
         $afterTitle = trim((string) ($after['product_title'] ?? ''));
         if ($beforeTitle !== $afterTitle && $afterTitle !== '') {
@@ -136,6 +150,66 @@ class ShopifyProductVariantActivityService
                 ]
             );
         }
+    }
+
+    public function recordProductTypeChange(
+        ShopifyProductVariant $variant,
+        string $beforeKind,
+        string $afterKind,
+        ?User $actor = null
+    ): void {
+        $before = ShopifyProduct::normalizeCrmProductKind($beforeKind);
+        $after = ShopifyProduct::normalizeCrmProductKind($afterKind);
+        if ($before === $after) {
+            return;
+        }
+
+        $this->record(
+            $variant,
+            ShopifyProductVariantActivity::TYPE_PRODUCT_TYPE,
+            'Product Type Updated to: '.ShopifyProduct::crmProductKindLabel($after),
+            null,
+            $actor,
+            null,
+            ['from' => $before, 'to' => $after]
+        );
+    }
+
+    public function recordBundleUpdated(ShopifyProductVariant $variant, ?User $actor = null, ?string $detail = null): void
+    {
+        $this->record(
+            $variant,
+            ShopifyProductVariantActivity::TYPE_BUNDLE_UPDATED,
+            'Bundle Updated',
+            $detail,
+            $actor
+        );
+    }
+
+    public function recordProductInfoSynced(ShopifyProductVariant $variant, ?User $actor = null): void
+    {
+        $this->record(
+            $variant,
+            ShopifyProductVariantActivity::TYPE_SYNC_INFO,
+            'Product Info Synced from Shopify',
+            null,
+            $actor
+        );
+    }
+
+    public function recordInventoryPushed(ShopifyProductVariant $variant, int $pushed, ?User $actor = null): void
+    {
+        $this->record(
+            $variant,
+            ShopifyProductVariantActivity::TYPE_PUSH_INVENTORY,
+            $pushed > 0
+                ? 'Inventory Pushed to Shopify ('.$pushed.' location'.($pushed === 1 ? '' : 's').')'
+                : 'Inventory Push Attempted',
+            null,
+            $actor,
+            null,
+            ['pushed' => $pushed]
+        );
     }
 
     /**

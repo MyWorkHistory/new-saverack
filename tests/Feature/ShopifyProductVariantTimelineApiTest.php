@@ -126,4 +126,39 @@ class ShopifyProductVariantTimelineApiTest extends TestCase
         $this->assertSame(4.0, (float) ($dims->meta['width'] ?? 0));
         $this->assertSame(2.0, (float) ($dims->meta['height'] ?? 0));
     }
+
+    public function test_update_variant_records_sku_timeline_event(): void
+    {
+        $this->actingAsAdmin();
+        $variant = $this->makeVariant();
+
+        $this->patchJson("/api/shopify/inventory/{$variant->id}", [
+            'sku' => 'TL-CHANGED',
+        ])->assertOk();
+
+        $row = ShopifyProductVariantActivity::query()
+            ->where('shopify_variant_id', $variant->id)
+            ->where('type', ShopifyProductVariantActivity::TYPE_SKU)
+            ->first();
+        $this->assertNotNull($row);
+        $this->assertSame('SKU Updated to: TL-CHANGED', $row->title);
+    }
+
+    public function test_update_product_settings_records_type_timeline_event(): void
+    {
+        $this->actingAsAdmin();
+        $variant = $this->makeVariant();
+
+        $this->patchJson("/api/shopify/inventory/{$variant->id}/settings", [
+            'status' => 'active',
+            'product_type' => 'bundle',
+        ])->assertOk();
+
+        $row = ShopifyProductVariantActivity::query()
+            ->where('shopify_variant_id', $variant->id)
+            ->where('type', ShopifyProductVariantActivity::TYPE_PRODUCT_TYPE)
+            ->first();
+        $this->assertNotNull($row);
+        $this->assertSame('Product Type Updated to: Bundle', $row->title);
+    }
 }

@@ -188,6 +188,11 @@ function timelineGlyph(type) {
   if (type === "barcode_updated") return "barcode";
   if (type === "weight_updated") return "weight";
   if (type === "dimensions_updated") return "ruler";
+  if (type === "sku_updated") return "sku";
+  if (type === "product_type_updated") return "type";
+  if (type === "bundle_updated") return "bundle";
+  if (type === "product_info_synced") return "sync";
+  if (type === "inventory_pushed") return "push";
   return "pencil";
 }
 
@@ -196,6 +201,11 @@ function timelineIconClass(type) {
   if (type === "barcode_updated") return "sid-timeline__icon--barcode";
   if (type === "weight_updated") return "sid-timeline__icon--weight";
   if (type === "dimensions_updated") return "sid-timeline__icon--dims";
+  if (type === "sku_updated") return "sid-timeline__icon--sku";
+  if (type === "product_type_updated") return "sid-timeline__icon--type";
+  if (type === "bundle_updated") return "sid-timeline__icon--bundle";
+  if (type === "product_info_synced") return "sid-timeline__icon--sync";
+  if (type === "inventory_pushed") return "sid-timeline__icon--push";
   return "sid-timeline__icon--edit";
 }
 
@@ -258,9 +268,8 @@ async function onSaveSettings(payload) {
     settingsOpen.value = false;
     if (data?.variant) {
       variant.value = data.variant;
-    } else {
-      await load();
     }
+    await load();
   } catch (e) {
     toast.errorFrom(e, "Could not save settings.");
   } finally {
@@ -277,11 +286,7 @@ async function onSaveBundleItems(items) {
     });
     toast.success(data?.message || "Bundle components saved.");
     bundleItemsOpen.value = false;
-    if (Array.isArray(data?.components) && variant.value) {
-      variant.value = { ...variant.value, bundle_components: data.components };
-    } else {
-      await load();
-    }
+    await load();
   } catch (e) {
     toast.errorFrom(e, "Could not save bundle items.");
   } finally {
@@ -412,17 +417,14 @@ async function deleteBundleComponent(component) {
 
 async function syncProductInfo() {
   actionsOpen.value = false;
-  const accountId = variant.value?.client_account_id;
-  const connectionId = variant.value?.connection_id;
-  if (!accountId || !connectionId) {
-    toast.error("Missing Shopify connection for this product.");
+  const variantId = variant.value?.id;
+  if (!variantId) {
+    toast.error("Missing product for this action.");
     return;
   }
   actionBusy.value = true;
   try {
-    const { data } = await api.post(
-      `/client-accounts/${accountId}/shopify-connections/${connectionId}/sync-products`,
-    );
+    const { data } = await api.post(`/shopify/inventory/${variantId}/sync-product-info`);
     toast.success(data?.message || "Product info synced.");
     await load();
   } catch (e) {
@@ -443,6 +445,7 @@ async function pushInventory() {
   try {
     const { data } = await api.post(`/shopify/inventory/${variantId}/push-inventory`);
     toast.success(data?.message || "Inventory pushed.");
+    await load();
   } catch (e) {
     toast.errorFrom(e, "Could not push inventory.");
   } finally {
@@ -1602,6 +1605,11 @@ onUnmounted(() => {
 .sid-timeline__icon--barcode { background: #3b82f6; }
 .sid-timeline__icon--weight { background: #0ea5e9; }
 .sid-timeline__icon--dims { background: #14b8a6; }
+.sid-timeline__icon--sku { background: #6366f1; }
+.sid-timeline__icon--type { background: #a855f7; }
+.sid-timeline__icon--bundle { background: #ec4899; }
+.sid-timeline__icon--sync { background: #0d9488; }
+.sid-timeline__icon--push { background: #2563eb; }
 .sid-timeline__body {
   flex: 1;
   min-width: 0;

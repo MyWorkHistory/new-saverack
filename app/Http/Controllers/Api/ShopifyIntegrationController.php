@@ -10,6 +10,7 @@ use App\Models\ShopifyOrder;
 use App\Models\ShopifyProductVariant;
 use App\Models\ShopifyWarehouseLocationItem;
 use App\Services\AsnReceivingService;
+use App\Services\ShopifyBootstrapImportService;
 use App\Services\ShopifyConnectionService;
 use App\Services\ShopifyFulfillmentService;
 use App\Services\ShopifyOAuthService;
@@ -20,6 +21,7 @@ use App\Services\ShopifyOrderListService;
 use App\Services\ShopifyOrderSyncService;
 use App\Services\ShopifyProductCsvService;
 use App\Services\ShopifyProductSyncService;
+use App\Services\ShopifyWarehouseInventorySyncService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -1518,29 +1520,20 @@ class ShopifyIntegrationController extends Controller
         }
 
         $page = $query->paginate($perPage);
-        $variantIds = collect($page->items())->pluck('shopify_inventory_item_id')->filter()->all();
-        $connectionIds = collect($page->items())->pluck('connection_id')->unique()->all();
-
-        $levels = \App\Models\ShopifyInventoryLevel::query()
-            ->whereIn('connection_id', $connectionIds)
-            ->whereIn('shopify_inventory_item_id', $variantIds)
-            ->get()
-            ->groupBy(function ($row) {
-                return $row->connection_id.'|'.$row->shopify_inventory_item_id;
-            });
-
-        $locations = \App\Models\ShopifyLocation::query()
-            ->whereIn('connection_id', $connectionIds)
-            ->get()
-            ->groupBy('connection_id');
+        $crmVariantIds = collect($page->items())->pluck('id')->filter()->values()->all();
+        $warehouseTotals = [];
+        if ($crmVariantIds !== []) {
+            $warehouseTotals = ShopifyWarehouseLocationItem::query()
+                ->whereIn('shopify_variant_id', $crmVariantIds)
+                ->selectRaw('shopify_variant_id, COALESCE(SUM(available), 0) as total_on_hand')
+                ->groupBy('shopify_variant_id')
+                ->pluck('total_on_hand', 'shopify_variant_id')
+                ->all();
+        }
 
         return response()->json([
-            'data' => collect($page->items())->map(function (ShopifyProductVariant $variant) use ($levels, $locations) {
-                $key = $variant->connection_id.'|'.$variant->shopify_inventory_item_id;
-                $levelRows = $levels->get($key, collect());
-                $locMap = ($locations->get($variant->connection_id) ?? collect())->keyBy('shopify_location_id');
-
-                $onHand = (int) $levelRows->sum('available');
+            'data' => collect($page->items())->map(function (ShopifyProductVariant $variant) use ($warehouseTotals) {
+                $onHand = (int) ($warehouseTotals[$variant->id] ?? 0);
                 $productStatus = $this->normalizeCrmProductStatus(
                     $variant->product ? (string) ($variant->product->status ?? 'active') : 'active'
                 );
@@ -1571,15 +1564,7 @@ class ShopifyIntegrationController extends Controller
                         : null,
                     'connection_id' => (int) $variant->connection_id,
                     'account_name' => optional(optional($variant->connection)->clientAccount)->company_name,
-                    'inventory' => $levelRows->map(function ($level) use ($locMap) {
-                        $loc = $locMap->get($level->shopify_location_id);
-
-                        return [
-                            'location_id' => $level->shopify_location_id,
-                            'location_name' => $loc->name ?? $level->shopify_location_id,
-                            'available' => (int) $level->available,
-                        ];
-                    })->values(),
+                    'inventory' => [],
                     'available_total' => $onHand,
                 ];
             })->values(),
@@ -1595,7 +1580,9 @@ class ShopifyIntegrationController extends Controller
     public function pushVariantInventory(
         Request $request,
         ShopifyProductVariant $shopifyVariant,
-        ShopifyProductSyncService $productSync
+        ShopifyProductSyncService $productSync,
+        ShopifyWarehouseInventorySyncService $warehouseInventorySync,
+        ShopifyBootstrapImportService $bootstrap
     ): JsonResponse {
         $this->assertAdmin($request);
         $shopifyVariant->loadMissing('connection');
@@ -1616,24 +1603,50 @@ class ShopifyIntegrationController extends Controller
             ], 422);
         }
 
-        $hasSyncLocation = ShopifyLocation::query()
-            ->where('connection_id', (int) $connection->id)
-            ->where('sync_inventory', true)
-            ->exists();
-        if (! $hasSyncLocation) {
+        // Refresh Shopify locations so push uses valid location IDs.
+        try {
+            $bootstrap->importLocationsOnly($connection);
+        } catch (Throwable $e) {
+            report($e);
+        }
+
+        $hydrate = $warehouseInventorySync->hydrateCrmLevelsFromWarehouse($shopifyVariant->fresh('connection'));
+        if (($hydrate['status'] ?? '') !== 'ok') {
+            $reason = (string) ($hydrate['reason'] ?? 'unknown');
+            $message = 'Could not prepare inventory for Shopify push.';
+            if ($reason === 'no_sync_inventory_locations') {
+                $message = 'No Shopify store location found. Sync store locations under Account → Stores, then try again.';
+            } elseif ($reason === 'missing_inventory_item_id') {
+                $message = 'This product is missing a Shopify inventory item id — re-sync products.';
+            }
+
             return response()->json([
-                'message' => 'Enable Sync Inventory on a store location under Account → Stores.',
+                'message' => $message,
                 'pushed' => 0,
-                'reason' => 'no_sync_inventory_locations',
+                'reason' => $reason,
             ], 422);
         }
 
         try {
-            $pushed = $productSync->pushInventoryToShopify($shopifyVariant);
+            $pushed = $productSync->pushInventoryToShopify($shopifyVariant->fresh('connection'));
         } catch (Throwable $e) {
             report($e);
+            $msg = $e->getMessage();
+            if (stripos($msg, 'location') !== false && stripos($msg, 'not found') !== false) {
+                try {
+                    $bootstrap->importLocationsOnly($connection);
+                    $warehouseInventorySync->hydrateCrmLevelsFromWarehouse($shopifyVariant->fresh('connection'));
+                    $pushed = $productSync->pushInventoryToShopify($shopifyVariant->fresh('connection'));
+                } catch (Throwable $retry) {
+                    report($retry);
 
-            return response()->json(['message' => $e->getMessage()], 422);
+                    return response()->json([
+                        'message' => 'Shopify location not found. Re-sync store locations under Account → Stores, then try Push Inventory again.',
+                    ], 422);
+                }
+            } else {
+                return response()->json(['message' => $msg], 422);
+            }
         }
 
         if ($pushed === 0) {
@@ -1644,9 +1657,64 @@ class ShopifyIntegrationController extends Controller
             ], 422);
         }
 
+        try {
+            app(\App\Services\ShopifyProductVariantActivityService::class)->recordInventoryPushed(
+                $shopifyVariant,
+                (int) $pushed,
+                $request->user()
+            );
+        } catch (Throwable $e) {
+            report($e);
+        }
+
         return response()->json([
             'message' => 'Pushed inventory for '.$pushed.' location'.($pushed === 1 ? '' : 's').'.',
             'pushed' => $pushed,
+        ]);
+    }
+
+    public function syncVariantProductInfo(
+        Request $request,
+        ShopifyProductVariant $shopifyVariant,
+        ShopifyProductSyncService $productSync
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $shopifyVariant->loadMissing('connection');
+        $connection = $shopifyVariant->connection;
+        if ($connection === null) {
+            return response()->json(['message' => 'Shopify connection is missing for this product.'], 422);
+        }
+        if (! $connection->hasCredentials()) {
+            return response()->json(['message' => 'Connect Shopify credentials first.'], 422);
+        }
+
+        try {
+            $catalog = $productSync->importActiveProducts($connection);
+            $connection->last_product_sync_at = now();
+            $connection->last_sync_at = now();
+            $connection->save();
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        try {
+            app(\App\Services\ShopifyProductVariantActivityService::class)->recordProductInfoSynced(
+                $shopifyVariant,
+                $request->user()
+            );
+        } catch (Throwable $e) {
+            report($e);
+        }
+
+        return response()->json([
+            'message' => 'Synced '.(int) ($catalog['products'] ?? 0).' products.',
+            'products' => (int) ($catalog['products'] ?? 0),
+            'variants' => (int) ($catalog['variants'] ?? 0),
+            'variant' => $this->serializeInventoryVariantDetail(
+                $shopifyVariant->fresh(['product', 'connection.clientAccount'])
+            ),
         ]);
     }
 
@@ -1761,6 +1829,7 @@ class ShopifyIntegrationController extends Controller
         // Persist CRM copy immediately so the request finishes under Cloudflare.
         $shopifyVariant->loadMissing('product');
         $before = [
+            'sku' => $shopifyVariant->sku,
             'product_title' => $shopifyVariant->product->title ?? null,
             'barcode' => $shopifyVariant->barcode,
             'weight' => $shopifyVariant->weight,
@@ -1845,6 +1914,7 @@ class ShopifyIntegrationController extends Controller
         }
 
         $after = [
+            'sku' => $shopifyVariant->sku,
             'product_title' => $shopifyVariant->product->title ?? null,
             'barcode' => $shopifyVariant->barcode,
             'weight' => $shopifyVariant->weight,
@@ -1923,10 +1993,22 @@ class ShopifyIntegrationController extends Controller
 
         $status = strtolower(trim((string) $validated['status'])) === 'inactive' ? 'inactive' : 'active';
         $kind = \App\Models\ShopifyProduct::normalizeCrmProductKind($validated['product_type']);
+        $beforeKind = \App\Models\ShopifyProduct::normalizeCrmProductKind($product->crm_product_kind ?? null);
 
         $product->status = $status;
         $product->crm_product_kind = $kind;
         $product->save();
+
+        try {
+            app(\App\Services\ShopifyProductVariantActivityService::class)->recordProductTypeChange(
+                $shopifyVariant,
+                $beforeKind,
+                $kind,
+                $request->user()
+            );
+        } catch (Throwable $e) {
+            report($e);
+        }
 
         // Push Active/Inactive to Shopify when connected (CRM type stays local).
         try {
@@ -2155,6 +2237,16 @@ class ShopifyIntegrationController extends Controller
             $message = 'Bundle components saved. Skipped bundle SKUs: '.implode(', ', array_slice($rejectedBundles, 0, 5)).'.';
         }
 
+        try {
+            app(\App\Services\ShopifyProductVariantActivityService::class)->recordBundleUpdated(
+                $shopifyVariant,
+                $request->user(),
+                count($rows).' component'.(count($rows) === 1 ? '' : 's')
+            );
+        } catch (Throwable $e) {
+            report($e);
+        }
+
         return response()->json([
             'message' => $message,
             'components' => $this->serializeBundleComponents($shopifyVariant->fresh()),
@@ -2176,6 +2268,16 @@ class ShopifyIntegrationController extends Controller
         $component->quantity = (int) $validated['quantity'];
         $component->save();
 
+        try {
+            app(\App\Services\ShopifyProductVariantActivityService::class)->recordBundleUpdated(
+                $shopifyVariant,
+                $request->user(),
+                'Component quantity updated'
+            );
+        } catch (Throwable $e) {
+            report($e);
+        }
+
         return response()->json([
             'message' => 'Quantity updated.',
             'components' => $this->serializeBundleComponents($shopifyVariant),
@@ -2192,6 +2294,16 @@ class ShopifyIntegrationController extends Controller
             abort(404);
         }
         $component->delete();
+
+        try {
+            app(\App\Services\ShopifyProductVariantActivityService::class)->recordBundleUpdated(
+                $shopifyVariant,
+                $request->user(),
+                'Component removed'
+            );
+        } catch (Throwable $e) {
+            report($e);
+        }
 
         return response()->json([
             'message' => 'Component removed.',

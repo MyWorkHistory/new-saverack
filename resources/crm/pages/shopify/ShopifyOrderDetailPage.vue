@@ -130,7 +130,7 @@ function lineStatusLabel(status) {
 function timelineIconClass(type) {
   if (type === "order_hold") return "so-timeline__icon--hold";
   if (type === "order_cancel") return "so-timeline__icon--hold";
-  if (type === "order_edited" || type === "address_updated" || type === "shipping_updated" || type === "items_updated" || type === "shopify_edit") {
+  if (type === "order_edited" || type === "address_updated" || type === "shipping_updated" || type === "items_updated" || type === "shopify_edit" || type === "order_status") {
     return "so-timeline__icon--edit";
   }
   if (type === "order_fulfill" || type === "ready_to_ship") return "so-timeline__icon--ok";

@@ -27,6 +27,8 @@ class ShopifyOrderActivity extends Model
 
     public const TYPE_READY = 'ready_to_ship';
 
+    public const TYPE_STATUS = 'order_status';
+
     public const TYPE_SHOPIFY_EDIT = 'shopify_edit';
 
     public const TYPE_SYNC = 'synced';

@@ -946,4 +946,81 @@ class ShopifyOrderActionsApiTest extends TestCase
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.id', $held->id);
     }
+
+    public function test_display_status_change_writes_timeline_entry(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder([
+            'source' => ShopifyOrder::SOURCE_CRM,
+            'shopify_order_id' => 'crm-test-status-1',
+            'name' => 'MO-99',
+            'raw_json' => [
+                'crm_display_hint' => 'draft',
+                'crm_source' => 'crm',
+            ],
+        ]);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/display-status', [
+            'status' => 'ready_to_ship',
+        ])
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'ready_to_ship');
+
+        $detail = $this->getJson('/api/shopify/orders/'.$order->id)->assertOk()->json('order');
+        $timeline = collect($detail['timeline'] ?? []);
+        $statusEvent = $timeline->first(function ($row) {
+            return ($row['type'] ?? '') === \App\Models\ShopifyOrderActivity::TYPE_READY;
+        });
+        $this->assertNotNull($statusEvent);
+        $this->assertSame('Status Updated to: Ready to Ship', $statusEvent['title'] ?? null);
+        $this->assertSame('Previously: Draft', $statusEvent['detail'] ?? null);
+    }
+
+    public function test_crm_manual_order_fulfill_skips_shopify_and_fulfills_locally(): void
+    {
+        $this->actingAsAdmin();
+        [, $connection, $order] = $this->seedOrder([
+            'source' => ShopifyOrder::SOURCE_CRM,
+            'shopify_order_id' => 'crm-test-fulfill-1',
+            'name' => 'MO-100',
+            'raw_json' => [
+                'crm_display_hint' => 'ready_to_ship',
+                'crm_source' => 'crm',
+            ],
+        ]);
+
+        $line = \App\Models\ShopifyOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => 'crm-line-1',
+            'sku' => 'CRM-SKU',
+            'title' => 'CRM Item',
+            'quantity' => 2,
+            'fulfillable_quantity' => 2,
+            'fulfilled_quantity' => 0,
+            'price' => 10,
+        ]);
+
+        $sync = Mockery::mock(\App\Services\ShopifyOrderSyncService::class);
+        $sync->shouldReceive('refreshOrderByShopifyId')->never();
+        $sync->shouldReceive('syncFulfillmentOrdersFromRestApi')->never();
+        $this->app->instance(\App\Services\ShopifyOrderSyncService::class, $sync);
+
+        $fulfillments = Mockery::mock(\App\Services\ShopifyFulfillmentService::class);
+        $fulfillments->shouldReceive('markShipped')->never();
+        $this->app->instance(\App\Services\ShopifyFulfillmentService::class, $fulfillments);
+        $this->app->forgetInstance(ShopifyOrderActionService::class);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/fulfill-all')
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'fulfilled');
+
+        $this->assertSame(2, (int) $line->fresh()->fulfilled_quantity);
+        $this->assertSame(0, (int) $line->fresh()->fulfillable_quantity);
+        $this->assertSame(1, \App\Models\ShopifyFulfillment::query()->where('shopify_order_id', $order->id)->count());
+
+        $detail = $this->getJson('/api/shopify/orders/'.$order->id)->assertOk()->json('order');
+        $timelineTypes = collect($detail['timeline'] ?? [])->pluck('type')->all();
+        $this->assertContains(\App\Models\ShopifyOrderActivity::TYPE_FULFILL, $timelineTypes);
+    }
 }

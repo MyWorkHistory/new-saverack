@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ShopifyFulfillment;
 use App\Models\ShopifyInventoryLevel;
 use App\Models\ShopifyLocation;
 use App\Models\ShopifyOrder;
@@ -61,6 +62,10 @@ class ShopifyOrderActionService
 
     public function syncOrder(ShopifyOrder $order): ShopifyOrder
     {
+        if ($order->isCrmSource()) {
+            throw new RuntimeException('CRM manual orders are not synced from Shopify.');
+        }
+
         $connection = $order->connection;
         if ($connection === null || ! $connection->hasCredentials()) {
             throw new RuntimeException('Shopify connection credentials missing.');
@@ -133,13 +138,16 @@ class ShopifyOrderActionService
             report($e);
         }
 
-        $order->loadMissing('connection');
-        $connection = $order->connection;
-        if ($connection !== null && $connection->hasCredentials()) {
-            try {
-                $this->pushHoldTags($connection, $order, $reasons);
-            } catch (\Throwable $e) {
-                report($e);
+        // Manual CRM orders are not in Shopify — never push hold tags.
+        if (! $order->isCrmSource()) {
+            $order->loadMissing('connection');
+            $connection = $order->connection;
+            if ($connection !== null && $connection->hasCredentials()) {
+                try {
+                    $this->pushHoldTags($connection, $order, $reasons);
+                } catch (\Throwable $e) {
+                    report($e);
+                }
             }
         }
 
@@ -149,6 +157,11 @@ class ShopifyOrderActionService
     public function cancelOrder(ShopifyOrder $order, bool $cancelInShopify = false): ShopifyOrder
     {
         $this->assertNotShipped($order);
+
+        // Manual CRM orders are not in Shopify.
+        if ($cancelInShopify && $order->isCrmSource()) {
+            $cancelInShopify = false;
+        }
 
         if ($cancelInShopify) {
             $connection = $order->connection;
@@ -282,6 +295,11 @@ GQL
 
         if ($this->list->isCancelled($order)) {
             throw new RuntimeException('Cannot fulfill a cancelled order.');
+        }
+
+        // Manual CRM orders are not in Shopify — fulfill line qtys locally only.
+        if ($order->isCrmSource()) {
+            return $this->fulfillCrmOrderLocally($order, $actor, $trackingNumber, $deductLineItemIds);
         }
 
         $connection = $order->connection;
@@ -426,15 +444,17 @@ GQL
         $order->crm_fulfillment_cancelled_at = null;
         $order->save();
 
-        $connection = $order->connection;
-        if ($connection !== null && $connection->hasCredentials()) {
-            $refreshed = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
-            if ($refreshed !== null) {
-                $refreshed->crm_hold_reasons = [];
-                $refreshed->crm_fulfillment_cancelled_at = null;
-                $refreshed->save();
+        if (! $order->isCrmSource()) {
+            $connection = $order->connection;
+            if ($connection !== null && $connection->hasCredentials()) {
+                $refreshed = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
+                if ($refreshed !== null) {
+                    $refreshed->crm_hold_reasons = [];
+                    $refreshed->crm_fulfillment_cancelled_at = null;
+                    $refreshed->save();
 
-                return $refreshed->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
+                    return $refreshed->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']);
+                }
             }
         }
 
@@ -471,6 +491,8 @@ GQL
 
         $this->assertNotShipped($order);
 
+        $previousStatus = $this->list->displayStatus($order);
+
         if ($status === ShopifyOrderListService::DISPLAY_READY) {
             $order->crm_hold_reasons = [];
             $order->crm_fulfillment_cancelled_at = null;
@@ -480,7 +502,7 @@ GQL
             $order->raw_json = $raw;
             $order->save();
 
-            return $order->fresh(['connection.clientAccount', 'lineItems']);
+            return $this->finishDisplayStatusChange($order, $previousStatus);
         }
 
         if ($status === ShopifyOrderListService::DISPLAY_DRAFT) {
@@ -491,7 +513,7 @@ GQL
             $order->raw_json = $raw;
             $order->save();
 
-            return $order->fresh(['connection.clientAccount', 'lineItems']);
+            return $this->finishDisplayStatusChange($order, $previousStatus);
         }
 
         if ($status === ShopifyOrderListService::DISPLAY_BACKORDER) {
@@ -502,10 +524,163 @@ GQL
             $order->raw_json = $raw;
             $order->save();
 
-            return $order->fresh(['connection.clientAccount', 'lineItems']);
+            return $this->finishDisplayStatusChange($order, $previousStatus);
         }
 
         throw new RuntimeException('Unsupported status.');
+    }
+
+    /**
+     * Persist timeline when CRM display status actually changes.
+     */
+    private function finishDisplayStatusChange(ShopifyOrder $order, string $previousStatus): ShopifyOrder
+    {
+        $fresh = $order->fresh(['connection.clientAccount', 'lineItems']);
+        if ($fresh === null) {
+            return $order;
+        }
+
+        $newStatus = $this->list->displayStatus($fresh);
+        if ($previousStatus !== $newStatus) {
+            $this->recordDisplayStatusChange($fresh, $previousStatus, $newStatus);
+        }
+
+        return $fresh;
+    }
+
+    private function recordDisplayStatusChange(ShopifyOrder $order, string $fromStatus, string $toStatus): void
+    {
+        $fromLabel = $this->list->displayStatusLabel($fromStatus);
+        $toLabel = $this->list->displayStatusLabel($toStatus);
+        $type = $toStatus === ShopifyOrderListService::DISPLAY_READY
+            ? ShopifyOrderActivity::TYPE_READY
+            : ShopifyOrderActivity::TYPE_STATUS;
+
+        try {
+            $actor = auth()->user();
+            $this->activities->record(
+                $order,
+                $type,
+                'Status Updated to: '.$toLabel,
+                'Previously: '.$fromLabel,
+                $actor instanceof User ? $actor : null,
+                null,
+                [
+                    'from' => $fromStatus,
+                    'to' => $toStatus,
+                ]
+            );
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * Fulfill a CRM-only order without calling Shopify (no FOs / remote fulfillment).
+     *
+     * @param  list<int>|null  $deductLineItemIds
+     * @return array{fulfillment:ShopifyFulfillment, order:ShopifyOrder}
+     */
+    private function fulfillCrmOrderLocally(
+        ShopifyOrder $order,
+        ?User $actor,
+        ?string $trackingNumber,
+        ?array $deductLineItemIds
+    ): array {
+        $order->loadMissing(['lineItems', 'connection']);
+
+        $selectedIds = null;
+        if ($deductLineItemIds !== null) {
+            $selectedIds = array_values(array_unique(array_filter(array_map('intval', $deductLineItemIds))));
+            if ($selectedIds === []) {
+                throw new RuntimeException('Select at least one item to fulfill.');
+            }
+        }
+
+        $fulfilledPayload = [];
+        $fulfilledCount = 0;
+        foreach ($order->lineItems as $lineItem) {
+            /** @var ShopifyOrderLineItem $lineItem */
+            $lineId = (int) $lineItem->id;
+            if ($selectedIds !== null && ! in_array($lineId, $selectedIds, true)) {
+                continue;
+            }
+            if ($this->list->rawLineStatus($lineItem) === 'fulfilled') {
+                continue;
+            }
+            $qty = max(0, (int) $lineItem->quantity);
+            $already = max(0, (int) $lineItem->fulfilled_quantity);
+            $remain = max(0, (int) $lineItem->fulfillable_quantity);
+            if ($remain <= 0) {
+                $remain = max(0, $qty - $already);
+            }
+            if ($remain <= 0 || $qty <= 0) {
+                continue;
+            }
+            $lineItem->fulfilled_quantity = min($qty, $already + $remain);
+            $lineItem->fulfillable_quantity = max(0, $qty - (int) $lineItem->fulfilled_quantity);
+            $lineItem->save();
+            $fulfilledPayload[] = [
+                'order_line_item_id' => $lineId,
+                'quantity' => $remain,
+                'sku' => (string) ($lineItem->sku ?? ''),
+            ];
+            $fulfilledCount++;
+        }
+
+        if ($fulfilledPayload === []) {
+            throw new RuntimeException('No fulfillable quantities remain on this CRM order.');
+        }
+
+        $order->unsetRelation('lineItems');
+        $order->load('lineItems');
+        if ($this->list->hasNoPendingLines($order)) {
+            $order->fulfillment_status = 'fulfilled';
+        } else {
+            $status = strtolower(trim((string) $order->fulfillment_status));
+            if ($status === '' || $status === 'unfulfilled' || $status === 'fulfilled') {
+                $order->fulfillment_status = 'partial';
+            }
+        }
+        $order->crm_fulfillment_cancelled_at = null;
+        $order->crm_hold_reasons = [];
+        $raw = is_array($order->raw_json) ? $order->raw_json : [];
+        unset($raw['crm_display_hint']);
+        $order->raw_json = $raw;
+        $order->save();
+
+        $tracking = trim((string) ($trackingNumber ?? ''));
+        $fulfillment = ShopifyFulfillment::query()->create([
+            'connection_id' => (int) $order->connection_id,
+            'shopify_order_id' => (int) $order->id,
+            'shopify_fulfillment_id' => null,
+            'status' => 'success',
+            'tracking_company' => $tracking !== '' ? 'UPS' : '',
+            'tracking_number' => $tracking,
+            'line_items_json' => $fulfilledPayload,
+            'created_by_user_id' => $actor !== null ? (int) $actor->id : null,
+            'raw_json' => ['crm' => true, 'source' => 'crm'],
+        ]);
+
+        $this->deductInventoryForOrder($order, $selectedIds);
+
+        $orderOut = $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems', 'fulfillments']);
+        $detailParts = [$fulfilledCount.' item'.($fulfilledCount === 1 ? '' : 's').' fulfilled'];
+        if ($tracking !== '') {
+            $detailParts[] = 'Tracking '.$tracking;
+        }
+        $this->activities->record(
+            $orderOut,
+            ShopifyOrderActivity::TYPE_FULFILL,
+            'Order marked fulfilled',
+            implode(' · ', $detailParts),
+            $actor
+        );
+
+        return [
+            'fulfillment' => $fulfillment,
+            'order' => $orderOut,
+        ];
     }
 
     /**

@@ -177,9 +177,13 @@ class ShopifyWarehouseInventorySyncService
      */
     public function syncLocationIds(int $connectionId): array
     {
-        $ids = ShopifyLocation::query()
+        $prefer = ShopifyLocation::query()
             ->where('connection_id', $connectionId)
             ->where('sync_inventory', true)
+            ->where('active', true)
+            ->orderByRaw("CASE WHEN LOWER(name) LIKE '%shop location%' THEN 0 ELSE 1 END")
+            ->orderBy('name')
+            ->orderBy('id')
             ->pluck('shopify_location_id')
             ->map(static function ($id) {
                 return ShopifyGid::toId((string) $id);
@@ -191,12 +195,16 @@ class ShopifyWarehouseInventorySyncService
             ->values()
             ->all();
 
-        if ($ids !== []) {
-            return $ids;
+        if ($prefer !== []) {
+            return $prefer;
         }
 
         return ShopifyLocation::query()
             ->where('connection_id', $connectionId)
+            ->where('active', true)
+            ->orderByRaw("CASE WHEN LOWER(name) LIKE '%shop location%' THEN 0 ELSE 1 END")
+            ->orderBy('name')
+            ->orderBy('id')
             ->pluck('shopify_location_id')
             ->map(static function ($id) {
                 return ShopifyGid::toId((string) $id);

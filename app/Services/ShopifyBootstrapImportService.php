@@ -87,6 +87,7 @@ class ShopifyBootstrapImportService
         $count = 0;
         $cursor = null;
         $page = 0;
+        $seenIds = [];
         do {
             $page++;
             $data = $api->graphql(
@@ -126,6 +127,7 @@ GQL
                 if ($id === '') {
                     continue;
                 }
+                $seenIds[] = $id;
                 $location = ShopifyLocation::query()->firstOrNew([
                     'connection_id' => $connection->id,
                     'shopify_location_id' => $id,
@@ -146,6 +148,33 @@ GQL
             $pageInfo = is_array($conn['pageInfo'] ?? null) ? $conn['pageInfo'] : [];
             $cursor = ShopifyClient::nextPageCursor($cursor, $pageInfo, $page, 10);
         } while ($cursor !== null);
+
+        // Drop / normalize CRM rows so we never push to deleted Shopify location IDs.
+        if ($seenIds !== []) {
+            $existing = ShopifyLocation::query()
+                ->where('connection_id', $connection->id)
+                ->get();
+            foreach ($existing as $location) {
+                $normalized = ShopifyGid::toId((string) $location->shopify_location_id);
+                if ($normalized === '' || ! in_array($normalized, $seenIds, true)) {
+                    $location->delete();
+                    continue;
+                }
+                if ((string) $location->shopify_location_id !== $normalized) {
+                    $duplicate = ShopifyLocation::query()
+                        ->where('connection_id', $connection->id)
+                        ->where('shopify_location_id', $normalized)
+                        ->where('id', '!=', $location->id)
+                        ->first();
+                    if ($duplicate !== null) {
+                        $location->delete();
+                    } else {
+                        $location->shopify_location_id = $normalized;
+                        $location->save();
+                    }
+                }
+            }
+        }
 
         return $count;
     }

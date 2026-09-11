@@ -584,6 +584,7 @@ GQL
         $enabled = ShopifyLocation::query()
             ->where('connection_id', $connection->id)
             ->where('sync_inventory', true)
+            ->where('active', true)
             ->pluck('shopify_location_id')
             ->map(static function ($id) {
                 return ShopifyGid::toId((string) $id);
@@ -594,11 +595,12 @@ GQL
             ->unique()
             ->values()
             ->all();
-        // Fall back to every Shopify location when none are flagged for sync —
+        // Fall back to every active Shopify location when none are flagged for sync —
         // otherwise CRM warehouse edits never reach Shopify Admin.
         if ($enabled === []) {
             $enabled = ShopifyLocation::query()
                 ->where('connection_id', $connection->id)
+                ->where('active', true)
                 ->pluck('shopify_location_id')
                 ->map(static function ($id) {
                     return ShopifyGid::toId((string) $id);
@@ -625,8 +627,13 @@ GQL
                 ->get();
             $levels = [];
             foreach ($rows as $row) {
+                $locId = ShopifyGid::toId((string) $row->shopify_location_id);
+                // Skip stale CRM levels for locations Shopify no longer has.
+                if ($locId === '' || ! in_array($locId, $enabled, true)) {
+                    continue;
+                }
                 $levels[] = [
-                    'location_id' => (string) $row->shopify_location_id,
+                    'location_id' => $locId,
                     'available' => (int) $row->available,
                 ];
             }

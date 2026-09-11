@@ -1615,7 +1615,7 @@ class ShopifyIntegrationController extends Controller
             $reason = (string) ($hydrate['reason'] ?? 'unknown');
             $message = 'Could not prepare inventory for Shopify push.';
             if ($reason === 'no_sync_inventory_locations') {
-                $message = 'No Shopify store location found. Sync store locations under Account → Stores, then try again.';
+                $message = 'No active Shopify store location found. Open Account → Stores, sync locations, enable Sync Inventory on Shop location, then try again.';
             } elseif ($reason === 'missing_inventory_item_id') {
                 $message = 'This product is missing a Shopify inventory item id — re-sync products.';
             }
@@ -1627,21 +1627,34 @@ class ShopifyIntegrationController extends Controller
             ], 422);
         }
 
+        // Push only the hydrated store location (warehouse total) — never stale CRM levels.
+        $pushLevels = [[
+            'location_id' => (string) ($hydrate['location_id'] ?? ''),
+            'available' => (int) ($hydrate['total'] ?? 0),
+        ]];
+
         try {
-            $pushed = $productSync->pushInventoryToShopify($shopifyVariant->fresh('connection'));
+            $pushed = $productSync->pushInventoryToShopify($shopifyVariant->fresh('connection'), $pushLevels);
         } catch (Throwable $e) {
             report($e);
             $msg = $e->getMessage();
             if (stripos($msg, 'location') !== false && stripos($msg, 'not found') !== false) {
                 try {
                     $bootstrap->importLocationsOnly($connection);
-                    $warehouseInventorySync->hydrateCrmLevelsFromWarehouse($shopifyVariant->fresh('connection'));
-                    $pushed = $productSync->pushInventoryToShopify($shopifyVariant->fresh('connection'));
+                    $hydrate = $warehouseInventorySync->hydrateCrmLevelsFromWarehouse($shopifyVariant->fresh('connection'));
+                    if (($hydrate['status'] ?? '') !== 'ok') {
+                        throw new RuntimeException((string) ($hydrate['reason'] ?? 'no_locations'));
+                    }
+                    $pushLevels = [[
+                        'location_id' => (string) ($hydrate['location_id'] ?? ''),
+                        'available' => (int) ($hydrate['total'] ?? 0),
+                    ]];
+                    $pushed = $productSync->pushInventoryToShopify($shopifyVariant->fresh('connection'), $pushLevels);
                 } catch (Throwable $retry) {
                     report($retry);
 
                     return response()->json([
-                        'message' => 'Shopify location not found. Re-sync store locations under Account → Stores, then try Push Inventory again.',
+                        'message' => 'Shopify rejected the store location ID (it may be deleted or from another shop). Open Account → Stores, sync locations, turn on Sync Inventory for “Shop location”, then try Push Inventory again.',
                     ], 422);
                 }
             } else {

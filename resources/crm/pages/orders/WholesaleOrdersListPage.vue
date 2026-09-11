@@ -1,6 +1,6 @@
 <script setup>
 import { computed, inject, nextTick, onMounted, onUnmounted, ref } from "vue";
-import { RouterLink, useRoute, useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -62,11 +62,6 @@ const accountOptions = computed(() =>
     email: a.email ? String(a.email) : "",
   })),
 );
-
-const pickListRoute = computed(() => {
-  const query = accountFilter.value ? { client_account_id: String(accountFilter.value) } : {};
-  return { name: "wholesale-pick-list", query };
-});
 
 const manageMenuRow = computed(
   () => results.value.find((r) => r.id === manageOpenId.value) ?? null,
@@ -282,13 +277,6 @@ onUnmounted(() => {
         </p>
       </div>
       <div class="d-flex flex-wrap gap-2">
-        <RouterLink
-          v-if="!isPortalView"
-          :to="pickListRoute"
-          class="btn btn-outline-secondary fw-semibold orders-toolbar-outline-btn"
-        >
-          Pick List
-        </RouterLink>
         <button
           type="button"
           class="btn btn-primary staff-page-primary fw-semibold"

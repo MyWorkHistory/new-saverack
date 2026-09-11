@@ -1120,11 +1120,15 @@ class WholesaleOrderWorkflowTest extends TestCase
         return $order->fresh(['lines']);
     }
 
-    public function test_pick_list_returns_in_progress_orders(): void
+    public function test_pick_list_returns_single_in_progress_order(): void
     {
         $account = $this->account('pick');
         $otherAccount = $this->account('other');
         Sanctum::actingAs($this->staffUser());
+
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('getProductDetailBySku')->andReturn(null)->byDefault();
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
 
         $order = $this->seedInProgressOrder($account);
 
@@ -1144,18 +1148,35 @@ class WholesaleOrderWorkflowTest extends TestCase
             'items_count' => 1,
         ]);
 
+        $second = $this->seedInProgressOrder($account);
+        $second->order_number = 'PICK-2';
+        $second->save();
+
         $this->getJson('/api/admin/wholesale-orders/pick-list')
+            ->assertStatus(422);
+
+        $this->getJson('/api/admin/wholesale-orders/pick-list?client_account_id='.$account->id)
+            ->assertStatus(422);
+
+        $this->getJson('/api/admin/wholesale-orders/pick-list?wholesale_order_id='.$order->id)
             ->assertOk()
-            ->assertJsonCount(2, 'orders')
+            ->assertJsonCount(1, 'orders')
             ->assertJsonPath('orders.0.id', $order->id)
             ->assertJsonPath('orders.0.order_number', 'PICK-1')
             ->assertJsonPath('orders.0.is_fully_picked', false)
             ->assertJsonPath('orders.0.lines.0.sku', 'SKU-PICK-A');
 
-        $this->getJson('/api/admin/wholesale-orders/pick-list?client_account_id='.$account->id)
+        $this->getJson('/api/admin/wholesale-orders/pick-list?wholesale_order_id='.$order->id.'&client_account_id='.$account->id)
             ->assertOk()
             ->assertJsonCount(1, 'orders')
-            ->assertJsonPath('orders.0.id', $order->id);
+            ->assertJsonPath('orders.0.id', $order->id)
+            ->assertJsonPath('orders.0.order_number', 'PICK-1');
+
+        $this->getJson('/api/admin/wholesale-orders/pick-list?wholesale_order_id='.$second->id)
+            ->assertOk()
+            ->assertJsonCount(1, 'orders')
+            ->assertJsonPath('orders.0.id', $second->id)
+            ->assertJsonPath('orders.0.order_number', 'PICK-2');
     }
 
     public function test_pick_list_includes_locations_from_cached_product_detail(): void
@@ -1199,7 +1220,11 @@ class WholesaleOrderWorkflowTest extends TestCase
             'product_synced_at' => now(),
         ]);
 
-        $this->getJson('/api/admin/wholesale-orders/pick-list?client_account_id='.$account->id)
+        $mock = Mockery::mock(ShipHeroInventoryService::class);
+        $mock->shouldReceive('getProductDetailBySku')->andReturn(null)->byDefault();
+        $this->app->instance(ShipHeroInventoryService::class, $mock);
+
+        $this->getJson('/api/admin/wholesale-orders/pick-list?wholesale_order_id='.$order->id.'&client_account_id='.$account->id)
             ->assertOk()
             ->assertJsonPath('orders.0.lines.0.pick_location', 'A-01 (5), A-02 (3)')
             ->assertJsonPath('orders.0.lines.0.pick_locations.0', 'A-01 (5)')
@@ -1210,11 +1235,15 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonPath('orders.0.lines.1.backstock_location', null);
     }
 
-    public function test_pick_list_uses_stale_cache_and_never_calls_shiphero(): void
+    public function test_pick_list_uses_stale_cache_and_does_not_refetch_cached_skus(): void
     {
         $account = $this->account('pick-stale');
         Sanctum::actingAs($this->staffUser());
         $order = $this->seedInProgressOrder($account);
+        WholesaleOrderLine::query()
+            ->where('wholesale_order_id', $order->id)
+            ->where('sku', 'SKU-PICK-B')
+            ->delete();
 
         ShipHeroInventoryProductDetailCache::query()->create([
             'client_account_id' => $account->id,
@@ -1245,7 +1274,7 @@ class WholesaleOrderWorkflowTest extends TestCase
         $mock->shouldReceive('getProductDetailBySku')->never();
         $this->app->instance(ShipHeroInventoryService::class, $mock);
 
-        $this->getJson('/api/admin/wholesale-orders/pick-list?client_account_id='.$account->id)
+        $this->getJson('/api/admin/wholesale-orders/pick-list?wholesale_order_id='.$order->id.'&client_account_id='.$account->id)
             ->assertOk()
             ->assertJsonPath('orders.0.lines.0.pick_location', 'B-99 (7)')
             ->assertJsonPath('orders.0.lines.0.pick_locations.0', 'B-99 (7)');

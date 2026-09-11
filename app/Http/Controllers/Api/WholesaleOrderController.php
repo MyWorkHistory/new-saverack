@@ -2232,6 +2232,7 @@ class WholesaleOrderController extends Controller
         Gate::authorize('viewAny', WholesaleOrder::class);
 
         $validated = $request->validate([
+            'wholesale_order_id' => ['required', 'integer', 'exists:wholesale_orders,id'],
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
         ]);
 
@@ -2243,6 +2244,7 @@ class WholesaleOrderController extends Controller
         $query = WholesaleOrder::query()
             ->with(['lines', 'clientAccount'])
             ->where('status', WholesaleOrder::STATUS_IN_PROGRESS)
+            ->where('id', (int) $validated['wholesale_order_id'])
             ->orderByDesc('updated_at')
             ->orderByDesc('id');
 
@@ -2388,8 +2390,10 @@ class WholesaleOrderController extends Controller
     }
 
     /**
-     * Resolve pick/backstock labels from the local product detail cache only.
-     * Never calls ShipHero — per-SKU live fetches made large pick lists take minutes.
+     * Resolve pick/backstock labels from the local product detail cache.
+     * Prefer cache (including stale). For SKUs with no usable location data, hydrate
+     * from ShipHero once and write cache — otherwise pickers see blank locations until
+     * someone opens each product detail page.
      *
      * @return array<string, array{pick_location: ?string, backstock_location: ?string, pick_locations: list<string>}>
      */
@@ -2422,11 +2426,29 @@ class WholesaleOrderController extends Controller
 
         // Allow stale cache so expired rows still show locations without live API.
         $cached = $this->detailCache->getCachedProductsForPairs($pairs, true);
+        $customerId = trim((string) optional($order->clientAccount)->shiphero_customer_account_id);
+        $hydrateStarted = microtime(true);
+        $hydrateBudgetSeconds = 90.0;
 
         $out = [];
         foreach ($skuKeys as $key => $sku) {
             $cacheKey = $clientAccountId.'|'.$this->detailCache->normalizeSku($sku);
             $product = $cached[$cacheKey] ?? null;
+            $locations = is_array($product) ? PutAwayRowBuilder::locationsFromProductDetail($product) : [];
+
+            if ($locations === [] && $customerId !== '' && (microtime(true) - $hydrateStarted) < $hydrateBudgetSeconds) {
+                try {
+                    $fetched = $this->inventory->getProductDetailBySku($sku, null, $customerId, false);
+                    if (is_array($fetched)) {
+                        $this->detailCache->putProduct($clientAccountId, $sku, $fetched);
+                        $product = $fetched;
+                        $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
+                    }
+                } catch (Throwable $e) {
+                    // Keep empty locations; pick list must still render.
+                }
+            }
+
             if (! is_array($product)) {
                 $out[$key] = [
                     'pick_location' => null,
@@ -2436,7 +2458,6 @@ class WholesaleOrderController extends Controller
                 continue;
             }
 
-            $locations = PutAwayRowBuilder::locationsFromProductDetail($product);
             $out[$key] = [
                 'pick_location' => PutAwayRowBuilder::pickLocationLabel($locations),
                 'backstock_location' => PutAwayRowBuilder::backstockLocationLabel($locations),

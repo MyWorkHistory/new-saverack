@@ -20,13 +20,22 @@ const pickModalOrderId = ref(null);
 const pickModalLine = ref(null);
 
 const accountFilter = computed(() => String(route.query.client_account_id || "").trim());
+const orderFilter = computed(() => String(route.query.wholesale_order_id || "").trim());
 
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
 async function load() {
+  if (!orderFilter.value) {
+    orders.value = [];
+    loading.value = false;
+    return;
+  }
+
   loading.value = true;
   try {
-    const params = {};
+    const params = {
+      wholesale_order_id: Number(orderFilter.value),
+    };
     if (accountFilter.value) {
       params.client_account_id = Number(accountFilter.value);
     }
@@ -38,6 +47,18 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+
+function productHref(order, line) {
+  const sku = String(line?.sku || "").trim();
+  if (!sku) return null;
+  const accountId = Number(order?.client_account_id || accountFilter.value || 0);
+  const resolved = router.resolve({
+    name: "inventory-detail",
+    params: { sku },
+    query: accountId > 0 ? { client_account_id: String(accountId) } : {},
+  });
+  return resolved.href;
 }
 
 function openPickModal(order, line) {
@@ -126,6 +147,10 @@ async function markAllPicked(order) {
 }
 
 function goBack() {
+  if (orderFilter.value) {
+    router.push({ name: "wholesale-order-detail", params: { id: orderFilter.value } });
+    return;
+  }
   if (accountFilter.value) {
     router.push({ name: "wholesale-orders", query: { client_account_id: accountFilter.value } });
     return;
@@ -161,8 +186,12 @@ onMounted(() => {
       <CrmLoadingSpinner message="Loading pick list…" :center="true" />
     </div>
 
+    <p v-else-if="!orderFilter" class="text-center text-secondary py-5 mb-0">
+      Open Pick List from a wholesale order to see that order’s items.
+    </p>
+
     <p v-else-if="!orders.length" class="text-center text-secondary py-5 mb-0">
-      No orders ready to pick.
+      This order is not ready to pick.
     </p>
 
     <div v-else class="d-flex flex-column gap-4">
@@ -251,25 +280,55 @@ onMounted(() => {
             :class="{ 'wholesale-pick-item-row--last': lineIdx === order.lines.length - 1 }"
           >
             <div class="wholesale-pick-item-row__product">
-              <img
-                v-if="line.image_url"
-                :src="line.image_url"
-                alt=""
-                class="wholesale-pick-product__thumb"
-                loading="lazy"
-              />
-              <span
-                v-else
-                class="wholesale-pick-product__thumb wholesale-pick-product__thumb--empty"
-                aria-hidden="true"
-              />
-              <div class="min-w-0">
-                <div class="wholesale-pick-product__sku">{{ line.sku || "—" }}</div>
-                <div class="wholesale-pick-product__name">{{ line.name || "—" }}</div>
-                <div v-if="line.variant_description" class="wholesale-pick-product__variant">
-                  {{ line.variant_description }}
+              <a
+                v-if="productHref(order, line)"
+                :href="productHref(order, line)"
+                class="wholesale-pick-item-row__product-link"
+                target="_blank"
+                rel="noopener noreferrer"
+                @click.stop
+              >
+                <img
+                  v-if="line.image_url"
+                  :src="line.image_url"
+                  alt=""
+                  class="wholesale-pick-product__thumb"
+                  loading="lazy"
+                />
+                <span
+                  v-else
+                  class="wholesale-pick-product__thumb wholesale-pick-product__thumb--empty"
+                  aria-hidden="true"
+                />
+                <div class="min-w-0">
+                  <div class="wholesale-pick-product__sku">{{ line.sku || "—" }}</div>
+                  <div class="wholesale-pick-product__name">{{ line.name || "—" }}</div>
+                  <div v-if="line.variant_description" class="wholesale-pick-product__variant">
+                    {{ line.variant_description }}
+                  </div>
                 </div>
-              </div>
+              </a>
+              <template v-else>
+                <img
+                  v-if="line.image_url"
+                  :src="line.image_url"
+                  alt=""
+                  class="wholesale-pick-product__thumb"
+                  loading="lazy"
+                />
+                <span
+                  v-else
+                  class="wholesale-pick-product__thumb wholesale-pick-product__thumb--empty"
+                  aria-hidden="true"
+                />
+                <div class="min-w-0">
+                  <div class="wholesale-pick-product__sku">{{ line.sku || "—" }}</div>
+                  <div class="wholesale-pick-product__name">{{ line.name || "—" }}</div>
+                  <div v-if="line.variant_description" class="wholesale-pick-product__variant">
+                    {{ line.variant_description }}
+                  </div>
+                </div>
+              </template>
             </div>
 
             <div class="wholesale-pick-item-row__metric">

@@ -181,7 +181,11 @@ const showPickListLink = computed(() => {
 
 const pickListRoute = computed(() => {
   const query = {};
+  const orderId = Number(order.value?.id || 0);
   const accountId = Number(order.value?.client_account_id || 0);
+  if (orderId > 0) {
+    query.wholesale_order_id = String(orderId);
+  }
   if (accountId > 0) {
     query.client_account_id = String(accountId);
   }

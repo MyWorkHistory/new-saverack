@@ -1189,62 +1189,72 @@ onUnmounted(() => {
               Order placed on {{ formatDateUs(order.created_at) || "—" }} • via Save Rack CRM
             </p>
           </div>
-          <div
-            class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0 align-self-start wholesale-order-detail-page__header-actions"
-          >
-            <RouterLink
-              v-if="!isPortalView && order.wholesale_bill_id"
-              :to="`/admin/billing/wholesale-bills/${order.wholesale_bill_id}`"
-              class="btn btn-outline-primary"
+          <div class="wholesale-order-detail-page__header-actions align-self-start">
+            <div
+              v-if="showMarkAsShippedButton || showReadyToShipButton || (!isPortalView && feeLines.length && !order.wholesale_bill_id)"
+              class="wholesale-order-detail-page__header-primary"
             >
-              View Bill
-            </RouterLink>
-            <button
-              v-else-if="!isPortalView && feeLines.length"
-              type="button"
-              class="btn btn-primary staff-page-primary"
-              :disabled="createBillBusy"
-              @click="createBill"
-            >
-              {{ createBillBusy ? "Creating…" : "Create Bill" }}
-            </button>
-            <button
-              type="button"
-              class="staff-detail-tab-btn"
-              @click="palletInfoOpen = true"
-            >
-              <span class="staff-detail-tab-btn__icon" aria-hidden="true">
-                <CrmMaterialIcon name="package" :size="18" />
-              </span>
-              <span class="staff-detail-tab-btn__label">Pallet Info</span>
-            </button>
-            <RouterLink
-              v-if="showPickListLink"
-              :to="pickListRoute"
-              class="staff-detail-tab-btn text-decoration-none"
-            >
-              <span class="staff-detail-tab-btn__icon" aria-hidden="true">
-                <CrmMaterialIcon name="taskAlt" :size="18" />
-              </span>
-              <span class="staff-detail-tab-btn__label">Pick List</span>
-            </RouterLink>
-            <button
-              v-if="showMarkAsShippedButton"
-              type="button"
-              class="btn wholesale-ready-to-ship-btn"
-              @click="openMarkAsShipped"
-            >
-              Mark as Shipped
-            </button>
-            <button
-              v-if="showReadyToShipButton"
-              type="button"
-              class="btn wholesale-ready-to-ship-btn"
-              :disabled="readyToShipBusy"
-              @click="submitReadyToShip"
-            >
-              {{ readyToShipBusy ? "Sending…" : "Submit Order" }}
-            </button>
+              <button
+                v-if="!isPortalView && feeLines.length && !order.wholesale_bill_id"
+                type="button"
+                class="btn btn-primary staff-page-primary"
+                :disabled="createBillBusy"
+                @click="createBill"
+              >
+                {{ createBillBusy ? "Creating…" : "Create Bill" }}
+              </button>
+              <button
+                v-if="showMarkAsShippedButton"
+                type="button"
+                class="btn wholesale-ready-to-ship-btn"
+                @click="openMarkAsShipped"
+              >
+                Mark as Shipped
+              </button>
+              <button
+                v-if="showReadyToShipButton"
+                type="button"
+                class="btn wholesale-ready-to-ship-btn"
+                :disabled="readyToShipBusy"
+                @click="submitReadyToShip"
+              >
+                {{ readyToShipBusy ? "Sending…" : "Submit Order" }}
+              </button>
+            </div>
+            <div class="staff-detail-tab-bar-wrap">
+              <div class="staff-detail-tab-bar">
+                <RouterLink
+                  v-if="!isPortalView && order.wholesale_bill_id"
+                  :to="`/admin/billing/wholesale-bills/${order.wholesale_bill_id}`"
+                  class="staff-detail-tab-btn text-decoration-none"
+                >
+                  <span class="staff-detail-tab-btn__icon" aria-hidden="true">
+                    <CrmMaterialIcon name="description" :size="18" />
+                  </span>
+                  <span class="staff-detail-tab-btn__label">View Bill</span>
+                </RouterLink>
+                <button
+                  type="button"
+                  class="staff-detail-tab-btn"
+                  @click="palletInfoOpen = true"
+                >
+                  <span class="staff-detail-tab-btn__icon" aria-hidden="true">
+                    <CrmMaterialIcon name="package" :size="18" />
+                  </span>
+                  <span class="staff-detail-tab-btn__label">Pallet Info</span>
+                </button>
+                <RouterLink
+                  v-if="showPickListLink"
+                  :to="pickListRoute"
+                  class="staff-detail-tab-btn text-decoration-none"
+                >
+                  <span class="staff-detail-tab-btn__icon" aria-hidden="true">
+                    <CrmMaterialIcon name="taskAlt" :size="18" />
+                  </span>
+                  <span class="staff-detail-tab-btn__label">Pick List</span>
+                </RouterLink>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1294,7 +1304,7 @@ onUnmounted(() => {
             />
           </div>
 
-          <div class="staff-table-wrap wholesale-items-table-wrap">
+          <div class="staff-table-wrap wholesale-items-table-wrap d-none d-lg-block">
             <table class="table table-hover align-middle mb-0 staff-data-table wholesale-items-table">
               <thead class="table-light staff-table-head">
                 <tr>
@@ -1430,6 +1440,148 @@ onUnmounted(() => {
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <div class="crm-mobile-item-cards d-lg-none wholesale-order-detail-page__mobile-items" aria-label="Order items">
+            <div v-if="!lines.length" class="crm-mobile-item-card__empty">No items yet.</div>
+            <template v-else>
+              <article
+                v-for="line in lines"
+                :key="`mobile-line-${line.id}`"
+                class="crm-mobile-item-card"
+              >
+                <div class="crm-mobile-item-card__head">
+                  <div class="crm-mobile-item-card__head-start">
+                    <span
+                      v-if="showLineStatusBadge(line)"
+                      class="badge rounded-pill fw-medium"
+                      :class="wholesaleLineStatusBadgeClass(line.status)"
+                    >
+                      {{ lineStatusLabel(line) }}
+                    </span>
+                  </div>
+                  <div
+                    v-if="!isPortalView"
+                    class="crm-mobile-item-card__head-end"
+                    data-row-actions
+                    @click.stop
+                  >
+                    <button
+                      type="button"
+                      class="staff-action-btn staff-action-btn--more"
+                      :class="{ 'is-open': lineMenuOpenId === line.id }"
+                      :aria-expanded="lineMenuOpenId === line.id ? 'true' : 'false'"
+                      aria-haspopup="true"
+                      aria-label="Line item actions"
+                      :disabled="lineBusy"
+                      @click="toggleLineMenu(line.id, $event)"
+                    >
+                      <CrmIconRowActions variant="horizontal" />
+                    </button>
+                  </div>
+                </div>
+
+                <div class="crm-mobile-item-card__product">
+                  <a
+                    v-if="inventoryDetailHref(line.sku)"
+                    :href="inventoryDetailHref(line.sku)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-decoration-none"
+                    :aria-label="line.sku ? `View inventory for SKU ${line.sku} in new tab` : undefined"
+                    @click="openInventoryInNewTab(line, $event)"
+                  >
+                    <img
+                      v-if="line.image_url"
+                      :src="line.image_url"
+                      alt=""
+                      class="crm-mobile-item-card__thumb"
+                      loading="lazy"
+                    />
+                    <div
+                      v-else
+                      class="crm-mobile-item-card__thumb crm-mobile-item-card__thumb--empty"
+                      aria-hidden="true"
+                    />
+                  </a>
+                  <template v-else>
+                    <img
+                      v-if="line.image_url"
+                      :src="line.image_url"
+                      alt=""
+                      class="crm-mobile-item-card__thumb"
+                      loading="lazy"
+                    />
+                    <div
+                      v-else
+                      class="crm-mobile-item-card__thumb crm-mobile-item-card__thumb--empty"
+                      aria-hidden="true"
+                    />
+                  </template>
+                  <div class="crm-mobile-item-card__copy">
+                    <span v-if="line.sku" class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain">
+                      {{ line.sku }}
+                    </span>
+                    <div class="crm-mobile-item-card__name">{{ line.name || "—" }}</div>
+                  </div>
+                </div>
+
+                <div class="crm-mobile-item-card__meta">
+                  <div class="crm-mobile-item-card__meta-row">
+                    <span class="crm-mobile-item-card__meta-label">Qty</span>
+                    <span class="crm-mobile-item-card__meta-value">
+                      <input
+                        v-if="canManageLineItems"
+                        type="number"
+                        min="1"
+                        class="form-control form-control-sm text-end wholesale-line-qty-input wholesale-line-qty-input--mobile"
+                        :value="line.quantity"
+                        :disabled="lineBusy"
+                        @change="saveLineQty(line, $event.target.value)"
+                      />
+                      <template v-else>{{ line.quantity }}</template>
+                    </span>
+                  </div>
+                  <div class="crm-mobile-item-card__meta-row">
+                    <span class="crm-mobile-item-card__meta-label">Barcodes</span>
+                    <span class="crm-mobile-item-card__meta-value">
+                      <button
+                        v-if="line.has_barcode"
+                        type="button"
+                        class="btn btn-link btn-sm p-0 text-decoration-none"
+                        @click="printBarcode(line)"
+                      >
+                        Print Labels
+                      </button>
+                      <button
+                        v-else-if="canManageLineItems"
+                        type="button"
+                        class="btn btn-link btn-sm p-0 text-decoration-none"
+                        :disabled="lineBusy"
+                        @click="openBarcodeModal(line)"
+                      >
+                        Upload Labels
+                      </button>
+                      <span v-else class="text-secondary">—</span>
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  v-if="!isPortalView || (Array.isArray(line.boxes) && line.boxes.length)"
+                  class="wholesale-order-detail-page__mobile-boxes"
+                >
+                  <WholesaleLineBoxBreakdown
+                    :order-id="orderId"
+                    :line-id="line.id"
+                    :line-quantity="line.quantity"
+                    :boxes="line.boxes || []"
+                    :read-only="isPortalView || !canEditLineBoxes"
+                    @saved="applyOrderData"
+                  />
+                </div>
+              </article>
+            </template>
           </div>
 
           <div v-if="lines.length" class="order-detail-page__items-summary border-top px-4 py-3">
@@ -2287,18 +2439,6 @@ td.wholesale-line-barcodes-col .btn {
   line-height: 1.2;
 }
 
-@media (max-width: 991.98px) {
-  .wholesale-order-detail-page .order-detail-page__items-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 575.98px) {
-  .wholesale-order-detail-page .order-detail-page__items-summary {
-    grid-template-columns: 1fr;
-  }
-}
-
 .wholesale-requirements-card__subtitle {
   line-height: 1.5;
 }
@@ -2313,6 +2453,26 @@ td.wholesale-line-barcodes-col .btn {
   text-decoration: underline !important;
 }
 
+.wholesale-order-detail-page__header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.625rem;
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.wholesale-order-detail-page__header-primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
 .wholesale-order-detail-page__header-actions .staff-detail-tab-btn__icon {
   display: inline-flex;
   align-items: center;
@@ -2322,6 +2482,21 @@ td.wholesale-line-barcodes-col .btn {
 
 .wholesale-order-detail-page__header-actions a.staff-detail-tab-btn {
   color: inherit;
+}
+
+.wholesale-line-qty-input--mobile {
+  max-width: 5.5rem;
+  margin-left: auto;
+}
+
+.wholesale-order-detail-page__mobile-items {
+  padding: 0.75rem 1rem 1rem;
+}
+
+.wholesale-order-detail-page__mobile-boxes {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .wholesale-ready-to-ship-btn {
@@ -2342,5 +2517,75 @@ td.wholesale-line-barcodes-col .btn {
   border-color: #93c5fd;
   background: #93c5fd;
   color: #fff;
+}
+
+@media (max-width: 991.98px) {
+  .wholesale-order-detail-page .order-detail-page__items-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .wholesale-order-detail-page .order-detail-page__side-column {
+    position: static;
+  }
+
+  .wholesale-order-detail-page > .staff-table-card > .p-4,
+  .wholesale-order-detail-page .order-detail-page__side-panel.p-4,
+  .wholesale-order-detail-page .wholesale-requirements-card.p-4 {
+    padding: 1rem !important;
+  }
+
+  .wholesale-order-detail-page .order-detail-page__section-head.px-4,
+  .wholesale-order-detail-page .order-detail-page__items-summary.px-4 {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  .wholesale-order-detail-page__header-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  .wholesale-order-detail-page__header-primary {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .wholesale-order-detail-page__header-primary .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .wholesale-order-detail-page__header-actions .staff-detail-tab-bar-wrap {
+    width: 100%;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .wholesale-order-detail-page .order-detail-page__items-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .wholesale-order-detail-page__title-row .h4 {
+    font-size: 1.15rem;
+  }
+
+  .wholesale-order-detail-page .order-detail-page__shopify-header-link {
+    white-space: normal;
+  }
+
+  .wholesale-order-detail-page .order-detail-page__section-head {
+    align-items: stretch !important;
+  }
+
+  .wholesale-order-detail-page .order-detail-page__section-head > .d-flex.flex-wrap {
+    width: 100%;
+  }
+
+  .wholesale-order-detail-page .order-detail-page__section-head .btn {
+    flex: 1 1 calc(50% - 0.25rem);
+  }
 }
 </style>

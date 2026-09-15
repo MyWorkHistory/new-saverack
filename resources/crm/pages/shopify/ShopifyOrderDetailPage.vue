@@ -145,12 +145,23 @@ function timelineGlyph(type) {
   return "edit";
 }
 
-function formatAddress(r) {
-  if (!r) return "";
-  const parts = [r.address1, r.address2, [r.city, r.province, r.zip].filter(Boolean).join(", "), r.country]
-    .map((p) => String(p || "").trim())
-    .filter(Boolean);
-  return parts.join(", ");
+function formatAddressLines(r) {
+  if (!r) return [];
+  const lines = [];
+  const company = String(r.company || "").trim();
+  if (company) lines.push(company);
+  const street1 = String(r.address1 || "").trim();
+  if (street1) lines.push(street1);
+  const street2 = String(r.address2 || "").trim();
+  if (street2) lines.push(street2);
+  const city = String(r.city || "").trim();
+  const province = String(r.province || "").trim();
+  const zip = String(r.zip || "").trim();
+  const locality = [city, [province, zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  if (locality) lines.push(locality);
+  const country = String(r.country || "").trim();
+  if (country) lines.push(country);
+  return lines;
 }
 
 function carrierLabel(code) {
@@ -529,7 +540,17 @@ onUnmounted(() => {
               </button>
             </div>
             <div class="fw-bold mb-1 text-body">{{ recipient?.name || order.recipient_name || "—" }}</div>
-            <p class="mb-3 text-body so-recipient-addr">{{ formatAddress(recipient) || "—" }}</p>
+            <div v-if="formatAddressLines(recipient).length" class="mb-3 text-body so-recipient-addr">
+              <p
+                v-for="(line, idx) in formatAddressLines(recipient)"
+                :key="'addr-' + idx"
+                class="mb-0 so-recipient-addr__line"
+                :class="{ 'so-recipient-addr__line--company': idx === 0 && recipient?.company }"
+              >
+                {{ line }}
+              </p>
+            </div>
+            <p v-else class="mb-3 text-body so-recipient-addr">—</p>
             <div v-if="recipient?.email || order.email" class="so-contact-row mb-2">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path d="M4 6h16v12H4z" />
@@ -815,6 +836,8 @@ onUnmounted(() => {
 .so-line-status--cancelled { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
 .so-line-status--fulfilled { background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; }
 .so-recipient-addr { color: #374151; line-height: 1.45; }
+.so-recipient-addr__line { margin: 0; }
+.so-recipient-addr__line--company { font-weight: 500; color: #111827; }
 .so-contact-row {
   display: flex;
   align-items: center;

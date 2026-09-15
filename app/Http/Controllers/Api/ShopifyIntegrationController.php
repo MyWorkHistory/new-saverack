@@ -1207,6 +1207,7 @@ class ShopifyIntegrationController extends Controller
         $this->assertAdmin($request);
         $validated = $request->validate([
             'full_name' => ['required', 'string', 'max:191'],
+            'company' => ['nullable', 'string', 'max:191'],
             'address1' => ['required', 'string', 'max:191'],
             'address2' => ['nullable', 'string', 'max:191'],
             'city' => ['required', 'string', 'max:128'],
@@ -2607,6 +2608,7 @@ class ShopifyIntegrationController extends Controller
             'shipping_address' => $order->shipping_address_json,
             'recipient' => [
                 'name' => $recipientName,
+                'company' => trim((string) ($ship['company'] ?? '')),
                 'address1' => trim((string) ($ship['address1'] ?? '')),
                 'address2' => trim((string) ($ship['address2'] ?? '')),
                 'city' => trim((string) ($ship['city'] ?? '')),

@@ -11,6 +11,7 @@ const emit = defineEmits(["close", "confirm"]);
 
 const form = reactive({
   full_name: "",
+  company: "",
   address1: "",
   address2: "",
   city: "",
@@ -27,6 +28,7 @@ watch(
     if (!isOpen) return;
     const r = props.recipient || {};
     form.full_name = r.name || "";
+    form.company = r.company || "";
     form.address1 = r.address1 || "";
     form.address2 = r.address2 || "";
     form.city = r.city || "";
@@ -58,6 +60,9 @@ function onConfirm() {
 
         <label class="form-label">Full Name</label>
         <input v-model="form.full_name" type="text" class="form-control mb-3" :disabled="busy">
+
+        <label class="form-label">Company <span class="text-secondary fw-normal">(Optional)</span></label>
+        <input v-model="form.company" type="text" class="form-control mb-3" :disabled="busy">
 
         <label class="form-label">Address Line 1</label>
         <input v-model="form.address1" type="text" class="form-control mb-3" :disabled="busy">

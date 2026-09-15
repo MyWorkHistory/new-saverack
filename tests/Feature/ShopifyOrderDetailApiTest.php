@@ -61,6 +61,7 @@ class ShopifyOrderDetailApiTest extends TestCase
             'shopify_created_at' => now()->subHour(),
             'shipping_address_json' => [
                 'name' => 'James Anderson',
+                'company' => 'Anderson Labs',
                 'address1' => '7421 Innovation Drive',
                 'city' => 'Lakeland',
                 'province' => 'FL',
@@ -125,6 +126,7 @@ class ShopifyOrderDetailApiTest extends TestCase
             ->assertJsonPath('order.shipping.carrier', 'UPS')
             ->assertJsonPath('order.shipping.service', 'UPS Ground')
             ->assertJsonPath('order.recipient.name', 'James Anderson')
+            ->assertJsonPath('order.recipient.company', 'Anderson Labs')
             ->assertJsonPath('order.line_items.0.crm_variant_id', $variant->id)
             ->assertJsonPath('order.line_items.0.line_status', 'pending')
             ->assertJsonPath('order.timeline.0.actor_label', 'System');
@@ -151,6 +153,7 @@ class ShopifyOrderDetailApiTest extends TestCase
 
         $this->postJson('/api/shopify/orders/'.$order->id.'/shipping-address', [
             'full_name' => 'James Anderson',
+            'company' => 'Anderson Labs LLC',
             'address1' => '100 New Street',
             'address2' => '',
             'city' => 'Lakeland',
@@ -161,7 +164,8 @@ class ShopifyOrderDetailApiTest extends TestCase
             'phone' => '8635550000',
         ])
             ->assertOk()
-            ->assertJsonPath('order.recipient.address1', '100 New Street');
+            ->assertJsonPath('order.recipient.address1', '100 New Street')
+            ->assertJsonPath('order.recipient.company', 'Anderson Labs LLC');
 
         $this->assertDatabaseHas('shopify_order_activities', [
             'shopify_order_id' => $order->id,

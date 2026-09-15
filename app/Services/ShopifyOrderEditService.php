@@ -39,6 +39,7 @@ class ShopifyOrderEditService
     /**
      * @param  array{
      *   full_name?:string,
+     *   company?:string,
      *   address1?:string,
      *   address2?:string,
      *   city?:string,
@@ -72,6 +73,7 @@ class ShopifyOrderEditService
         $zip = trim((string) ($input['zip'] ?? ''));
         $countryRaw = trim((string) ($input['country'] ?? ''));
         $phone = trim((string) ($input['phone'] ?? ''));
+        $company = trim((string) ($input['company'] ?? ''));
         $countryCode = $this->mailingAddressCountryCode($countryRaw, $order);
 
         [$province, $zip, $provinceCode] = $this->normalizeMailingRegion($countryCode, $province, $zip);
@@ -87,6 +89,7 @@ class ShopifyOrderEditService
             'countryCode' => $countryCode !== '' ? $countryCode : null,
             'firstName' => $firstName !== '' ? $firstName : null,
             'lastName' => $lastName !== '' ? $lastName : null,
+            'company' => $company !== '' ? $company : null,
             'phone' => $phone !== '' ? $phone : null,
         ], static fn ($v) => $v !== null && $v !== '');
 
@@ -146,6 +149,7 @@ GQL
             'name' => $fullName,
             'firstName' => $firstName,
             'lastName' => $lastName,
+            'company' => $company,
             'address1' => $address1,
             'address2' => $address2,
             'city' => $city,
@@ -757,6 +761,7 @@ GQL
     /**
      * @param  array{
      *   full_name?:string,
+     *   company?:string,
      *   address1?:string,
      *   address2?:string,
      *   city?:string,
@@ -775,6 +780,7 @@ GQL
         $lastName = trim((string) ($parts[1] ?? ''));
         $email = trim((string) ($input['email'] ?? ''));
         $phone = trim((string) ($input['phone'] ?? ''));
+        $company = trim((string) ($input['company'] ?? ''));
         $country = trim((string) ($input['country'] ?? 'United States'));
         $countryCode = preg_match('/^[A-Za-z]{2}$/', $country) ? strtoupper($country) : '';
         if ($countryCode === '' && stripos($country, 'united states') !== false) {
@@ -787,6 +793,7 @@ GQL
             'last_name' => $lastName,
             'firstName' => $firstName,
             'lastName' => $lastName,
+            'company' => $company,
             'address1' => trim((string) ($input['address1'] ?? '')),
             'address2' => trim((string) ($input['address2'] ?? '')),
             'city' => trim((string) ($input['city'] ?? '')),

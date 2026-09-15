@@ -1,8 +1,7 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
-import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ShopifyInventoryAddProductModal from "../../components/shopify/ShopifyInventoryAddProductModal.vue";
 import ShopifyInventoryBulkEditModal from "../../components/shopify/ShopifyInventoryBulkEditModal.vue";
@@ -11,8 +10,6 @@ import ShopifyInventorySyncAccountModal from "../../components/shopify/ShopifyIn
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 
-const MENU_W = 160;
-const MENU_H = 88;
 const PER_PAGE = 50;
 
 const router = useRouter();
@@ -35,17 +32,10 @@ const filters = reactive({
   backorder: "all",
 });
 
-const manageOpenId = ref(null);
-const manageMenuRect = ref({ top: 0, left: 0 });
-
 const syncOpen = ref(false);
 const importOpen = ref(false);
 const bulkOpen = ref(false);
 const addOpen = ref(false);
-
-const manageMenuRow = computed(
-  () => rows.value.find((r) => r.id === manageOpenId.value) ?? null,
-);
 
 const allSelected = computed(
   () => rows.value.length > 0 && rows.value.every((r) => selectedIds.value.includes(r.id)),
@@ -87,7 +77,6 @@ async function loadAccounts() {
 
 async function load() {
   loading.value = true;
-  manageOpenId.value = null;
   try {
     const { data } = await api.get("/shopify/inventory", { params: filterParams() });
     rows.value = Array.isArray(data?.data) ? data.data : [];
@@ -144,10 +133,14 @@ function clearFilters() {
   void load();
 }
 
+function inventoryDetailHref(row) {
+  if (!row?.id) return "#";
+  return router.resolve({ name: "shopify-inventory-detail", params: { id: String(row.id) } }).href;
+}
+
 function openRow(row) {
   if (!row?.id) return;
-  manageOpenId.value = null;
-  router.push({ name: "shopify-inventory-detail", params: { id: String(row.id) } });
+  window.open(inventoryDetailHref(row), "_blank", "noopener,noreferrer");
 }
 
 function toggleSelectAll() {
@@ -208,33 +201,6 @@ function exportSelected() {
   URL.revokeObjectURL(url);
 }
 
-function placeManageMenu(btn) {
-  if (!(btn instanceof HTMLElement)) return;
-  const r = btn.getBoundingClientRect();
-  let top = r.bottom + 4;
-  let left = r.right - MENU_W;
-  left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
-  if (top + MENU_H > window.innerHeight - 8) {
-    top = Math.max(8, r.top - MENU_H - 4);
-  }
-  manageMenuRect.value = { top, left };
-}
-
-async function toggleManageMenu(row, e) {
-  e?.stopPropagation?.();
-  const id = row?.id;
-  if (manageOpenId.value === id) {
-    manageOpenId.value = null;
-    return;
-  }
-  const btn = e?.currentTarget;
-  manageOpenId.value = id;
-  await nextTick();
-  requestAnimationFrame(() => {
-    if (btn instanceof HTMLElement) placeManageMenu(btn);
-  });
-}
-
 function openActions(action) {
   actionsMenuOpen.value = false;
   if (action === "sync") syncOpen.value = true;
@@ -250,9 +216,6 @@ function onCsvQueued() {
 }
 
 function onDocClick(e) {
-  if (!e.target?.closest?.("[data-shopify-inventory-row-actions]")) {
-    manageOpenId.value = null;
-  }
   if (!e.target?.closest?.("[data-sip-actions]")) {
     actionsMenuOpen.value = false;
   }
@@ -538,19 +501,18 @@ onUnmounted(() => {
               <th class="staff-table-head__th text-end" scope="col">On Hand</th>
               <th class="staff-table-head__th text-end" scope="col">Allocated</th>
               <th class="staff-table-head__th text-end" scope="col">Backorder</th>
-              <th class="staff-table-head__th staff-actions-col text-center" scope="col">Action</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="8" class="py-5">
+              <td colspan="7" class="py-5">
                 <div class="d-flex justify-content-center py-3">
                   <CrmLoadingSpinner message="Loading Products…" />
                 </div>
               </td>
             </tr>
             <tr v-else-if="!rows.length">
-              <td colspan="8" class="px-4 py-5 text-center text-secondary">
+              <td colspan="7" class="px-4 py-5 text-center text-secondary">
                 No products found.
               </td>
             </tr>
@@ -601,24 +563,6 @@ onUnmounted(() => {
               <td class="text-end text-body">{{ Number(row.on_hand ?? row.available_total ?? 0).toLocaleString("en-US") }}</td>
               <td class="text-end text-body">{{ Number(row.allocated ?? 0).toLocaleString("en-US") }}</td>
               <td class="text-end text-body">{{ Number(row.backorder ?? 0).toLocaleString("en-US") }}</td>
-              <td class="staff-actions-cell text-center" @click.stop>
-                <div
-                  data-shopify-inventory-row-actions
-                  class="staff-actions-inner staff-actions-inner--single justify-content-center"
-                >
-                  <button
-                    type="button"
-                    class="staff-action-btn staff-action-btn--more"
-                    :class="{ 'is-open': manageOpenId === row.id }"
-                    :aria-expanded="manageOpenId === row.id ? 'true' : 'false'"
-                    aria-haspopup="true"
-                    aria-label="Row actions"
-                    @click="toggleManageMenu(row, $event)"
-                  >
-                    <CrmIconRowActions variant="horizontal" />
-                  </button>
-                </div>
-              </td>
             </tr>
           </tbody>
         </table>
@@ -651,23 +595,6 @@ onUnmounted(() => {
                 <span class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain">
                   {{ row.sku || "—" }}
                 </span>
-              </div>
-              <div
-                class="crm-mobile-item-card__head-end"
-                data-shopify-inventory-row-actions
-                @click.stop
-              >
-                <button
-                  type="button"
-                  class="staff-action-btn staff-action-btn--more"
-                  :class="{ 'is-open': manageOpenId === row.id }"
-                  :aria-expanded="manageOpenId === row.id ? 'true' : 'false'"
-                  aria-haspopup="true"
-                  aria-label="Row actions"
-                  @click="toggleManageMenu(row, $event)"
-                >
-                  <CrmIconRowActions variant="horizontal" />
-                </button>
               </div>
             </div>
             <div class="crm-mobile-item-card__product">
@@ -724,34 +651,6 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
-
-    <Teleport to="body">
-      <div
-        v-if="manageMenuRow"
-        data-shopify-inventory-row-actions
-        class="staff-row-menu fixed z-[300] overflow-hidden"
-        role="menu"
-        :style="{ top: `${manageMenuRect.top}px`, left: `${manageMenuRect.left}px` }"
-        @click.stop
-      >
-        <button
-          type="button"
-          class="staff-row-menu__item"
-          role="menuitem"
-          @click="openRow(manageMenuRow)"
-        >
-          View
-        </button>
-        <button
-          type="button"
-          class="staff-row-menu__item"
-          role="menuitem"
-          @click="openRow(manageMenuRow)"
-        >
-          Edit
-        </button>
-      </div>
-    </Teleport>
 
     <ShopifyInventorySyncAccountModal
       v-model:open="syncOpen"

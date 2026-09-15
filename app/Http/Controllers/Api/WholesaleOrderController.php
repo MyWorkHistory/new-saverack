@@ -805,6 +805,8 @@ class WholesaleOrderController extends Controller
 
         $query = WholesaleOrder::query()
             ->with(['clientAccount', 'createdBy'])
+            // Default queue: Pending + Ready to Ship first, then everything else (newest within group).
+            ->orderByRaw("CASE status WHEN 'pending' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END")
             ->orderByDesc('created_at')
             ->orderByDesc('id');
 

@@ -179,6 +179,54 @@ class WholesaleOrderWorkflowTest extends TestCase
             ->assertJsonPath('data.0.order_number', 'AMZ-001');
     }
 
+    public function test_list_defaults_to_pending_and_ready_to_ship_first(): void
+    {
+        $account = $this->account('list-sort');
+        Sanctum::actingAs($this->staffUser());
+
+        $shipped = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'SHIPPED-OLD',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_SHIPPED,
+            'items_count' => 0,
+        ]);
+        $shipped->forceFill(['created_at' => now()->subDays(1), 'updated_at' => now()->subDays(1)])->save();
+
+        $draft = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'DRAFT-NEW',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_DRAFT,
+            'items_count' => 0,
+        ]);
+        $draft->forceFill(['created_at' => now(), 'updated_at' => now()])->save();
+
+        $ready = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'RTS-1',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_IN_PROGRESS,
+            'items_count' => 0,
+        ]);
+        $ready->forceFill(['created_at' => now()->subHours(2), 'updated_at' => now()->subHours(2)])->save();
+
+        $pending = WholesaleOrder::query()->create([
+            'client_account_id' => $account->id,
+            'order_number' => 'PENDING-1',
+            'order_type' => WholesaleOrder::TYPE_B2B,
+            'status' => WholesaleOrder::STATUS_PENDING,
+            'items_count' => 0,
+        ]);
+        $pending->forceFill(['created_at' => now()->subHours(3), 'updated_at' => now()->subHours(3)])->save();
+
+        $numbers = collect($this->getJson('/api/admin/wholesale-orders')->assertOk()->json('data'))
+            ->pluck('order_number')
+            ->all();
+
+        $this->assertSame(['PENDING-1', 'RTS-1', 'DRAFT-NEW', 'SHIPPED-OLD'], $numbers);
+    }
+
     public function test_line_crud_and_barcode_upload(): void
     {
         Storage::fake('local');

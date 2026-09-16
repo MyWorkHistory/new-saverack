@@ -146,6 +146,62 @@ class ShopifyOrderSyncServiceTest extends TestCase
         $this->assertNotNull($event->fresh()->processed_at);
     }
 
+    public function test_reopened_order_sync_does_not_restore_shopify_cancel(): void
+    {
+        $connection = $this->connection();
+        $service = app(ShopifyOrderSyncService::class);
+        $order = ShopifyOrder::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => '99',
+            'name' => '#1099',
+            'email' => 'buyer@example.com',
+            'financial_status' => 'paid',
+            'fulfillment_status' => 'unfulfilled',
+            'currency' => 'USD',
+            'total_price' => 10,
+            'cancelled_at' => null,
+            'raw_json' => [
+                'crm_ignore_shopify_cancel' => true,
+                'crm_display_hint' => 'ready_to_ship',
+            ],
+        ]);
+        ShopifyOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => '55',
+            'sku' => 'SKU',
+            'title' => 'Item',
+            'quantity' => 2,
+            'fulfillable_quantity' => 2,
+            'fulfilled_quantity' => 0,
+            'price' => 10,
+            'raw_json' => [
+                'crm_quantity_locked' => true,
+                'crm_original_quantity' => 2,
+            ],
+        ]);
+
+        $node = $this->orderNode([
+            [
+                'id' => 'gid://shopify/LineItem/55',
+                'quantity' => 2,
+                'currentQuantity' => 0,
+                'unfulfilledQuantity' => 0,
+            ],
+        ]);
+        $node['cancelledAt'] = '2026-09-16T12:00:00Z';
+        $node['displayFulfillmentStatus'] = 'RESTOCKED';
+
+        $this->assertTrue($service->upsertOrderFromShopifyNode($connection, $node));
+
+        $fresh = $order->fresh();
+        $this->assertNull($fresh->cancelled_at);
+        $this->assertSame('unfulfilled', $fresh->fulfillment_status);
+        $line = ShopifyOrderLineItem::query()->where('shopify_order_id', $order->id)->first();
+        $this->assertSame(2, (int) $line->quantity);
+        $this->assertSame(2, (int) $line->fulfillable_quantity);
+    }
+
     public function test_rest_shipping_lines_normalized_onto_shipping_line(): void
     {
         $connection = $this->connection();

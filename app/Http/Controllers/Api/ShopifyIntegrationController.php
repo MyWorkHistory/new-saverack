@@ -265,9 +265,11 @@ class ShopifyIntegrationController extends Controller
 
         $pushed = 0;
         $variants = $shopifyConnection->variants()->whereNotNull('shopify_inventory_item_id')->get();
+        $warehouseInventorySync = app(ShopifyWarehouseInventorySyncService::class);
         try {
             foreach ($variants as $variant) {
-                $pushed += $productSync->pushInventoryToShopify($variant);
+                $warehouseInventorySync->hydrateCrmLevelsFromWarehouse($variant);
+                $pushed += $productSync->pushInventoryToShopify($variant->fresh('connection'));
             }
         } catch (Throwable $e) {
             report($e);
@@ -1681,11 +1683,8 @@ class ShopifyIntegrationController extends Controller
             ], 422);
         }
 
-        // Push only the hydrated store location (warehouse total) — never stale CRM levels.
-        $pushLevels = [[
-            'location_id' => (string) ($hydrate['location_id'] ?? ''),
-            'available' => (int) ($hydrate['total'] ?? 0),
-        ]];
+        // Push the warehouse total to every location with Sync Inventory on.
+        $pushLevels = $this->hydratePushLevels($hydrate);
 
         try {
             $pushed = $productSync->pushInventoryToShopify($shopifyVariant->fresh('connection'), $pushLevels);
@@ -1699,10 +1698,7 @@ class ShopifyIntegrationController extends Controller
                     if (($hydrate['status'] ?? '') !== 'ok') {
                         throw new RuntimeException((string) ($hydrate['reason'] ?? 'no_locations'));
                     }
-                    $pushLevels = [[
-                        'location_id' => (string) ($hydrate['location_id'] ?? ''),
-                        'available' => (int) ($hydrate['total'] ?? 0),
-                    ]];
+                    $pushLevels = $this->hydratePushLevels($hydrate);
                     $pushed = $productSync->pushInventoryToShopify($shopifyVariant->fresh('connection'), $pushLevels);
                 } catch (Throwable $retry) {
                     report($retry);
@@ -1738,6 +1734,42 @@ class ShopifyIntegrationController extends Controller
             'message' => 'Pushed inventory for '.$pushed.' location'.($pushed === 1 ? '' : 's').'.',
             'pushed' => $pushed,
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $hydrate
+     * @return list<array{location_id:string, available:int}>
+     */
+    private function hydratePushLevels(array $hydrate): array
+    {
+        $levels = is_array($hydrate['levels'] ?? null) ? $hydrate['levels'] : [];
+        $out = [];
+        foreach ($levels as $level) {
+            if (! is_array($level)) {
+                continue;
+            }
+            $locationId = trim((string) ($level['location_id'] ?? ''));
+            if ($locationId === '') {
+                continue;
+            }
+            $out[] = [
+                'location_id' => $locationId,
+                'available' => (int) ($level['available'] ?? 0),
+            ];
+        }
+        if ($out !== []) {
+            return $out;
+        }
+
+        $locationId = trim((string) ($hydrate['location_id'] ?? ''));
+        if ($locationId === '') {
+            return [];
+        }
+
+        return [[
+            'location_id' => $locationId,
+            'available' => (int) ($hydrate['total'] ?? 0),
+        ]];
     }
 
     public function syncVariantProductInfo(

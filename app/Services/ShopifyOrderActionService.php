@@ -108,7 +108,7 @@ class ShopifyOrderActionService
     /**
      * @param  list<string>  $reasons
      */
-    public function holdOrder(ShopifyOrder $order, array $reasons, ?User $actor = null): ShopifyOrder
+    public function holdOrder(ShopifyOrder $order, array $reasons, ?User $actor = null, bool $pushShopifyTags = true): ShopifyOrder
     {
         $this->assertNotShipped($order);
 
@@ -142,7 +142,8 @@ class ShopifyOrderActionService
         }
 
         // Manual CRM orders are not in Shopify — never push hold tags.
-        if (! $order->isCrmSource()) {
+        // Reopening a cancelled order is CRM-only; do not push tags to Shopify.
+        if ($pushShopifyTags && ! $order->isCrmSource()) {
             $order->loadMissing('connection');
             $connection = $order->connection;
             if ($connection !== null && $connection->hasCredentials()) {
@@ -231,6 +232,7 @@ class ShopifyOrderActionService
     public function cancelOrder(ShopifyOrder $order, bool $cancelInShopify = false): ShopifyOrder
     {
         $this->assertNotShipped($order);
+        $this->clearIgnoreShopifyCancel($order);
 
         // Manual CRM orders are not in Shopify.
         if ($cancelInShopify && $order->isCrmSource()) {
@@ -573,7 +575,7 @@ GQL
         }
 
         if ($status === ShopifyOrderListService::DISPLAY_ON_HOLD) {
-            $held = $this->holdOrder($order, $holdReasons);
+            $held = $this->holdOrder($order, $holdReasons, null, ! $recoveringFromCancel);
             // holdOrder records its own timeline; also note recovery when leaving cancelled.
             if ($recoveringFromCancel && $previousStatus === ShopifyOrderListService::DISPLAY_CANCELLED) {
                 $this->recordDisplayStatusChange(
@@ -629,24 +631,48 @@ GQL
     }
 
     /**
-     * Clear CRM/Shopify cancel flags and restore unfulfilled lines to Pending.
+     * Clear CRM/Shopify cancel flags and restore every unfulfilled line to Pending.
+     * Does not call Shopify. Later syncs must not put the order back on Cancelled.
      */
     private function restoreCancelledOrderToPending(ShopifyOrder $order): void
     {
         $order->loadMissing(['lineItems', 'fulfillmentOrders.lineItems']);
 
+        $hasPending = false;
+        $hasFulfilled = false;
         foreach ($order->lineItems as $lineItem) {
-            $qty = max(0, (int) $lineItem->quantity);
+            $raw = is_array($lineItem->raw_json) ? $lineItem->raw_json : [];
+            $qty = $this->restoredLineQuantity($lineItem, $raw, $order);
             $fulfilled = max(0, (int) $lineItem->fulfilled_quantity);
-            if ($fulfilled > $qty) {
+            if ($qty > 0 && $fulfilled > $qty) {
                 $fulfilled = $qty;
-                $lineItem->fulfilled_quantity = $fulfilled;
             }
-            $lineItem->fulfillable_quantity = max(0, $qty - $fulfilled);
+            unset($raw['crm_line_cancelled']);
+            if ($qty > 0) {
+                $raw['crm_original_quantity'] = $qty;
+                $raw['crm_quantity_locked'] = true;
+            }
+            $lineItem->raw_json = $raw;
+            $lineItem->quantity = $qty;
+            $lineItem->fulfilled_quantity = $fulfilled;
+            $lineItem->fulfillable_quantity = $qty > $fulfilled ? $qty - $fulfilled : 0;
             $lineItem->save();
+            if ((int) $lineItem->fulfillable_quantity > 0) {
+                $hasPending = true;
+            }
+            if ($fulfilled > 0 && $fulfilled >= $qty) {
+                $hasFulfilled = true;
+            }
         }
 
+        $order->load('lineItems');
+
         foreach ($order->fulfillmentOrders as $fo) {
+            $status = strtolower(trim((string) $fo->status));
+            if (in_array($status, ['cancelled', 'closed', 'incomplete'], true)) {
+                $fo->status = 'open';
+                $fo->save();
+            }
             foreach ($fo->lineItems as $foLine) {
                 $total = max(0, (int) ($foLine->total_quantity ?? 0));
                 $orderLineId = (int) ($foLine->shopify_order_line_item_id ?? 0);
@@ -655,18 +681,96 @@ GQL
                     $match = $order->lineItems->firstWhere('id', $orderLineId);
                     if ($match !== null) {
                         $remaining = max(0, (int) $match->fulfillable_quantity);
+                        if ($total <= 0) {
+                            $total = max($total, (int) $match->quantity);
+                        }
+                    }
+                } else {
+                    $sid = trim((string) ($foLine->shopify_line_item_id ?? ''));
+                    if ($sid !== '') {
+                        $match = $order->lineItems->firstWhere('shopify_line_item_id', $sid);
+                        if ($match !== null) {
+                            $remaining = max(0, (int) $match->fulfillable_quantity);
+                            if ($total <= 0) {
+                                $total = max($total, (int) $match->quantity);
+                            }
+                        }
                     }
                 }
                 if ($total <= 0 && $remaining > 0) {
                     $foLine->total_quantity = $remaining;
+                } elseif ($total > 0) {
+                    $foLine->total_quantity = $total;
                 }
                 $foLine->remaining_quantity = $remaining;
                 $foLine->save();
             }
         }
 
+        $raw = is_array($order->raw_json) ? $order->raw_json : [];
+        $raw['crm_ignore_shopify_cancel'] = true;
+        $order->raw_json = $raw;
         $order->crm_fulfillment_cancelled_at = null;
         $order->cancelled_at = null;
+        if ($hasPending && $hasFulfilled) {
+            $order->fulfillment_status = 'partial';
+        } elseif ($hasPending) {
+            $order->fulfillment_status = 'unfulfilled';
+        }
+        $order->save();
+    }
+
+    /**
+     * Shopify cancel often stores quantity 0. Recover the original so the line can be Pending.
+     *
+     * @param  array<string, mixed>  $raw
+     */
+    private function restoredLineQuantity(ShopifyOrderLineItem $lineItem, array $raw, ShopifyOrder $order): int
+    {
+        $qty = max(0, (int) $lineItem->quantity);
+        $candidates = [
+            (int) ($raw['crm_original_quantity'] ?? 0),
+            (int) ($raw['quantity'] ?? 0),
+        ];
+        $current = (int) ($raw['currentQuantity'] ?? $raw['current_quantity'] ?? 0);
+        if ($current > 0) {
+            $candidates[] = $current;
+        }
+        foreach ($candidates as $candidate) {
+            if ($candidate > $qty) {
+                $qty = $candidate;
+            }
+        }
+        if ($qty > 0) {
+            return $qty;
+        }
+
+        foreach ($order->fulfillmentOrders as $fo) {
+            foreach ($fo->lineItems as $foLine) {
+                $matchesId = (int) ($foLine->shopify_order_line_item_id ?? 0) === (int) $lineItem->id;
+                $matchesShopify = trim((string) ($foLine->shopify_line_item_id ?? '')) !== ''
+                    && (string) $foLine->shopify_line_item_id === (string) $lineItem->shopify_line_item_id;
+                if (! $matchesId && ! $matchesShopify) {
+                    continue;
+                }
+                $total = max((int) ($foLine->total_quantity ?? 0), (int) ($foLine->remaining_quantity ?? 0));
+                if ($total > $qty) {
+                    $qty = $total;
+                }
+            }
+        }
+
+        return $qty > 0 ? $qty : 1;
+    }
+
+    private function clearIgnoreShopifyCancel(ShopifyOrder $order): void
+    {
+        $raw = is_array($order->raw_json) ? $order->raw_json : [];
+        if (empty($raw['crm_ignore_shopify_cancel'])) {
+            return;
+        }
+        unset($raw['crm_ignore_shopify_cancel']);
+        $order->raw_json = $raw;
         $order->save();
     }
 

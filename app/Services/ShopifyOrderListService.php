@@ -184,7 +184,9 @@ class ShopifyOrderListService
             })->where(function (Builder $b) {
                 $b->whereNull('fulfillment_status')
                     ->orWhere('fulfillment_status', '!=', 'fulfilled');
-            });
+            })->whereRaw(
+                "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_json, '$.crm_ignore_shopify_cancel')), '')) NOT IN ('true', '1')"
+            );
 
             return;
         }
@@ -208,7 +210,11 @@ class ShopifyOrderListService
 
         $query->where(function (Builder $b) {
             $b->whereNull('fulfillment_status')
-                ->orWhereIn('fulfillment_status', ['unfulfilled', 'partial', 'partially_fulfilled', '']);
+                ->orWhereIn('fulfillment_status', ['unfulfilled', 'partial', 'partially_fulfilled', ''])
+                // CRM reopen can leave Shopify's restocked/cancelled fulfillment status behind.
+                ->orWhereRaw(
+                    "LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_json, '$.crm_ignore_shopify_cancel')), '')) IN ('true', '1')"
+                );
         })->where(function (Builder $b) {
             $b->whereNull('crm_hold_reasons')
                 ->orWhereRaw('JSON_LENGTH(crm_hold_reasons) = 0');
@@ -280,9 +286,11 @@ class ShopifyOrderListService
     public function displayStatus(ShopifyOrder $order): string
     {
         $order->loadMissing('lineItems');
+        $ignoreShopifyCancel = $order->ignoresShopifyCancel();
 
-        // Explicit CRM / Shopify cancel always wins for the order badge.
-        if ($order->cancelled_at !== null || $order->crm_fulfillment_cancelled_at !== null) {
+        // Explicit CRM / Shopify cancel always wins for the order badge,
+        // unless CRM already reopened this order (Shopify stays cancelled).
+        if (! $ignoreShopifyCancel && ($order->cancelled_at !== null || $order->crm_fulfillment_cancelled_at !== null)) {
             // Prefer line outcomes only when cancel left some lines fulfilled and none pending.
             if ($order->lineItems->isNotEmpty()) {
                 $hasPending = false;
@@ -413,7 +421,8 @@ class ShopifyOrderListService
         if ($raw === 'cancelled') {
             return 'cancelled';
         }
-        if ($order->cancelled_at !== null || $order->crm_fulfillment_cancelled_at !== null) {
+        if (! $order->ignoresShopifyCancel()
+            && ($order->cancelled_at !== null || $order->crm_fulfillment_cancelled_at !== null)) {
             return 'cancelled';
         }
 

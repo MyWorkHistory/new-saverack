@@ -53,6 +53,16 @@ class ShopifyOrder extends Model
         return strtolower(trim((string) ($this->source ?? self::SOURCE_SHOPIFY))) === self::SOURCE_CRM;
     }
 
+    /**
+     * CRM reopened a cancelled order. Later Shopify syncs must not put it back on Cancelled.
+     */
+    public function ignoresShopifyCancel(): bool
+    {
+        $raw = is_array($this->raw_json) ? $this->raw_json : [];
+
+        return ! empty($raw['crm_ignore_shopify_cancel']);
+    }
+
     public function connection(): BelongsTo
     {
         return $this->belongsTo(ClientAccountShopifyConnection::class, 'connection_id');

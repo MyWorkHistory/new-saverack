@@ -662,6 +662,10 @@ GQL
 
         $api = $this->client->forConnection($connection);
         $inventoryItemGid = ShopifyGid::of('InventoryItem', $itemId);
+        $pushed = 0;
+        $errors = [];
+        // One Shopify call per location. A single inventorySetQuantities batch for the
+        // same item only applies the first location.
         foreach ($quantities as $quantity) {
             $this->ensureInventoryActivatedAtLocation(
                 $api,
@@ -669,12 +673,33 @@ GQL
                 (string) $quantity['locationId'],
                 (int) $quantity['quantity']
             );
+            try {
+                $this->setInventoryQuantity($api, $quantity, (int) $variant->id);
+                $pushed++;
+            } catch (Throwable $e) {
+                $errors[] = $e->getMessage();
+            }
+        }
+        if ($errors !== []) {
+            $detail = $errors[0];
+            if ($pushed > 0) {
+                $detail = 'Updated '.$pushed.' location'.($pushed === 1 ? '' : 's').', but Shopify rejected another: '.$detail;
+            }
+            throw new RuntimeException($detail);
         }
 
+        return $pushed;
+    }
+
+    /**
+     * @param  array{inventoryItemId:string, locationId:string, quantity:int, changeFromQuantity:null}  $quantity
+     */
+    private function setInventoryQuantity($api, array $quantity, int $variantId): void
+    {
         $idempotencyKey = sprintf(
             'crm-inv-push-%d-%s-%s',
-            (int) $variant->id,
-            substr(hash('sha256', json_encode($quantities)), 0, 16),
+            $variantId,
+            substr(hash('sha256', json_encode($quantity)), 0, 16),
             bin2hex(random_bytes(8))
         );
 
@@ -682,7 +707,7 @@ GQL
             'name' => 'available',
             'reason' => 'correction',
             'ignoreCompareQuantity' => true,
-            'quantities' => $quantities,
+            'quantities' => [$quantity],
         ];
 
         try {
@@ -725,8 +750,6 @@ GQL
             );
             $this->assertNoUserErrors($data['inventorySetQuantities'] ?? null);
         }
-
-        return count($quantities);
     }
 
     /**

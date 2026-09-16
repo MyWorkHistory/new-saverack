@@ -680,8 +680,17 @@ GQL
             }
 
             $rawJson = $this->prepareOrderRawJson($node, $existing);
+            $ignoreShopifyCancel = $existing !== null && $existing->ignoresShopifyCancel();
             $total = $node['totalPriceSet']['shopMoney']['amount'] ?? $node['total_price'] ?? null;
             $fulfillmentStatus = strtolower((string) ($node['displayFulfillmentStatus'] ?? $node['fulfillment_status'] ?? 'unfulfilled'));
+            if ($ignoreShopifyCancel) {
+                $localFulfillment = strtolower(trim((string) ($existing->fulfillment_status ?? '')));
+                if ($localFulfillment !== '' && ! in_array($localFulfillment, ['cancelled', 'restocked'], true)) {
+                    $fulfillmentStatus = $localFulfillment;
+                } else {
+                    $fulfillmentStatus = 'unfulfilled';
+                }
+            }
 
             /** @var ShopifyOrder $order */
             $order = ShopifyOrder::query()->updateOrCreate(
@@ -698,7 +707,9 @@ GQL
                     'total_price' => $total !== null && $total !== '' ? (float) $total : null,
                     'shopify_created_at' => $this->parseTime($node['createdAt'] ?? $node['created_at'] ?? null),
                     'shopify_updated_at' => $this->parseTime($node['updatedAt'] ?? $node['updated_at'] ?? null),
-                    'cancelled_at' => $this->parseTime($node['cancelledAt'] ?? $node['cancelled_at'] ?? null),
+                    'cancelled_at' => $ignoreShopifyCancel
+                        ? $existing->cancelled_at
+                        : $this->parseTime($node['cancelledAt'] ?? $node['cancelled_at'] ?? null),
                     'customer_json' => $this->customerJsonFromOrderNode($node),
                     'shipping_address_json' => is_array($node['shippingAddress'] ?? $node['shipping_address'] ?? null)
                         ? ($node['shippingAddress'] ?? $node['shipping_address'])
@@ -720,8 +731,8 @@ GQL
             $hasLineSnapshot = array_key_exists('lineItems', $node) || array_key_exists('line_items', $node);
 
             $seenLineIds = [];
-            $preserveCancelQtys = $order->crm_fulfillment_cancelled_at !== null
-                || $order->cancelled_at !== null;
+            $preserveCancelQtys = ! $order->ignoresShopifyCancel()
+                && ($order->crm_fulfillment_cancelled_at !== null || $order->cancelled_at !== null);
             $removedLineIds = $this->crmRemovedLineIds($order);
             foreach ($lineNodes as $lineNode) {
                 $lineId = ShopifyGid::toId((string) ($lineNode['admin_graphql_api_id'] ?? $lineNode['id'] ?? ''));

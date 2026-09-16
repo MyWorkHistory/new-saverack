@@ -974,6 +974,64 @@ class ShopifyOrderActionsApiTest extends TestCase
         }));
     }
 
+    public function test_shopify_cancelled_zero_qty_recovers_in_crm_without_shopify_call(): void
+    {
+        $this->actingAsAdmin();
+        [, $connection, $order] = $this->seedOrder([
+            'cancelled_at' => now(),
+            'crm_fulfillment_cancelled_at' => now(),
+            'fulfillment_status' => 'restocked',
+        ]);
+        $line = \App\Models\ShopifyOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => 'zero-cancel-1',
+            'sku' => 'ZERO-1',
+            'title' => 'Zeroed Cancel Item',
+            'quantity' => 0,
+            'fulfillable_quantity' => 0,
+            'fulfilled_quantity' => 0,
+            'price' => 10,
+            'raw_json' => [
+                'quantity' => 1,
+                'currentQuantity' => 0,
+                'crm_line_cancelled' => true,
+                'crm_original_quantity' => 1,
+            ],
+        ]);
+
+        $sync = Mockery::mock(\App\Services\ShopifyOrderSyncService::class);
+        $sync->shouldReceive('refreshOrderByShopifyId')->never();
+        $this->app->instance(\App\Services\ShopifyOrderSyncService::class, $sync);
+        $this->app->forgetInstance(\App\Services\ShopifyOrderActionService::class);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/display-status', [
+            'status' => 'ready_to_ship',
+        ])
+            ->assertOk()
+            ->assertJsonPath('order.display_status', 'ready_to_ship');
+
+        $freshLine = $line->fresh();
+        $this->assertSame(1, (int) $freshLine->quantity);
+        $this->assertSame(1, (int) $freshLine->fulfillable_quantity);
+        $this->assertSame('pending', app(\App\Services\ShopifyOrderListService::class)->lineDisplayStatus($order->fresh(), $freshLine));
+
+        $fresh = $order->fresh();
+        $this->assertNull($fresh->cancelled_at);
+        $this->assertNull($fresh->crm_fulfillment_cancelled_at);
+        $this->assertTrue($fresh->ignoresShopifyCancel());
+        $this->assertSame('unfulfilled', $fresh->fulfillment_status);
+
+        $detail = $this->getJson('/api/shopify/orders/'.$order->id)->assertOk()->json('order');
+        $this->assertSame('ready_to_ship', $detail['display_status'] ?? null);
+        $this->assertSame('pending', $detail['line_items'][0]['line_status'] ?? null);
+        $this->assertSame(1, (int) ($detail['line_items'][0]['quantity'] ?? 0));
+        $timelineDetails = collect($detail['timeline'] ?? [])->pluck('detail')->filter()->all();
+        $this->assertTrue(collect($timelineDetails)->contains(function ($d) {
+            return is_string($d) && str_contains($d, 'Items restored to Pending');
+        }));
+    }
+
     public function test_shipping_method_from_rest_shipping_lines(): void
     {
         $this->actingAsAdmin();

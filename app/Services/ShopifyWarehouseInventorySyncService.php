@@ -91,8 +91,9 @@ class ShopifyWarehouseInventorySyncService
 
     /**
      * Set CRM Shopify inventory levels from warehouse bin totals (source of truth).
+     * Every location with Sync Inventory on gets the same available total.
      *
-     * @return array{status: string, reason: ?string, total?: int, location_id?: string}
+     * @return array{status: string, reason: ?string, total?: int, location_id?: string, location_ids?: list<string>, levels?: list<array{location_id:string, available:int}>}
      */
     public function hydrateCrmLevelsFromWarehouse(ShopifyProductVariant $variant): array
     {
@@ -117,25 +118,31 @@ class ShopifyWarehouseInventorySyncService
             ->sum('available');
         $total = max(0, $total);
 
-        // Put warehouse total on the primary sync location only (avoid multiplying
-        // inventory across every Shopify location).
-        $primaryLocationId = $locationIds[0];
         $now = Carbon::now();
-        /** @var ShopifyInventoryLevel $level */
-        $level = ShopifyInventoryLevel::query()->firstOrNew([
-            'connection_id' => (int) $connection->id,
-            'shopify_inventory_item_id' => $itemId,
-            'shopify_location_id' => $primaryLocationId,
-        ]);
-        $level->available = $total;
-        $level->crm_set_at = $now;
-        $level->save();
+        $levels = [];
+        foreach ($locationIds as $locationId) {
+            /** @var ShopifyInventoryLevel $level */
+            $level = ShopifyInventoryLevel::query()->firstOrNew([
+                'connection_id' => (int) $connection->id,
+                'shopify_inventory_item_id' => $itemId,
+                'shopify_location_id' => $locationId,
+            ]);
+            $level->available = $total;
+            $level->crm_set_at = $now;
+            $level->save();
+            $levels[] = [
+                'location_id' => $locationId,
+                'available' => $total,
+            ];
+        }
 
         return [
             'status' => 'ok',
             'reason' => null,
             'total' => $total,
-            'location_id' => $primaryLocationId,
+            'location_id' => $locationIds[0],
+            'location_ids' => $locationIds,
+            'levels' => $levels,
         ];
     }
 

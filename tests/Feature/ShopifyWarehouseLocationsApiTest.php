@@ -365,6 +365,17 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
             'active' => true,
             'sync_inventory' => true,
         ]);
+        $bin = ShopifyWarehouseLocation::query()->create([
+            'name' => 'A-01-PUSH',
+            'type' => 'Large Shelf',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        ShopifyWarehouseLocationItem::query()->create([
+            'location_id' => $bin->id,
+            'shopify_variant_id' => $variant->id,
+            'available' => 4,
+        ]);
         ShopifyInventoryLevel::query()->create([
             'connection_id' => $variant->connection_id,
             'shopify_inventory_item_id' => (string) $variant->shopify_inventory_item_id,
@@ -402,6 +413,121 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
         $this->postJson("/api/shopify/inventory/{$variant->id}/push-inventory")
             ->assertOk()
             ->assertJsonPath('pushed', 1);
+    }
+
+    public function test_push_variant_inventory_updates_every_selected_sync_location(): void
+    {
+        $this->actingAsAdmin();
+        $variant = $this->makeVariant('PUSH-BOTH');
+
+        ShopifyLocation::query()->create([
+            'connection_id' => $variant->connection_id,
+            'shopify_location_id' => '1111',
+            'name' => 'Shop location',
+            'active' => true,
+            'sync_inventory' => true,
+        ]);
+        ShopifyLocation::query()->create([
+            'connection_id' => $variant->connection_id,
+            'shopify_location_id' => '2222',
+            'name' => 'Overflow',
+            'active' => true,
+            'sync_inventory' => true,
+        ]);
+        ShopifyLocation::query()->create([
+            'connection_id' => $variant->connection_id,
+            'shopify_location_id' => '3333',
+            'name' => 'Do Not Sync',
+            'active' => true,
+            'sync_inventory' => false,
+        ]);
+        $bin = ShopifyWarehouseLocation::query()->create([
+            'name' => 'A-02-100',
+            'type' => 'Large Shelf',
+            'pickable' => true,
+            'sellable' => true,
+        ]);
+        ShopifyWarehouseLocationItem::query()->create([
+            'location_id' => $bin->id,
+            'shopify_variant_id' => $variant->id,
+            'available' => 6,
+        ]);
+
+        $captured = null;
+        $sync = \Mockery::mock(\App\Services\ShopifyProductSyncService::class);
+        $sync->shouldReceive('pushInventoryToShopify')
+            ->once()
+            ->withArgs(function ($pushedVariant, $levels) use ($variant, &$captured) {
+                $captured = $levels;
+
+                return (int) $pushedVariant->id === (int) $variant->id && is_array($levels);
+            })
+            ->andReturn(2);
+        $bootstrap = \Mockery::mock(\App\Services\ShopifyBootstrapImportService::class);
+        $bootstrap->shouldReceive('importLocationsOnly')->andReturn(1);
+        $this->app->instance(\App\Services\ShopifyProductSyncService::class, $sync);
+        $this->app->instance(\App\Services\ShopifyBootstrapImportService::class, $bootstrap);
+        $this->app->forgetInstance(\App\Services\ShopifyWarehouseInventorySyncService::class);
+
+        $this->postJson("/api/shopify/inventory/{$variant->id}/push-inventory")
+            ->assertOk()
+            ->assertJsonPath('pushed', 2);
+
+        $ids = collect($captured)->pluck('location_id')->map(function ($id) {
+            return (string) $id;
+        })->all();
+        $this->assertEqualsCanonicalizing(['1111', '2222'], $ids);
+        foreach ($captured as $level) {
+            $this->assertSame(6, (int) ($level['available'] ?? 0));
+        }
+        $this->assertDatabaseMissing('shopify_inventory_levels', [
+            'connection_id' => $variant->connection_id,
+            'shopify_location_id' => '3333',
+        ]);
+    }
+
+    public function test_push_inventory_sets_each_location_in_its_own_shopify_call(): void
+    {
+        $variant = $this->makeVariant('BOTH-API');
+        foreach (['111', '222'] as $id) {
+            ShopifyLocation::query()->create([
+                'connection_id' => $variant->connection_id,
+                'shopify_location_id' => $id,
+                'name' => 'Loc '.$id,
+                'active' => true,
+                'sync_inventory' => true,
+            ]);
+        }
+
+        $seen = [];
+        $api = \Mockery::mock(\App\Services\ShopifyClient::class);
+        $api->shouldReceive('graphql')->andReturnUsing(function (string $query, array $vars) use (&$seen) {
+            if (str_contains($query, 'inventorySetQuantities')) {
+                $qty = $vars['input']['quantities'][0] ?? null;
+                $seen[] = is_array($qty) ? ($qty['locationId'] ?? null) : null;
+                $this->assertCount(1, $vars['input']['quantities'] ?? []);
+
+                return ['inventorySetQuantities' => ['userErrors' => []]];
+            }
+
+            return ['inventoryActivate' => ['userErrors' => []]];
+        });
+        $client = \Mockery::mock(\App\Services\ShopifyClient::class);
+        $client->shouldReceive('forConnection')->andReturn($api);
+        $this->app->instance(\App\Services\ShopifyClient::class, $client);
+        $this->app->forgetInstance(\App\Services\ShopifyProductSyncService::class);
+
+        $pushed = app(\App\Services\ShopifyProductSyncService::class)
+            ->pushInventoryToShopify($variant->fresh('connection'), [
+                ['location_id' => '111', 'available' => 6],
+                ['location_id' => '222', 'available' => 6],
+            ]);
+
+        $this->assertSame(2, $pushed);
+        $this->assertEqualsCanonicalizing([
+            'gid://shopify/Location/111',
+            'gid://shopify/Location/222',
+        ], $seen);
     }
 
     public function test_update_item_qty_applies_delta_to_sync_level(): void

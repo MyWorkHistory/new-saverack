@@ -26,6 +26,8 @@ import ShopifyInventoryDetailPage from "../pages/shopify/ShopifyInventoryDetailP
 import ShopifyInventoryLogHubPage from "../pages/shopify/ShopifyInventoryLogHubPage.vue";
 import ShopifyInventoryLogPage from "../pages/shopify/ShopifyInventoryLogPage.vue";
 import ShopifyLocationsPage from "../pages/shopify/ShopifyLocationsPage.vue";
+import ShopifyPackagingPage from "../pages/shopify/ShopifyPackagingPage.vue";
+import ShopifyPackagingDetailPage from "../pages/shopify/ShopifyPackagingDetailPage.vue";
 import ShopifyLocationDetailPage from "../pages/shopify/ShopifyLocationDetailPage.vue";
 import AdminEmailsListPage from "../pages/admin-email/AdminEmailsListPage.vue";
 import AdminEmailDetailPage from "../pages/admin-email/AdminEmailDetailPage.vue";
@@ -125,6 +127,14 @@ const meta = {
   shopifyLocationDetail: {
     title: "Save Rack | Location",
     description: "Shopify warehouse location.",
+  },
+  shopifyPackaging: {
+    title: "Save Rack | Packaging",
+    description: "Shopify packaging and packaging materials.",
+  },
+  shopifyPackagingDetail: {
+    title: "Save Rack | Packaging",
+    description: "Packaging detail.",
   },
   shopifyInventoryLogHub: {
     title: "Save Rack | Inventory Log",
@@ -1078,6 +1088,19 @@ const routes = [
     component: ShopifyLocationDetailPage,
     props: true,
     meta: meta.shopifyLocationDetail,
+  },
+  {
+    path: "/admin/shopify/packaging",
+    name: "shopify-packaging",
+    component: ShopifyPackagingPage,
+    meta: meta.shopifyPackaging,
+  },
+  {
+    path: "/admin/shopify/packaging/:id",
+    name: "shopify-packaging-detail",
+    component: ShopifyPackagingDetailPage,
+    props: true,
+    meta: meta.shopifyPackagingDetail,
   },
   {
     path: "/admin/shopify/inventory-log",

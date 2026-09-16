@@ -311,6 +311,7 @@ function navActive(mode) {
     return p.startsWith("/admin/shopify/inventory") && !p.startsWith("/admin/shopify/inventory-log");
   }
   if (mode === "shopify-locations") return p.startsWith("/admin/shopify/locations");
+  if (mode === "shopify-packaging") return p.startsWith("/admin/shopify/packaging");
   if (mode === "email") return p === "/admin/email" || p.startsWith("/admin/email/");
   if (mode === "clients") return p.startsWith("/admin/clients");
   if (mode === "clients-accounts") return p.startsWith("/admin/clients/accounts");
@@ -1526,6 +1527,16 @@ function collapseNav() {
                     @click="closeMobile"
                   >
                     Locations
+                  </RouterLink>
+                </li>
+                <li>
+                  <RouterLink
+                    to="/admin/shopify/packaging"
+                    class="vx-nav-link vx-nav-sublink"
+                    :class="{ 'vx-nav-link--active': navActive('shopify-packaging') }"
+                    @click="closeMobile"
+                  >
+                    Packaging
                   </RouterLink>
                 </li>
                 <li>

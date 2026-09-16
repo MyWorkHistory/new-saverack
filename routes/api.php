@@ -57,6 +57,7 @@ use App\Http\Controllers\Api\WholesaleOrderController;
 use App\Http\Controllers\Api\WholesaleBillController;
 use App\Http\Controllers\Api\ShopifyIntegrationController;
 use App\Http\Controllers\Api\ShopifyWarehouseInventoryLogController;
+use App\Http\Controllers\Api\ShopifyPackagingController;
 use App\Http\Controllers\Api\ShopifyWarehouseLocationController;
 use App\Http\Controllers\ShipHeroWebhookController;
 use App\Http\Controllers\ShopifyWebhookController;
@@ -776,6 +777,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/locations/{shopify_warehouse_location}/items', [ShopifyWarehouseLocationController::class, 'storeItem']);
         Route::patch('/locations/{shopify_warehouse_location}/items/{shopify_warehouse_location_item}', [ShopifyWarehouseLocationController::class, 'updateItemQty']);
         Route::delete('/locations/{shopify_warehouse_location}/items/{shopify_warehouse_location_item}', [ShopifyWarehouseLocationController::class, 'destroyItem']);
+        Route::get('/packaging/meta', [ShopifyPackagingController::class, 'meta']);
+        Route::get('/packaging', [ShopifyPackagingController::class, 'index']);
+        Route::post('/packaging', [ShopifyPackagingController::class, 'store']);
+        Route::get('/packaging/{packaging}', [ShopifyPackagingController::class, 'show']);
+        Route::patch('/packaging/{packaging}', [ShopifyPackagingController::class, 'update']);
+        Route::delete('/packaging/{packaging}', [ShopifyPackagingController::class, 'destroy']);
+        Route::post('/packaging/{packaging}/image', [ShopifyPackagingController::class, 'uploadImage']);
     });
 
     Route::prefix('resources')->group(function () {

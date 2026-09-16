@@ -10,7 +10,6 @@ import ShopifyOrderEditItemsModal from "../../components/shopify/ShopifyOrderEdi
 import ShopifyOrderEditShippingModal from "../../components/shopify/ShopifyOrderEditShippingModal.vue";
 import ShopifyOrderFulfillModal from "../../components/shopify/ShopifyOrderFulfillModal.vue";
 import ShopifyOrderHoldModal from "../../components/shopify/ShopifyOrderHoldModal.vue";
-import ShopifyOrderRemoveHoldModal from "../../components/shopify/ShopifyOrderRemoveHoldModal.vue";
 import ShopifyOrderReprocessModal from "../../components/shopify/ShopifyOrderReprocessModal.vue";
 import ShopifyOrderReshipModal from "../../components/shopify/ShopifyOrderReshipModal.vue";
 import ShopifyOrderStatusPickerModal from "../../components/shopify/ShopifyOrderStatusPickerModal.vue";
@@ -32,7 +31,6 @@ const loading = ref(true);
 const order = ref(null);
 const actionsMenuOpen = ref(false);
 const holdModalOpen = ref(false);
-const removeHoldModalOpen = ref(false);
 const cancelModalOpen = ref(false);
 const fulfillModalOpen = ref(false);
 const reshipModalOpen = ref(false);
@@ -215,11 +213,11 @@ async function confirmHold(reasons) {
   }
 }
 
-async function confirmRemoveHolds(reasons) {
-  if (!orderId.value) return;
-  const result = await actions.removeHolds([orderId.value], reasons);
+async function onRemoveHold() {
+  if (!orderId.value || !activeHoldReasons.value.length) return;
+  const result = await actions.removeHolds([orderId.value], activeHoldReasons.value);
   if (result) {
-    removeHoldModalOpen.value = false;
+    statusPickerOpen.value = false;
     await load();
   }
 }
@@ -390,16 +388,6 @@ onUnmounted(() => {
               </svg>
               Edit Order
             </button>
-            <button
-              v-if="isOnHold"
-              type="button"
-              class="btn btn-danger text-white fw-semibold"
-              :disabled="actions.busy.value"
-              title="Remove Hold"
-              @click="removeHoldModalOpen = true"
-            >
-              Remove Hold
-            </button>
             <div class="position-relative" data-shopify-order-detail-actions>
               <button
                 type="button"
@@ -431,15 +419,6 @@ onUnmounted(() => {
                   @click="holdModalOpen = true; actionsMenuOpen = false"
                 >
                   Hold Order
-                </button>
-                <button
-                  v-if="isOnHold"
-                  type="button"
-                  class="staff-row-menu__item"
-                  role="menuitem"
-                  @click="removeHoldModalOpen = true; actionsMenuOpen = false"
-                >
-                  Remove Hold
                 </button>
                 <button
                   v-if="canChangeOrderActions(order.display_status)"
@@ -662,13 +641,6 @@ onUnmounted(() => {
     </template>
 
     <ShopifyOrderHoldModal :open="holdModalOpen" :busy="actions.busy.value" @close="holdModalOpen = false" @confirm="confirmHold" />
-    <ShopifyOrderRemoveHoldModal
-      :open="removeHoldModalOpen"
-      :busy="actions.busy.value"
-      :active-reasons="activeHoldReasons"
-      @close="removeHoldModalOpen = false"
-      @confirm="confirmRemoveHolds"
-    />
     <ShopifyOrderCancelConfirmModal :open="cancelModalOpen" :busy="actions.busy.value" @close="cancelModalOpen = false" @confirm="confirmCancel" />
     <ShopifyOrderFulfillModal
       :open="fulfillModalOpen"
@@ -699,6 +671,7 @@ onUnmounted(() => {
       :order="order"
       @close="statusPickerOpen = false"
       @pick="onStatusPicked"
+      @remove-hold="onRemoveHold"
     />
     <ShopifyOrderEditItemsModal
       :open="editItemsOpen"

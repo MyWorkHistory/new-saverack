@@ -13,7 +13,7 @@ const props = defineProps({
   orderCount: { type: Number, default: 1 },
 });
 
-const emit = defineEmits(["close", "pick"]);
+const emit = defineEmits(["close", "pick", "remove-hold"]);
 
 const step = ref("pick"); // pick | confirm
 const selected = ref("");
@@ -35,6 +35,10 @@ const statusLocked = computed(() => alreadyFulfilled.value);
 
 const lockMessage = computed(() => "Cannot change fulfilled order status.");
 
+const canRemoveHold = computed(
+  () => props.orderCount === 1 && currentStatus.value === "on_hold",
+);
+
 watch(
   () => props.open,
   (isOpen) => {
@@ -50,7 +54,12 @@ function onClose() {
 }
 
 function choose(value) {
-  if (statusLocked.value) return;
+  if (statusLocked.value || props.busy) return;
+  if (value === "on_hold" && canRemoveHold.value) {
+    emit("remove-hold");
+    return;
+  }
+  if (value === currentStatus.value) return;
   selected.value = value;
   step.value = "confirm";
 }
@@ -95,11 +104,12 @@ function onConfirm() {
               :key="opt.value"
               type="button"
               class="so-status-list__item"
-              :class="{ 'is-current': opt.value === currentStatus }"
-              :disabled="busy || opt.value === currentStatus"
+              :class="{ 'is-current': opt.value === currentStatus && !(opt.value === 'on_hold' && canRemoveHold) }"
+              :disabled="busy || (opt.value === currentStatus && !(opt.value === 'on_hold' && canRemoveHold))"
               @click="choose(opt.value)"
             >
-              {{ opt.label }}
+              <span>{{ opt.label }}</span>
+              <span v-if="opt.value === 'on_hold' && canRemoveHold" class="so-status-list__remove">Remove Hold</span>
             </button>
           </div>
           <footer class="so-modal__foot">
@@ -181,6 +191,10 @@ function onConfirm() {
   margin-bottom: 1.15rem;
 }
 .so-status-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   text-align: left;
   padding: 0.7rem 0.9rem;
   border: 1px solid #e5e7eb !important;
@@ -191,6 +205,11 @@ function onConfirm() {
   box-shadow: none;
   -webkit-appearance: none;
   appearance: none;
+}
+.so-status-list__remove {
+  color: #ef4444;
+  font-weight: 600;
+  white-space: nowrap;
 }
 .so-status-list__item:hover:not(:disabled) {
   border-color: #93c5fd;

@@ -18,6 +18,7 @@ import {
   formatShopifyOrderName,
   isCancelledStatus,
   isFulfilledStatus,
+  SHOPIFY_ORDER_HOLD_REASONS,
   useShopifyOrderActions,
 } from "../../composables/useShopifyOrderActions.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -561,6 +562,20 @@ async function onStatusPicked(status) {
     return;
   }
   const result = await actions.applyDisplayStatus(ids, status);
+  if (result) {
+    statusPickerOpen.value = false;
+    void load();
+  }
+}
+
+async function onRemoveHold() {
+  const id = actionTargetIds.value[0];
+  if (!id) return;
+  const fromOrder = Array.isArray(actionOrder.value?.crm_hold_reasons)
+    ? actionOrder.value.crm_hold_reasons.map((r) => String(r || "").trim()).filter(Boolean)
+    : [];
+  const reasons = fromOrder.length ? fromOrder : SHOPIFY_ORDER_HOLD_REASONS.map((r) => r.label);
+  const result = await actions.removeHolds([id], reasons);
   if (result) {
     statusPickerOpen.value = false;
     void load();
@@ -1250,6 +1265,7 @@ onUnmounted(() => {
       :order="actionOrder"
       @close="statusPickerOpen = false"
       @pick="onStatusPicked"
+      @remove-hold="onRemoveHold"
     />
     <ShopifyOrderCreateDrawer
       v-model:open="createOpen"

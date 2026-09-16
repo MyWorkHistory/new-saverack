@@ -1,11 +1,11 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
-import ShopifyPackagingFormModal from "../../components/shopify/ShopifyPackagingFormModal.vue";
+import ShopifyPackagingFormDrawer from "../../components/shopify/ShopifyPackagingFormDrawer.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 import { formatCents } from "../../utils/formatMoney.js";
@@ -52,8 +52,6 @@ const manageMenuRow = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
 const pagination = ref({ current_page: 1, last_page: 1, total: 0, per_page: 50 });
 
-const form = reactive(emptyForm());
-
 const typeOptions = computed(() => {
   if (category.value && TYPES[category.value]) return TYPES[category.value];
   return [...TYPES.packaging, ...TYPES.packaging_materials];
@@ -73,22 +71,6 @@ const pageItems = computed(() => {
   for (let i = Math.max(1, end - 4); i <= end; i += 1) pages.push(i);
   return pages;
 });
-
-function emptyForm() {
-  return {
-    name: "",
-    sku: "",
-    category: "packaging",
-    type: "box",
-    cost: "",
-    price: "",
-    on_hand: "0",
-    length: "",
-    width: "",
-    height: "",
-    weight: "",
-  };
-}
 
 function detailHref(row) {
   return router.resolve({ name: "shopify-packaging-detail", params: { id: String(row.id) } }).href;
@@ -152,7 +134,6 @@ function promptDelete(row) {
 }
 
 function openAdd() {
-  Object.assign(form, emptyForm());
   addOpen.value = true;
 }
 
@@ -432,11 +413,9 @@ onUnmounted(() => {
       </div>
     </Teleport>
 
-    <ShopifyPackagingFormModal
+    <ShopifyPackagingFormDrawer
       :open="addOpen"
-      title="Add Packaging"
       :busy="saveBusy"
-      :item="form"
       @close="addOpen = false"
       @save="saveCreate"
     />

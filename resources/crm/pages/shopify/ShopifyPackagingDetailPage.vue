@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
+import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ShopifyPackagingFormModal from "../../components/shopify/ShopifyPackagingFormModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -16,6 +17,7 @@ const loading = ref(true);
 const saveBusy = ref(false);
 const imageBusy = ref(false);
 const editOpen = ref(false);
+const removeIconOpen = ref(false);
 const item = ref(null);
 const imageInput = ref(null);
 const form = ref(emptyForm());
@@ -156,6 +158,7 @@ async function removeIcon() {
     });
     item.value = data?.item || item.value;
     toast.success("Icon removed.");
+    removeIconOpen.value = false;
   } catch (e) {
     toast.errorFrom(e, "Could not remove icon.");
   } finally {
@@ -217,7 +220,7 @@ onMounted(load);
                   type="button"
                   class="btn btn-link btn-sm px-0 sid-remove-icon"
                   :disabled="imageBusy"
-                  @click="removeIcon"
+                  @click="removeIconOpen = true"
                 >
                   Remove Icon
                 </button>
@@ -355,6 +358,17 @@ onMounted(load);
         :item="form"
         @close="editOpen = false"
         @save="saveEdit"
+      />
+
+      <ConfirmModal
+        :open="removeIconOpen"
+        title="Remove Icon?"
+        message="Remove this packaging icon? You can upload a new one later."
+        confirm-label="Remove"
+        :busy="imageBusy"
+        danger
+        @close="removeIconOpen = false"
+        @confirm="removeIcon"
       />
     </template>
   </div>

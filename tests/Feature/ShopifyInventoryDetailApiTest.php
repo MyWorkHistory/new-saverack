@@ -222,4 +222,35 @@ class ShopifyInventoryDetailApiTest extends TestCase
         $this->assertNotEmpty($parent->crm_image_path);
         Storage::disk('public')->assertExists($parent->crm_image_path);
     }
+
+    public function test_packaging_assignment_stays_in_crm(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+        $this->actingAsAdmin();
+        [, $parent] = $this->seedBundlePair();
+
+        $box = \App\Models\ShopifyPackagingItem::query()->create([
+            'name' => '8x8x4',
+            'category' => 'packaging',
+            'type' => 'box',
+        ]);
+        $paper = \App\Models\ShopifyPackagingItem::query()->create([
+            'name' => 'Kraft Paper',
+            'category' => 'packaging_materials',
+            'type' => 'kraft_paper',
+        ]);
+
+        $this->patchJson('/api/shopify/inventory/'.$parent->id.'/packaging', [
+            'packaging_item_id' => $box->id,
+            'packaging_material_item_id' => $paper->id,
+        ])->assertOk()
+            ->assertJsonPath('variant.packaging.label', 'Box: 8x8x4')
+            ->assertJsonPath('variant.packaging_material.label', 'Kraft Paper')
+            ->assertJsonPath('message', 'Packaging updated.');
+
+        $parent->refresh();
+        $this->assertSame($box->id, (int) $parent->packaging_item_id);
+        $this->assertSame($paper->id, (int) $parent->packaging_material_item_id);
+        \Illuminate\Support\Facades\Queue::assertNothingPushed();
+    }
 }

@@ -175,6 +175,17 @@ class ShopifyProductVariantActivityService
         );
     }
 
+    public function recordPackagingUpdated(ShopifyProductVariant $variant, ?string $detail = null, ?User $actor = null): void
+    {
+        $this->record(
+            $variant,
+            ShopifyProductVariantActivity::TYPE_PACKAGING,
+            'Packaging Updated',
+            $detail,
+            $actor
+        );
+    }
+
     public function recordBundleUpdated(ShopifyProductVariant $variant, ?User $actor = null, ?string $detail = null): void
     {
         $this->record(

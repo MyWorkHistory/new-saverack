@@ -9,6 +9,7 @@ import ShopifyInventoryAddLocationModal from "../../components/shopify/ShopifyIn
 import ShopifyInventoryEditProductModal from "../../components/shopify/ShopifyInventoryEditProductModal.vue";
 import ShopifyInventoryProductSettingsModal from "../../components/shopify/ShopifyInventoryProductSettingsModal.vue";
 import ShopifyInventoryBundleItemsModal from "../../components/shopify/ShopifyInventoryBundleItemsModal.vue";
+import ShopifyInventoryPackagingModal from "../../components/shopify/ShopifyInventoryPackagingModal.vue";
 import ShopifyProductLocationEditQtyModal from "../../components/shopify/ShopifyProductLocationEditQtyModal.vue";
 import ShopifyLocationTransferModal from "../../components/shopify/ShopifyLocationTransferModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -35,6 +36,8 @@ const variant = ref(null);
 const editOpen = ref(false);
 const settingsOpen = ref(false);
 const bundleItemsOpen = ref(false);
+const packagingOpen = ref(false);
+const packagingBusy = ref(false);
 const actionsOpen = ref(false);
 const actionsRoot = ref(null);
 const imageInput = ref(null);
@@ -191,6 +194,7 @@ function timelineGlyph(type) {
   if (type === "sku_updated") return "sku";
   if (type === "product_type_updated") return "type";
   if (type === "bundle_updated") return "bundle";
+  if (type === "packaging_updated") return "box";
   if (type === "product_info_synced") return "sync";
   if (type === "inventory_pushed") return "push";
   return "pencil";
@@ -204,6 +208,7 @@ function timelineIconClass(type) {
   if (type === "sku_updated") return "sid-timeline__icon--sku";
   if (type === "product_type_updated") return "sid-timeline__icon--type";
   if (type === "bundle_updated") return "sid-timeline__icon--bundle";
+  if (type === "packaging_updated") return "sid-timeline__icon--dims";
   if (type === "product_info_synced") return "sid-timeline__icon--sync";
   if (type === "inventory_pushed") return "sid-timeline__icon--push";
   return "sid-timeline__icon--edit";
@@ -275,6 +280,29 @@ async function onSaveSettings(payload) {
   } finally {
     settingsBusy.value = false;
   }
+}
+
+async function onSavePackaging(payload) {
+  if (!variant.value?.id || packagingBusy.value) return;
+  packagingBusy.value = true;
+  try {
+    const { data } = await api.patch(`/shopify/inventory/${variant.value.id}/packaging`, payload);
+    toast.success(data?.message || "Packaging updated.");
+    packagingOpen.value = false;
+    if (data?.variant) variant.value = data.variant;
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update packaging.");
+  } finally {
+    packagingBusy.value = false;
+  }
+}
+
+function packagingLines(detail) {
+  return String(detail || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 async function onSaveBundleItems(items) {
@@ -950,6 +978,42 @@ onUnmounted(() => {
             </div>
           </section>
 
+          <section class="sid-card sid-packaging">
+            <div class="sid-packaging__toolbar">
+              <button
+                type="button"
+                class="staff-outline-action-btn staff-outline-action-btn--sm"
+                :disabled="packagingBusy"
+                @click="packagingOpen = true"
+              >
+                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
+                </svg>
+                Edit
+              </button>
+            </div>
+            <div class="sid-specs sid-packaging__specs">
+              <div class="sid-specs__item">
+                <span class="sid-specs__icon" aria-hidden="true">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                  </svg>
+                </span>
+                <div class="sid-field__label">Packaging</div>
+                <div class="sid-specs__value">{{ variant.packaging?.label || "—" }}</div>
+              </div>
+              <div class="sid-specs__item">
+                <span class="sid-specs__icon" aria-hidden="true">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                  </svg>
+                </span>
+                <div class="sid-field__label">Packaging Materials</div>
+                <div class="sid-specs__value">{{ variant.packaging_material?.label || "—" }}</div>
+              </div>
+            </div>
+          </section>
+
           <!-- Timeline (product field changes only) -->
           <section class="sid-card">
             <div class="sid-card__head">
@@ -981,6 +1045,9 @@ onUnmounted(() => {
                     <path stroke-linecap="round" stroke-linejoin="round" d="M3 7.5L7.5 3l13.5 13.5-4.5 4.5L3 7.5z" />
                     <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 7.5l1.5-1.5M10.5 10.5l1.5-1.5M13.5 13.5l1.5-1.5" />
                   </svg>
+                  <svg v-else-if="timelineGlyph(ev.type) === 'box'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                  </svg>
                   <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
                   </svg>
@@ -989,6 +1056,12 @@ onUnmounted(() => {
                   <div class="sid-timeline__row">
                     <div class="min-w-0">
                       <div class="sid-timeline__title">{{ ev.title }}</div>
+                      <div
+                        v-if="ev.type === 'packaging_updated' && packagingLines(ev.detail).length"
+                        class="sid-timeline__chips"
+                      >
+                        <span v-for="line in packagingLines(ev.detail)" :key="line" class="sid-timeline__chip">{{ line }}</span>
+                      </div>
                       <div
                         v-if="ev.type === 'dimensions_updated' && ev.meta"
                         class="sid-timeline__chips"
@@ -1204,6 +1277,13 @@ onUnmounted(() => {
       :variant-id="variant?.id"
       :existing-components="bundleComponents"
       @save="onSaveBundleItems"
+    />
+    <ShopifyInventoryPackagingModal
+      :open="packagingOpen"
+      :busy="packagingBusy"
+      :variant="variant"
+      @close="packagingOpen = false"
+      @save="onSavePackaging"
     />
     <ShopifyInventoryAddLocationModal
       v-model:open="addLocationOpen"
@@ -1710,6 +1790,22 @@ onUnmounted(() => {
   color: #111827;
   line-height: 1.25;
 }
+.sid-packaging {
+  position: relative;
+}
+.sid-packaging__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.15rem;
+}
+.sid-packaging__specs {
+  margin-top: 0.35rem;
+  padding-top: 0;
+  border-top: 0;
+  grid-template-columns: repeat(2, minmax(0, 14rem));
+  justify-content: center;
+  gap: 2.5rem;
+}
 .sid-bundle-label {
   margin-bottom: 0.55rem;
 }
@@ -2148,6 +2244,9 @@ onUnmounted(() => {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     row-gap: 0.9rem;
   }
+  .sid-packaging__specs {
+    grid-template-columns: repeat(2, minmax(0, 14rem));
+  }
 }
 @media (max-width: 575.98px) {
   .sid-product {
@@ -2162,6 +2261,10 @@ onUnmounted(() => {
   }
   .sid-specs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sid-packaging__specs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
   }
 }
 </style>

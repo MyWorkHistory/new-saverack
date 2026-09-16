@@ -752,6 +752,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/inventory/{shopifyVariant}/sync-product-info', [ShopifyIntegrationController::class, 'syncVariantProductInfo']);
         Route::patch('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'updateVariant']);
         Route::patch('/inventory/{shopifyVariant}/settings', [ShopifyIntegrationController::class, 'updateProductSettings']);
+        Route::patch('/inventory/{shopifyVariant}/packaging', [ShopifyIntegrationController::class, 'updateVariantPackaging']);
         Route::post('/inventory/{shopifyVariant}/image', [ShopifyIntegrationController::class, 'uploadVariantImage']);
         Route::post('/inventory/barcode-labels.pdf', [ShopifyIntegrationController::class, 'barcodeLabelsBulkPdf']);
         Route::get('/inventory/{shopifyVariant}/barcode-label.pdf', [ShopifyIntegrationController::class, 'barcodeLabelPdf']);

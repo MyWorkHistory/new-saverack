@@ -7,6 +7,7 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountShopifyConnection;
 use App\Models\ShopifyLocation;
 use App\Models\ShopifyOrder;
+use App\Models\ShopifyPackagingItem;
 use App\Models\ShopifyProductVariant;
 use App\Models\ShopifyWarehouseLocationItem;
 use App\Services\AsnReceivingService;
@@ -2069,6 +2070,58 @@ class ShopifyIntegrationController extends Controller
         ]);
     }
 
+    /**
+     * CRM-only packaging assignment. Not pushed to Shopify or ShipHero.
+     */
+    public function updateVariantPackaging(Request $request, ShopifyProductVariant $shopifyVariant): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        $validated = $request->validate([
+            'packaging_item_id' => ['present', 'nullable', 'integer', 'exists:shopify_packaging_items,id'],
+            'packaging_material_item_id' => ['present', 'nullable', 'integer', 'exists:shopify_packaging_items,id'],
+        ]);
+
+        $packagingId = $validated['packaging_item_id'] ?? null;
+        $materialId = $validated['packaging_material_item_id'] ?? null;
+        $this->assertPackagingCategory($packagingId, ShopifyPackagingItem::CATEGORY_PACKAGING, 'packaging_item_id');
+        $this->assertPackagingCategory($materialId, ShopifyPackagingItem::CATEGORY_MATERIALS, 'packaging_material_item_id');
+
+        $shopifyVariant->loadMissing(['packagingItem', 'packagingMaterialItem']);
+        $beforePackaging = $this->assignedPackagingLabel($shopifyVariant->packagingItem, true);
+        $beforeMaterial = $this->assignedPackagingLabel($shopifyVariant->packagingMaterialItem, false);
+
+        $shopifyVariant->packaging_item_id = $packagingId ? (int) $packagingId : null;
+        $shopifyVariant->packaging_material_item_id = $materialId ? (int) $materialId : null;
+        $shopifyVariant->save();
+        $shopifyVariant->unsetRelation('packagingItem');
+        $shopifyVariant->unsetRelation('packagingMaterialItem');
+        $shopifyVariant->load(['packagingItem', 'packagingMaterialItem', 'product', 'connection.clientAccount']);
+
+        $afterPackaging = $this->assignedPackagingLabel($shopifyVariant->packagingItem, true);
+        $afterMaterial = $this->assignedPackagingLabel($shopifyVariant->packagingMaterialItem, false);
+        if ($beforePackaging !== $afterPackaging || $beforeMaterial !== $afterMaterial) {
+            $lines = [
+                'Packaging: '.($afterPackaging !== '' ? $afterPackaging : '—'),
+                'Packaging Materials: '.($afterMaterial !== '' ? $afterMaterial : '—'),
+            ];
+            try {
+                app(\App\Services\ShopifyProductVariantActivityService::class)->recordPackagingUpdated(
+                    $shopifyVariant,
+                    implode("\n", $lines),
+                    $request->user()
+                );
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }
+
+        return response()->json([
+            'message' => 'Packaging updated.',
+            'variant' => $this->serializeInventoryVariantDetail($shopifyVariant),
+        ]);
+    }
+
     public function uploadVariantImage(Request $request, ShopifyProductVariant $shopifyVariant): JsonResponse
     {
         $this->assertAdmin($request);
@@ -2511,7 +2564,7 @@ class ShopifyIntegrationController extends Controller
      */
     private function serializeInventoryVariantDetail(ShopifyProductVariant $shopifyVariant): array
     {
-        $shopifyVariant->loadMissing(['product', 'connection.clientAccount']);
+        $shopifyVariant->loadMissing(['product', 'connection.clientAccount', 'packagingItem', 'packagingMaterialItem']);
         $kind = \App\Models\ShopifyProduct::normalizeCrmProductKind(
             $shopifyVariant->product->crm_product_kind ?? null
         );
@@ -2547,9 +2600,61 @@ class ShopifyIntegrationController extends Controller
             'bundle_components' => $kind === \App\Models\ShopifyProduct::KIND_BUNDLE
                 ? $this->serializeBundleComponents($shopifyVariant)
                 : [],
+            'packaging' => $this->assignedPackagingPayload($shopifyVariant->packagingItem, true),
+            'packaging_material' => $this->assignedPackagingPayload($shopifyVariant->packagingMaterialItem, false),
             'timeline' => app(\App\Services\ShopifyProductVariantActivityService::class)
                 ->timelineFor($shopifyVariant),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function assignedPackagingPayload(?ShopifyPackagingItem $item, bool $prefixType): ?array
+    {
+        if ($item === null) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $item->id,
+            'name' => $item->name,
+            'category' => $item->category,
+            'type' => $item->type,
+            'type_label' => $item->typeLabel(),
+            'label' => $this->assignedPackagingLabel($item, $prefixType),
+            'image_url' => $item->imageUrl(),
+        ];
+    }
+
+    private function assignedPackagingLabel(?ShopifyPackagingItem $item, bool $prefixType): string
+    {
+        if ($item === null) {
+            return '';
+        }
+        $name = trim((string) $item->name);
+        $type = trim($item->typeLabel());
+        if ($prefixType && $type !== '' && strcasecmp($type, $name) !== 0) {
+            return $type.': '.$name;
+        }
+
+        return $name !== '' ? $name : $type;
+    }
+
+    /**
+     * @param mixed $id
+     */
+    private function assertPackagingCategory($id, string $category, string $field): void
+    {
+        if ($id === null || $id === '') {
+            return;
+        }
+        $item = ShopifyPackagingItem::query()->find((int) $id);
+        if ($item === null || $item->category !== $category) {
+            throw ValidationException::withMessages([
+                $field => ['That item is not in the selected packaging category.'],
+            ]);
+        }
     }
 
     private function normalizeCrmProductStatus(?string $status): string

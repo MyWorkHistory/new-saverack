@@ -23,6 +23,8 @@ class ShopifyProductVariantActivity extends Model
 
     public const TYPE_BUNDLE_UPDATED = 'bundle_updated';
 
+    public const TYPE_PACKAGING = 'packaging_updated';
+
     public const TYPE_SYNC_INFO = 'product_info_synced';
 
     public const TYPE_PUSH_INVENTORY = 'inventory_pushed';

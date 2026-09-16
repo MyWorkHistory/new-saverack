@@ -25,6 +25,8 @@ class ShopifyProductVariant extends Model
         'length',
         'width',
         'height',
+        'packaging_item_id',
+        'packaging_material_item_id',
         'dimension_unit',
         'requires_shipping',
         'crm_locked_at',
@@ -45,6 +47,8 @@ class ShopifyProductVariant extends Model
         'length' => 'decimal:4',
         'width' => 'decimal:4',
         'height' => 'decimal:4',
+        'packaging_item_id' => 'integer',
+        'packaging_material_item_id' => 'integer',
         'requires_shipping' => 'boolean',
         'crm_locked_at' => 'datetime',
         'shopify_updated_at' => 'datetime',
@@ -60,6 +64,16 @@ class ShopifyProductVariant extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(ShopifyProduct::class, 'shopify_product_id');
+    }
+
+    public function packagingItem(): BelongsTo
+    {
+        return $this->belongsTo(ShopifyPackagingItem::class, 'packaging_item_id');
+    }
+
+    public function packagingMaterialItem(): BelongsTo
+    {
+        return $this->belongsTo(ShopifyPackagingItem::class, 'packaging_material_item_id');
     }
 
     public function bundleComponents(): HasMany

@@ -463,11 +463,39 @@ onUnmounted(() => {
         v-if="selectedIds.length > 0"
         class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
       >
-        <span class="small staff-bulk-selection-bar__count">{{ selectedIds.length }} locations selected</span>
-        <button type="button" class="btn btn-sm staff-page-primary" @click="bulkOpen = true">Bulk Edit</button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" @click="exportCsv(true)">Export</button>
+        <input
+          type="checkbox"
+          class="form-check-input m-0"
+          :checked="allSelected"
+          aria-label="Select all locations"
+          @change="toggleSelectAll"
+        />
+        <span class="small staff-bulk-selection-bar__count">
+          {{ selectedIds.length }} location{{ selectedIds.length === 1 ? "" : "s" }} selected
+        </span>
+        <button
+          type="button"
+          class="btn btn-outline-primary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+          :disabled="busy"
+          @click="bulkOpen = true"
+        >
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
+          </svg>
+          Bulk Edit
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-primary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+          @click="exportCsv(true)"
+        >
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+          </svg>
+          Export
+        </button>
         <button type="button" class="btn btn-link btn-sm staff-bulk-clear-link ms-auto text-decoration-none" @click="selectedIds = []">
-          Clear Selection
+          Clear
         </button>
       </div>
 

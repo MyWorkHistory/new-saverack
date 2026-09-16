@@ -89,6 +89,34 @@ class ShopifyPackagingController extends Controller
         ], 201);
     }
 
+    public function bulkUpdate(Request $request): JsonResponse
+    {
+        $this->assertAdmin($request);
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:1000'],
+            'ids.*' => ['integer'],
+            'category' => ['required', Rule::in(array_keys(ShopifyPackagingItem::CATEGORIES))],
+            'type' => ['required', 'string', 'max:64'],
+        ]);
+        $category = (string) $validated['category'];
+        $type = (string) $validated['type'];
+        if (! array_key_exists($type, ShopifyPackagingItem::typesFor($category))) {
+            throw ValidationException::withMessages([
+                'type' => ['This type does not match the selected category.'],
+            ]);
+        }
+        $ids = array_values(array_unique(array_map('intval', $validated['ids'])));
+        $updated = ShopifyPackagingItem::query()->whereIn('id', $ids)->update([
+            'category' => $category,
+            'type' => $type,
+        ]);
+
+        return response()->json([
+            'message' => 'Updated '.$updated.' packaging item'.($updated === 1 ? '' : 's').'.',
+            'updated' => $updated,
+        ]);
+    }
+
     public function show(Request $request, ShopifyPackagingItem $packaging): JsonResponse
     {
         $this->assertAdmin($request);

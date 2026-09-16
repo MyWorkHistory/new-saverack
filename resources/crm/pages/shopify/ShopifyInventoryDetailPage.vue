@@ -38,6 +38,8 @@ const settingsOpen = ref(false);
 const bundleItemsOpen = ref(false);
 const packagingOpen = ref(false);
 const packagingBusy = ref(false);
+const packagingItems = computed(() => packagingItemsFor("packaging_items", "packaging"));
+const packagingMaterials = computed(() => packagingItemsFor("packaging_materials", "packaging_material"));
 const actionsOpen = ref(false);
 const actionsRoot = ref(null);
 const imageInput = ref(null);
@@ -296,6 +298,18 @@ async function onSavePackaging(payload) {
   } finally {
     packagingBusy.value = false;
   }
+}
+
+function packagingHref(item) {
+  if (!item?.id) return "#";
+  return router.resolve({ name: "shopify-packaging-detail", params: { id: String(item.id) } }).href;
+}
+
+function packagingItemsFor(listKey, singleKey) {
+  const list = variant.value?.[listKey];
+  if (Array.isArray(list) && list.length) return list.filter((item) => item?.id);
+  const single = variant.value?.[singleKey];
+  return single?.id ? [single] : [];
 }
 
 function packagingLines(detail) {
@@ -1000,7 +1014,19 @@ onUnmounted(() => {
                   </svg>
                 </span>
                 <div class="sid-field__label">Packaging</div>
-                <div class="sid-specs__value">{{ variant.packaging?.label || "—" }}</div>
+                <div class="sid-specs__value">
+                  <template v-if="packagingItems.length">
+                    <template v-for="(item, index) in packagingItems" :key="item.id">
+                      <a
+                        class="sid-account-link"
+                        :href="packagingHref(item)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >{{ item.label || item.name }}</a><span v-if="index < packagingItems.length - 1">, </span>
+                    </template>
+                  </template>
+                  <span v-else>—</span>
+                </div>
               </div>
               <div class="sid-specs__item">
                 <span class="sid-specs__icon" aria-hidden="true">
@@ -1009,7 +1035,19 @@ onUnmounted(() => {
                   </svg>
                 </span>
                 <div class="sid-field__label">Packaging Materials</div>
-                <div class="sid-specs__value">{{ variant.packaging_material?.label || "—" }}</div>
+                <div class="sid-specs__value">
+                  <template v-if="packagingMaterials.length">
+                    <template v-for="(item, index) in packagingMaterials" :key="item.id">
+                      <a
+                        class="sid-account-link"
+                        :href="packagingHref(item)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >{{ item.label || item.name }}</a><span v-if="index < packagingMaterials.length - 1">, </span>
+                    </template>
+                  </template>
+                  <span v-else>—</span>
+                </div>
               </div>
             </div>
           </section>
@@ -1802,9 +1840,12 @@ onUnmounted(() => {
   margin-top: 0.35rem;
   padding-top: 0;
   border-top: 0;
-  grid-template-columns: repeat(2, minmax(0, 14rem));
+  grid-template-columns: repeat(2, minmax(0, 22rem));
   justify-content: center;
   gap: 2.5rem;
+}
+.sid-packaging__specs .sid-specs__value {
+  overflow-wrap: anywhere;
 }
 .sid-bundle-label {
   margin-bottom: 0.55rem;

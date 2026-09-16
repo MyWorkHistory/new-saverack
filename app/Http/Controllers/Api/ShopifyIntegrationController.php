@@ -1472,6 +1472,48 @@ class ShopifyIntegrationController extends Controller
         ], 202);
     }
 
+    public function bulkViewEdit(Request $request): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        $validated = $request->validate([
+            'mode' => ['required', 'string', 'in:locations,packaging,weights,dimensions'],
+            'ids' => ['required', 'array', 'min:1', 'max:1000'],
+            'ids.*' => ['integer'],
+            'location_id' => ['required_if:mode,locations', 'nullable', 'integer'],
+            'available' => ['required_if:mode,locations', 'nullable', 'integer', 'min:1'],
+            'reason' => ['required_if:mode,locations', 'nullable', 'string', \Illuminate\Validation\Rule::in(\App\Models\ShopifyWarehouseLocation::addItemReasons())],
+            'packaging_item_id' => ['nullable', 'integer'],
+            'packaging_material_item_id' => ['nullable', 'integer'],
+            'weight' => ['required_if:mode,weights', 'nullable', 'numeric', 'min:0'],
+            'weight_unit' => ['required_if:mode,weights', 'nullable', 'string', 'in:POUNDS,OUNCES,GRAMS,KILOGRAMS'],
+            'length' => ['required_if:mode,dimensions', 'nullable', 'numeric', 'min:0'],
+            'width' => ['required_if:mode,dimensions', 'nullable', 'numeric', 'min:0'],
+            'height' => ['required_if:mode,dimensions', 'nullable', 'numeric', 'min:0'],
+            'dimension_unit' => ['nullable', 'string', 'max:16'],
+        ]);
+
+        $ids = array_values(array_unique(array_map('intval', $validated['ids'])));
+        $variants = ShopifyProductVariant::query()->whereIn('id', $ids)->get();
+        if ($variants->isEmpty()) {
+            return response()->json(['message' => 'Select at least one product.'], 422);
+        }
+
+        $mode = (string) $validated['mode'];
+        if ($mode === 'locations') {
+            $updated = $this->bulkAddLocationQty($request, $variants, $validated);
+        } elseif ($mode === 'packaging') {
+            $updated = $this->bulkSetPackaging($request, $variants, $validated);
+        } else {
+            $updated = $this->bulkSetVariantMeasures($request, $variants, $validated, $mode);
+        }
+
+        return response()->json([
+            'message' => 'Updated '.$updated.' product'.($updated === 1 ? '' : 's').'.',
+            'updated' => $updated,
+        ]);
+    }
+
     private function csvUploadMessage(int $queued, int $skipped, string $verb): string
     {
         if ($queued === 0) {
@@ -1506,6 +1548,7 @@ class ShopifyIntegrationController extends Controller
                 'connection.clientAccount:id,company_name',
                 'packagingItem',
                 'packagingMaterialItem',
+                'packagingAssignments',
             ])
             ->orderByDesc('id');
 
@@ -1623,8 +1666,7 @@ class ShopifyIntegrationController extends Controller
                     'account_name' => optional(optional($variant->connection)->clientAccount)->company_name,
                     'inventory' => [],
                     'available_total' => $onHand,
-                    'packaging' => $this->assignedPackagingPayload($variant->packagingItem, true),
-                    'packaging_material' => $this->assignedPackagingPayload($variant->packagingMaterialItem, false),
+                ] + $this->packagingFields($variant) + [
                     'location_groups' => $locationGroupsByVariant[(int) $variant->id] ?? $this->emptyLocationGroups(),
                 ];
             })->values(),
@@ -2136,28 +2178,26 @@ class ShopifyIntegrationController extends Controller
         $this->assertAdmin($request);
 
         $validated = $request->validate([
-            'packaging_item_id' => ['present', 'nullable', 'integer', 'exists:shopify_packaging_items,id'],
-            'packaging_material_item_id' => ['present', 'nullable', 'integer', 'exists:shopify_packaging_items,id'],
+            'packaging_item_ids' => ['sometimes', 'array', 'max:50'],
+            'packaging_item_ids.*' => ['integer', 'distinct'],
+            'packaging_material_item_ids' => ['sometimes', 'array', 'max:50'],
+            'packaging_material_item_ids.*' => ['integer', 'distinct'],
+            'packaging_item_id' => ['sometimes', 'nullable', 'integer'],
+            'packaging_material_item_id' => ['sometimes', 'nullable', 'integer'],
         ]);
 
-        $packagingId = $validated['packaging_item_id'] ?? null;
-        $materialId = $validated['packaging_material_item_id'] ?? null;
-        $this->assertPackagingCategory($packagingId, ShopifyPackagingItem::CATEGORY_PACKAGING, 'packaging_item_id');
-        $this->assertPackagingCategory($materialId, ShopifyPackagingItem::CATEGORY_MATERIALS, 'packaging_material_item_id');
+        $packagingIds = $this->packagingIdsFromRequest($validated, 'packaging_item_ids', 'packaging_item_id');
+        $materialIds = $this->packagingIdsFromRequest($validated, 'packaging_material_item_ids', 'packaging_material_item_id');
+        $packagingIds = $this->assertPackagingIds($packagingIds, ShopifyPackagingItem::CATEGORY_PACKAGING, 'packaging_item_ids');
+        $materialIds = $this->assertPackagingIds($materialIds, ShopifyPackagingItem::CATEGORY_MATERIALS, 'packaging_material_item_ids');
 
-        $shopifyVariant->loadMissing(['packagingItem', 'packagingMaterialItem']);
-        $beforePackaging = $this->assignedPackagingLabel($shopifyVariant->packagingItem, true);
-        $beforeMaterial = $this->assignedPackagingLabel($shopifyVariant->packagingMaterialItem, false);
+        $shopifyVariant->loadMissing(['packagingAssignments', 'packagingItem', 'packagingMaterialItem']);
+        [$beforePackaging, $beforeMaterial] = $this->assignedPackagingSummaries($shopifyVariant);
 
-        $shopifyVariant->packaging_item_id = $packagingId ? (int) $packagingId : null;
-        $shopifyVariant->packaging_material_item_id = $materialId ? (int) $materialId : null;
-        $shopifyVariant->save();
-        $shopifyVariant->unsetRelation('packagingItem');
-        $shopifyVariant->unsetRelation('packagingMaterialItem');
-        $shopifyVariant->load(['packagingItem', 'packagingMaterialItem', 'product', 'connection.clientAccount']);
+        $this->syncVariantPackaging($shopifyVariant, $packagingIds, $materialIds);
+        $shopifyVariant->load(['packagingAssignments', 'packagingItem', 'packagingMaterialItem', 'product', 'connection.clientAccount']);
 
-        $afterPackaging = $this->assignedPackagingLabel($shopifyVariant->packagingItem, true);
-        $afterMaterial = $this->assignedPackagingLabel($shopifyVariant->packagingMaterialItem, false);
+        [$afterPackaging, $afterMaterial] = $this->assignedPackagingSummaries($shopifyVariant);
         if ($beforePackaging !== $afterPackaging || $beforeMaterial !== $afterMaterial) {
             $lines = [
                 'Packaging: '.($afterPackaging !== '' ? $afterPackaging : '—'),
@@ -2666,7 +2706,7 @@ class ShopifyIntegrationController extends Controller
      */
     private function serializeInventoryVariantDetail(ShopifyProductVariant $shopifyVariant): array
     {
-        $shopifyVariant->loadMissing(['product', 'connection.clientAccount', 'packagingItem', 'packagingMaterialItem']);
+        $shopifyVariant->loadMissing(['product', 'connection.clientAccount', 'packagingAssignments', 'packagingItem', 'packagingMaterialItem']);
         $kind = \App\Models\ShopifyProduct::normalizeCrmProductKind(
             $shopifyVariant->product->crm_product_kind ?? null
         );
@@ -2702,11 +2742,149 @@ class ShopifyIntegrationController extends Controller
             'bundle_components' => $kind === \App\Models\ShopifyProduct::KIND_BUNDLE
                 ? $this->serializeBundleComponents($shopifyVariant)
                 : [],
-            'packaging' => $this->assignedPackagingPayload($shopifyVariant->packagingItem, true),
-            'packaging_material' => $this->assignedPackagingPayload($shopifyVariant->packagingMaterialItem, false),
+        ] + $this->packagingFields($shopifyVariant) + [
             'timeline' => app(\App\Services\ShopifyProductVariantActivityService::class)
                 ->timelineFor($shopifyVariant),
         ];
+    }
+
+    /**
+     * @return array{packaging_items: list<array<string, mixed>>, packaging_materials: list<array<string, mixed>>, packaging: array<string, mixed>|null, packaging_material: array<string, mixed>|null}
+     */
+    private function packagingFields(ShopifyProductVariant $variant): array
+    {
+        $packaging = $this->assignedPackagingList($variant, ShopifyPackagingItem::CATEGORY_PACKAGING, true);
+        $materials = $this->assignedPackagingList($variant, ShopifyPackagingItem::CATEGORY_MATERIALS, false);
+
+        return [
+            'packaging_items' => $packaging,
+            'packaging_materials' => $materials,
+            'packaging' => $packaging[0] ?? null,
+            'packaging_material' => $materials[0] ?? null,
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function assignedPackagingList(ShopifyProductVariant $variant, string $category, bool $prefixType): array
+    {
+        $variant->loadMissing(['packagingAssignments', 'packagingItem', 'packagingMaterialItem']);
+        $out = [];
+        $seen = [];
+        foreach ($variant->packagingAssignments as $item) {
+            if ($item->category !== $category || isset($seen[(int) $item->id])) {
+                continue;
+            }
+            $payload = $this->assignedPackagingPayload($item, $prefixType);
+            if ($payload === null) {
+                continue;
+            }
+            $seen[(int) $item->id] = true;
+            $out[] = $payload;
+        }
+        if ($out !== []) {
+            return $out;
+        }
+
+        $fallback = $category === ShopifyPackagingItem::CATEGORY_PACKAGING
+            ? $variant->packagingItem
+            : $variant->packagingMaterialItem;
+        $payload = $this->assignedPackagingPayload($fallback, $prefixType);
+        if ($payload === null || ($fallback && $fallback->category !== $category)) {
+            return [];
+        }
+
+        return [$payload];
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function assignedPackagingSummaries(ShopifyProductVariant $variant): array
+    {
+        $fields = $this->packagingFields($variant);
+        $packaging = [];
+        foreach ($fields['packaging_items'] as $item) {
+            $label = trim((string) ($item['label'] ?? ''));
+            if ($label !== '') {
+                $packaging[] = $label;
+            }
+        }
+        $materials = [];
+        foreach ($fields['packaging_materials'] as $item) {
+            $label = trim((string) ($item['label'] ?? ''));
+            if ($label !== '') {
+                $materials[] = $label;
+            }
+        }
+
+        return [implode(', ', $packaging), implode(', ', $materials)];
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return list<int>
+     */
+    private function packagingIdsFromRequest(array $validated, string $listKey, string $singleKey): array
+    {
+        if (array_key_exists($listKey, $validated) && is_array($validated[$listKey])) {
+            return array_values(array_unique(array_map('intval', $validated[$listKey])));
+        }
+        if (! array_key_exists($singleKey, $validated) || $validated[$singleKey] === null || $validated[$singleKey] === '') {
+            return [];
+        }
+
+        return [(int) $validated[$singleKey]];
+    }
+
+    /**
+     * @param  list<int>  $ids
+     * @return list<int>
+     */
+    private function assertPackagingIds(array $ids, string $category, string $field): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        $items = ShopifyPackagingItem::query()->whereIn('id', $ids)->get()->keyBy('id');
+        foreach ($ids as $id) {
+            $item = $items->get($id);
+            if ($item === null || $item->category !== $category) {
+                throw ValidationException::withMessages([
+                    $field => ['That item is not in the selected packaging category.'],
+                ]);
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * @param  list<int>  $packagingIds
+     * @param  list<int>  $materialIds
+     */
+    private function syncVariantPackaging(ShopifyProductVariant $variant, array $packagingIds, array $materialIds): void
+    {
+        $sync = [];
+        $sort = 0;
+        foreach ([$packagingIds, $materialIds] as $group) {
+            foreach ($group as $id) {
+                $id = (int) $id;
+                if ($id < 1 || isset($sync[$id])) {
+                    continue;
+                }
+                $sync[$id] = ['sort' => $sort];
+                $sort++;
+            }
+        }
+        $variant->packagingAssignments()->sync($sync);
+        $variant->packaging_item_id = isset($packagingIds[0]) ? (int) $packagingIds[0] : null;
+        $variant->packaging_material_item_id = isset($materialIds[0]) ? (int) $materialIds[0] : null;
+        $variant->save();
+        $variant->unsetRelation('packagingAssignments');
+        $variant->unsetRelation('packagingItem');
+        $variant->unsetRelation('packagingMaterialItem');
     }
 
     /**
@@ -2741,6 +2919,150 @@ class ShopifyIntegrationController extends Controller
         }
 
         return $name !== '' ? $name : $type;
+    }
+
+    /**
+     * Add the same quantity at one warehouse location for each selected product.
+     *
+     * @param  \Illuminate\Support\Collection<int, ShopifyProductVariant>  $variants
+     * @param  array<string, mixed>  $validated
+     */
+    private function bulkAddLocationQty(Request $request, $variants, array $validated): int
+    {
+        $location = \App\Models\ShopifyWarehouseLocation::query()->find((int) $validated['location_id']);
+        if ($location === null) {
+            throw ValidationException::withMessages([
+                'location_id' => ['Select a location.'],
+            ]);
+        }
+
+        $qty = max(1, (int) $validated['available']);
+        $reason = (string) $validated['reason'];
+        $sync = app(ShopifyWarehouseInventorySyncService::class);
+        $logs = app(\App\Services\ShopifyWarehouseInventoryLogService::class);
+        $updated = 0;
+
+        foreach ($variants as $variant) {
+            $item = ShopifyWarehouseLocationItem::query()->firstOrNew([
+                'location_id' => $location->id,
+                'shopify_variant_id' => $variant->id,
+            ]);
+            $oldQty = (int) $item->available;
+            $item->available = $oldQty + $qty;
+            $item->save();
+            $logs->recordAdjustment(
+                (int) $variant->id,
+                $location,
+                $oldQty,
+                (int) $item->available,
+                $reason,
+                $request->user(),
+                sprintf('Added %d', $qty)
+            );
+            $sync->applyAvailableDelta($variant, $qty);
+            $updated++;
+        }
+
+        return $updated;
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, ShopifyProductVariant>  $variants
+     * @param  array<string, mixed>  $validated
+     */
+    private function bulkSetPackaging(Request $request, $variants, array $validated): int
+    {
+        $packagingId = array_key_exists('packaging_item_id', $validated) && $validated['packaging_item_id'] !== null
+            ? (int) $validated['packaging_item_id']
+            : null;
+        $materialId = array_key_exists('packaging_material_item_id', $validated) && $validated['packaging_material_item_id'] !== null
+            ? (int) $validated['packaging_material_item_id']
+            : null;
+        $this->assertPackagingCategory($packagingId, ShopifyPackagingItem::CATEGORY_PACKAGING, 'packaging_item_id');
+        $this->assertPackagingCategory($materialId, ShopifyPackagingItem::CATEGORY_MATERIALS, 'packaging_material_item_id');
+
+        $activities = app(\App\Services\ShopifyProductVariantActivityService::class);
+        $updated = 0;
+        foreach ($variants as $variant) {
+            $variant->loadMissing(['packagingAssignments', 'packagingItem', 'packagingMaterialItem']);
+            [$beforePackaging, $beforeMaterial] = $this->assignedPackagingSummaries($variant);
+            $this->syncVariantPackaging(
+                $variant,
+                $packagingId ? [$packagingId] : [],
+                $materialId ? [$materialId] : []
+            );
+            $variant->load(['packagingAssignments', 'packagingItem', 'packagingMaterialItem']);
+            [$afterPackaging, $afterMaterial] = $this->assignedPackagingSummaries($variant);
+            if ($beforePackaging !== $afterPackaging || $beforeMaterial !== $afterMaterial) {
+                $activities->recordPackagingUpdated(
+                    $variant,
+                    "Packaging: ".($afterPackaging !== '' ? $afterPackaging : '—')."\n"
+                    ."Packaging Materials: ".($afterMaterial !== '' ? $afterMaterial : '—'),
+                    $request->user()
+                );
+            }
+            $updated++;
+        }
+
+        return $updated;
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, ShopifyProductVariant>  $variants
+     * @param  array<string, mixed>  $validated
+     */
+    private function bulkSetVariantMeasures(Request $request, $variants, array $validated, string $mode): int
+    {
+        $activities = app(\App\Services\ShopifyProductVariantActivityService::class);
+        $updated = 0;
+        foreach ($variants as $variant) {
+            $variant->loadMissing('product');
+            $before = [
+                'sku' => $variant->sku,
+                'product_title' => $variant->product->title ?? null,
+                'barcode' => $variant->barcode,
+                'weight' => $variant->weight,
+                'weight_unit' => $variant->weight_unit,
+                'length' => $variant->length,
+                'width' => $variant->width,
+                'height' => $variant->height,
+                'dimension_unit' => $variant->dimension_unit,
+            ];
+            $fields = [];
+            if ($mode === 'weights') {
+                $variant->weight = (float) $validated['weight'];
+                $variant->weight_unit = (string) $validated['weight_unit'];
+                $fields = [
+                    'weight' => $variant->weight,
+                    'weight_unit' => $variant->weight_unit,
+                ];
+            } else {
+                $variant->length = (float) $validated['length'];
+                $variant->width = (float) $validated['width'];
+                $variant->height = (float) $validated['height'];
+                $variant->dimension_unit = (string) ($validated['dimension_unit'] ?? 'INCHES');
+                $fields = [
+                    'length' => $variant->length,
+                    'width' => $variant->width,
+                    'height' => $variant->height,
+                    'dimension_unit' => $variant->dimension_unit,
+                ];
+            }
+            $variant->save();
+            $after = $before;
+            foreach ($fields as $key => $value) {
+                $after[$key] = $value;
+            }
+            try {
+                $activities->recordFieldChanges($variant, $before, $after, $request->user());
+            } catch (Throwable $e) {
+                report($e);
+            }
+            \App\Jobs\PushShopifyVariantJob::dispatch((int) $variant->id, $fields);
+            $updated++;
+        }
+
+        return $updated;
     }
 
     /**

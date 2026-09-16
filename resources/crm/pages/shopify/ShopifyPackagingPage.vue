@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
@@ -52,6 +52,15 @@ const manageOpenId = ref(null);
 const manageMenuRow = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
 const pagination = ref({ current_page: 1, last_page: 1, total: 0, per_page: LIST_PAGE_SIZE_DEFAULT });
+const selectedIds = ref([]);
+const bulkOpen = ref(false);
+const bulkBusy = ref(false);
+const bulkForm = reactive({ category: "packaging", type: "box" });
+
+const allSelected = computed(
+  () => rows.value.length > 0 && rows.value.every((row) => selectedIds.value.includes(row.id)),
+);
+const bulkTypeOptions = computed(() => TYPES[bulkForm.category] || TYPES.packaging);
 
 const typeOptions = computed(() => {
   if (category.value && TYPES[category.value]) return TYPES[category.value];
@@ -142,9 +151,12 @@ async function load(page = pagination.value.current_page) {
       total: data?.meta?.total || 0,
       per_page: data?.meta?.per_page || pagination.value.per_page,
     };
+    const pageIds = new Set(rows.value.map((row) => row.id));
+    selectedIds.value = selectedIds.value.filter((id) => pageIds.has(id));
   } catch (e) {
     toast.errorFrom(e, "Could not load packaging.");
     rows.value = [];
+    selectedIds.value = [];
   } finally {
     loading.value = false;
   }
@@ -183,6 +195,85 @@ async function confirmDelete() {
 function onPerPageChange(size) {
   pagination.value.per_page = Number(size) || LIST_PAGE_SIZE_DEFAULT;
   load(1);
+}
+
+function isSelected(id) {
+  return selectedIds.value.includes(id);
+}
+
+function toggleSelect(id) {
+  if (selectedIds.value.includes(id)) {
+    selectedIds.value = selectedIds.value.filter((x) => x !== id);
+    return;
+  }
+  selectedIds.value = [...selectedIds.value, id];
+}
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    selectedIds.value = [];
+    return;
+  }
+  selectedIds.value = rows.value.map((row) => row.id);
+}
+
+function onBulkCategoryChange() {
+  const allowed = bulkTypeOptions.value.map((opt) => opt.value);
+  if (!allowed.includes(bulkForm.type)) bulkForm.type = allowed[0] || "";
+}
+
+function csvEscape(val) {
+  const s = String(val ?? "");
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function exportSelected() {
+  const selected = rows.value.filter((row) => selectedIds.value.includes(row.id));
+  if (!selected.length) {
+    toast.error("Select packaging to export.");
+    return;
+  }
+  const lines = [["Name", "Category", "Type", "Cost", "Price", "On Hand"].join(",")];
+  selected.forEach((row) => {
+    lines.push(
+      [
+        csvEscape(row.name),
+        csvEscape(row.category_label),
+        csvEscape(row.type_label),
+        csvEscape(formatCents(row.cost_cents)),
+        csvEscape(formatCents(row.price_cents)),
+        csvEscape(row.on_hand ?? 0),
+      ].join(","),
+    );
+  });
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `shopify-packaging-${Date.now()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function saveBulk() {
+  if (!selectedIds.value.length) return;
+  bulkBusy.value = true;
+  try {
+    const { data } = await api.post("/shopify/packaging/bulk", {
+      ids: selectedIds.value,
+      category: bulkForm.category,
+      type: bulkForm.type,
+    });
+    toast.success(data?.message || "Packaging updated.");
+    bulkOpen.value = false;
+    selectedIds.value = [];
+    await load(pagination.value.current_page);
+  } catch (e) {
+    toast.errorFrom(e, "Could not update packaging.");
+  } finally {
+    bulkBusy.value = false;
+  }
 }
 
 onMounted(() => {
@@ -284,10 +375,64 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <div
+        v-if="selectedIds.length"
+        class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
+      >
+        <input
+          type="checkbox"
+          class="form-check-input m-0"
+          :checked="allSelected"
+          aria-label="Select all packaging"
+          @change="toggleSelectAll"
+        />
+        <span class="small staff-bulk-selection-bar__count">
+          {{ selectedIds.length }} packaging item{{ selectedIds.length === 1 ? "" : "s" }} selected
+        </span>
+        <button
+          type="button"
+          class="btn btn-outline-primary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+          :disabled="bulkBusy"
+          @click="bulkOpen = true"
+        >
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
+          </svg>
+          Bulk Edit
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-primary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+          @click="exportSelected"
+        >
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+          </svg>
+          Export
+        </button>
+        <button
+          type="button"
+          class="btn btn-link btn-sm staff-bulk-clear-link ms-auto text-decoration-none"
+          @click="selectedIds = []"
+        >
+          Clear
+        </button>
+      </div>
+
       <div class="table-responsive staff-table-wrap">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
+              <th class="staff-table-head__th sip-check-col" scope="col">
+                <input
+                  type="checkbox"
+                  class="form-check-input m-0"
+                  :checked="allSelected"
+                  :disabled="!rows.length || loading"
+                  aria-label="Select all"
+                  @change="toggleSelectAll"
+                />
+              </th>
               <th class="staff-table-head__th" scope="col">Name</th>
               <th class="staff-table-head__th" scope="col">Category</th>
               <th class="staff-table-head__th" scope="col">Type</th>
@@ -299,25 +444,35 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="7" class="py-5">
+              <td colspan="8" class="py-5">
                 <div class="d-flex justify-content-center py-3">
                   <CrmLoadingSpinner message="Loading Packaging…" />
                 </div>
               </td>
             </tr>
             <tr v-else-if="!rows.length">
-              <td colspan="7" class="px-4 py-5 text-center text-secondary">No packaging found.</td>
+              <td colspan="8" class="px-4 py-5 text-center text-secondary">No packaging found.</td>
             </tr>
             <tr
               v-for="row in rows"
               v-else
               :key="row.id"
               class="align-middle sip-row"
+              :class="{ 'sip-row--selected': isSelected(row.id) }"
               role="button"
               tabindex="0"
               @click="openRow(row)"
               @keydown.enter.prevent="openRow(row)"
             >
+              <td class="sip-check-col" @click.stop>
+                <input
+                  type="checkbox"
+                  class="form-check-input m-0"
+                  :checked="isSelected(row.id)"
+                  :aria-label="`Select ${row.name || row.id}`"
+                  @change="toggleSelect(row.id)"
+                />
+              </td>
               <td>
                 <div class="sip-product-cell">
                   <div class="sip-product-cell__img">
@@ -396,6 +551,37 @@ onUnmounted(() => {
       @close="deleteOpen = false"
       @confirm="confirmDelete"
     />
+
+    <Teleport to="body">
+      <div v-if="bulkOpen" class="crm-vx-modal-overlay" @click.self="bulkOpen = false">
+        <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+          <header class="crm-vx-modal__head" style="text-align: left">
+            <h2 class="crm-vx-modal__title">Bulk Edit</h2>
+          </header>
+          <div class="crm-vx-modal__body">
+            <p class="small text-secondary mb-3">
+              Update category and type for {{ selectedIds.length }} selected packaging item{{ selectedIds.length === 1 ? "" : "s" }}.
+            </p>
+            <label class="form-label" for="pkg-bulk-category">Category</label>
+            <select id="pkg-bulk-category" v-model="bulkForm.category" class="form-select mb-3" @change="onBulkCategoryChange">
+              <option v-for="opt in CATEGORIES" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
+            <label class="form-label" for="pkg-bulk-type">Type</label>
+            <select id="pkg-bulk-type" v-model="bulkForm.type" class="form-select">
+              <option v-for="opt in bulkTypeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
+          </div>
+          <footer class="crm-vx-modal__footer justify-content-end">
+            <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" :disabled="bulkBusy" @click="bulkOpen = false">
+              Cancel
+            </button>
+            <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--primary" :disabled="bulkBusy" @click="saveBulk">
+              {{ bulkBusy ? "Please Wait…" : "Save" }}
+            </button>
+          </footer>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -418,6 +604,13 @@ onUnmounted(() => {
 }
 .sip-row {
   cursor: pointer;
+}
+.sip-row--selected {
+  background: #f8fbff;
+}
+.sip-check-col {
+  width: 2.5rem;
+  text-align: center;
 }
 .sip-product-cell {
   display: flex;

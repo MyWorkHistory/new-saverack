@@ -745,6 +745,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/inventory/accounts', [ShopifyIntegrationController::class, 'inventoryAccounts']);
         Route::post('/inventory/import', [ShopifyIntegrationController::class, 'importProductsCsv']);
         Route::post('/inventory/bulk-edit', [ShopifyIntegrationController::class, 'bulkEditProductsCsv']);
+        Route::post('/inventory/bulk-view-edit', [ShopifyIntegrationController::class, 'bulkViewEdit']);
         Route::get('/inventory/logs/meta', [ShopifyWarehouseInventoryLogController::class, 'meta']);
         Route::get('/inventory/{shopifyVariant}/logs', [ShopifyWarehouseInventoryLogController::class, 'index']);
         Route::get('/inventory/{shopifyVariant}', [ShopifyIntegrationController::class, 'inventoryShow']);
@@ -781,6 +782,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/packaging/meta', [ShopifyPackagingController::class, 'meta']);
         Route::get('/packaging', [ShopifyPackagingController::class, 'index']);
         Route::post('/packaging', [ShopifyPackagingController::class, 'store']);
+        Route::post('/packaging/bulk', [ShopifyPackagingController::class, 'bulkUpdate']);
         Route::get('/packaging/{packaging}', [ShopifyPackagingController::class, 'show']);
         Route::patch('/packaging/{packaging}', [ShopifyPackagingController::class, 'update']);
         Route::delete('/packaging/{packaging}', [ShopifyPackagingController::class, 'destroy']);

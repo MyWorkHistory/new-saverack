@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
 
@@ -74,6 +75,16 @@ class ShopifyProductVariant extends Model
     public function packagingMaterialItem(): BelongsTo
     {
         return $this->belongsTo(ShopifyPackagingItem::class, 'packaging_material_item_id');
+    }
+
+    public function packagingAssignments(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            ShopifyPackagingItem::class,
+            'shopify_variant_packaging',
+            'shopify_product_variant_id',
+            'shopify_packaging_item_id'
+        )->withPivot('sort')->orderBy('shopify_variant_packaging.sort')->orderBy('shopify_packaging_items.id');
     }
 
     public function bundleComponents(): HasMany

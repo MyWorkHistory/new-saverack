@@ -239,18 +239,37 @@ class ShopifyInventoryDetailApiTest extends TestCase
             'category' => 'packaging_materials',
             'type' => 'kraft_paper',
         ]);
+        $wrap = \App\Models\ShopifyPackagingItem::query()->create([
+            'name' => 'Bubble Wrap',
+            'category' => 'packaging_materials',
+            'type' => 'bubble_wrap',
+        ]);
 
         $this->patchJson('/api/shopify/inventory/'.$parent->id.'/packaging', [
-            'packaging_item_id' => $box->id,
-            'packaging_material_item_id' => $paper->id,
+            'packaging_item_ids' => [$box->id],
+            'packaging_material_item_ids' => [$paper->id, $wrap->id],
         ])->assertOk()
             ->assertJsonPath('variant.packaging.label', 'Box: 8x8x4')
-            ->assertJsonPath('variant.packaging_material.label', 'Kraft Paper')
+            ->assertJsonPath('variant.packaging_items.0.label', 'Box: 8x8x4')
+            ->assertJsonPath('variant.packaging_materials.0.label', 'Kraft Paper')
+            ->assertJsonPath('variant.packaging_materials.1.label', 'Bubble Wrap')
             ->assertJsonPath('message', 'Packaging updated.');
 
         $parent->refresh();
         $this->assertSame($box->id, (int) $parent->packaging_item_id);
         $this->assertSame($paper->id, (int) $parent->packaging_material_item_id);
+        $materialIds = $parent->packagingAssignments()
+            ->get()
+            ->filter(function ($item) {
+                return $item->category === 'packaging_materials';
+            })
+            ->pluck('id')
+            ->map(function ($id) {
+                return (int) $id;
+            })
+            ->values()
+            ->all();
+        $this->assertSame([$paper->id, $wrap->id], $materialIds);
         \Illuminate\Support\Facades\Queue::assertNothingPushed();
     }
 }

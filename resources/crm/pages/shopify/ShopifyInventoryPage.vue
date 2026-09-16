@@ -9,6 +9,7 @@ import ShopifyInventoryBulkEditModal from "../../components/shopify/ShopifyInven
 import ShopifyInventoryImportProductsModal from "../../components/shopify/ShopifyInventoryImportProductsModal.vue";
 import ShopifyInventoryPackagingModal from "../../components/shopify/ShopifyInventoryPackagingModal.vue";
 import ShopifyInventorySyncAccountModal from "../../components/shopify/ShopifyInventorySyncAccountModal.vue";
+import ShopifyInventoryViewBulkModal from "../../components/shopify/ShopifyInventoryViewBulkModal.vue";
 import ShopifyInventoryViewEditModal from "../../components/shopify/ShopifyInventoryViewEditModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
@@ -38,6 +39,7 @@ const filters = reactive({
 const syncOpen = ref(false);
 const importOpen = ref(false);
 const bulkOpen = ref(false);
+const viewBulkOpen = ref(false);
 const addOpen = ref(false);
 const viewType = ref("inventory");
 const editBusy = ref(false);
@@ -171,6 +173,13 @@ function openRow(row) {
   window.open(inventoryDetailHref(row), "_blank", "noopener,noreferrer");
 }
 
+function packagingListLabel(row, listKey, singleKey) {
+  const list = Array.isArray(row?.[listKey]) ? row[listKey] : [];
+  const labels = list.map((item) => item?.label || item?.name).filter(Boolean);
+  if (labels.length) return labels.join(", ");
+  return row?.[singleKey]?.label || "—";
+}
+
 function locationLabel(row, key) {
   const group = (row?.location_groups || []).find((item) => item.key === key);
   const names = (group?.locations || [])
@@ -283,6 +292,49 @@ async function saveViewEdit(payload) {
     await load();
   } catch (e) {
     toast.errorFrom(e, "Could not save changes.");
+  } finally {
+    editBusy.value = false;
+  }
+}
+
+function openSelectionBulk() {
+  if (viewType.value === "inventory") {
+    bulkOpen.value = true;
+    return;
+  }
+  viewBulkOpen.value = true;
+}
+
+async function saveViewBulk(payload) {
+  if (!selectedIds.value.length) return;
+  if (payload.mode === "locations" && !payload.location_id) {
+    toast.error("Select a location.");
+    return;
+  }
+  if (payload.mode === "locations" && !payload.reason) {
+    toast.error("Select a reason.");
+    return;
+  }
+  if (payload.mode === "weights" && (payload.weight == null || Number.isNaN(payload.weight))) {
+    toast.error("Enter a weight.");
+    return;
+  }
+  if (payload.mode === "dimensions" && [payload.length, payload.width, payload.height].some((n) => n == null || Number.isNaN(n))) {
+    toast.error("Enter length, width, and height.");
+    return;
+  }
+  editBusy.value = true;
+  try {
+    const { data } = await api.post("/shopify/inventory/bulk-view-edit", {
+      ...payload,
+      ids: selectedIds.value,
+    });
+    toast.success(data?.message || "Updated.");
+    viewBulkOpen.value = false;
+    selectedIds.value = [];
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update the selected products.");
   } finally {
     editBusy.value = false;
   }
@@ -621,20 +673,20 @@ onUnmounted(() => {
         </span>
         <button
           type="button"
-          class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1"
-          @click="bulkOpen = true"
+          class="btn btn-outline-primary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+          @click="openSelectionBulk"
         >
-          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
           </svg>
           Bulk Edit
         </button>
         <button
           type="button"
-          class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1"
+          class="btn btn-outline-primary staff-toolbar-btn d-inline-flex align-items-center gap-2"
           @click="exportSelected"
         >
-          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
           </svg>
           Export
@@ -759,8 +811,8 @@ onUnmounted(() => {
                 <td class="text-body">{{ locationLabel(row, "other") }}</td>
               </template>
               <template v-else-if="viewType === 'packaging'">
-                <td class="text-body">{{ row.packaging?.label || "—" }}</td>
-                <td class="text-body">{{ row.packaging_material?.label || "—" }}</td>
+                <td class="text-body">{{ packagingListLabel(row, "packaging_items", "packaging") }}</td>
+                <td class="text-body">{{ packagingListLabel(row, "packaging_materials", "packaging_material") }}</td>
               </template>
               <template v-else-if="viewType === 'weights'">
                 <td class="text-body">{{ weightLabel(row) }}</td>
@@ -858,11 +910,11 @@ onUnmounted(() => {
               <template v-else-if="viewType === 'packaging'">
                 <div class="crm-mobile-item-card__meta-row">
                   <span class="crm-mobile-item-card__meta-label">Packaging</span>
-                  <span class="crm-mobile-item-card__meta-value">{{ row.packaging?.label || "—" }}</span>
+                  <span class="crm-mobile-item-card__meta-value">{{ packagingListLabel(row, "packaging_items", "packaging") }}</span>
                 </div>
                 <div class="crm-mobile-item-card__meta-row">
                   <span class="crm-mobile-item-card__meta-label">Materials</span>
-                  <span class="crm-mobile-item-card__meta-value">{{ row.packaging_material?.label || "—" }}</span>
+                  <span class="crm-mobile-item-card__meta-value">{{ packagingListLabel(row, "packaging_materials", "packaging_material") }}</span>
                 </div>
               </template>
               <template v-else-if="viewType === 'weights'">
@@ -927,6 +979,14 @@ onUnmounted(() => {
       :variant="editRow"
       @close="packagingEditOpen = false"
       @save="savePackaging"
+    />
+    <ShopifyInventoryViewBulkModal
+      :open="viewBulkOpen"
+      :busy="editBusy"
+      :mode="viewType"
+      :count="selectedIds.length"
+      @close="viewBulkOpen = false"
+      @save="saveViewBulk"
     />
     <ShopifyInventoryViewEditModal
       :open="viewEditOpen"

@@ -132,4 +132,46 @@ class ShopifyPackagingApiTest extends TestCase
 
         $this->assertNull($cleared['image_url']);
     }
+
+    public function test_bulk_updates_category_and_type_only(): void
+    {
+        $this->actingAsAdmin();
+
+        $box = $this->postJson('/api/shopify/packaging', [
+            'name' => '6x6x4',
+            'category' => 'packaging',
+            'type' => 'box',
+            'cost' => 1.25,
+            'price' => 2.00,
+            'on_hand' => 10,
+        ])->assertCreated()->json('item');
+
+        $mailer = $this->postJson('/api/shopify/packaging', [
+            'name' => 'Kraft Mailer',
+            'category' => 'packaging',
+            'type' => 'kraft_mailer',
+            'cost' => 0.40,
+            'price' => 0.75,
+            'on_hand' => 4,
+        ])->assertCreated()->json('item');
+
+        $this->postJson('/api/shopify/packaging/bulk', [
+            'ids' => [$box['id'], $mailer['id']],
+            'category' => 'packaging_materials',
+            'type' => 'bubble_wrap',
+        ])->assertOk()->assertJsonPath('updated', 2);
+
+        $boxFresh = ShopifyPackagingItem::query()->findOrFail($box['id']);
+        $this->assertSame('packaging_materials', $boxFresh->category);
+        $this->assertSame('bubble_wrap', $boxFresh->type);
+        $this->assertSame(125, (int) $boxFresh->cost_cents);
+        $this->assertSame(200, (int) $boxFresh->price_cents);
+        $this->assertSame(10, (int) $boxFresh->on_hand);
+
+        $this->postJson('/api/shopify/packaging/bulk', [
+            'ids' => [$box['id']],
+            'category' => 'packaging',
+            'type' => 'kraft_paper',
+        ])->assertStatus(422);
+    }
 }

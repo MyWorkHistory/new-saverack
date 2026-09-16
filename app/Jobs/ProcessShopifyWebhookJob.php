@@ -93,6 +93,10 @@ class ProcessShopifyWebhookJob implements ShouldQueue
                 $this->markProcessed($event, 'Shopify inventory webhooks do not update CRM quantity.');
 
                 return;
+            } elseif ($kind === 'locations_delete') {
+                $bootstrap->upsertLocationFromPayload($connection, $payload, true);
+            } elseif ($kind === 'locations') {
+                $bootstrap->upsertLocationFromPayload($connection, $payload, false);
             } elseif ($kind === 'fulfillments') {
                 $orderId = $orders->extractShopifyOrderId($payload);
                 if ($orderId === '') {
@@ -153,6 +157,12 @@ class ProcessShopifyWebhookJob implements ShouldQueue
         }
         if (str_starts_with($normalized, 'fulfillments/')) {
             return 'fulfillments';
+        }
+        if ($normalized === 'locations/delete' || $normalized === 'locations/deactivate') {
+            return 'locations_delete';
+        }
+        if (strpos($normalized, 'locations/') === 0) {
+            return 'locations';
         }
 
         return 'unknown';

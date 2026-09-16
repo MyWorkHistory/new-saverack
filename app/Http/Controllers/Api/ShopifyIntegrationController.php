@@ -80,6 +80,14 @@ class ShopifyIntegrationController extends Controller
         $this->assertConnectionAccount($clientAccount, $shopifyConnection);
         $connections->getForAccountConnection((int) $clientAccount->id, (int) $shopifyConnection->id);
         $shopifyConnection->refresh();
+        if ($shopifyConnection->hasCredentials()) {
+            try {
+                app(ShopifyBootstrapImportService::class)->importLocationsOnly($shopifyConnection);
+                $shopifyConnection->refresh();
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }
 
         $locations = $shopifyConnection->locations()->orderBy('name')->orderBy('id')->get()->map(function ($loc) {
             return [
@@ -814,6 +822,28 @@ class ShopifyIntegrationController extends Controller
             report($e);
 
             return response()->json(['message' => 'Could not hold order.'], 500);
+        }
+
+        return response()->json(['order' => app(ShopifyOrderListService::class)->listRow($order)]);
+    }
+
+    public function orderRemoveHolds(Request $request, ShopifyOrder $shopifyOrder, ShopifyOrderActionService $actions): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        $validated = $request->validate([
+            'reasons' => ['required', 'array', 'min:1'],
+            'reasons.*' => ['required', 'string', 'max:64'],
+        ]);
+
+        try {
+            $order = $actions->removeHolds($shopifyOrder, $validated['reasons'], $request->user());
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => 'Could not remove holds.'], 500);
         }
 
         return response()->json(['order' => app(ShopifyOrderListService::class)->listRow($order)]);
@@ -2643,6 +2673,13 @@ class ShopifyIntegrationController extends Controller
                 $fulfilled = (int) ($line->fulfilled_quantity ?? 0);
                 $fulfillable = (int) ($line->fulfillable_quantity ?? 0);
                 $lineStatus = $orders->lineDisplayStatus($order, $line);
+                if ($qty <= 0 && $lineStatus === 'cancelled') {
+                    $lineRaw = is_array($line->raw_json) ? $line->raw_json : [];
+                    $originalQty = (int) ($lineRaw['crm_original_quantity'] ?? $lineRaw['quantity'] ?? 0);
+                    if ($originalQty > 0) {
+                        $qty = $originalQty;
+                    }
+                }
 
                 $location = '—';
                 if ($crmVariantId && isset($locationsByVariantPk[(int) $crmVariantId])) {

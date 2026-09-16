@@ -17,6 +17,7 @@ const searchResults = ref([]);
 const searchBusy = ref(false);
 const searchOpen = ref(false);
 const rowMenuId = ref(null);
+const rowMenuStyle = ref({});
 let searchTimer = null;
 
 const draftLines = ref([]);
@@ -92,11 +93,34 @@ function addVariant(v) {
   searchOpen.value = false;
 }
 
+function toggleRowMenu(event, lineId) {
+  if (rowMenuId.value === lineId) {
+    rowMenuId.value = null;
+    return;
+  }
+  const rect = event.currentTarget.getBoundingClientRect();
+  const menuWidth = 168;
+  const menuHeight = 92;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const top = spaceBelow < menuHeight + 12 ? rect.top - menuHeight - 4 : rect.bottom + 4;
+  const left = Math.min(window.innerWidth - menuWidth - 8, Math.max(8, rect.right - menuWidth));
+  rowMenuStyle.value = {
+    top: `${Math.max(8, Math.floor(top))}px`,
+    left: `${Math.floor(left)}px`,
+  };
+  rowMenuId.value = lineId;
+}
+
 function setAction(line, action) {
+  if (!line) return;
   line.action = action;
   if (action === "cancel") line.line_status = "cancelled";
   if (action === "fulfilled") line.line_status = "fulfilled";
   rowMenuId.value = null;
+}
+
+function onMenuAction(action) {
+  setAction(draftLines.value.find((li) => li.id === rowMenuId.value), action);
 }
 
 function onConfirm() {
@@ -130,7 +154,7 @@ const statusLabel = (status) => {
 <template>
   <Teleport to="body">
     <div v-if="open" class="so-modal-overlay" role="dialog" aria-modal="true" @click.self="onClose">
-      <div class="so-modal so-modal--wide" @click.stop>
+      <div class="so-modal so-modal--wide" @click.stop="rowMenuId = null">
         <button type="button" class="so-modal__close" aria-label="Close" :disabled="busy" @click="onClose">×</button>
         <h2 class="so-modal__title mb-1">Edit Items</h2>
         <p class="so-modal__lead">Update the items for Order #{{ orderLabel }}</p>
@@ -192,12 +216,8 @@ const statusLabel = (status) => {
                 </td>
                 <td>{{ line.location || "—" }}</td>
                 <td><span :class="statusClass(line.line_status)">{{ statusLabel(line.line_status) }}</span></td>
-                <td class="position-relative">
-                  <button type="button" class="btn btn-sm btn-link text-secondary px-1" :disabled="busy" @click.stop="rowMenuId = rowMenuId === line.id ? null : line.id">⋯</button>
-                  <div v-if="rowMenuId === line.id" class="staff-row-menu so-edit-row-menu" @click.stop>
-                    <button type="button" class="staff-row-menu__item staff-row-menu__item--danger" @click="setAction(line, 'cancel')">Cancel</button>
-                    <button type="button" class="staff-row-menu__item" @click="setAction(line, 'fulfilled')">Fulfilled</button>
-                  </div>
+                <td>
+                  <button type="button" class="btn btn-sm btn-link text-secondary px-1" :disabled="busy" @click.stop="toggleRowMenu($event, line.id)">⋯</button>
                 </td>
               </tr>
               <tr v-for="add in pendingAdds" :key="add._key">
@@ -230,6 +250,16 @@ const statusLabel = (status) => {
             {{ busy ? "Updating…" : "Update Order" }}
           </button>
         </footer>
+      </div>
+      <div
+        v-if="rowMenuId != null"
+        class="staff-row-menu"
+        :style="rowMenuStyle"
+        role="menu"
+        @click.stop
+      >
+        <button type="button" class="staff-row-menu__item staff-row-menu__item--danger" role="menuitem" @click="onMenuAction('cancel')">Cancel</button>
+        <button type="button" class="staff-row-menu__item" role="menuitem" @click="onMenuAction('fulfilled')">Fulfilled</button>
       </div>
     </div>
   </Teleport>
@@ -310,5 +340,5 @@ const statusLabel = (status) => {
 .so-line-status--pending { background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
 .so-line-status--cancelled { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
 .so-line-status--fulfilled { background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; }
-.so-edit-row-menu { position: absolute; right: 0; top: 100%; z-index: 6; min-width: 9rem; }
+.so-edit-table-wrap { overflow: visible; }
 </style>

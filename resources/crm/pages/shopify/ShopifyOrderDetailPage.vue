@@ -10,6 +10,7 @@ import ShopifyOrderEditItemsModal from "../../components/shopify/ShopifyOrderEdi
 import ShopifyOrderEditShippingModal from "../../components/shopify/ShopifyOrderEditShippingModal.vue";
 import ShopifyOrderFulfillModal from "../../components/shopify/ShopifyOrderFulfillModal.vue";
 import ShopifyOrderHoldModal from "../../components/shopify/ShopifyOrderHoldModal.vue";
+import ShopifyOrderRemoveHoldModal from "../../components/shopify/ShopifyOrderRemoveHoldModal.vue";
 import ShopifyOrderReprocessModal from "../../components/shopify/ShopifyOrderReprocessModal.vue";
 import ShopifyOrderReshipModal from "../../components/shopify/ShopifyOrderReshipModal.vue";
 import ShopifyOrderStatusPickerModal from "../../components/shopify/ShopifyOrderStatusPickerModal.vue";
@@ -31,6 +32,7 @@ const loading = ref(true);
 const order = ref(null);
 const actionsMenuOpen = ref(false);
 const holdModalOpen = ref(false);
+const removeHoldModalOpen = ref(false);
 const cancelModalOpen = ref(false);
 const fulfillModalOpen = ref(false);
 const reshipModalOpen = ref(false);
@@ -42,7 +44,7 @@ const editShippingOpen = ref(false);
 
 const orderId = computed(() => Number(route.params.id || 0));
 const lineItems = computed(() => (Array.isArray(order.value?.line_items) ? order.value.line_items : []));
-const timeline = computed(() => (Array.isArray(order.value?.timeline) ? order.value.timeline : []));
+const timeline = computed(() => visibleTimeline(order.value?.timeline));
 const recipient = computed(() => order.value?.recipient || null);
 const shipping = computed(() => order.value?.shipping || null);
 
@@ -68,6 +70,13 @@ const createdLabel = computed(() => formatDetailDateTime(order.value?.shopify_cr
 function canChangeOrderActions(status) {
   return !isFulfilledStatus(status) && !isCancelledStatus(status);
 }
+
+const isOnHold = computed(() => String(order.value?.display_status || "").toLowerCase() === "on_hold");
+
+const activeHoldReasons = computed(() => {
+  const raw = order.value?.crm_hold_reasons;
+  return Array.isArray(raw) ? raw.map((r) => String(r || "").trim()).filter(Boolean) : [];
+});
 
 const actions = useShopifyOrderActions({
   onUpdated: (updated) => {
@@ -137,6 +146,32 @@ function timelineIconClass(type) {
   return "so-timeline__icon--create";
 }
 
+function visibleTimeline(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  return list.filter((ev) => !isShopifyEchoOfUserItemEdit(ev, list));
+}
+
+function isShopifyEchoOfUserItemEdit(ev, rows) {
+  if (!ev) return false;
+  const actor = String(ev.actor_label || "").toLowerCase();
+  const isEcho = ev.type === "shopify_edit" || (actor === "shopify" && ev.title === "Order Edited");
+  if (!isEcho) return false;
+  const at = Date.parse(ev.created_at || "");
+  return rows.some((other) => {
+    if (!other || other.id === ev.id || other.actor_user_id == null) return false;
+    if (other.type !== "items_updated" && other.title !== "Order Edited") return false;
+    const otherAt = Date.parse(other.created_at || "");
+    return Number.isFinite(at) && Number.isFinite(otherAt) && Math.abs(otherAt - at) <= 30 * 60 * 1000;
+  });
+}
+
+function timelineDetailLines(detail) {
+  const text = String(detail || "").trim();
+  if (!text) return [];
+  const parts = text.includes("\n") ? text.split("\n") : text.split("; ");
+  return parts.map((line) => line.trim()).filter(Boolean);
+}
+
 function timelineGlyph(type) {
   if (type === "order_hold") return "pause";
   if (type === "order_cancel") return "pause";
@@ -154,13 +189,14 @@ function formatAddressLines(r) {
   if (street1) lines.push(street1);
   const street2 = String(r.address2 || "").trim();
   if (street2) lines.push(street2);
-  const city = String(r.city || "").trim();
-  const province = String(r.province || "").trim();
-  const zip = String(r.zip || "").trim();
-  const locality = [city, [province, zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  const locality = [r.city, r.province, r.zip].map((part) => String(part || "").trim()).filter(Boolean).join(", ");
   if (locality) lines.push(locality);
   const country = String(r.country || "").trim();
   if (country) lines.push(country);
+  const email = String(r.email || order.value?.email || "").trim();
+  if (email) lines.push(email);
+  const phone = String(r.phone || order.value?.phone || "").trim();
+  if (phone) lines.push(phone);
   return lines;
 }
 
@@ -175,6 +211,15 @@ async function confirmHold(reasons) {
   const result = await actions.holdOrder([orderId.value], reasons);
   if (result) {
     holdModalOpen.value = false;
+    await load();
+  }
+}
+
+async function confirmRemoveHolds(reasons) {
+  if (!orderId.value) return;
+  const result = await actions.removeHolds([orderId.value], reasons);
+  if (result) {
+    removeHoldModalOpen.value = false;
     await load();
   }
 }
@@ -333,7 +378,7 @@ onUnmounted(() => {
               <span class="so-detail-meta__item">Sales Channel: {{ order.sales_channel || (order.source === 'crm' ? 'CRM' : 'Shopify') }}</span>
             </p>
           </div>
-          <div class="d-flex flex-wrap gap-2">
+          <div class="d-flex flex-wrap align-items-center gap-2">
             <button
               type="button"
               class="btn so-btn-outline fw-semibold d-inline-flex align-items-center gap-2"
@@ -344,6 +389,16 @@ onUnmounted(() => {
                 <path stroke-linecap="round" stroke-linejoin="round" d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
               </svg>
               Edit Order
+            </button>
+            <button
+              v-if="isOnHold"
+              type="button"
+              class="btn btn-danger text-white fw-semibold"
+              :disabled="actions.busy.value"
+              title="Remove Hold"
+              @click="removeHoldModalOpen = true"
+            >
+              Remove Hold
             </button>
             <div class="position-relative" data-shopify-order-detail-actions>
               <button
@@ -369,13 +424,22 @@ onUnmounted(() => {
                   Sync From Shopify
                 </button>
                 <button
-                  v-if="canChangeOrderActions(order.display_status)"
+                  v-if="canChangeOrderActions(order.display_status) && !isOnHold"
                   type="button"
                   class="staff-row-menu__item"
                   role="menuitem"
                   @click="holdModalOpen = true; actionsMenuOpen = false"
                 >
                   Hold Order
+                </button>
+                <button
+                  v-if="isOnHold"
+                  type="button"
+                  class="staff-row-menu__item"
+                  role="menuitem"
+                  @click="removeHoldModalOpen = true; actionsMenuOpen = false"
+                >
+                  Remove Hold
                 </button>
                 <button
                   v-if="canChangeOrderActions(order.display_status)"
@@ -505,9 +569,9 @@ onUnmounted(() => {
                   <div class="d-flex justify-content-between gap-3">
                     <div class="min-w-0">
                       <div class="fw-semibold text-body">{{ ev.title }}</div>
-                      <div class="small text-secondary">
-                        {{ formatDetailDateTime(ev.created_at) }}
-                        <template v-if="ev.detail"> · {{ ev.detail }}</template>
+                      <div class="small text-secondary">{{ formatDetailDateTime(ev.created_at) }}</div>
+                      <div v-if="timelineDetailLines(ev.detail).length" class="so-timeline__detail small text-secondary">
+                        <div v-for="(line, idx) in timelineDetailLines(ev.detail)" :key="`${ev.id}-d-${idx}`">{{ line }}</div>
                       </div>
                     </div>
                     <div class="small text-secondary text-nowrap">{{ ev.actor_label || "System" }}</div>
@@ -540,30 +604,16 @@ onUnmounted(() => {
               </button>
             </div>
             <div class="fw-bold mb-1 text-body">{{ recipient?.name || order.recipient_name || "—" }}</div>
-            <div v-if="formatAddressLines(recipient).length" class="mb-3 text-body so-recipient-addr">
+            <div v-if="formatAddressLines(recipient).length" class="text-body so-recipient-addr">
               <p
                 v-for="(line, idx) in formatAddressLines(recipient)"
                 :key="'addr-' + idx"
                 class="mb-0 so-recipient-addr__line"
-                :class="{ 'so-recipient-addr__line--company': idx === 0 && recipient?.company }"
               >
                 {{ line }}
               </p>
             </div>
-            <p v-else class="mb-3 text-body so-recipient-addr">—</p>
-            <div v-if="recipient?.email || order.email" class="so-contact-row mb-2">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <path d="M4 6h16v12H4z" />
-                <path d="M4 7l8 6 8-6" />
-              </svg>
-              <span>{{ recipient?.email || order.email }}</span>
-            </div>
-            <div v-if="recipient?.phone" class="so-contact-row">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <path d="M6.5 3h3l1.5 4-2 1.5a12 12 0 006 6L16.5 13l4 1.5v3A2 2 0 0118.5 20 15.5 15.5 0 014 5.5 2 2 0 016.5 3z" />
-              </svg>
-              <span>{{ recipient.phone }}</span>
-            </div>
+            <p v-else class="mb-0 text-body so-recipient-addr">—</p>
           </section>
 
           <section class="so-card">
@@ -612,6 +662,13 @@ onUnmounted(() => {
     </template>
 
     <ShopifyOrderHoldModal :open="holdModalOpen" :busy="actions.busy.value" @close="holdModalOpen = false" @confirm="confirmHold" />
+    <ShopifyOrderRemoveHoldModal
+      :open="removeHoldModalOpen"
+      :busy="actions.busy.value"
+      :active-reasons="activeHoldReasons"
+      @close="removeHoldModalOpen = false"
+      @confirm="confirmRemoveHolds"
+    />
     <ShopifyOrderCancelConfirmModal :open="cancelModalOpen" :busy="actions.busy.value" @close="cancelModalOpen = false" @confirm="confirmCancel" />
     <ShopifyOrderFulfillModal
       :open="fulfillModalOpen"
@@ -837,14 +894,6 @@ onUnmounted(() => {
 .so-line-status--fulfilled { background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; }
 .so-recipient-addr { color: #374151; line-height: 1.45; }
 .so-recipient-addr__line { margin: 0; }
-.so-recipient-addr__line--company { font-weight: 500; color: #111827; }
-.so-contact-row {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  color: #6b7280;
-  font-size: 0.875rem;
-}
 .so-ship-dl > div {
   display: grid;
   grid-template-columns: 6.5rem 1fr;
@@ -884,4 +933,6 @@ onUnmounted(() => {
 .so-timeline__icon--hold { background: #f59e0b; }
 .so-timeline__icon--edit { background: #8b5cf6; }
 .so-timeline__icon--ok { background: #10b981; }
+.so-timeline__detail { margin-top: 0.2rem; white-space: normal; }
+.so-timeline__detail > div + div { margin-top: 0.12rem; }
 </style>

@@ -94,6 +94,22 @@ export function useShopifyOrderActions({ onUpdated } = {}) {
     }
   }
 
+  async function removeHolds(ids, reasons) {
+    if (!ids?.length || !reasons?.length) return null;
+    busy.value = true;
+    try {
+      const { data } = await api.post(`/shopify/orders/${ids[0]}/remove-holds`, { reasons });
+      toast.success(reasons.length === 1 ? "Hold removed." : "Holds removed.");
+      onUpdated?.(data?.order);
+      return data?.order ?? null;
+    } catch (e) {
+      toast.errorFrom(e, "Could not remove holds.");
+      return null;
+    } finally {
+      busy.value = false;
+    }
+  }
+
   async function cancelOrder(ids, cancelInShopify = false) {
     if (!ids?.length) return null;
     busy.value = true;
@@ -312,6 +328,7 @@ export function useShopifyOrderActions({ onUpdated } = {}) {
     busy,
     syncOrder,
     holdOrder,
+    removeHolds,
     cancelOrder,
     fulfillOrder,
     reshipOrder,

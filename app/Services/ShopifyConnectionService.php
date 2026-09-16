@@ -26,6 +26,12 @@ class ShopifyConnectionService
         'PRODUCTS_UPDATE',
         'PRODUCTS_DELETE',
         'INVENTORY_LEVELS_UPDATE',
+        // Optional: requires read_locations. Existing stores pick these up on the next webhook register.
+        'LOCATIONS_CREATE',
+        'LOCATIONS_UPDATE',
+        'LOCATIONS_DELETE',
+        'LOCATIONS_ACTIVATE',
+        'LOCATIONS_DEACTIVATE',
         // Optional: requires read_fulfillments (orders/updated + orders/edited cover Phase 1)
         'FULFILLMENTS_CREATE',
         'FULFILLMENTS_UPDATE',
@@ -35,6 +41,11 @@ class ShopifyConnectionService
     public const OPTIONAL_WEBHOOK_TOPICS = [
         'FULFILLMENTS_CREATE',
         'FULFILLMENTS_UPDATE',
+        'LOCATIONS_CREATE',
+        'LOCATIONS_UPDATE',
+        'LOCATIONS_DELETE',
+        'LOCATIONS_ACTIVATE',
+        'LOCATIONS_DEACTIVATE',
     ];
 
     /** @var ShopifyClient */

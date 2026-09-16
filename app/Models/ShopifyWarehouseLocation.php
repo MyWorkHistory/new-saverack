@@ -53,6 +53,7 @@ class ShopifyWarehouseLocation extends Model
 
     protected $fillable = [
         'name',
+        'shopify_location_id',
         'type',
         'pickable',
         'sellable',

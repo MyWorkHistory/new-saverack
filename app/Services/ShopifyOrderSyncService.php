@@ -722,12 +722,16 @@ GQL
             $seenLineIds = [];
             $preserveCancelQtys = $order->crm_fulfillment_cancelled_at !== null
                 || $order->cancelled_at !== null;
+            $removedLineIds = $this->crmRemovedLineIds($order);
             foreach ($lineNodes as $lineNode) {
                 $lineId = ShopifyGid::toId((string) ($lineNode['admin_graphql_api_id'] ?? $lineNode['id'] ?? ''));
                 if ($lineId === '') {
                     $lineId = ShopifyGid::numericIdString($lineNode['id'] ?? null);
                 }
                 if ($lineId === '') {
+                    continue;
+                }
+                if (isset($removedLineIds[$lineId])) {
                     continue;
                 }
                 $seenLineIds[] = $lineId;
@@ -741,6 +745,30 @@ GQL
                 if ($preserveCancelQtys) {
                     // Keep CRM cancel: do not restore fulfillable qty from Shopify sync.
                     $unfulfilled = 0;
+                }
+                $existingLine = ShopifyOrderLineItem::query()
+                    ->where('connection_id', $connection->id)
+                    ->where('shopify_line_item_id', $lineId)
+                    ->first();
+                if ($existingLine !== null) {
+                    $prevRaw = is_array($existingLine->raw_json) ? $existingLine->raw_json : [];
+                    if (! empty($prevRaw['crm_line_cancelled'])) {
+                        $displayQty = max(
+                            1,
+                            (int) $existingLine->quantity,
+                            (int) ($prevRaw['crm_original_quantity'] ?? 0)
+                        );
+                        $qty = $displayQty;
+                        $unfulfilled = 0;
+                        $fulfilled = 0;
+                        $lineNode['crm_line_cancelled'] = true;
+                        $lineNode['crm_original_quantity'] = $displayQty;
+                    } elseif (! empty($prevRaw['crm_quantity_locked'])) {
+                        $qty = (int) $existingLine->quantity;
+                        $unfulfilled = (int) $existingLine->fulfillable_quantity;
+                        $fulfilled = (int) $existingLine->fulfilled_quantity;
+                        $lineNode['crm_quantity_locked'] = true;
+                    }
                 }
                 ShopifyOrderLineItem::query()->updateOrCreate(
                     [
@@ -768,7 +796,8 @@ GQL
             if ($hasLineSnapshot) {
                 $prune = ShopifyOrderLineItem::query()
                     ->where('connection_id', $connection->id)
-                    ->where('shopify_order_id', $order->id);
+                    ->where('shopify_order_id', $order->id)
+                    ->where('shopify_line_item_id', 'not like', 'crm-line-%');
                 if ($seenLineIds !== []) {
                     $prune->whereNotIn('shopify_line_item_id', $seenLineIds);
                 }
@@ -777,6 +806,7 @@ GQL
 
             $this->syncFulfillmentOrders($connection, $order, $node);
             $this->syncFulfillmentOrdersFromRestApi($connection, $order);
+            $this->reapplyCrmLineFulfillmentState($order);
 
             if ($order->wasRecentlyCreated) {
                 try {
@@ -809,35 +839,110 @@ GQL
     private function recordShopifyLineDiffs(ShopifyOrder $order, array $priorLines): void
     {
         $order->loadMissing('lineItems');
+        $userEditedIds = $this->userEditedShopifyLineIds($order);
+        $removed = $this->crmRemovedLineIds($order);
         $details = [];
         foreach ($order->lineItems as $line) {
             $id = (string) ($line->shopify_line_item_id ?? '');
+            if ($this->shopifyLineDiffAlreadyRecordedByUser($line, $id, $userEditedIds)) {
+                continue;
+            }
             $prev = $priorLines[$id] ?? null;
+            $title = trim((string) ($line->title ?: 'Item'));
+            $sku = trim((string) ($line->sku ?: ''));
+            if ($sku === '') {
+                $sku = '—';
+            }
             if ($prev === null) {
-                $details[] = 'Added '.trim((string) ($line->title ?: 'item')).' (SKU: '.trim((string) ($line->sku ?: '—')).') qty '.(int) $line->quantity;
+                $details[] = $title.' (SKU: '.$sku.') · qty 0 → '.(int) $line->quantity;
                 continue;
             }
             if ((int) $prev['quantity'] !== (int) $line->quantity) {
-                $details[] = trim((string) ($line->title ?: 'item')).' (SKU: '.trim((string) ($line->sku ?: '—')).') qty '.$prev['quantity'].' → '.(int) $line->quantity;
+                $details[] = $title.' (SKU: '.$sku.') · qty '.$prev['quantity'].' → '.(int) $line->quantity;
             }
         }
         foreach ($priorLines as $id => $prev) {
+            $id = (string) $id;
+            if (isset($userEditedIds[$id]) || isset($removed[$id])) {
+                continue;
+            }
             $still = $order->lineItems->firstWhere('shopify_line_item_id', $id);
             if ($still === null) {
-                $details[] = 'Removed '.trim((string) ($prev['title'] ?: 'item')).' (SKU: '.trim((string) ($prev['sku'] ?: '—')).')';
+                $title = trim((string) ($prev['title'] ?: 'Item'));
+                $sku = trim((string) ($prev['sku'] ?: ''));
+                if ($sku === '') {
+                    $sku = '—';
+                }
+                $details[] = $title.' (SKU: '.$sku.') · qty '.(int) ($prev['quantity'] ?? 0).' → 0';
             }
         }
         if ($details === []) {
+            return;
+        }
+        if ($this->userRecentlyEditedItems($order)) {
             return;
         }
         app(ShopifyOrderActivityService::class)->record(
             $order,
             \App\Models\ShopifyOrderActivity::TYPE_SHOPIFY_EDIT,
             'Order Edited',
-            implode('; ', $details),
+            implode("\n", $details),
             null,
             'Shopify'
         );
+    }
+
+    /**
+     * User item edits already write a timeline row. Do not echo them when Shopify syncs.
+     *
+     * @param  array<string, true>  $userEditedIds
+     */
+    private function shopifyLineDiffAlreadyRecordedByUser(ShopifyOrderLineItem $line, string $lineId, array $userEditedIds): bool
+    {
+        if ($lineId !== '' && isset($userEditedIds[$lineId])) {
+            return true;
+        }
+        $raw = is_array($line->raw_json) ? $line->raw_json : [];
+
+        return ! empty($raw['crm_line_cancelled']) || ! empty($raw['crm_quantity_locked']);
+    }
+
+    private function userRecentlyEditedItems(ShopifyOrder $order): bool
+    {
+        return \App\Models\ShopifyOrderActivity::query()
+            ->where('shopify_order_id', $order->id)
+            ->where('type', \App\Models\ShopifyOrderActivity::TYPE_ITEMS)
+            ->whereNotNull('actor_user_id')
+            ->where('created_at', '>=', now()->subMinutes(30))
+            ->exists();
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    private function userEditedShopifyLineIds(ShopifyOrder $order): array
+    {
+        $ids = [];
+        $rows = \App\Models\ShopifyOrderActivity::query()
+            ->where('shopify_order_id', $order->id)
+            ->where('type', \App\Models\ShopifyOrderActivity::TYPE_ITEMS)
+            ->whereNotNull('actor_user_id')
+            ->get(['meta']);
+        foreach ($rows as $row) {
+            $meta = is_array($row->meta) ? $row->meta : [];
+            $lineIds = $meta['shopify_line_item_ids'] ?? [];
+            if (! is_array($lineIds)) {
+                continue;
+            }
+            foreach ($lineIds as $id) {
+                $id = trim((string) $id);
+                if ($id !== '') {
+                    $ids[$id] = true;
+                }
+            }
+        }
+
+        return $ids;
     }
 
     /**
@@ -1200,6 +1305,15 @@ GQL
         $raw = $node;
         $title = $this->shippingTitleFromPayload($raw);
 
+        if ($existing !== null) {
+            $prev = is_array($existing->raw_json) ? $existing->raw_json : [];
+            foreach ($prev as $key => $value) {
+                if (strpos((string) $key, 'crm_') === 0 && ! array_key_exists($key, $raw)) {
+                    $raw[$key] = $value;
+                }
+            }
+        }
+
         if ($title === '' && $existing !== null) {
             $prev = is_array($existing->raw_json) ? $existing->raw_json : [];
             foreach (['shippingLine', 'shipping_lines', 'shippingLines'] as $key) {
@@ -1437,6 +1551,85 @@ GQL
             return Carbon::parse((string) $value);
         } catch (Throwable $e) {
             return null;
+        }
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    private function crmRemovedLineIds(ShopifyOrder $order): array
+    {
+        $raw = is_array($order->raw_json) ? $order->raw_json : [];
+        $rows = is_array($raw['crm_removed_line_item_ids'] ?? null) ? $raw['crm_removed_line_item_ids'] : [];
+        $ids = [];
+        foreach ($rows as $row) {
+            $id = is_array($row) ? trim((string) ($row['id'] ?? '')) : trim((string) $row);
+            if ($id !== '') {
+                $ids[$id] = true;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Shopify sync must not undo CRM item edits (qty lock, cancelled line, removed line).
+     */
+    private function reapplyCrmLineFulfillmentState(ShopifyOrder $order): void
+    {
+        $order->load(['lineItems', 'fulfillmentOrders.lineItems']);
+        $removed = $this->crmRemovedLineIds($order);
+
+        foreach ($order->lineItems as $line) {
+            $lineRaw = is_array($line->raw_json) ? $line->raw_json : [];
+            $remaining = null;
+            if (! empty($lineRaw['crm_line_cancelled'])) {
+                $displayQty = max(1, (int) $line->quantity, (int) ($lineRaw['crm_original_quantity'] ?? 0));
+                $line->quantity = $displayQty;
+                $line->fulfilled_quantity = 0;
+                $line->fulfillable_quantity = 0;
+                $line->save();
+                $remaining = 0;
+            } elseif (! empty($lineRaw['crm_quantity_locked'])) {
+                $remaining = max(0, (int) $line->fulfillable_quantity);
+            }
+            if ($remaining === null) {
+                continue;
+            }
+            $this->setFoRemainingForLine($order, $line, $remaining);
+        }
+
+        if ($removed === []) {
+            return;
+        }
+        foreach ($order->fulfillmentOrders as $fo) {
+            foreach ($fo->lineItems as $foLine) {
+                $sid = trim((string) ($foLine->shopify_line_item_id ?? ''));
+                if ($sid === '' || ! isset($removed[$sid])) {
+                    continue;
+                }
+                if ((int) $foLine->remaining_quantity === 0) {
+                    continue;
+                }
+                $foLine->remaining_quantity = 0;
+                $foLine->save();
+            }
+        }
+    }
+
+    private function setFoRemainingForLine(ShopifyOrder $order, ShopifyOrderLineItem $line, int $remaining): void
+    {
+        foreach ($order->fulfillmentOrders as $fo) {
+            foreach ($fo->lineItems as $foLine) {
+                $matchesLocal = (int) ($foLine->shopify_order_line_item_id ?? 0) === (int) $line->id;
+                $sid = trim((string) ($foLine->shopify_line_item_id ?? ''));
+                $matchesShopify = $sid !== '' && $sid === trim((string) ($line->shopify_line_item_id ?? ''));
+                if (! $matchesLocal && ! $matchesShopify) {
+                    continue;
+                }
+                $foLine->remaining_quantity = max(0, $remaining);
+                $foLine->save();
+            }
         }
     }
 }

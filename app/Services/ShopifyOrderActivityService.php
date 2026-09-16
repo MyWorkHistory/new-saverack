@@ -67,6 +67,8 @@ class ShopifyOrderActivityService
                 ->get();
         }
 
+        $rows = $this->withoutShopifyItemEditEchoes($rows);
+
         return $rows->map(static function (ShopifyOrderActivity $row) {
             return [
                 'id' => $row->id,
@@ -79,5 +81,56 @@ class ShopifyOrderActivityService
                 'created_at' => optional($row->created_at)->toIso8601String(),
             ];
         })->values()->all();
+    }
+
+    /**
+     * A CRM item edit already writes a timeline row. Hide the Shopify sync
+     * echo of that same edit (qty, add, remove, cancel).
+     *
+     * @param  \Illuminate\Support\Collection<int, ShopifyOrderActivity>  $rows
+     * @return \Illuminate\Support\Collection<int, ShopifyOrderActivity>
+     */
+    private function withoutShopifyItemEditEchoes($rows)
+    {
+        $userEdits = $rows->filter(function (ShopifyOrderActivity $row) {
+            if ($row->actor_user_id === null) {
+                return false;
+            }
+
+            return $row->type === ShopifyOrderActivity::TYPE_ITEMS
+                || $row->title === 'Order Edited';
+        });
+        if ($userEdits->isEmpty()) {
+            return $rows;
+        }
+
+        return $rows->reject(function (ShopifyOrderActivity $row) use ($userEdits) {
+            if (! $this->isShopifyItemEditEcho($row)) {
+                return false;
+            }
+            if ($row->created_at === null) {
+                return false;
+            }
+            foreach ($userEdits as $user) {
+                if ($user->id === $row->id || $user->created_at === null) {
+                    continue;
+                }
+                if (abs($user->created_at->diffInSeconds($row->created_at)) <= 30 * 60) {
+                    return true;
+                }
+            }
+
+            return false;
+        })->values();
+    }
+
+    private function isShopifyItemEditEcho(ShopifyOrderActivity $row): bool
+    {
+        if ($row->type === ShopifyOrderActivity::TYPE_SHOPIFY_EDIT) {
+            return true;
+        }
+
+        return strcasecmp((string) $row->actor_label, 'Shopify') === 0
+            && $row->title === 'Order Edited';
     }
 }

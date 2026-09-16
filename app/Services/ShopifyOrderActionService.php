@@ -37,13 +37,17 @@ class ShopifyOrderActionService
     /** @var ShopifyOrderActivityService */
     private $activities;
 
+    /** @var ShopifyOrderEditService */
+    private $edits;
+
     public function __construct(
         ShopifyClient $client,
         ShopifyOrderSyncService $sync,
         ShopifyFulfillmentService $fulfillments,
         ShopifyOrderListService $list,
         ShopifyProductSyncService $products,
-        ShopifyOrderActivityService $activities
+        ShopifyOrderActivityService $activities,
+        ShopifyOrderEditService $edits
     ) {
         $this->client = $client;
         $this->sync = $sync;
@@ -51,6 +55,7 @@ class ShopifyOrderActionService
         $this->list = $list;
         $this->products = $products;
         $this->activities = $activities;
+        $this->edits = $edits;
     }
 
     public function assertNotShipped(ShopifyOrder $order): void
@@ -106,9 +111,6 @@ class ShopifyOrderActionService
     public function holdOrder(ShopifyOrder $order, array $reasons, ?User $actor = null): ShopifyOrder
     {
         $this->assertNotShipped($order);
-        if ($order->cancelled_at !== null) {
-            throw new RuntimeException(self::CANCELLED_STATUS_LOCK_MESSAGE);
-        }
 
         $reasons = array_values(array_filter(array_map('trim', $reasons)));
         if ($reasons === []) {
@@ -124,6 +126,7 @@ class ShopifyOrderActionService
         // Clearing CRM-only cancel lets status recover from Cancelled → On Hold.
         $order->crm_hold_reasons = $reasons;
         $order->crm_fulfillment_cancelled_at = null;
+        $order->cancelled_at = null;
         $order->save();
 
         try {
@@ -145,6 +148,77 @@ class ShopifyOrderActionService
             if ($connection !== null && $connection->hasCredentials()) {
                 try {
                     $this->pushHoldTags($connection, $order, $reasons);
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
+        }
+
+        return $order->fresh(['connection.clientAccount', 'lineItems']);
+    }
+
+    /**
+     * Remove selected CRM hold reasons. Clears on-hold when none remain.
+     *
+     * @param  list<string>  $reasonsToClear
+     */
+    public function removeHolds(ShopifyOrder $order, array $reasonsToClear, ?User $actor = null): ShopifyOrder
+    {
+        $this->assertNotShipped($order);
+
+        $reasonsToClear = array_values(array_unique(array_filter(array_map('trim', $reasonsToClear))));
+        if ($reasonsToClear === []) {
+            throw new RuntimeException('Select at least one hold to remove.');
+        }
+
+        $invalid = array_diff($reasonsToClear, ShopifyOrderListService::HOLD_REASONS);
+        if ($invalid !== []) {
+            throw new RuntimeException('Invalid hold reason: '.implode(', ', $invalid));
+        }
+
+        $current = is_array($order->crm_hold_reasons) ? $order->crm_hold_reasons : [];
+        $current = array_values(array_filter(array_map('trim', $current)));
+        if ($current === []) {
+            throw new RuntimeException('This order has no active holds.');
+        }
+
+        $clearSet = array_fill_keys($reasonsToClear, true);
+        $remaining = [];
+        foreach ($current as $reason) {
+            if (! isset($clearSet[$reason])) {
+                $remaining[] = $reason;
+            }
+        }
+
+        $actuallyCleared = array_values(array_filter($current, static function ($reason) use ($clearSet) {
+            return isset($clearSet[$reason]);
+        }));
+        if ($actuallyCleared === []) {
+            throw new RuntimeException('Select at least one active hold to remove.');
+        }
+
+        $order->crm_hold_reasons = $remaining;
+        $order->save();
+
+        try {
+            $this->activities->record(
+                $order,
+                ShopifyOrderActivity::TYPE_HOLD,
+                $remaining === [] ? 'Hold Removed' : 'Holds Updated',
+                'Removed: '.implode(', ', $actuallyCleared)
+                    .($remaining !== [] ? ' · Remaining: '.implode(', ', $remaining) : ''),
+                $actor
+            );
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        if (! $order->isCrmSource()) {
+            $order->loadMissing('connection');
+            $connection = $order->connection;
+            if ($connection !== null && $connection->hasCredentials()) {
+                try {
+                    $this->removeHoldTags($connection, $order, $actuallyCleared);
                 } catch (\Throwable $e) {
                     report($e);
                 }
@@ -301,6 +375,9 @@ GQL
         if ($order->isCrmSource()) {
             return $this->fulfillCrmOrderLocally($order, $actor, $trackingNumber, $deductLineItemIds);
         }
+
+        // Item edits stay in CRM until the order is fulfilled.
+        $order = $this->edits->pushPendingItemEditsToShopify($order);
 
         $connection = $order->connection;
         if ($connection !== null && $connection->hasCredentials()) {
@@ -477,25 +554,44 @@ GQL
             throw new RuntimeException(self::SHIPPED_STATUS_LOCK_MESSAGE);
         }
 
-        if ($order->cancelled_at !== null) {
-            throw new RuntimeException(self::CANCELLED_STATUS_LOCK_MESSAGE);
-        }
-
         if ($status === ShopifyOrderListService::DISPLAY_FULFILLED) {
             throw new RuntimeException('Use Mark Fulfilled to set Fulfilled status.');
         }
 
+        if ($status === ShopifyOrderListService::DISPLAY_CANCELLED) {
+            throw new RuntimeException('Use Cancel Order to set Cancelled status.');
+        }
+
+        $previousStatus = $this->list->displayStatus($order);
+        $recoveringFromCancel = $previousStatus === ShopifyOrderListService::DISPLAY_CANCELLED
+            || $order->cancelled_at !== null
+            || $order->crm_fulfillment_cancelled_at !== null;
+
+        if ($recoveringFromCancel) {
+            $this->restoreCancelledOrderToPending($order);
+            $order = $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']) ?? $order;
+        }
+
         if ($status === ShopifyOrderListService::DISPLAY_ON_HOLD) {
-            return $this->holdOrder($order, $holdReasons);
+            $held = $this->holdOrder($order, $holdReasons);
+            // holdOrder records its own timeline; also note recovery when leaving cancelled.
+            if ($recoveringFromCancel && $previousStatus === ShopifyOrderListService::DISPLAY_CANCELLED) {
+                $this->recordDisplayStatusChange(
+                    $held,
+                    $previousStatus,
+                    $this->list->displayStatus($held)
+                );
+            }
+
+            return $held;
         }
 
         $this->assertNotShipped($order);
 
-        $previousStatus = $this->list->displayStatus($order);
-
         if ($status === ShopifyOrderListService::DISPLAY_READY) {
             $order->crm_hold_reasons = [];
             $order->crm_fulfillment_cancelled_at = null;
+            $order->cancelled_at = null;
             $raw = is_array($order->raw_json) ? $order->raw_json : [];
             // Explicit override so Backorder does not stick after clearing the hint.
             $raw['crm_display_hint'] = 'ready_to_ship';
@@ -508,6 +604,7 @@ GQL
         if ($status === ShopifyOrderListService::DISPLAY_DRAFT) {
             $order->crm_hold_reasons = [];
             $order->crm_fulfillment_cancelled_at = null;
+            $order->cancelled_at = null;
             $raw = is_array($order->raw_json) ? $order->raw_json : [];
             $raw['crm_display_hint'] = 'draft';
             $order->raw_json = $raw;
@@ -519,6 +616,7 @@ GQL
         if ($status === ShopifyOrderListService::DISPLAY_BACKORDER) {
             $order->crm_hold_reasons = [];
             $order->crm_fulfillment_cancelled_at = null;
+            $order->cancelled_at = null;
             $raw = is_array($order->raw_json) ? $order->raw_json : [];
             $raw['crm_display_hint'] = 'backorder';
             $order->raw_json = $raw;
@@ -528,6 +626,48 @@ GQL
         }
 
         throw new RuntimeException('Unsupported status.');
+    }
+
+    /**
+     * Clear CRM/Shopify cancel flags and restore unfulfilled lines to Pending.
+     */
+    private function restoreCancelledOrderToPending(ShopifyOrder $order): void
+    {
+        $order->loadMissing(['lineItems', 'fulfillmentOrders.lineItems']);
+
+        foreach ($order->lineItems as $lineItem) {
+            $qty = max(0, (int) $lineItem->quantity);
+            $fulfilled = max(0, (int) $lineItem->fulfilled_quantity);
+            if ($fulfilled > $qty) {
+                $fulfilled = $qty;
+                $lineItem->fulfilled_quantity = $fulfilled;
+            }
+            $lineItem->fulfillable_quantity = max(0, $qty - $fulfilled);
+            $lineItem->save();
+        }
+
+        foreach ($order->fulfillmentOrders as $fo) {
+            foreach ($fo->lineItems as $foLine) {
+                $total = max(0, (int) ($foLine->total_quantity ?? 0));
+                $orderLineId = (int) ($foLine->shopify_order_line_item_id ?? 0);
+                $remaining = $total;
+                if ($orderLineId > 0) {
+                    $match = $order->lineItems->firstWhere('id', $orderLineId);
+                    if ($match !== null) {
+                        $remaining = max(0, (int) $match->fulfillable_quantity);
+                    }
+                }
+                if ($total <= 0 && $remaining > 0) {
+                    $foLine->total_quantity = $remaining;
+                }
+                $foLine->remaining_quantity = $remaining;
+                $foLine->save();
+            }
+        }
+
+        $order->crm_fulfillment_cancelled_at = null;
+        $order->cancelled_at = null;
+        $order->save();
     }
 
     /**
@@ -542,14 +682,22 @@ GQL
 
         $newStatus = $this->list->displayStatus($fresh);
         if ($previousStatus !== $newStatus) {
-            $this->recordDisplayStatusChange($fresh, $previousStatus, $newStatus);
+            $detail = 'Previously: '.$this->list->displayStatusLabel($previousStatus);
+            if ($previousStatus === ShopifyOrderListService::DISPLAY_CANCELLED) {
+                $detail .= ' · Items restored to Pending';
+            }
+            $this->recordDisplayStatusChange($fresh, $previousStatus, $newStatus, $detail);
         }
 
         return $fresh;
     }
 
-    private function recordDisplayStatusChange(ShopifyOrder $order, string $fromStatus, string $toStatus): void
-    {
+    private function recordDisplayStatusChange(
+        ShopifyOrder $order,
+        string $fromStatus,
+        string $toStatus,
+        ?string $detail = null
+    ): void {
         $fromLabel = $this->list->displayStatusLabel($fromStatus);
         $toLabel = $this->list->displayStatusLabel($toStatus);
         $type = $toStatus === ShopifyOrderListService::DISPLAY_READY
@@ -562,7 +710,7 @@ GQL
                 $order,
                 $type,
                 'Status Updated to: '.$toLabel,
-                'Previously: '.$fromLabel,
+                $detail !== null && $detail !== '' ? $detail : 'Previously: '.$fromLabel,
                 $actor instanceof User ? $actor : null,
                 null,
                 [
@@ -706,6 +854,10 @@ GQL
                     continue;
                 }
                 $orderLineId = (int) ($line->shopify_order_line_item_id ?? 0);
+                $orderLine = $orderLineId > 0 ? $order->lineItems->firstWhere('id', $orderLineId) : null;
+                if ($orderLine !== null && $this->list->rawLineStatus($orderLine) === 'cancelled') {
+                    continue;
+                }
                 if ($allowed !== null) {
                     if ($orderLineId <= 0 || ! isset($allowed[$orderLineId])) {
                         continue;
@@ -936,6 +1088,51 @@ GQL
         $errors = is_array($payload['userErrors'] ?? null) ? $payload['userErrors'] : [];
         if ($errors !== []) {
             throw new RuntimeException((string) ($errors[0]['message'] ?? 'Could not update order tags.'));
+        }
+    }
+
+    /**
+     * @param  list<string>  $reasons
+     */
+    private function removeHoldTags($connection, ShopifyOrder $order, array $reasons): void
+    {
+        $holdTags = array_values(array_unique(array_filter(array_map(
+            static function ($r) {
+                return 'crm-hold:'.trim((string) $r);
+            },
+            $reasons
+        ))));
+        if ($holdTags === []) {
+            return;
+        }
+
+        $orderId = trim((string) $order->shopify_order_id);
+        if ($orderId === '') {
+            return;
+        }
+
+        $gid = ShopifyGid::of('Order', $orderId);
+        $api = $this->client->forConnection($connection);
+        $data = $api->graphql(
+            <<<'GQL'
+mutation tagsRemove($id: ID!, $tags: [String!]!) {
+  tagsRemove(id: $id, tags: $tags) {
+    node { ... on Order { id } }
+    userErrors { field message }
+  }
+}
+GQL
+            ,
+            [
+                'id' => $gid,
+                'tags' => $holdTags,
+            ]
+        );
+
+        $payload = is_array($data['tagsRemove'] ?? null) ? $data['tagsRemove'] : [];
+        $errors = is_array($payload['userErrors'] ?? null) ? $payload['userErrors'] : [];
+        if ($errors !== []) {
+            throw new RuntimeException((string) ($errors[0]['message'] ?? 'Could not remove hold tags.'));
         }
     }
 }

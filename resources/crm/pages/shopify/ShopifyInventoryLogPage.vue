@@ -382,8 +382,8 @@ onUnmounted(() => {
                       {{ deltaLabel(row.quantity_delta) }}
                     </span>
                   </div>
-                  <div v-if="row.transfer_group" class="small text-secondary mt-1">
-                    {{ row.transfer_group }} • {{ row.direction_label }}
+                  <div v-if="row.direction_label && row.transfer_group" class="small text-secondary mt-1">
+                    {{ row.direction_label }}
                   </div>
                 </td>
               </tr>

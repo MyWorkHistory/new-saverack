@@ -4,8 +4,10 @@ namespace App\Services;
 
 use App\Models\ClientAccountShopifyConnection;
 use App\Models\ShopifyLocation;
+use App\Models\ShopifyWarehouseLocation;
 use App\Support\ShopifyError;
 use App\Support\ShopifyGid;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -142,6 +144,7 @@ GQL
                     $location->sync_inventory = true;
                 }
                 $location->save();
+                $this->mirrorWarehouseLocation($location, (bool) $location->active);
                 $count++;
             }
 
@@ -149,7 +152,7 @@ GQL
             $cursor = ShopifyClient::nextPageCursor($cursor, $pageInfo, $page, 10);
         } while ($cursor !== null);
 
-        // Drop / normalize CRM rows so we never push to deleted Shopify location IDs.
+        // Deactivate CRM rows that Shopify no longer returns, and normalize location IDs.
         if ($seenIds !== []) {
             $existing = ShopifyLocation::query()
                 ->where('connection_id', $connection->id)
@@ -157,7 +160,9 @@ GQL
             foreach ($existing as $location) {
                 $normalized = ShopifyGid::toId((string) $location->shopify_location_id);
                 if ($normalized === '' || ! in_array($normalized, $seenIds, true)) {
-                    $location->delete();
+                    $this->deactivateWarehouseLocation($normalized);
+                    $location->active = false;
+                    $location->save();
                     continue;
                 }
                 if ((string) $location->shopify_location_id !== $normalized) {
@@ -177,6 +182,182 @@ GQL
         }
 
         return $count;
+    }
+
+    /**
+     * Pull Shopify locations for every connected store, but not more than once a minute.
+     */
+    public function syncConnectedLocationsIfStale(): void
+    {
+        if (Cache::has('shopify.locations.pull')) {
+            return;
+        }
+        Cache::put('shopify.locations.pull', 1, 60);
+
+        $connections = ClientAccountShopifyConnection::query()
+            ->where('status', ClientAccountShopifyConnection::STATUS_CONNECTED)
+            ->get();
+        foreach ($connections as $connection) {
+            if (! $connection->hasCredentials()) {
+                continue;
+            }
+            try {
+                $this->importLocations($connection, $this->client->forConnection($connection));
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }
+    }
+
+    /**
+     * Create or rename a CRM location from a Shopify locations webhook.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function upsertLocationFromPayload(
+        ClientAccountShopifyConnection $connection,
+        array $payload,
+        bool $deleted = false
+    ): ?ShopifyLocation {
+        $id = ShopifyGid::toId((string) ($payload['admin_graphql_api_id'] ?? ''));
+        if ($id === '') {
+            $id = ShopifyGid::toId((string) ($payload['id'] ?? ''));
+        }
+        if ($id === '') {
+            $id = ShopifyGid::numericIdString($payload['id'] ?? null);
+        }
+        if ($id === '') {
+            return null;
+        }
+
+        $location = ShopifyLocation::query()->firstOrNew([
+            'connection_id' => $connection->id,
+            'shopify_location_id' => $id,
+        ]);
+        $isNew = ! $location->exists;
+
+        if ($deleted) {
+            if ($isNew) {
+                return null;
+            }
+            $location->active = false;
+            $location->save();
+            $this->deactivateWarehouseLocation($id);
+
+            return $location;
+        }
+
+        $name = trim((string) ($payload['name'] ?? ''));
+        if ($name !== '') {
+            $location->name = $name;
+        } elseif ($isNew) {
+            $location->name = 'Location '.$id;
+        }
+        if (array_key_exists('active', $payload)) {
+            $location->active = (bool) $payload['active'];
+        } elseif ($isNew) {
+            $location->active = true;
+        }
+        $location->legacy = (bool) ($payload['legacy'] ?? $location->legacy ?? false);
+        $address = $this->addressFromLocationPayload($payload);
+        if ($address !== []) {
+            $location->address_json = $address;
+        }
+        if ($isNew) {
+            $location->import_orders = true;
+            $location->sync_inventory = true;
+        }
+        $location->save();
+        $this->mirrorWarehouseLocation($location, (bool) $location->active);
+
+        return $location;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, string>
+     */
+    private function addressFromLocationPayload(array $payload): array
+    {
+        $source = is_array($payload['address'] ?? null) ? $payload['address'] : $payload;
+        $address = [];
+        foreach (['address1', 'address2', 'city', 'province', 'country', 'zip'] as $key) {
+            $value = trim((string) ($source[$key] ?? ''));
+            if ($value !== '') {
+                $address[$key] = $value;
+            }
+        }
+
+        return $address;
+    }
+
+    private function deactivateWarehouseLocation(string $shopifyLocationId): void
+    {
+        $shopifyLocationId = trim($shopifyLocationId);
+        if ($shopifyLocationId === '') {
+            return;
+        }
+        ShopifyWarehouseLocation::query()
+            ->where('shopify_location_id', $shopifyLocationId)
+            ->update(['active' => false]);
+    }
+
+    private function mirrorWarehouseLocation(ShopifyLocation $location, bool $active): void
+    {
+        $sid = trim((string) $location->shopify_location_id);
+        if ($sid === '') {
+            return;
+        }
+        $name = trim((string) $location->name);
+        if ($name === '') {
+            $name = 'Location '.$sid;
+        }
+
+        $row = ShopifyWarehouseLocation::query()->where('shopify_location_id', $sid)->first();
+        if ($row === null) {
+            $row = ShopifyWarehouseLocation::query()
+                ->where('name', $name)
+                ->whereNull('shopify_location_id')
+                ->first();
+        }
+        if ($row === null) {
+            $row = new ShopifyWarehouseLocation();
+            $row->shopify_location_id = $sid;
+            $row->type = 'Shopify';
+            $row->pickable = false;
+            $row->sellable = true;
+        } else {
+            $row->shopify_location_id = $sid;
+        }
+        $row->name = $this->uniqueWarehouseName($name, $row->exists ? (int) $row->id : null);
+        $row->active = $active;
+        $row->save();
+    }
+
+    private function uniqueWarehouseName(string $name, ?int $ignoreId): string
+    {
+        $name = trim($name);
+        if ($name === '') {
+            $name = 'Location';
+        }
+        $candidate = $name;
+        $suffix = 2;
+        while ($this->warehouseNameTaken($candidate, $ignoreId)) {
+            $candidate = $name.' '.$suffix;
+            $suffix++;
+        }
+
+        return $candidate;
+    }
+
+    private function warehouseNameTaken(string $name, ?int $ignoreId): bool
+    {
+        $query = ShopifyWarehouseLocation::query()->where('name', $name);
+        if ($ignoreId !== null && $ignoreId > 0) {
+            $query->where('id', '!=', $ignoreId);
+        }
+
+        return $query->exists();
     }
 
     /**

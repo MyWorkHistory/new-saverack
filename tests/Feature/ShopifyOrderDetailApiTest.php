@@ -216,50 +216,16 @@ class ShopifyOrderDetailApiTest extends TestCase
             ->assertJsonPath('order.shipping.requested', 'UPS Ground');
     }
 
-    public function test_update_items_qty_runs_order_edit_sequence(): void
+    public function test_update_items_qty_stays_local_and_does_not_call_shopify(): void
     {
         $this->actingAsAdmin();
         [, , $order] = $this->seedOrder();
         $line = $order->lineItems()->first();
 
         $client = Mockery::mock(ShopifyClient::class);
-        $client->shouldReceive('forConnection')->andReturnSelf();
-        $client->shouldReceive('graphql')->times(3)->andReturn(
-            [
-                'orderEditBegin' => [
-                    'calculatedOrder' => [
-                        'id' => 'gid://shopify/CalculatedOrder/1',
-                        'lineItems' => [
-                            'edges' => [[
-                                'node' => [
-                                    'id' => 'gid://shopify/CalculatedLineItem/55',
-                                    'quantity' => 1,
-                                    'variant' => ['id' => 'gid://shopify/ProductVariant/99'],
-                                ],
-                            ]],
-                        ],
-                    ],
-                    'userErrors' => [],
-                ],
-            ],
-            [
-                'orderEditSetQuantity' => [
-                    'calculatedOrder' => ['id' => 'gid://shopify/CalculatedOrder/1'],
-                    'userErrors' => [],
-                ],
-            ],
-            [
-                'orderEditCommit' => [
-                    'order' => ['id' => 'gid://shopify/Order/1008'],
-                    'userErrors' => [],
-                ],
-            ]
-        );
+        $client->shouldReceive('forConnection')->never();
+        $client->shouldReceive('graphql')->never();
         $this->app->instance(ShopifyClient::class, $client);
-
-        $sync = Mockery::mock(\App\Services\ShopifyOrderSyncService::class);
-        $sync->shouldReceive('refreshOrderByShopifyId')->andReturn($order->fresh(['lineItems']));
-        $this->app->instance(\App\Services\ShopifyOrderSyncService::class, $sync);
 
         $this->postJson('/api/shopify/orders/'.$order->id.'/items', [
             'lines' => [
@@ -267,9 +233,48 @@ class ShopifyOrderDetailApiTest extends TestCase
             ],
         ])->assertOk();
 
+        $this->assertSame(2, (int) $line->fresh()->quantity);
         $this->assertDatabaseHas('shopify_order_activities', [
             'shopify_order_id' => $order->id,
-            'type' => ShopifyOrderActivity::TYPE_ITEMS,
+            'type' => 'items_updated',
+        ]);
+    }
+
+    public function test_cancel_item_keeps_quantity_and_marks_cancelled(): void
+    {
+        $this->actingAsAdmin();
+        [, , $order] = $this->seedOrder();
+        $line = $order->lineItems()->first();
+        $this->assertSame(1, (int) $line->quantity);
+
+        $client = Mockery::mock(ShopifyClient::class);
+        $client->shouldReceive('graphql')->never();
+        $this->app->instance(ShopifyClient::class, $client);
+
+        $detail = $this->postJson('/api/shopify/orders/'.$order->id.'/items', [
+            'lines' => [
+                ['id' => $line->id, 'quantity' => 1, 'action' => 'cancel'],
+            ],
+        ])->assertOk()->json('order');
+
+        $line->refresh();
+        $this->assertSame(1, (int) $line->quantity);
+        $this->assertSame(0, (int) $line->fulfillable_quantity);
+        $this->assertSame(1, (int) ($detail['line_items'][0]['quantity'] ?? 0));
+        $this->assertSame('cancelled', $detail['line_items'][0]['line_status'] ?? null);
+
+        $activity = ShopifyOrderActivity::query()
+            ->where('shopify_order_id', $order->id)
+            ->where('type', ShopifyOrderActivity::TYPE_ITEMS)
+            ->first();
+        $this->assertNotNull($activity);
+        $this->assertSame(
+            "Noise Cancelling Headphones (SKU: NC-HP100-BLK) · qty 1 → 0",
+            $activity->detail
+        );
+        $this->assertDatabaseMissing('shopify_order_activities', [
+            'shopify_order_id' => $order->id,
+            'type' => ShopifyOrderActivity::TYPE_SHOPIFY_EDIT,
         ]);
     }
 }

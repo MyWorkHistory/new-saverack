@@ -484,234 +484,11 @@ GQL
      */
     public function updateItems(ShopifyOrder $order, array $payload, ?User $actor = null): ShopifyOrder
     {
-        if ($order->isCrmSource()) {
-            return $this->updateItemsLocal($order, $payload, $actor);
-        }
-
-        $connection = $order->connection;
-        if ($connection === null || ! $connection->hasCredentials()) {
-            throw new RuntimeException('Shopify connection credentials missing.');
-        }
-
-        $order->loadMissing(['lineItems', 'fulfillmentOrders.lineItems']);
-        $lines = is_array($payload['lines'] ?? null) ? $payload['lines'] : [];
-        $adds = is_array($payload['add'] ?? null) ? $payload['add'] : [];
-        $fulfillLineIds = [];
-        $qtyUpdates = [];
-        $changes = [];
-
-        foreach ($lines as $row) {
-            if (! is_array($row)) {
-                continue;
-            }
-            $lineId = (int) ($row['id'] ?? 0);
-            $action = strtolower(trim((string) ($row['action'] ?? '')));
-            $qty = (int) ($row['quantity'] ?? 0);
-            /** @var ShopifyOrderLineItem|null $line */
-            $line = $lineId > 0 ? $order->lineItems->firstWhere('id', $lineId) : null;
-            if ($line === null) {
-                continue;
-            }
-            if ($action === 'fulfilled') {
-                $fulfillLineIds[] = $line->id;
-                continue;
-            }
-            if ($action === 'cancel') {
-                $qty = 0;
-            }
-            $oldQty = (int) $line->quantity;
-            if ($qty === $oldQty && $action !== 'cancel') {
-                continue;
-            }
-            $qtyUpdates[] = ['line' => $line, 'qty' => max(0, $qty), 'old' => $oldQty];
-        }
-
-        $needsEdit = $qtyUpdates !== [] || $adds !== [];
-        $api = $this->client->forConnection($connection);
-
-        if ($needsEdit) {
-            try {
-                $orderGid = ShopifyGid::of('Order', (string) $order->shopify_order_id);
-                $begin = $api->graphql(
-                <<<'GQL'
-mutation OrderEditBegin($id: ID!) {
-  orderEditBegin(id: $id) {
-    calculatedOrder {
-      id
-      lineItems(first: 100) {
-        edges {
-          node {
-            id
-            quantity
-            variant { id }
-          }
-        }
-      }
+        // Item edits (qty, add, remove, cancel) stay in CRM.
+        // Shopify is updated only when the whole order is fulfilled, or cancelled with the Shopify checkbox.
+        return $this->updateItemsLocal($order, $payload, $actor);
     }
-    userErrors { field message }
-  }
-}
-GQL
-                ,
-                ['id' => $orderGid]
-            );
-            $beginErrors = is_array($begin['orderEditBegin']['userErrors'] ?? null) ? $begin['orderEditBegin']['userErrors'] : [];
-            if ($beginErrors !== []) {
-                throw new RuntimeException((string) ($beginErrors[0]['message'] ?? 'Could not start order edit.'));
-            }
-            $calculated = is_array($begin['orderEditBegin']['calculatedOrder'] ?? null)
-                ? $begin['orderEditBegin']['calculatedOrder']
-                : [];
-            $calculatedId = (string) ($calculated['id'] ?? '');
-            if ($calculatedId === '') {
-                throw new RuntimeException('Could not start order edit session.');
-            }
 
-            $calcLinesByVariant = [];
-            foreach (($calculated['lineItems']['edges'] ?? []) as $edge) {
-                $node = is_array($edge['node'] ?? null) ? $edge['node'] : null;
-                if ($node === null) {
-                    continue;
-                }
-                $variantId = ShopifyGid::toId((string) ($node['variant']['id'] ?? ''));
-                if ($variantId !== '') {
-                    $calcLinesByVariant[$variantId] = $node;
-                }
-            }
-
-            foreach ($qtyUpdates as $update) {
-                /** @var ShopifyOrderLineItem $line */
-                $line = $update['line'];
-                $variantId = trim((string) ($line->shopify_variant_id ?? ''));
-                $calcNode = $variantId !== '' ? ($calcLinesByVariant[$variantId] ?? null) : null;
-                $calcLineId = is_array($calcNode) ? (string) ($calcNode['id'] ?? '') : '';
-                if ($calcLineId === '') {
-                    throw new RuntimeException('Could not match line item in Shopify edit session.');
-                }
-                $set = $api->graphql(
-                    <<<'GQL'
-mutation OrderEditSetQuantity($id: ID!, $lineItemId: ID!, $quantity: Int!) {
-  orderEditSetQuantity(id: $id, lineItemId: $lineItemId, quantity: $quantity) {
-    calculatedOrder { id }
-    userErrors { field message }
-  }
-}
-GQL
-                    ,
-                    [
-                        'id' => $calculatedId,
-                        'lineItemId' => $calcLineId,
-                        'quantity' => (int) $update['qty'],
-                    ]
-                );
-                $setErrors = is_array($set['orderEditSetQuantity']['userErrors'] ?? null)
-                    ? $set['orderEditSetQuantity']['userErrors']
-                    : [];
-                if ($setErrors !== []) {
-                    throw new RuntimeException((string) ($setErrors[0]['message'] ?? 'Could not update line quantity.'));
-                }
-                $changes[] = trim((string) ($line->title ?: 'Item')).' (SKU: '.trim((string) ($line->sku ?: '—')).') qty '.$update['old'].' → '.$update['qty'];
-            }
-
-            foreach ($adds as $add) {
-                if (! is_array($add)) {
-                    continue;
-                }
-                $variantId = ShopifyGid::toId((string) ($add['shopify_variant_id'] ?? ''));
-                $qty = max(1, (int) ($add['quantity'] ?? 1));
-                if ($variantId === '') {
-                    continue;
-                }
-                $addRes = $api->graphql(
-                    <<<'GQL'
-mutation OrderEditAddVariant($id: ID!, $variantId: ID!, $quantity: Int!) {
-  orderEditAddVariant(id: $id, variantId: $variantId, quantity: $quantity) {
-    calculatedOrder { id }
-    userErrors { field message }
-  }
-}
-GQL
-                    ,
-                    [
-                        'id' => $calculatedId,
-                        'variantId' => ShopifyGid::of('ProductVariant', $variantId),
-                        'quantity' => $qty,
-                    ]
-                );
-                $addErrors = is_array($addRes['orderEditAddVariant']['userErrors'] ?? null)
-                    ? $addRes['orderEditAddVariant']['userErrors']
-                    : [];
-                if ($addErrors !== []) {
-                    throw new RuntimeException((string) ($addErrors[0]['message'] ?? 'Could not add variant to order.'));
-                }
-                $variant = ShopifyProductVariant::query()
-                    ->where('connection_id', $connection->id)
-                    ->where('shopify_variant_id', $variantId)
-                    ->first();
-                $label = $variant !== null
-                    ? trim((string) ($variant->title ?: $variant->sku ?: $variantId))
-                    : $variantId;
-                $sku = $variant !== null ? trim((string) ($variant->sku ?: '')) : '';
-                $changes[] = 'Added '.$label.($sku !== '' ? ' (SKU: '.$sku.')' : '').' qty '.$qty;
-            }
-
-            $this->commitOrderEdit($api, $calculatedId, 'Updated order items');
-            $refreshed = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
-            $target = $refreshed ?? $order->fresh(['connection', 'lineItems', 'fulfillmentOrders.lineItems']);
-            } catch (RuntimeException $e) {
-                if ($this->isMissingOrderEditScope($e->getMessage())) {
-                    throw new RuntimeException(
-                        'Shopify app is missing the write_order_edits scope. Add it in the Shopify app settings, set SHOPIFY_SCOPES (includes write_order_edits), then reconnect the store under Account → Stores.'
-                    );
-                }
-                throw $e;
-            }
-        } else {
-            $target = $order->fresh(['connection', 'lineItems', 'fulfillmentOrders.lineItems']);
-        }
-
-        if ($fulfillLineIds !== []) {
-            $target->loadMissing(['fulfillmentOrders.lineItems', 'lineItems', 'connection']);
-            $foItems = [];
-            foreach ($target->fulfillmentOrders as $fo) {
-                foreach ($fo->lineItems as $foLine) {
-                    $liId = (string) ($foLine->shopify_line_item_id ?? '');
-                    $match = $target->lineItems->first(function ($li) use ($liId, $fulfillLineIds) {
-                        return in_array((int) $li->id, $fulfillLineIds, true)
-                            && (string) $li->shopify_line_item_id === $liId;
-                    });
-                    if ($match === null) {
-                        continue;
-                    }
-                    $remaining = (int) $foLine->remaining_quantity;
-                    if ($remaining <= 0) {
-                        continue;
-                    }
-                    $foItems[] = [
-                        'fo_line_item_id' => (string) $foLine->shopify_fo_line_item_id,
-                        'quantity' => $remaining,
-                    ];
-                }
-            }
-            if ($foItems !== []) {
-                $this->fulfillments->markShipped($target, $foItems, '', '', $actor);
-                $changes[] = 'Marked selected item(s) fulfilled';
-            }
-            $target = $target->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems', 'fulfillments']);
-        }
-
-        if ($changes !== []) {
-            $this->activities->record(
-                $target,
-                ShopifyOrderActivity::TYPE_ITEMS,
-                'Order Edited',
-                implode('; ', $changes),
-                $actor
-            );
-        }
-
-        return $target->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems', 'fulfillments']);
-    }
 
     /**
      * @param  object  $api  ShopifyClient instance bound to a connection
@@ -839,6 +616,7 @@ GQL
         $lines = is_array($payload['lines'] ?? null) ? $payload['lines'] : [];
         $adds = is_array($payload['add'] ?? null) ? $payload['add'] : [];
         $changes = [];
+        $editedLineIds = [];
 
         foreach ($lines as $row) {
             if (! is_array($row)) {
@@ -852,27 +630,53 @@ GQL
             if ($line === null) {
                 continue;
             }
-            if ($action === 'cancel' || $qty <= 0) {
+            if ($action === 'cancel') {
+                $displayQty = max(1, (int) $line->quantity, $qty);
+                $line->quantity = $displayQty;
+                $line->fulfilled_quantity = 0;
+                $line->fulfillable_quantity = 0;
+                $raw = is_array($line->raw_json) ? $line->raw_json : [];
+                $raw['crm_line_cancelled'] = true;
+                $raw['crm_original_quantity'] = $displayQty;
+                $line->raw_json = $raw;
+                $line->save();
+                $this->zeroFoRemainingForLine($order, $line);
+                $changes[] = $this->formatItemEditLine($line, $displayQty, 0);
+                $this->rememberEditedLineId($editedLineIds, $line);
+                continue;
+            }
+            if ($qty <= 0) {
                 $oldQty = (int) $line->quantity;
+                $this->rememberRemovedLine($order, $line);
+                $this->zeroFoRemainingForLine($order, $line);
+                $changes[] = $this->formatItemEditLine($line, $oldQty, 0);
+                $this->rememberEditedLineId($editedLineIds, $line);
                 $line->delete();
-                $changes[] = 'Removed '.$line->sku.' (was '.$oldQty.')';
                 continue;
             }
             if ($action === 'fulfilled') {
                 $line->fulfilled_quantity = (int) $line->quantity;
                 $line->fulfillable_quantity = 0;
                 $line->save();
-                $changes[] = 'Marked '.$line->sku.' fulfilled';
+                $title = trim((string) ($line->title ?: 'Item'));
+                $sku = trim((string) ($line->sku ?? ''));
+                $changes[] = $title.' (SKU: '.($sku !== '' ? $sku : '—').') · fulfilled';
+                $this->rememberEditedLineId($editedLineIds, $line);
                 continue;
             }
             $oldQty = (int) $line->quantity;
             if ($qty === $oldQty) {
                 continue;
             }
+            $raw = is_array($line->raw_json) ? $line->raw_json : [];
+            $raw['crm_quantity_locked'] = true;
+            $line->raw_json = $raw;
             $line->quantity = $qty;
             $line->fulfillable_quantity = max(0, $qty - (int) $line->fulfilled_quantity);
             $line->save();
-            $changes[] = 'Updated '.$line->sku.' qty '.$oldQty.' → '.$qty;
+            $this->zeroFoRemainingForLine($order, $line, (int) $line->fulfillable_quantity);
+            $changes[] = $this->formatItemEditLine($line, $oldQty, $qty);
+            $this->rememberEditedLineId($editedLineIds, $line);
         }
 
         foreach ($adds as $row) {
@@ -911,7 +715,8 @@ GQL
             $line->price = 0;
             $line->raw_json = ['crm_source' => 'crm'];
             $line->save();
-            $changes[] = 'Added '.$line->sku.' x'.$qty;
+            $changes[] = $this->formatItemEditLine($line, 0, $qty);
+            $this->rememberEditedLineId($editedLineIds, $line);
         }
 
         $order->load('lineItems');
@@ -926,13 +731,248 @@ GQL
         if ($changes !== []) {
             $this->activities->record(
                 $order,
-                'items_updated',
-                'Order items updated.',
-                implode('; ', array_slice($changes, 0, 8)),
-                $actor
+                ShopifyOrderActivity::TYPE_ITEMS,
+                'Order Edited',
+                implode("\n", $changes),
+                $actor,
+                null,
+                ['shopify_line_item_ids' => array_values($editedLineIds)]
             );
         }
 
         return $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems', 'fulfillments']);
+    }
+
+    private function formatItemEditLine(ShopifyOrderLineItem $line, int $oldQty, int $newQty): string
+    {
+        $title = trim((string) ($line->title ?: 'Item'));
+        $sku = trim((string) ($line->sku ?? ''));
+        if ($sku === '') {
+            $sku = '—';
+        }
+
+        return $title.' (SKU: '.$sku.') · qty '.$oldQty.' → '.$newQty;
+    }
+
+    /**
+     * @param  array<string, true>  $editedLineIds
+     */
+    private function rememberEditedLineId(array &$editedLineIds, ShopifyOrderLineItem $line): void
+    {
+        $sid = trim((string) ($line->shopify_line_item_id ?? ''));
+        if ($sid !== '') {
+            $editedLineIds[$sid] = true;
+        }
+    }
+
+    private function zeroFoRemainingForLine(ShopifyOrder $order, ShopifyOrderLineItem $line, int $remaining = 0): void
+    {
+        $order->loadMissing('fulfillmentOrders.lineItems');
+        foreach ($order->fulfillmentOrders as $fo) {
+            foreach ($fo->lineItems as $foLine) {
+                $matchesLocal = (int) ($foLine->shopify_order_line_item_id ?? 0) === (int) $line->id;
+                $matchesShopify = trim((string) ($foLine->shopify_line_item_id ?? '')) !== ''
+                    && trim((string) $foLine->shopify_line_item_id) === trim((string) ($line->shopify_line_item_id ?? ''));
+                if (! $matchesLocal && ! $matchesShopify) {
+                    continue;
+                }
+                $foLine->remaining_quantity = max(0, $remaining);
+                $foLine->save();
+            }
+        }
+    }
+
+    private function rememberRemovedLine(ShopifyOrder $order, ShopifyOrderLineItem $line): void
+    {
+        $sid = trim((string) ($line->shopify_line_item_id ?? ''));
+        if ($sid === '' || strpos($sid, 'crm-line-') === 0) {
+            return;
+        }
+        $raw = is_array($order->raw_json) ? $order->raw_json : [];
+        $removed = is_array($raw['crm_removed_line_item_ids'] ?? null) ? $raw['crm_removed_line_item_ids'] : [];
+        $removed[] = [
+            'id' => $sid,
+            'variant_id' => trim((string) ($line->shopify_variant_id ?? '')),
+        ];
+        $raw['crm_removed_line_item_ids'] = $removed;
+        $order->raw_json = $raw;
+        $order->save();
+    }
+
+    /**
+     * Push CRM item edits to Shopify. Called only when the order is fulfilled
+     * (or would otherwise ship the pre-edit Shopify quantities).
+     */
+    public function pushPendingItemEditsToShopify(ShopifyOrder $order): ShopifyOrder
+    {
+        if ($order->isCrmSource()) {
+            return $order;
+        }
+
+        $order->loadMissing('lineItems');
+        $raw = is_array($order->raw_json) ? $order->raw_json : [];
+        $removed = is_array($raw['crm_removed_line_item_ids'] ?? null) ? $raw['crm_removed_line_item_ids'] : [];
+
+        $qtyUpdates = [];
+        $adds = [];
+        foreach ($order->lineItems as $line) {
+            $lineRaw = is_array($line->raw_json) ? $line->raw_json : [];
+            $sid = trim((string) ($line->shopify_line_item_id ?? ''));
+            if ($sid !== '' && strpos($sid, 'crm-line-') === 0) {
+                $adds[] = $line;
+                continue;
+            }
+            if (! empty($lineRaw['crm_line_cancelled'])) {
+                $qtyUpdates[] = ['variant_id' => trim((string) ($line->shopify_variant_id ?? '')), 'qty' => 0];
+                continue;
+            }
+            if (! empty($lineRaw['crm_quantity_locked'])) {
+                $qtyUpdates[] = ['variant_id' => trim((string) ($line->shopify_variant_id ?? '')), 'qty' => (int) $line->quantity];
+            }
+        }
+        foreach ($removed as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $variantId = trim((string) ($row['variant_id'] ?? ''));
+            if ($variantId === '') {
+                continue;
+            }
+            $qtyUpdates[] = ['variant_id' => $variantId, 'qty' => 0];
+        }
+
+        if ($qtyUpdates === [] && $adds === []) {
+            return $order;
+        }
+
+        $connection = $order->connection;
+        if ($connection === null || ! $connection->hasCredentials()) {
+            throw new RuntimeException('Shopify connection credentials missing.');
+        }
+
+        $api = $this->client->forConnection($connection);
+        $orderGid = ShopifyGid::of('Order', (string) $order->shopify_order_id);
+        $begin = $api->graphql(
+            <<<'GQL'
+mutation OrderEditBegin($id: ID!) {
+  orderEditBegin(id: $id) {
+    calculatedOrder {
+      id
+      lineItems(first: 100) {
+        edges {
+          node {
+            id
+            quantity
+            variant { id }
+          }
+        }
+      }
+    }
+    userErrors { field message }
+  }
+}
+GQL
+            ,
+            ['id' => $orderGid]
+        );
+        $beginErrors = is_array($begin['orderEditBegin']['userErrors'] ?? null) ? $begin['orderEditBegin']['userErrors'] : [];
+        if ($beginErrors !== []) {
+            throw new RuntimeException((string) ($beginErrors[0]['message'] ?? 'Could not start order edit.'));
+        }
+        $calculated = is_array($begin['orderEditBegin']['calculatedOrder'] ?? null)
+            ? $begin['orderEditBegin']['calculatedOrder']
+            : [];
+        $calculatedId = (string) ($calculated['id'] ?? '');
+        if ($calculatedId === '') {
+            throw new RuntimeException('Could not start order edit session.');
+        }
+
+        $calcLinesByVariant = [];
+        foreach (($calculated['lineItems']['edges'] ?? []) as $edge) {
+            $node = is_array($edge['node'] ?? null) ? $edge['node'] : null;
+            if ($node === null) {
+                continue;
+            }
+            $variantId = ShopifyGid::toId((string) ($node['variant']['id'] ?? ''));
+            if ($variantId !== '') {
+                $calcLinesByVariant[$variantId] = $node;
+            }
+        }
+
+        foreach ($qtyUpdates as $update) {
+            $variantId = ShopifyGid::toId((string) ($update['variant_id'] ?? ''));
+            $calcNode = $variantId !== '' ? ($calcLinesByVariant[$variantId] ?? null) : null;
+            $calcLineId = is_array($calcNode) ? (string) ($calcNode['id'] ?? '') : '';
+            if ($calcLineId === '') {
+                throw new RuntimeException('Could not match line item in Shopify edit session.');
+            }
+            $set = $api->graphql(
+                <<<'GQL'
+mutation OrderEditSetQuantity($id: ID!, $lineItemId: ID!, $quantity: Int!) {
+  orderEditSetQuantity(id: $id, lineItemId: $lineItemId, quantity: $quantity) {
+    calculatedOrder { id }
+    userErrors { field message }
+  }
+}
+GQL
+                ,
+                [
+                    'id' => $calculatedId,
+                    'lineItemId' => $calcLineId,
+                    'quantity' => (int) $update['qty'],
+                ]
+            );
+            $setErrors = is_array($set['orderEditSetQuantity']['userErrors'] ?? null)
+                ? $set['orderEditSetQuantity']['userErrors']
+                : [];
+            if ($setErrors !== []) {
+                throw new RuntimeException((string) ($setErrors[0]['message'] ?? 'Could not update line quantity.'));
+            }
+        }
+
+        foreach ($adds as $line) {
+            $variantId = ShopifyGid::toId((string) ($line->shopify_variant_id ?? ''));
+            if ($variantId === '') {
+                continue;
+            }
+            $addRes = $api->graphql(
+                <<<'GQL'
+mutation OrderEditAddVariant($id: ID!, $variantId: ID!, $quantity: Int!) {
+  orderEditAddVariant(id: $id, variantId: $variantId, quantity: $quantity) {
+    calculatedOrder { id }
+    userErrors { field message }
+  }
+}
+GQL
+                ,
+                [
+                    'id' => $calculatedId,
+                    'variantId' => ShopifyGid::of('ProductVariant', $variantId),
+                    'quantity' => max(1, (int) $line->quantity),
+                ]
+            );
+            $addErrors = is_array($addRes['orderEditAddVariant']['userErrors'] ?? null)
+                ? $addRes['orderEditAddVariant']['userErrors']
+                : [];
+            if ($addErrors !== []) {
+                throw new RuntimeException((string) ($addErrors[0]['message'] ?? 'Could not add variant to order.'));
+            }
+        }
+
+        $this->commitOrderEdit($api, $calculatedId, 'Updated order items');
+
+        foreach ($order->lineItems as $line) {
+            $lineRaw = is_array($line->raw_json) ? $line->raw_json : [];
+            if (empty($lineRaw['crm_quantity_locked'])) {
+                continue;
+            }
+            unset($lineRaw['crm_quantity_locked']);
+            $line->raw_json = $lineRaw;
+            $line->save();
+        }
+
+        $refreshed = $this->sync->refreshOrderByShopifyId($connection, (string) $order->shopify_order_id);
+
+        return $refreshed !== null ? $refreshed : $order->fresh(['lineItems', 'fulfillmentOrders.lineItems']);
     }
 }

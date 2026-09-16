@@ -12,6 +12,7 @@ use App\Models\ShopifyLocation;
 use App\Models\ShopifyOrder;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
+use App\Models\ShopifyWarehouseLocation;
 use App\Models\ShopifyWebhookEvent;
 use App\Services\ShopifyBootstrapImportService;
 use App\Services\ShopifyClient;
@@ -66,6 +67,59 @@ class ShopifyStoresSyncTest extends TestCase
 
         $this->assertFalse($ok);
         $this->assertSame(0, ShopifyOrder::query()->count());
+    }
+
+    public function test_location_webhook_creates_location_and_renames_it(): void
+    {
+        $connection = $this->connection();
+        $create = ShopifyWebhookEvent::query()->create([
+            'event_id' => 'wh-loc-create',
+            'topic' => 'locations/create',
+            'shop_domain' => 'test.myshopify.com',
+            'connection_id' => $connection->id,
+            'payload' => [
+                'id' => 6400,
+                'name' => 'East Warehouse',
+                'active' => true,
+                'address1' => '100 Main',
+                'city' => 'Lakeland',
+            ],
+        ]);
+
+        $this->processWebhook($create->id);
+
+        $this->assertDatabaseHas('shopify_locations', [
+            'connection_id' => $connection->id,
+            'shopify_location_id' => '6400',
+            'name' => 'East Warehouse',
+        ]);
+        $this->assertDatabaseHas('shopify_warehouse_locations', [
+            'shopify_location_id' => '6400',
+            'name' => 'East Warehouse',
+        ]);
+
+        $update = ShopifyWebhookEvent::query()->create([
+            'event_id' => 'wh-loc-update',
+            'topic' => 'locations/update',
+            'shop_domain' => 'test.myshopify.com',
+            'connection_id' => $connection->id,
+            'payload' => [
+                'id' => 6400,
+                'name' => 'East Hub',
+                'active' => true,
+            ],
+        ]);
+        $this->processWebhook($update->id);
+
+        $this->assertDatabaseHas('shopify_locations', [
+            'shopify_location_id' => '6400',
+            'name' => 'East Hub',
+        ]);
+        $this->assertDatabaseHas('shopify_warehouse_locations', [
+            'shopify_location_id' => '6400',
+            'name' => 'East Hub',
+        ]);
+        $this->assertSame(1, ShopifyWarehouseLocation::query()->where('shopify_location_id', '6400')->count());
     }
 
     public function test_inventory_webhook_does_not_change_available(): void
@@ -162,6 +216,16 @@ class ShopifyStoresSyncTest extends TestCase
             'company_name' => 'Stores Co',
             'status' => ClientAccount::STATUS_ACTIVE,
         ]);
+    }
+
+    private function processWebhook(int $eventId): void
+    {
+        (new ProcessShopifyWebhookJob($eventId))->handle(
+            app(ShopifyProductSyncService::class),
+            app(ShopifyOrderSyncService::class),
+            app(ShopifyBootstrapImportService::class),
+            app(ShopifyClient::class)
+        );
     }
 
     private function connection(): ClientAccountShopifyConnection

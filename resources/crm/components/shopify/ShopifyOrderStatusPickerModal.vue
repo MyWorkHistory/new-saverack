@@ -30,18 +30,10 @@ const alreadyFulfilled = computed(
   () => props.orderCount === 1 && isFulfilledStatus(currentStatus.value),
 );
 
-/** Shopify-cancelled orders are locked; CRM-only cancel can be recovered via Ready / Hold / Backorder. */
-const shopifyCancelledLocked = computed(
-  () => props.orderCount === 1 && Boolean(props.order?.cancelled_at),
-);
+/** Fulfilled orders are locked; cancelled can be recovered to another status. */
+const statusLocked = computed(() => alreadyFulfilled.value);
 
-const statusLocked = computed(() => alreadyFulfilled.value || shopifyCancelledLocked.value);
-
-const lockMessage = computed(() =>
-  alreadyFulfilled.value
-    ? "Cannot change fulfilled order status."
-    : "Cannot change cancelled order status.",
-);
+const lockMessage = computed(() => "Cannot change fulfilled order status.");
 
 watch(
   () => props.open,

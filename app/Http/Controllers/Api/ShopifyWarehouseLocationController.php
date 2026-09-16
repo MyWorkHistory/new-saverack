@@ -7,6 +7,7 @@ use App\Models\ShopifyProductVariant;
 use App\Models\ShopifyWarehouseLocation;
 use App\Models\ShopifyWarehouseLocationItem;
 use App\Models\User;
+use App\Services\ShopifyBootstrapImportService;
 use App\Services\ShopifyWarehouseInventoryLogService;
 use App\Services\ShopifyWarehouseInventorySyncService;
 use App\Services\ShopifyWarehouseLocationPrintService;
@@ -55,9 +56,10 @@ class ShopifyWarehouseLocationController extends Controller
         ]);
     }
 
-    public function index(Request $request): JsonResponse
+    public function index(Request $request, ShopifyBootstrapImportService $shopifyLocations): JsonResponse
     {
         $this->assertAdmin($request);
+        $shopifyLocations->syncConnectedLocationsIfStale();
 
         $perPage = max(10, min(100, (int) $request->query('per_page', 10)));
         $sort = (string) $request->query('sort', 'name');

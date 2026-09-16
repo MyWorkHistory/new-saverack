@@ -1,12 +1,15 @@
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ShopifyInventoryAddProductModal from "../../components/shopify/ShopifyInventoryAddProductModal.vue";
 import ShopifyInventoryBulkEditModal from "../../components/shopify/ShopifyInventoryBulkEditModal.vue";
 import ShopifyInventoryImportProductsModal from "../../components/shopify/ShopifyInventoryImportProductsModal.vue";
+import ShopifyInventoryPackagingModal from "../../components/shopify/ShopifyInventoryPackagingModal.vue";
 import ShopifyInventorySyncAccountModal from "../../components/shopify/ShopifyInventorySyncAccountModal.vue";
+import ShopifyInventoryViewEditModal from "../../components/shopify/ShopifyInventoryViewEditModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 
@@ -36,6 +39,30 @@ const syncOpen = ref(false);
 const importOpen = ref(false);
 const bulkOpen = ref(false);
 const addOpen = ref(false);
+const viewType = ref("inventory");
+const editBusy = ref(false);
+const packagingEditOpen = ref(false);
+const viewEditOpen = ref(false);
+const editRow = ref(null);
+const rowMenu = ref(null);
+const rowMenuRect = ref({ top: 0, left: 0 });
+
+const VIEW_OPTIONS = [
+  { value: "inventory", label: "Inventory Counts" },
+  { value: "locations", label: "Locations" },
+  { value: "packaging", label: "Packaging" },
+  { value: "weights", label: "Weights" },
+  { value: "dimensions", label: "Dimensions" },
+];
+
+const hasRowActions = computed(() => viewType.value !== "inventory");
+const tableColspan = computed(() => {
+  if (viewType.value === "locations") return 7;
+  if (viewType.value === "packaging") return 6;
+  if (viewType.value === "weights") return 5;
+  if (viewType.value === "dimensions") return 8;
+  return 7;
+});
 
 const allSelected = computed(
   () => rows.value.length > 0 && rows.value.every((r) => selectedIds.value.includes(r.id)),
@@ -140,7 +167,125 @@ function inventoryDetailHref(row) {
 
 function openRow(row) {
   if (!row?.id) return;
+  rowMenu.value = null;
   window.open(inventoryDetailHref(row), "_blank", "noopener,noreferrer");
+}
+
+function locationLabel(row, key) {
+  const group = (row?.location_groups || []).find((item) => item.key === key);
+  const names = (group?.locations || [])
+    .filter((loc) => Number(loc.available) > 0)
+    .map((loc) => loc.name)
+    .filter(Boolean);
+  return names.length ? names.join(", ") : "—";
+}
+
+function weightLabel(row) {
+  if (row?.weight == null || row.weight === "") return "—";
+  const unit = String(row.weight_unit || "POUNDS").toUpperCase();
+  const suffix = unit === "OUNCES" ? "oz" : unit === "GRAMS" ? "g" : unit === "KILOGRAMS" ? "kg" : "lbs";
+  return `${Number(row.weight).toLocaleString("en-US", { maximumFractionDigits: 3 })} ${suffix}`;
+}
+
+function dimLabel(value, unit) {
+  if (value == null || value === "") return "—";
+  const suffix = String(unit || "").toUpperCase() === "CENTIMETERS" ? "cm" : "in";
+  return `${Number(value).toLocaleString("en-US", { maximumFractionDigits: 3 })} ${suffix}`;
+}
+
+function cubicFeetLabel(row) {
+  const l = Number(row?.length);
+  const w = Number(row?.width);
+  const h = Number(row?.height);
+  if (![l, w, h].every((n) => Number.isFinite(n) && n > 0)) return "—";
+  let inchesL = l;
+  let inchesW = w;
+  let inchesH = h;
+  if (String(row?.dimension_unit || "").toUpperCase() === "CENTIMETERS") {
+    inchesL /= 2.54;
+    inchesW /= 2.54;
+    inchesH /= 2.54;
+  }
+  return (inchesL * inchesW * inchesH / 1728).toLocaleString("en-US", { maximumFractionDigits: 3 });
+}
+
+async function toggleRowMenu(row, e) {
+  e?.stopPropagation?.();
+  if (rowMenu.value?.id === row?.id) {
+    rowMenu.value = null;
+    return;
+  }
+  const btn = e?.currentTarget;
+  rowMenu.value = row;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (!(btn instanceof HTMLElement)) return;
+    const r = btn.getBoundingClientRect();
+    const menuW = 140;
+    const menuH = 52;
+    let top = r.bottom + 4;
+    let left = Math.max(8, Math.min(r.right - menuW, window.innerWidth - menuW - 8));
+    if (top + menuH > window.innerHeight - 8) top = Math.max(8, r.top - menuH - 4);
+    rowMenuRect.value = { top, left };
+  });
+}
+
+function openViewEdit(row) {
+  editRow.value = row;
+  rowMenu.value = null;
+  if (viewType.value === "packaging") packagingEditOpen.value = true;
+  else viewEditOpen.value = true;
+}
+
+async function savePackaging(payload) {
+  if (!editRow.value?.id) return;
+  editBusy.value = true;
+  try {
+    await api.patch(`/shopify/inventory/${editRow.value.id}/packaging`, payload);
+    toast.success("Packaging updated.");
+    packagingEditOpen.value = false;
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not update packaging.");
+  } finally {
+    editBusy.value = false;
+  }
+}
+
+async function saveViewEdit(payload) {
+  if (!editRow.value?.id) return;
+  editBusy.value = true;
+  try {
+    if (viewType.value === "locations") {
+      const changes = payload.changes || [];
+      if (!changes.length) {
+        viewEditOpen.value = false;
+        return;
+      }
+      if (!payload.reason) {
+        toast.error("Select a reason.");
+        return;
+      }
+      await Promise.all(
+        changes.map((change) =>
+          api.patch(`/shopify/locations/${change.location_id}/items/${change.item_id}`, {
+            available: change.available,
+            reason: payload.reason,
+          }),
+        ),
+      );
+      toast.success("Locations updated.");
+    } else {
+      await api.patch(`/shopify/inventory/${editRow.value.id}`, payload);
+      toast.success(viewType.value === "weights" ? "Weight updated." : "Dimensions updated.");
+    }
+    viewEditOpen.value = false;
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not save changes.");
+  } finally {
+    editBusy.value = false;
+  }
 }
 
 function toggleSelectAll() {
@@ -221,6 +366,9 @@ function onDocClick(e) {
   }
   if (!e.target?.closest?.("[data-sip-filters]")) {
     filterMenuOpen.value = false;
+  }
+  if (!e.target?.closest?.("[data-sip-row-actions]")) {
+    rowMenu.value = null;
   }
 }
 
@@ -435,6 +583,19 @@ onUnmounted(() => {
             </svg>
             Clear Filters
           </button>
+
+          <div class="sip-view-type ms-lg-auto">
+            <label class="sip-view-type__label" for="sip-view-type">View Type</label>
+            <select
+              id="sip-view-type"
+              v-model="viewType"
+              class="form-select sip-account-select"
+              aria-label="View Type"
+              :disabled="loading"
+            >
+              <option v-for="opt in VIEW_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -497,22 +658,43 @@ onUnmounted(() => {
               </th>
               <th class="staff-table-head__th" scope="col">Product</th>
               <th class="staff-table-head__th" scope="col">Account</th>
-              <th class="staff-table-head__th" scope="col">Bundle</th>
-              <th class="staff-table-head__th text-end" scope="col">On Hand</th>
-              <th class="staff-table-head__th text-end" scope="col">Allocated</th>
-              <th class="staff-table-head__th text-end" scope="col">Backorder</th>
+              <template v-if="viewType === 'inventory'">
+                <th class="staff-table-head__th" scope="col">Bundle</th>
+                <th class="staff-table-head__th text-end" scope="col">On Hand</th>
+                <th class="staff-table-head__th text-end" scope="col">Allocated</th>
+                <th class="staff-table-head__th text-end" scope="col">Backorder</th>
+              </template>
+              <template v-else-if="viewType === 'locations'">
+                <th class="staff-table-head__th" scope="col">Pick Locations</th>
+                <th class="staff-table-head__th" scope="col">Backstock Locations</th>
+                <th class="staff-table-head__th" scope="col">Other Locations</th>
+              </template>
+              <template v-else-if="viewType === 'packaging'">
+                <th class="staff-table-head__th" scope="col">Default Packaging</th>
+                <th class="staff-table-head__th" scope="col">Packaging Materials</th>
+              </template>
+              <template v-else-if="viewType === 'weights'">
+                <th class="staff-table-head__th" scope="col">Weight</th>
+              </template>
+              <template v-else>
+                <th class="staff-table-head__th" scope="col">Length</th>
+                <th class="staff-table-head__th" scope="col">Width</th>
+                <th class="staff-table-head__th" scope="col">Height</th>
+                <th class="staff-table-head__th" scope="col">Cubic Ft</th>
+              </template>
+              <th v-if="hasRowActions" class="staff-table-head__th text-center" scope="col">Action</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="7" class="py-5">
+              <td :colspan="tableColspan" class="py-5">
                 <div class="d-flex justify-content-center py-3">
                   <CrmLoadingSpinner message="Loading Products…" />
                 </div>
               </td>
             </tr>
             <tr v-else-if="!rows.length">
-              <td colspan="7" class="px-4 py-5 text-center text-secondary">
+              <td :colspan="tableColspan" class="px-4 py-5 text-center text-secondary">
                 No products found.
               </td>
             </tr>
@@ -559,10 +741,43 @@ onUnmounted(() => {
                 </div>
               </td>
               <td class="text-body">{{ row.account_name || "—" }}</td>
-              <td class="text-body">{{ row.bundle ? "Yes" : "No" }}</td>
-              <td class="text-end text-body">{{ Number(row.on_hand ?? row.available_total ?? 0).toLocaleString("en-US") }}</td>
-              <td class="text-end text-body">{{ Number(row.allocated ?? 0).toLocaleString("en-US") }}</td>
-              <td class="text-end text-body">{{ Number(row.backorder ?? 0).toLocaleString("en-US") }}</td>
+              <template v-if="viewType === 'inventory'">
+                <td class="text-body">{{ row.bundle ? "Yes" : "No" }}</td>
+                <td class="text-end text-body">{{ Number(row.on_hand ?? row.available_total ?? 0).toLocaleString("en-US") }}</td>
+                <td class="text-end text-body">{{ Number(row.allocated ?? 0).toLocaleString("en-US") }}</td>
+                <td class="text-end text-body">{{ Number(row.backorder ?? 0).toLocaleString("en-US") }}</td>
+              </template>
+              <template v-else-if="viewType === 'locations'">
+                <td class="text-body">{{ locationLabel(row, "pick") }}</td>
+                <td class="text-body">{{ locationLabel(row, "backstock") }}</td>
+                <td class="text-body">{{ locationLabel(row, "other") }}</td>
+              </template>
+              <template v-else-if="viewType === 'packaging'">
+                <td class="text-body">{{ row.packaging?.label || "—" }}</td>
+                <td class="text-body">{{ row.packaging_material?.label || "—" }}</td>
+              </template>
+              <template v-else-if="viewType === 'weights'">
+                <td class="text-body">{{ weightLabel(row) }}</td>
+              </template>
+              <template v-else>
+                <td class="text-body">{{ dimLabel(row.length, row.dimension_unit) }}</td>
+                <td class="text-body">{{ dimLabel(row.width, row.dimension_unit) }}</td>
+                <td class="text-body">{{ dimLabel(row.height, row.dimension_unit) }}</td>
+                <td class="text-body">{{ cubicFeetLabel(row) }}</td>
+              </template>
+              <td v-if="hasRowActions" class="staff-actions-cell text-center" @click.stop>
+                <div data-sip-row-actions class="staff-actions-inner staff-actions-inner--single justify-content-center">
+                  <button
+                    type="button"
+                    class="staff-action-btn staff-action-btn--more"
+                    :class="{ 'is-open': rowMenu?.id === row.id }"
+                    aria-label="Row actions"
+                    @click="toggleRowMenu(row, $event)"
+                  >
+                    <CrmIconRowActions variant="horizontal" />
+                  </button>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -606,18 +821,66 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="crm-mobile-item-card__meta">
-              <div class="crm-mobile-item-card__meta-row">
-                <span class="crm-mobile-item-card__meta-label">On Hand</span>
-                <span class="crm-mobile-item-card__meta-value">{{ row.on_hand ?? 0 }}</span>
-              </div>
-              <div class="crm-mobile-item-card__meta-row">
-                <span class="crm-mobile-item-card__meta-label">Allocated</span>
-                <span class="crm-mobile-item-card__meta-value">{{ row.allocated ?? 0 }}</span>
-              </div>
-              <div class="crm-mobile-item-card__meta-row">
-                <span class="crm-mobile-item-card__meta-label">Backorder</span>
-                <span class="crm-mobile-item-card__meta-value">{{ row.backorder ?? 0 }}</span>
-              </div>
+              <template v-if="viewType === 'inventory'">
+                <div class="crm-mobile-item-card__meta-row">
+                  <span class="crm-mobile-item-card__meta-label">On Hand</span>
+                  <span class="crm-mobile-item-card__meta-value">{{ row.on_hand ?? 0 }}</span>
+                </div>
+                <div class="crm-mobile-item-card__meta-row">
+                  <span class="crm-mobile-item-card__meta-label">Allocated</span>
+                  <span class="crm-mobile-item-card__meta-value">{{ row.allocated ?? 0 }}</span>
+                </div>
+                <div class="crm-mobile-item-card__meta-row">
+                  <span class="crm-mobile-item-card__meta-label">Backorder</span>
+                  <span class="crm-mobile-item-card__meta-value">{{ row.backorder ?? 0 }}</span>
+                </div>
+              </template>
+              <template v-else-if="viewType === 'locations'">
+                <div class="crm-mobile-item-card__meta-row">
+                  <span class="crm-mobile-item-card__meta-label">Pick</span>
+                  <span class="crm-mobile-item-card__meta-value">{{ locationLabel(row, "pick") }}</span>
+                </div>
+                <div class="crm-mobile-item-card__meta-row">
+                  <span class="crm-mobile-item-card__meta-label">Backstock</span>
+                  <span class="crm-mobile-item-card__meta-value">{{ locationLabel(row, "backstock") }}</span>
+                </div>
+                <div class="crm-mobile-item-card__meta-row">
+                  <span class="crm-mobile-item-card__meta-label">Other</span>
+                  <span class="crm-mobile-item-card__meta-value">{{ locationLabel(row, "other") }}</span>
+                </div>
+              </template>
+              <template v-else-if="viewType === 'packaging'">
+                <div class="crm-mobile-item-card__meta-row">
+                  <span class="crm-mobile-item-card__meta-label">Packaging</span>
+                  <span class="crm-mobile-item-card__meta-value">{{ row.packaging?.label || "—" }}</span>
+                </div>
+                <div class="crm-mobile-item-card__meta-row">
+                  <span class="crm-mobile-item-card__meta-label">Materials</span>
+                  <span class="crm-mobile-item-card__meta-value">{{ row.packaging_material?.label || "—" }}</span>
+                </div>
+              </template>
+              <template v-else-if="viewType === 'weights'">
+                <div class="crm-mobile-item-card__meta-row">
+                  <span class="crm-mobile-item-card__meta-label">Weight</span>
+                  <span class="crm-mobile-item-card__meta-value">{{ weightLabel(row) }}</span>
+                </div>
+              </template>
+              <template v-else>
+                <div class="crm-mobile-item-card__meta-row">
+                  <span class="crm-mobile-item-card__meta-label">Size</span>
+                  <span class="crm-mobile-item-card__meta-value">
+                    {{ dimLabel(row.length, row.dimension_unit) }} × {{ dimLabel(row.width, row.dimension_unit) }} × {{ dimLabel(row.height, row.dimension_unit) }}
+                  </span>
+                </div>
+              </template>
+              <button
+                v-if="hasRowActions"
+                type="button"
+                class="btn btn-outline-secondary btn-sm mt-2"
+                @click.stop="openViewEdit(row)"
+              >
+                Edit
+              </button>
             </div>
           </article>
         </template>
@@ -669,6 +932,34 @@ onUnmounted(() => {
       @queued="onCsvQueued"
     />
     <ShopifyInventoryAddProductModal v-model:open="addOpen" />
+    <ShopifyInventoryPackagingModal
+      :open="packagingEditOpen"
+      :busy="editBusy"
+      :variant="editRow"
+      @close="packagingEditOpen = false"
+      @save="savePackaging"
+    />
+    <ShopifyInventoryViewEditModal
+      :open="viewEditOpen"
+      :busy="editBusy"
+      :mode="viewType === 'dimensions' ? 'dimensions' : viewType === 'locations' ? 'locations' : 'weight'"
+      :row="editRow"
+      @close="viewEditOpen = false"
+      @save="saveViewEdit"
+    />
+
+    <Teleport to="body">
+      <div
+        v-if="rowMenu"
+        data-sip-row-actions
+        class="staff-row-menu fixed z-[300] overflow-hidden"
+        role="menu"
+        :style="{ top: `${rowMenuRect.top}px`, left: `${rowMenuRect.left}px` }"
+        @click.stop
+      >
+        <button type="button" class="staff-row-menu__item" role="menuitem" @click="openViewEdit(rowMenu)">Edit</button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -691,6 +982,18 @@ onUnmounted(() => {
 }
 .sip-clear-filters {
   color: #2563eb;
+  white-space: nowrap;
+}
+.sip-view-type {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.sip-view-type__label {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
   white-space: nowrap;
 }
 .sip-actions-menu {

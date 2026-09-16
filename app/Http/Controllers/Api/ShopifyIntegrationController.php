@@ -1495,7 +1495,12 @@ class ShopifyIntegrationController extends Controller
         $perPage = max(10, min(100, (int) $request->query('per_page', 25)));
 
         $query = ShopifyProductVariant::query()
-            ->with(['product', 'connection.clientAccount:id,company_name'])
+            ->with([
+                'product',
+                'connection.clientAccount:id,company_name',
+                'packagingItem',
+                'packagingMaterialItem',
+            ])
             ->orderByDesc('id');
 
         if ($status === 'active') {
@@ -1554,6 +1559,7 @@ class ShopifyIntegrationController extends Controller
         $page = $query->paginate($perPage);
         $crmVariantIds = collect($page->items())->pluck('id')->filter()->values()->all();
         $warehouseTotals = [];
+        $locationGroupsByVariant = [];
         if ($crmVariantIds !== []) {
             $warehouseTotals = ShopifyWarehouseLocationItem::query()
                 ->whereIn('shopify_variant_id', $crmVariantIds)
@@ -1561,10 +1567,19 @@ class ShopifyIntegrationController extends Controller
                 ->groupBy('shopify_variant_id')
                 ->pluck('total_on_hand', 'shopify_variant_id')
                 ->all();
+
+            $locationItems = ShopifyWarehouseLocationItem::query()
+                ->whereIn('shopify_variant_id', $crmVariantIds)
+                ->with('location')
+                ->get()
+                ->groupBy('shopify_variant_id');
+            foreach ($locationItems as $variantId => $items) {
+                $locationGroupsByVariant[(int) $variantId] = $this->summarizeWarehouseItems($items)['location_groups'];
+            }
         }
 
         return response()->json([
-            'data' => collect($page->items())->map(function (ShopifyProductVariant $variant) use ($warehouseTotals) {
+            'data' => collect($page->items())->map(function (ShopifyProductVariant $variant) use ($warehouseTotals, $locationGroupsByVariant) {
                 $onHand = (int) ($warehouseTotals[$variant->id] ?? 0);
                 $productStatus = $this->normalizeCrmProductStatus(
                     $variant->product ? (string) ($variant->product->status ?? 'active') : 'active'
@@ -1584,6 +1599,10 @@ class ShopifyIntegrationController extends Controller
                     'shopify_product_id' => $variant->product->shopify_product_id ?? null,
                     'weight' => $variant->weight,
                     'weight_unit' => $variant->weight_unit,
+                    'length' => $variant->length,
+                    'width' => $variant->width,
+                    'height' => $variant->height,
+                    'dimension_unit' => $variant->dimension_unit,
                     'status' => $productStatus,
                     'product_type' => $kind,
                     'product_type_label' => \App\Models\ShopifyProduct::crmProductKindLabel($kind),
@@ -1598,6 +1617,9 @@ class ShopifyIntegrationController extends Controller
                     'account_name' => optional(optional($variant->connection)->clientAccount)->company_name,
                     'inventory' => [],
                     'available_total' => $onHand,
+                    'packaging' => $this->assignedPackagingPayload($variant->packagingItem, true),
+                    'packaging_material' => $this->assignedPackagingPayload($variant->packagingMaterialItem, false),
+                    'location_groups' => $locationGroupsByVariant[(int) $variant->id] ?? $this->emptyLocationGroups(),
                 ];
             })->values(),
             'meta' => [
@@ -2464,17 +2486,48 @@ class ShopifyIntegrationController extends Controller
     {
         $items = ShopifyWarehouseLocationItem::query()
             ->where('shopify_variant_id', $variant->id)
-            ->where('available', '>', 0)
             ->with('location')
             ->get();
 
+        $summary = $this->summarizeWarehouseItems($items);
+        $groups = [];
+        $totalOnHand = 0;
+        foreach ($summary['location_groups'] as $group) {
+            $locations = [];
+            foreach ($group['locations'] as $loc) {
+                if ((int) ($loc['available'] ?? 0) > 0) {
+                    $locations[] = $loc;
+                }
+            }
+            $group['locations'] = $locations;
+            $totalOnHand += (int) ($group['count'] ?? 0);
+            $groups[] = $group;
+        }
+
+        return [
+            'location_groups' => $groups,
+            'inventory_stats' => [
+                'total_on_hand' => $totalOnHand,
+                'allocated' => 0,
+                'available' => $totalOnHand,
+                'backorder' => 0,
+                'asn' => 0,
+            ],
+        ];
+    }
+
+    /**
+     * @param iterable<int, ShopifyWarehouseLocationItem> $items
+     * @return array{location_groups: list<array<string, mixed>>}
+     */
+    private function summarizeWarehouseItems($items): array
+    {
         $grouped = [
             'pick' => [],
             'backstock' => [],
             'other' => [],
         ];
         $receivingName = strtolower(AsnReceivingService::RECEIVING_LOCATION_NAME);
-        $totalOnHand = 0;
 
         foreach ($items as $item) {
             $location = $item->location;
@@ -2482,7 +2535,6 @@ class ShopifyIntegrationController extends Controller
                 continue;
             }
             $qty = (int) $item->available;
-            $totalOnHand += $qty;
             $entry = [
                 'item_id' => (int) $item->id,
                 'location_id' => (int) $location->id,
@@ -2502,6 +2554,15 @@ class ShopifyIntegrationController extends Controller
             }
         }
 
+        return ['location_groups' => $this->locationGroupsFromBuckets($grouped)];
+    }
+
+    /**
+     * @param array<string, list<array<string, mixed>>> $grouped
+     * @return list<array<string, mixed>>
+     */
+    private function locationGroupsFromBuckets(array $grouped): array
+    {
         $labels = [
             'pick' => 'Pick Locations',
             'backstock' => 'Backstock Locations',
@@ -2509,10 +2570,12 @@ class ShopifyIntegrationController extends Controller
         ];
         $locationGroups = [];
         foreach ($labels as $key => $label) {
-            $locations = $grouped[$key];
+            $locations = $grouped[$key] ?? [];
             $qtyTotal = 0;
             foreach ($locations as $loc) {
-                $qtyTotal += (int) ($loc['available'] ?? 0);
+                if ((int) ($loc['available'] ?? 0) > 0) {
+                    $qtyTotal += (int) $loc['available'];
+                }
             }
             $locationGroups[] = [
                 'key' => $key,
@@ -2522,16 +2585,19 @@ class ShopifyIntegrationController extends Controller
             ];
         }
 
-        return [
-            'location_groups' => $locationGroups,
-            'inventory_stats' => [
-                'total_on_hand' => $totalOnHand,
-                'allocated' => 0,
-                'available' => $totalOnHand,
-                'backorder' => 0,
-                'asn' => 0,
-            ],
-        ];
+        return $locationGroups;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function emptyLocationGroups(): array
+    {
+        return $this->locationGroupsFromBuckets([
+            'pick' => [],
+            'backstock' => [],
+            'other' => [],
+        ]);
     }
 
     /**

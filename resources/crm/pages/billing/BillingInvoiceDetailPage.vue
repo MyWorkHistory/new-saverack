@@ -423,9 +423,10 @@ const invoicePaymentTypeDisplay = computed(() => {
   return String(t).trim();
 });
 
-const isCreditCardPaymentType = computed(
-  () => invoicePaymentTypeDisplay.value.toLowerCase() === "credit card",
-);
+const isCreditCardPaymentType = computed(() => {
+  const t = invoicePaymentTypeDisplay.value.toLowerCase();
+  return t === "credit card" || t === "paypal" || t === "pay pal";
+});
 
 const hasCreditCardFee = computed(() => {
   const items = Array.isArray(invoice.value?.items) ? invoice.value.items : [];

@@ -608,9 +608,9 @@ class InvoiceService
                 'amount_cents' => 'Invoice account was not found.',
             ]);
         }
-        if (strcasecmp(trim((string) $account->default_payment_type), 'Credit Card') !== 0) {
+        if (! $this->accountUsesCardProcessingFee($account)) {
             throw ValidationException::withMessages([
-                'amount_cents' => 'Credit card fees can only be added to Credit Card accounts.',
+                'amount_cents' => 'Credit card fees can only be added to Credit Card or Paypal accounts.',
             ]);
         }
         if ($invoice->items->contains(fn (InvoiceItem $item): bool => $this->isCreditCardFeeItem($item))) {
@@ -2623,7 +2623,7 @@ class InvoiceService
         if ($account === null) {
             return $invoice;
         }
-        if (strcasecmp(trim((string) $account->default_payment_type), 'Credit Card') !== 0) {
+        if (! $this->accountUsesCardProcessingFee($account)) {
             return $invoice;
         }
         if ($invoice->items->contains(fn (InvoiceItem $item): bool => $this->isCreditCardFeeItem($item))) {
@@ -2641,6 +2641,16 @@ class InvoiceService
         }
 
         return $this->addCcFee($invoice, 'Credit Card Fee', $actor);
+    }
+
+    private function accountUsesCardProcessingFee($account): bool
+    {
+        if ($account === null) {
+            return false;
+        }
+        $type = strtolower(trim((string) $account->default_payment_type));
+
+        return $type === 'credit card' || $type === 'paypal' || $type === 'pay pal';
     }
 
     /**

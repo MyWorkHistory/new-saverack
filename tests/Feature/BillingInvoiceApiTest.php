@@ -2402,6 +2402,54 @@ class BillingInvoiceApiTest extends TestCase
         ])->assertStatus(422);
     }
 
+    public function test_opening_paypal_invoice_adds_credit_card_fee(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->sync([
+            $this->billingViewPermission()->id,
+            $this->billingUpdatePermission()->id,
+        ]);
+        Sanctum::actingAs($user);
+
+        $client = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Paypal Fee Co',
+            'email' => 'paypal-fee@acme.test',
+            'default_payment_type' => 'Paypal',
+            'cc_fee_percent' => 3.50,
+        ]);
+
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-PAYPAL-FEE-001',
+            'client_account_id' => $client->id,
+            'status' => Invoice::STATUS_DRAFT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1000,
+            'tax_cents' => 0,
+            'total_cents' => 1000,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1000,
+        ]);
+        InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 1,
+            'description' => 'Storage',
+            'display_name' => 'Storage',
+            'quantity' => 1,
+            'unit_price_cents' => 1000,
+            'line_total_cents' => 1000,
+        ]);
+
+        $this->postJson("/api/invoices/{$invoice->id}/status", [
+            'status' => 'open',
+        ])->assertOk()
+            ->assertJsonPath('total_cents', 1035)
+            ->assertJsonFragment([
+                'name' => 'Credit Card Fee',
+                'total_cents' => 35,
+            ]);
+    }
+
     public function test_credit_items_are_saved_as_negative_from_positive_input(): void
     {
         $user = User::factory()->create();

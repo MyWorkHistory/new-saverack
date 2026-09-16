@@ -12,8 +12,8 @@ import ShopifyInventorySyncAccountModal from "../../components/shopify/ShopifyIn
 import ShopifyInventoryViewEditModal from "../../components/shopify/ShopifyInventoryViewEditModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
-
-const PER_PAGE = 50;
+import CrmListTableFooter from "../../components/common/CrmListTableFooter.vue";
+import { LIST_PAGE_SIZE_DEFAULT } from "../../constants/pagination.js";
 
 const router = useRouter();
 const toast = useToast();
@@ -26,7 +26,7 @@ const accountId = ref("");
 const filterMenuOpen = ref(false);
 const actionsMenuOpen = ref(false);
 const selectedIds = ref([]);
-const pagination = ref({ current_page: 1, last_page: 1, total: 0, per_page: PER_PAGE });
+const pagination = ref({ current_page: 1, last_page: 1, total: 0, per_page: LIST_PAGE_SIZE_DEFAULT });
 
 const filters = reactive({
   status: "active",
@@ -87,7 +87,7 @@ function filterParams() {
     bundle: filters.bundle === "yes" ? "yes" : undefined,
     allocated: filters.allocated !== "all" ? filters.allocated : undefined,
     backorder: filters.backorder !== "all" ? filters.backorder : undefined,
-    per_page: pagination.value.per_page || PER_PAGE,
+    per_page: pagination.value.per_page || LIST_PAGE_SIZE_DEFAULT,
     page: pagination.value.current_page || 1,
   };
 }
@@ -111,7 +111,7 @@ async function load() {
       current_page: data?.meta?.current_page || 1,
       last_page: data?.meta?.last_page || 1,
       total: data?.meta?.total || 0,
-      per_page: data?.meta?.per_page || PER_PAGE,
+      per_page: data?.meta?.per_page || LIST_PAGE_SIZE_DEFAULT,
     };
     selectedIds.value = selectedIds.value.filter((id) =>
       rows.value.some((r) => r.id === id),
@@ -375,6 +375,12 @@ function onDocClick(e) {
 function goPage(page) {
   if (page < 1 || page > pagination.value.last_page || page === pagination.value.current_page) return;
   pagination.value.current_page = page;
+  void load();
+}
+
+function onPerPageChange(size) {
+  pagination.value.per_page = Number(size) || LIST_PAGE_SIZE_DEFAULT;
+  pagination.value.current_page = 1;
   void load();
 }
 
@@ -886,33 +892,16 @@ onUnmounted(() => {
         </template>
       </div>
 
-      <div
-        v-if="pagination.last_page > 1"
-        class="d-flex flex-wrap align-items-center justify-content-between gap-2 px-3 px-md-4 py-3 border-top"
-      >
-        <div class="small text-secondary">
-          Page {{ pagination.current_page }} of {{ pagination.last_page }}
-          ({{ pagination.total.toLocaleString("en-US") }} total)
-        </div>
-        <div class="btn-group">
-          <button
-            type="button"
-            class="btn btn-outline-secondary btn-sm"
-            :disabled="loading || pagination.current_page <= 1"
-            @click="goPage(pagination.current_page - 1)"
-          >
-            Previous
-          </button>
-          <button
-            type="button"
-            class="btn btn-outline-secondary btn-sm"
-            :disabled="loading || pagination.current_page >= pagination.last_page"
-            @click="goPage(pagination.current_page + 1)"
-          >
-            Next
-          </button>
-        </div>
-      </div>
+      <CrmListTableFooter
+        :total="pagination.total"
+        :current-page="pagination.current_page"
+        :last-page="pagination.last_page"
+        :per-page="pagination.per_page"
+        :loading="loading"
+        noun="products"
+        @page="goPage"
+        @per-page="onPerPageChange"
+      />
     </div>
 
     <ShopifyInventorySyncAccountModal

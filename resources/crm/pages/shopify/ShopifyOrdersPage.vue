@@ -23,10 +23,11 @@ import {
 } from "../../composables/useShopifyOrderActions.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
+import CrmListTableFooter from "../../components/common/CrmListTableFooter.vue";
+import { LIST_PAGE_SIZE_DEFAULT } from "../../constants/pagination.js";
 
 const MENU_W = 220;
 const MENU_H = 360;
-const PER_PAGE = 25;
 
 const router = useRouter();
 const toast = useToast();
@@ -60,7 +61,7 @@ const draftFilters = reactive({
 const filterMenuOpen = ref(false);
 const bulkMenuOpen = ref(false);
 const selectedIds = ref([]);
-const pagination = ref({ current_page: 1, last_page: 1, total: 0, per_page: PER_PAGE });
+const pagination = ref({ current_page: 1, last_page: 1, total: 0, per_page: LIST_PAGE_SIZE_DEFAULT });
 const manageOpenId = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
 const holdModalOpen = ref(false);
@@ -235,7 +236,7 @@ async function load() {
       current_page: data?.meta?.current_page || 1,
       last_page: data?.meta?.last_page || 1,
       total: data?.meta?.total || 0,
-      per_page: data?.meta?.per_page || PER_PAGE,
+      per_page: data?.meta?.per_page || LIST_PAGE_SIZE_DEFAULT,
     };
     selectedIds.value = selectedIds.value.filter((id) => rows.value.some((r) => r.id === id));
   } catch (e) {
@@ -333,6 +334,12 @@ function toggleSelect(id) {
 function goPage(p) {
   if (p < 1 || p > pagination.value.last_page) return;
   pagination.value.current_page = p;
+  void load();
+}
+
+function onPerPageChange(size) {
+  pagination.value.per_page = Number(size) || LIST_PAGE_SIZE_DEFAULT;
+  pagination.value.current_page = 1;
   void load();
 }
 
@@ -1112,32 +1119,16 @@ onUnmounted(() => {
         </table>
       </div>
 
-      <div
-        v-if="pagination.total > pagination.per_page"
-        class="d-flex flex-wrap justify-content-between align-items-center gap-2 px-3 px-md-4 py-3 border-top"
-      >
-        <span class="small text-secondary">
-          Page {{ pagination.current_page }} of {{ pagination.last_page }} ({{ pagination.total }} orders)
-        </span>
-        <div class="btn-group btn-group-sm">
-          <button
-            type="button"
-            class="btn btn-outline-secondary orders-toolbar-outline-btn"
-            :disabled="pagination.current_page <= 1 || loading"
-            @click="goPage(pagination.current_page - 1)"
-          >
-            Previous
-          </button>
-          <button
-            type="button"
-            class="btn btn-outline-secondary orders-toolbar-outline-btn"
-            :disabled="pagination.current_page >= pagination.last_page || loading"
-            @click="goPage(pagination.current_page + 1)"
-          >
-            Next
-          </button>
-        </div>
-      </div>
+      <CrmListTableFooter
+        :total="pagination.total"
+        :current-page="pagination.current_page"
+        :last-page="pagination.last_page"
+        :per-page="pagination.per_page"
+        :loading="loading"
+        noun="orders"
+        @page="goPage"
+        @per-page="onPerPageChange"
+      />
     </div>
 
     <Teleport to="body">

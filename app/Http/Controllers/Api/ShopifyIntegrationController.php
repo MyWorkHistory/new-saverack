@@ -728,7 +728,9 @@ class ShopifyIntegrationController extends Controller
     {
         $this->assertAdmin($request);
 
-        $perPage = max(10, min(100, (int) $request->query('per_page', 25)));
+        $perPage = in_array((int) $request->query('per_page', 25), [25, 50, 100, 250, 500, 1000], true)
+            ? (int) $request->query('per_page', 25)
+            : 25;
         $page = $orders->filteredQuery($request)->paginate($perPage);
 
         return response()->json([
@@ -1494,7 +1496,9 @@ class ShopifyIntegrationController extends Controller
         $bundle = strtolower(trim((string) $request->query('bundle', '')));
         $allocated = strtolower(trim((string) $request->query('allocated', 'all')));
         $backorder = strtolower(trim((string) $request->query('backorder', 'all')));
-        $perPage = max(10, min(100, (int) $request->query('per_page', 25)));
+        $perPage = in_array((int) $request->query('per_page', 25), [25, 50, 100, 250, 500, 1000], true)
+            ? (int) $request->query('per_page', 25)
+            : 25;
 
         $query = ShopifyProductVariant::query()
             ->with([

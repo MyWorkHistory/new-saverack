@@ -816,6 +816,11 @@ button.billing-inv-summary-card:hover:not(:disabled) .staff-stat-card__icon {
   max-width: 8rem;
 }
 
+.staff-table-footer-per-page--labeled {
+  min-width: 8.75rem;
+  max-width: none;
+}
+
 .staff-actions-inner--single {
   justify-content: flex-end;
 }

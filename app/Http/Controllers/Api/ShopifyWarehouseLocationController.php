@@ -61,7 +61,9 @@ class ShopifyWarehouseLocationController extends Controller
         $this->assertAdmin($request);
         $shopifyLocations->syncConnectedLocationsIfStale();
 
-        $perPage = max(10, min(100, (int) $request->query('per_page', 10)));
+        $perPage = in_array((int) $request->query('per_page', 25), [25, 50, 100, 250, 500, 1000], true)
+            ? (int) $request->query('per_page', 25)
+            : 25;
         $sort = (string) $request->query('sort', 'name');
         $dir = strtolower((string) $request->query('dir', 'asc')) === 'desc' ? 'desc' : 'asc';
         $allowedSort = ['name', 'type', 'pickable', 'sellable'];

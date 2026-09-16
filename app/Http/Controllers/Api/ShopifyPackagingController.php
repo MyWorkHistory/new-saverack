@@ -41,7 +41,9 @@ class ShopifyPackagingController extends Controller
     {
         $this->assertAdmin($request);
 
-        $perPage = max(10, min(100, (int) $request->query('per_page', 50)));
+        $perPage = in_array((int) $request->query('per_page', 25), [25, 50, 100, 250, 500, 1000], true)
+            ? (int) $request->query('per_page', 25)
+            : 25;
         $query = ShopifyPackagingItem::query();
 
         $q = trim((string) $request->query('q', ''));

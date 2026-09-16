@@ -9,6 +9,8 @@ import ShopifyPackagingFormDrawer from "../../components/shopify/ShopifyPackagin
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
 import { formatCents } from "../../utils/formatMoney.js";
+import CrmListTableFooter from "../../components/common/CrmListTableFooter.vue";
+import { LIST_PAGE_SIZE_DEFAULT } from "../../constants/pagination.js";
 
 const CATEGORIES = [
   { value: "packaging", label: "Packaging" },
@@ -32,7 +34,6 @@ const TYPES = {
 
 const MENU_W = 140;
 const MENU_H = 52;
-const PER_PAGE_OPTIONS = [10, 25, 50, 100];
 
 const router = useRouter();
 const toast = useToast();
@@ -50,26 +51,11 @@ const deleteTarget = ref(null);
 const manageOpenId = ref(null);
 const manageMenuRow = ref(null);
 const manageMenuRect = ref({ top: 0, left: 0 });
-const pagination = ref({ current_page: 1, last_page: 1, total: 0, per_page: 50 });
+const pagination = ref({ current_page: 1, last_page: 1, total: 0, per_page: LIST_PAGE_SIZE_DEFAULT });
 
 const typeOptions = computed(() => {
   if (category.value && TYPES[category.value]) return TYPES[category.value];
   return [...TYPES.packaging, ...TYPES.packaging_materials];
-});
-
-const showingFrom = computed(() => {
-  if (!pagination.value.total) return 0;
-  return (pagination.value.current_page - 1) * pagination.value.per_page + 1;
-});
-const showingTo = computed(() => Math.min(pagination.value.current_page * pagination.value.per_page, pagination.value.total));
-const pageItems = computed(() => {
-  const last = pagination.value.last_page || 1;
-  const current = pagination.value.current_page || 1;
-  const start = Math.max(1, current - 2);
-  const end = Math.min(last, start + 4);
-  const pages = [];
-  for (let i = Math.max(1, end - 4); i <= end; i += 1) pages.push(i);
-  return pages;
 });
 
 function detailHref(row) {
@@ -194,8 +180,8 @@ async function confirmDelete() {
   }
 }
 
-function onPerPageChange(e) {
-  pagination.value.per_page = Number(e.target.value) || 50;
+function onPerPageChange(size) {
+  pagination.value.per_page = Number(size) || LIST_PAGE_SIZE_DEFAULT;
   load(1);
 }
 
@@ -368,36 +354,16 @@ onUnmounted(() => {
         </table>
       </div>
 
-      <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-lg-between gap-3 border-top staff-table-footer">
-        <p class="small text-secondary mb-0">
-          Showing
-          <span class="fw-semibold text-body">{{ showingFrom }}</span>
-          to
-          <span class="fw-semibold text-body">{{ showingTo }}</span>
-          of
-          <span class="fw-semibold text-body">{{ pagination.total }}</span>
-          packaging items.
-        </p>
-        <div class="d-flex align-items-center gap-3">
-          <select class="form-select form-select-sm staff-table-footer-per-page" :value="pagination.per_page" @change="onPerPageChange">
-            <option v-for="n in PER_PAGE_OPTIONS" :key="n" :value="n">{{ n }} per page</option>
-          </select>
-          <nav class="staff-page-pager staff-page-pager--cluster" aria-label="Packaging pages">
-            <button type="button" class="staff-page-pager-tile staff-page-pager-tile--nav" :disabled="pagination.current_page <= 1" @click="load(pagination.current_page - 1)">‹</button>
-            <button
-              v-for="p in pageItems"
-              :key="p"
-              type="button"
-              class="staff-page-pager-tile"
-              :class="{ 'staff-page-pager-tile--active': p === pagination.current_page }"
-              @click="load(p)"
-            >
-              {{ p }}
-            </button>
-            <button type="button" class="staff-page-pager-tile staff-page-pager-tile--nav" :disabled="pagination.current_page >= pagination.last_page" @click="load(pagination.current_page + 1)">›</button>
-          </nav>
-        </div>
-      </div>
+      <CrmListTableFooter
+        :total="pagination.total"
+        :current-page="pagination.current_page"
+        :last-page="pagination.last_page"
+        :per-page="pagination.per_page"
+        :loading="loading"
+        noun="packaging items"
+        @page="load"
+        @per-page="onPerPageChange"
+      />
     </div>
 
     <Teleport to="body">

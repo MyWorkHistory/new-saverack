@@ -7,6 +7,7 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ShopifyInventoryAddProductModal from "../../components/shopify/ShopifyInventoryAddProductModal.vue";
 import ShopifyInventoryBulkEditModal from "../../components/shopify/ShopifyInventoryBulkEditModal.vue";
 import ShopifyInventoryImportProductsModal from "../../components/shopify/ShopifyInventoryImportProductsModal.vue";
+import ShopifyInventoryLocationCell from "../../components/shopify/ShopifyInventoryLocationCell.vue";
 import ShopifyInventoryPackagingModal from "../../components/shopify/ShopifyInventoryPackagingModal.vue";
 import ShopifyInventorySyncAccountModal from "../../components/shopify/ShopifyInventorySyncAccountModal.vue";
 import ShopifyInventoryViewBulkModal from "../../components/shopify/ShopifyInventoryViewBulkModal.vue";
@@ -50,7 +51,7 @@ const rowMenu = ref(null);
 const rowMenuRect = ref({ top: 0, left: 0 });
 
 const VIEW_OPTIONS = [
-  { value: "inventory", label: "Inventory Counts" },
+  { value: "inventory", label: "Inventory" },
   { value: "locations", label: "Locations" },
   { value: "packaging", label: "Packaging" },
   { value: "weights", label: "Weights" },
@@ -180,13 +181,15 @@ function packagingListLabel(row, listKey, singleKey) {
   return row?.[singleKey]?.label || "—";
 }
 
-function locationLabel(row, key) {
+function locationGroup(row, key) {
   const group = (row?.location_groups || []).find((item) => item.key === key);
-  const names = (group?.locations || [])
-    .filter((loc) => Number(loc.available) > 0)
-    .map((loc) => loc.name)
-    .filter(Boolean);
-  return names.length ? names.join(", ") : "—";
+  return Array.isArray(group?.locations) ? group.locations : [];
+}
+
+function locationGroupLabel(key) {
+  if (key === "backstock") return "Backstock Locations";
+  if (key === "other") return "Other Locations";
+  return "Pick Locations";
 }
 
 function weightLabel(row) {
@@ -643,12 +646,11 @@ onUnmounted(() => {
           </button>
 
           <div class="sip-view-type ms-lg-auto">
-            <label class="sip-view-type__label" for="sip-view-type">View Type</label>
             <select
               id="sip-view-type"
               v-model="viewType"
               class="form-select sip-account-select"
-              aria-label="View Type"
+              aria-label="View"
               :disabled="loading"
             >
               <option v-for="opt in VIEW_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
@@ -806,9 +808,15 @@ onUnmounted(() => {
                 <td class="text-end text-body">{{ Number(row.backorder ?? 0).toLocaleString("en-US") }}</td>
               </template>
               <template v-else-if="viewType === 'locations'">
-                <td class="text-body">{{ locationLabel(row, "pick") }}</td>
-                <td class="text-body">{{ locationLabel(row, "backstock") }}</td>
-                <td class="text-body">{{ locationLabel(row, "other") }}</td>
+                <td @click.stop>
+                  <ShopifyInventoryLocationCell :locations="locationGroup(row, 'pick')" :label="locationGroupLabel('pick')" />
+                </td>
+                <td @click.stop>
+                  <ShopifyInventoryLocationCell :locations="locationGroup(row, 'backstock')" :label="locationGroupLabel('backstock')" />
+                </td>
+                <td @click.stop>
+                  <ShopifyInventoryLocationCell :locations="locationGroup(row, 'other')" :label="locationGroupLabel('other')" />
+                </td>
               </template>
               <template v-else-if="viewType === 'packaging'">
                 <td class="text-body">{{ packagingListLabel(row, "packaging_items", "packaging") }}</td>
@@ -894,17 +902,23 @@ onUnmounted(() => {
                 </div>
               </template>
               <template v-else-if="viewType === 'locations'">
-                <div class="crm-mobile-item-card__meta-row">
+                <div class="crm-mobile-item-card__meta-row" @click.stop>
                   <span class="crm-mobile-item-card__meta-label">Pick</span>
-                  <span class="crm-mobile-item-card__meta-value">{{ locationLabel(row, "pick") }}</span>
+                  <span class="crm-mobile-item-card__meta-value">
+                    <ShopifyInventoryLocationCell :locations="locationGroup(row, 'pick')" :label="locationGroupLabel('pick')" />
+                  </span>
                 </div>
-                <div class="crm-mobile-item-card__meta-row">
+                <div class="crm-mobile-item-card__meta-row" @click.stop>
                   <span class="crm-mobile-item-card__meta-label">Backstock</span>
-                  <span class="crm-mobile-item-card__meta-value">{{ locationLabel(row, "backstock") }}</span>
+                  <span class="crm-mobile-item-card__meta-value">
+                    <ShopifyInventoryLocationCell :locations="locationGroup(row, 'backstock')" :label="locationGroupLabel('backstock')" />
+                  </span>
                 </div>
-                <div class="crm-mobile-item-card__meta-row">
+                <div class="crm-mobile-item-card__meta-row" @click.stop>
                   <span class="crm-mobile-item-card__meta-label">Other</span>
-                  <span class="crm-mobile-item-card__meta-value">{{ locationLabel(row, "other") }}</span>
+                  <span class="crm-mobile-item-card__meta-value">
+                    <ShopifyInventoryLocationCell :locations="locationGroup(row, 'other')" :label="locationGroupLabel('other')" />
+                  </span>
                 </div>
               </template>
               <template v-else-if="viewType === 'packaging'">
@@ -1036,14 +1050,6 @@ onUnmounted(() => {
 .sip-view-type {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-}
-.sip-view-type__label {
-  margin: 0;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #374151;
-  white-space: nowrap;
 }
 .sip-actions-menu {
   right: 0;

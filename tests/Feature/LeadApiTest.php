@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\EmailTemplate;
 use App\Models\Lead;
+use App\Services\LeadService;
+use App\Support\OldListLeadCatalog;
 use App\Models\LeadStatusEvent;
 use App\Models\Permission;
 use App\Models\PricingFeeTemplate;
@@ -516,5 +518,35 @@ TEXT;
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.id', $wrongDays->id);
+    }
+
+    public function test_old_list_import_skips_existing_email(): void
+    {
+        $this->staffWithLeads();
+
+        Lead::query()->create([
+            'status' => Lead::STATUS_OPEN,
+            'referral' => Lead::REFERRAL_BIZY,
+            'company_name' => 'Already Here',
+            'email' => 'support@evexiascience.com',
+            'follow_up_days' => 1,
+            'follow_up_at' => now()->addDay()->toDateString(),
+        ]);
+
+        $result = app(LeadService::class)->importIfEmailMissing(
+            array_slice(OldListLeadCatalog::rows(), 0, 2),
+            Lead::STATUS_OLD_LIST
+        );
+
+        $this->assertSame(1, $result['created']);
+        $this->assertSame(1, $result['skipped']);
+        $this->assertSame(
+            Lead::STATUS_OPEN,
+            Lead::query()->where('email', 'support@evexiascience.com')->value('status')
+        );
+        $imported = Lead::query()->where('email', 'info@mdprescriptives.com')->first();
+        $this->assertNotNull($imported);
+        $this->assertSame(Lead::STATUS_OLD_LIST, $imported->status);
+        $this->assertSame('2025-01-27', $imported->created_at->toDateString());
     }
 }

@@ -1201,6 +1201,73 @@ class LeadService
         return number_format((float) $amount, 4, '.', '');
     }
 
+    /**
+     * Create leads from a prepared list. Existing emails are skipped.
+     *
+     * @param  list<array{name: string, company_name: string, email: string, referral: string, last_activity?: string|null}>  $rows
+     * @return array{created: int, skipped: int}
+     */
+    public function importIfEmailMissing(array $rows, string $status = Lead::STATUS_OLD_LIST): array
+    {
+        if (! in_array($status, Lead::STATUSES, true)) {
+            throw new InvalidArgumentException('Invalid lead status.');
+        }
+
+        $created = 0;
+        $skipped = 0;
+
+        foreach ($rows as $row) {
+            $email = strtolower(trim((string) ($row['email'] ?? '')));
+            $company = trim((string) ($row['company_name'] ?? ''));
+            if ($email === '' || $company === '' || $this->emailAlreadyExists($email)) {
+                $skipped++;
+                continue;
+            }
+
+            $lastActivity = $this->nullableTrim($row['last_activity'] ?? null);
+            $createdAt = null;
+            if ($lastActivity !== null) {
+                try {
+                    $createdAt = \Illuminate\Support\Carbon::createFromFormat('n/j/Y', $lastActivity)->startOfDay();
+                } catch (\Throwable $e) {
+                    $createdAt = null;
+                }
+            }
+
+            $lead = Lead::query()->create([
+                'status' => $status,
+                'referral' => Lead::normalizeReferral($row['referral'] ?? Lead::REFERRAL_BIZY),
+                'company_name' => $company,
+                'email' => $email,
+                'name' => $this->nullableTrim($row['name'] ?? null),
+                'follow_up_days' => null,
+                'follow_up_at' => null,
+            ]);
+
+            if ($createdAt !== null) {
+                $lead->created_at = $createdAt;
+                $lead->updated_at = $createdAt;
+                $lead->save();
+            }
+
+            $this->provisionDefaultFees($lead);
+
+            LeadStatusEvent::query()->create([
+                'lead_id' => $lead->id,
+                'status' => $status,
+                'follow_up_days' => null,
+                'note' => 'Imported from old list',
+            ]);
+
+            $created++;
+        }
+
+        return [
+            'created' => $created,
+            'skipped' => $skipped,
+        ];
+    }
+
     private function emailAlreadyExists(string $email, ?int $ignoreLeadId = null): bool
     {
         $normalized = strtolower(trim($email));

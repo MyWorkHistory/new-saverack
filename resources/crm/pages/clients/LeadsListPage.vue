@@ -546,6 +546,7 @@ function statusBadgeClass(status) {
   if (s === "not_interested") return "bg-secondary-subtle text-secondary";
   if (s === "not_qualified") return "bg-body-secondary text-body-secondary";
   if (s === "account_created") return "bg-success-subtle text-success";
+  if (s === "old_list") return "bg-warning-subtle text-warning-emphasis";
   return "bg-body-secondary text-body-secondary";
 }
 

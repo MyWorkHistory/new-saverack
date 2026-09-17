@@ -22,6 +22,8 @@ class EmailTemplate extends Model
 
     public const CATEGORY_ACCOUNT_CREATED = 'account_created';
 
+    public const CATEGORY_OLD_LIST = 'old_list';
+
     /** @var list<string> */
     public const CATEGORIES = [
         self::CATEGORY_CONTACTED,
@@ -32,6 +34,7 @@ class EmailTemplate extends Model
         self::CATEGORY_NOT_INTERESTED,
         self::CATEGORY_NOT_QUALIFIED,
         self::CATEGORY_ACCOUNT_CREATED,
+        self::CATEGORY_OLD_LIST,
     ];
 
     /** @var array<string, string> */
@@ -44,6 +47,7 @@ class EmailTemplate extends Model
         self::CATEGORY_NOT_INTERESTED => 'Not Interested',
         self::CATEGORY_NOT_QUALIFIED => 'Not Qualified',
         self::CATEGORY_ACCOUNT_CREATED => 'Account Created',
+        self::CATEGORY_OLD_LIST => 'Old List',
     ];
 
     /**
@@ -60,6 +64,7 @@ class EmailTemplate extends Model
         self::CATEGORY_NOT_INTERESTED => null,
         self::CATEGORY_NOT_QUALIFIED => null,
         self::CATEGORY_ACCOUNT_CREATED => null,
+        self::CATEGORY_OLD_LIST => 7,
     ];
 
     protected $fillable = [

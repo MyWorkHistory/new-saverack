@@ -7,6 +7,7 @@ export const EMAIL_TEMPLATE_CATEGORIES = [
   "not_interested",
   "not_qualified",
   "account_created",
+  "old_list",
 ];
 
 export const EMAIL_TEMPLATE_CATEGORY_LABELS = {
@@ -18,6 +19,7 @@ export const EMAIL_TEMPLATE_CATEGORY_LABELS = {
   not_interested: "Not Interested",
   not_qualified: "Not Qualified",
   account_created: "Account Created",
+  old_list: "Old List",
 };
 
 /** Icon name + accent colors for category group headers and pills. */
@@ -69,6 +71,12 @@ export const EMAIL_TEMPLATE_CATEGORY_META = {
     accent: "#059669",
     softBg: "#d1fae5",
     softText: "#047857",
+  },
+  old_list: {
+    icon: "archive",
+    accent: "#b45309",
+    softBg: "#fef3c7",
+    softText: "#92400e",
   },
 };
 

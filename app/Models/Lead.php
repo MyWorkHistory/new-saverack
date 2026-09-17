@@ -26,6 +26,8 @@ class Lead extends Model
 
     public const STATUS_ACCOUNT_CREATED = 'account_created';
 
+    public const STATUS_OLD_LIST = 'old_list';
+
     public const REFERRAL_BIZY = 'bizy';
 
     public const REFERRAL_GOOGLE = 'google';
@@ -41,6 +43,7 @@ class Lead extends Model
         self::STATUS_NOT_INTERESTED,
         self::STATUS_NOT_QUALIFIED,
         self::STATUS_ACCOUNT_CREATED,
+        self::STATUS_OLD_LIST,
     ];
 
     /** @var list<string> */
@@ -115,6 +118,7 @@ class Lead extends Model
             self::STATUS_NOT_INTERESTED => 'Not Interested',
             self::STATUS_NOT_QUALIFIED => 'Not Qualified',
             self::STATUS_ACCOUNT_CREATED => 'Account Created',
+            self::STATUS_OLD_LIST => 'Old List',
         ];
 
         return $labels[$status] ?? str_replace('_', ' ', ucwords($status, '_'));

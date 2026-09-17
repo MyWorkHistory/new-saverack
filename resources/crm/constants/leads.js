@@ -8,6 +8,7 @@ export const LEAD_STATUSES = [
   "not_interested",
   "not_qualified",
   "account_created",
+  "old_list",
 ];
 
 export const LEAD_REFERRALS = ["bizy", "google"];
@@ -27,6 +28,7 @@ export const LEAD_STATUS_LABELS = {
   not_interested: "Not Interested",
   not_qualified: "Not Qualified",
   account_created: "Account Created",
+  old_list: "Old List",
 };
 
 export const LEAD_REFERRAL_LABELS = {

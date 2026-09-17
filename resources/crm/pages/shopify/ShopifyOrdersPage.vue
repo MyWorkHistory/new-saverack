@@ -18,7 +18,6 @@ import {
   formatShopifyOrderName,
   isCancelledStatus,
   isFulfilledStatus,
-  SHOPIFY_ORDER_HOLD_REASONS,
   useShopifyOrderActions,
 } from "../../composables/useShopifyOrderActions.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -413,8 +412,22 @@ async function loadActionOrder(id) {
   actionLineItems.value = Array.isArray(data?.order?.line_items) ? data.order.line_items : [];
 }
 
-function openHoldModal(ids) {
+const holdInitialReasons = ref([]);
+
+function reasonsFromOrder(order) {
+  return Array.isArray(order?.crm_hold_reasons)
+    ? order.crm_hold_reasons.map((r) => String(r || "").trim()).filter(Boolean)
+    : [];
+}
+
+function openHoldModal(ids, order = null) {
   actionTargetIds.value = [...ids];
+  if (ids.length === 1) {
+    const row = order || rows.value.find((r) => r.id === ids[0]) || actionOrder.value;
+    holdInitialReasons.value = reasonsFromOrder(row);
+  } else {
+    holdInitialReasons.value = [];
+  }
   holdModalOpen.value = true;
   manageOpenId.value = null;
   bulkMenuOpen.value = false;
@@ -500,10 +513,20 @@ function openStatusPicker(row) {
 async function confirmHold(reasons) {
   const ids = actionTargetIds.value.length ? actionTargetIds.value : [];
   if (!ids.length) return;
-  const result = await actions.holdOrder(ids, reasons);
+  const next = Array.isArray(reasons) ? reasons : [];
+  const current = ids.length === 1 ? holdInitialReasons.value : [];
+  const toRemove = current.filter((r) => !next.includes(r));
+  const toAdd = next.filter((r) => !current.includes(r));
+  let result = true;
+  if (toRemove.length || toAdd.length) {
+    if (!next.length) result = await actions.removeHolds(ids, current);
+    else if (toRemove.length && !toAdd.length && ids.length === 1) result = await actions.removeHolds(ids, toRemove);
+    else result = await actions.holdOrder(ids, next);
+  }
   if (result) {
     holdModalOpen.value = false;
     actionTargetIds.value = [];
+    holdInitialReasons.value = [];
     if (ids.length > 1) selectedIds.value = [];
     else void load();
   }
@@ -575,18 +598,11 @@ async function onStatusPicked(status) {
   }
 }
 
-async function onRemoveHold() {
+function onRemoveHold() {
   const id = actionTargetIds.value[0];
   if (!id) return;
-  const fromOrder = Array.isArray(actionOrder.value?.crm_hold_reasons)
-    ? actionOrder.value.crm_hold_reasons.map((r) => String(r || "").trim()).filter(Boolean)
-    : [];
-  const reasons = fromOrder.length ? fromOrder : SHOPIFY_ORDER_HOLD_REASONS.map((r) => r.label);
-  const result = await actions.removeHolds([id], reasons);
-  if (result) {
-    statusPickerOpen.value = false;
-    void load();
-  }
+  statusPickerOpen.value = false;
+  openHoldModal([id], actionOrder.value);
 }
 
 function runRowAction(fn, row) {
@@ -1216,6 +1232,7 @@ onUnmounted(() => {
       :open="holdModalOpen"
       :busy="actions.busy.value"
       :order-count="holdTargetCount"
+      :initial-reasons="holdInitialReasons"
       @close="holdModalOpen = false"
       @confirm="confirmHold"
     />

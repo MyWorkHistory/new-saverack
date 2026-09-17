@@ -6,26 +6,47 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   busy: { type: Boolean, default: false },
   orderCount: { type: Number, default: 1 },
+  /** Active hold labels to pre-check so the user can uncheck the ones to remove. */
+  initialReasons: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits(["close", "confirm"]);
 
 const selected = reactive({});
 
-function resetSelection() {
+function applySelection() {
+  const active = new Set(
+    (Array.isArray(props.initialReasons) ? props.initialReasons : [])
+      .map((r) => String(r || "").trim())
+      .filter(Boolean),
+  );
   SHOPIFY_ORDER_HOLD_REASONS.forEach((r) => {
-    selected[r.label] = false;
+    selected[r.label] = active.has(r.label);
   });
 }
 
 watch(
   () => props.open,
   (isOpen) => {
-    if (isOpen) resetSelection();
+    if (isOpen) applySelection();
   },
 );
 
-const canSubmit = computed(() => SHOPIFY_ORDER_HOLD_REASONS.some((r) => selected[r.label]));
+const selectedLabels = computed(() =>
+  SHOPIFY_ORDER_HOLD_REASONS.filter((r) => selected[r.label]).map((r) => r.label),
+);
+
+const hasInitialHolds = computed(
+  () =>
+    (Array.isArray(props.initialReasons) ? props.initialReasons : []).some((r) => String(r || "").trim()),
+);
+
+const canSubmit = computed(() => selectedLabels.value.length > 0 || hasInitialHolds.value);
+
+const submitLabel = computed(() => {
+  if (props.busy) return selectedLabels.value.length ? "Applying…" : "Removing…";
+  return selectedLabels.value.length ? "Apply Hold" : "Remove Hold";
+});
 
 const title = computed(() =>
   props.orderCount > 1 ? `Hold ${props.orderCount} Orders` : "Hold Order",
@@ -110,11 +131,11 @@ function onSubmit() {
           </button>
           <button
             type="button"
-            class="btn btn-primary staff-page-primary fw-semibold"
             :disabled="busy || !canSubmit"
+            :class="selectedLabels.length ? 'btn btn-primary staff-page-primary fw-semibold' : 'btn btn-danger text-white fw-semibold'"
             @click="onSubmit"
           >
-            {{ busy ? "Applying…" : "Apply Hold" }}
+            {{ submitLabel }}
           </button>
         </footer>
       </div>
@@ -126,7 +147,7 @@ function onSubmit() {
 .so-modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1200;
+  z-index: 1300;
   display: flex;
   align-items: center;
   justify-content: center;

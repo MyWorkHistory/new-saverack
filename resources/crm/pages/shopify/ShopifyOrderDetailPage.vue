@@ -208,22 +208,29 @@ function carrierLabel(code) {
   return c || "—";
 }
 
+async function syncHoldReasons(id, reasons, current) {
+  const next = Array.isArray(reasons) ? reasons : [];
+  const existing = Array.isArray(current) ? current : [];
+  const toRemove = existing.filter((r) => !next.includes(r));
+  const toAdd = next.filter((r) => !existing.includes(r));
+  if (!toRemove.length && !toAdd.length) return true;
+  if (!next.length) return actions.removeHolds([id], existing);
+  if (toRemove.length && !toAdd.length) return actions.removeHolds([id], toRemove);
+  return actions.holdOrder([id], next);
+}
+
 async function confirmHold(reasons) {
   if (!orderId.value) return;
-  const result = await actions.holdOrder([orderId.value], reasons);
+  const result = await syncHoldReasons(orderId.value, reasons, activeHoldReasons.value);
   if (result) {
     holdModalOpen.value = false;
     await load();
   }
 }
 
-async function onRemoveHold() {
-  if (!orderId.value || !activeHoldReasons.value.length) return;
-  const result = await actions.removeHolds([orderId.value], activeHoldReasons.value);
-  if (result) {
-    statusPickerOpen.value = false;
-    await load();
-  }
+function onRemoveHold() {
+  statusPickerOpen.value = false;
+  holdModalOpen.value = true;
 }
 
 async function confirmCancel({ cancelInShopify } = {}) {
@@ -644,7 +651,13 @@ onUnmounted(() => {
       </div>
     </template>
 
-    <ShopifyOrderHoldModal :open="holdModalOpen" :busy="actions.busy.value" @close="holdModalOpen = false" @confirm="confirmHold" />
+    <ShopifyOrderHoldModal
+      :open="holdModalOpen"
+      :busy="actions.busy.value"
+      :initial-reasons="activeHoldReasons"
+      @close="holdModalOpen = false"
+      @confirm="confirmHold"
+    />
     <ShopifyOrderCancelConfirmModal :open="cancelModalOpen" :busy="actions.busy.value" @close="cancelModalOpen = false" @confirm="confirmCancel" />
     <ShopifyOrderFulfillModal
       :open="fulfillModalOpen"

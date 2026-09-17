@@ -16,6 +16,8 @@ import LeadCreateDrawer from "../../components/leads/LeadCreateDrawer.vue";
 import LeadQuickAddDrawer from "../../components/leads/LeadQuickAddDrawer.vue";
 import LeadStatusUpdateModal from "../../components/leads/LeadStatusUpdateModal.vue";
 import LeadSummaryCards from "../../components/leads/LeadSummaryCards.vue";
+import CrmListTableFooter from "../../components/common/CrmListTableFooter.vue";
+import { LIST_PAGE_SIZE_DEFAULT } from "../../constants/pagination.js";
 import ShopifyCsvUploadModal from "../../components/shopify/ShopifyCsvUploadModal.vue";
 import {
   LEAD_FOLLOW_UP_DAY_OPTIONS,
@@ -49,7 +51,7 @@ setCrmPageMeta({ title: "Save Rack | Leads", description: "Sales leads directory
 
 const loading = ref(true);
 const rows = ref([]);
-const meta = ref({ current_page: 1, last_page: 1, per_page: 25, total: 0 });
+const meta = ref({ current_page: 1, last_page: 1, per_page: LIST_PAGE_SIZE_DEFAULT, total: 0 });
 const directoryStats = ref({
   open: 0,
   contacted: 0,
@@ -67,7 +69,7 @@ const query = ref({
   follow_up_days: "all",
   email_template_id: "all",
   page: 1,
-  per_page: 25,
+  per_page: LIST_PAGE_SIZE_DEFAULT,
   sort_by: "follow_up_at",
   sort_dir: "asc",
 });
@@ -361,7 +363,7 @@ async function fetchRows() {
     meta.value = {
       current_page: Number(data?.current_page || 1),
       last_page: Number(data?.last_page || 1),
-      per_page: Number(data?.per_page || 25),
+      per_page: Number(data?.per_page || LIST_PAGE_SIZE_DEFAULT),
       total: Number(data?.total || 0),
     };
     const visible = new Set(rows.value.map((r) => r.id));
@@ -674,6 +676,20 @@ watch(
     fetchRows();
   },
 );
+
+function goPage(page) {
+  if (page < 1 || page > meta.value.last_page || page === query.value.page) return;
+  query.value.page = page;
+}
+
+function onPerPageChange(size) {
+  query.value.per_page = Number(size) || LIST_PAGE_SIZE_DEFAULT;
+  if (query.value.page !== 1) {
+    query.value.page = 1;
+    return;
+  }
+  fetchRows();
+}
 
 onMounted(async () => {
   document.addEventListener("click", onDocClick);
@@ -1336,32 +1352,16 @@ onUnmounted(() => {
         </template>
       </div>
 
-      <div
-        v-if="meta.last_page > 1"
-        class="staff-table-footer card-footer d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-2"
-      >
-        <span class="small text-secondary">
-          Page {{ meta.current_page }} of {{ meta.last_page }} ({{ meta.total }} total)
-        </span>
-        <div class="btn-group btn-group-sm ms-sm-auto">
-          <button
-            type="button"
-            class="btn btn-outline-secondary"
-            :disabled="meta.current_page <= 1 || loading"
-            @click="query.page = meta.current_page - 1"
-          >
-            Previous
-          </button>
-          <button
-            type="button"
-            class="btn btn-outline-secondary"
-            :disabled="meta.current_page >= meta.last_page || loading"
-            @click="query.page = meta.current_page + 1"
-          >
-            Next
-          </button>
-        </div>
-      </div>
+      <CrmListTableFooter
+        :total="meta.total"
+        :current-page="meta.current_page"
+        :last-page="meta.last_page"
+        :per-page="query.per_page"
+        :loading="loading"
+        noun="leads"
+        @page="goPage"
+        @per-page="onPerPageChange"
+      />
     </div>
 
     <Teleport to="body">

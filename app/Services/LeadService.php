@@ -74,12 +74,10 @@ class LeadService
      */
     public function paginate(array $filters): LengthAwarePaginator
     {
+        $allowedPageSizes = [25, 50, 100, 250, 500, 1000];
         $perPage = (int) ($filters['per_page'] ?? 25);
-        if ($perPage < 1) {
+        if (! in_array($perPage, $allowedPageSizes, true)) {
             $perPage = 25;
-        }
-        if ($perPage > 100) {
-            $perPage = 100;
         }
 
         $query = $this->filteredQuery($filters)

@@ -1,0 +1,12 @@
+---
+description: CRM list pages must use the shared pager and page sizes
+alwaysApply: true
+---
+
+# List page navigation
+
+Every CRM list page uses `CrmListTableFooter` (Showing X to Y of Z, page tiles, previous/next).
+
+Page size options are **25, 50, 100, 250, 500, 1000**, default 25. Use `LIST_PAGE_SIZE_OPTIONS` and `LIST_PAGE_SIZE_DEFAULT` from `resources/crm/constants/pagination.js`. Do not hardcode a 25-only page size or a Previous/Next-only footer.
+
+The list API must accept those same sizes and must not cap below 1000.

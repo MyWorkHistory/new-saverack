@@ -757,28 +757,6 @@ onMounted(load);
           </dl>
         </div>
 
-        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-          <h3 class="h6 fw-semibold mb-3">Return Comment</h3>
-          <p class="small text-secondary mb-2">Visible to account users</p>
-          <textarea
-            id="admin-return-detail-comment"
-            v-model="returnCommentDraft"
-            class="form-control form-control-sm mb-3"
-            rows="4"
-            maxlength="20000"
-            placeholder="Optional return comment"
-            :disabled="returnCommentBusy"
-          />
-          <button
-            type="button"
-            class="btn btn-primary btn-sm staff-page-primary fw-semibold w-100"
-            :disabled="returnCommentBusy || !returnCommentDirty"
-            @click="saveReturnComment"
-          >
-            {{ returnCommentBusy ? "Saving…" : "Save Comment" }}
-          </button>
-        </div>
-
         <div v-if="ret.warehouse_private_note" class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Private Note</h3>
           <p class="small mb-0 text-secondary" style="white-space: pre-wrap">{{ ret.warehouse_private_note }}</p>
@@ -808,6 +786,28 @@ onMounted(load);
           :return-bill-id="ret.return_bill_id"
           @update:fees="returnFees = $event"
         />
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">Return Comment</h3>
+          <p class="small text-secondary mb-2">Visible to account users</p>
+          <textarea
+            id="admin-return-detail-comment"
+            v-model="returnCommentDraft"
+            class="form-control form-control-sm mb-3"
+            rows="4"
+            maxlength="20000"
+            placeholder="Optional return comment"
+            :disabled="returnCommentBusy"
+          />
+          <button
+            type="button"
+            class="btn btn-primary btn-sm staff-page-primary fw-semibold w-100"
+            :disabled="returnCommentBusy || !returnCommentDirty"
+            @click="saveReturnComment"
+          >
+            {{ returnCommentBusy ? "Saving…" : "Save Comment" }}
+          </button>
+        </div>
       </div>
     </div>
 

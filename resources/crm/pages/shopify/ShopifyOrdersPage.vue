@@ -1458,8 +1458,8 @@ onUnmounted(() => {
 }
 
 .shopify-order-status--shipped {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: #ecfdf5;
+  color: #047857;
 }
 
 .shopify-order-status--cancelled {

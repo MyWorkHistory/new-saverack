@@ -43,11 +43,11 @@ async function onFilesSelected(event) {
       latest = data;
       localFiles.value = Array.isArray(data?.files) ? [...data.files] : localFiles.value;
     }
-    toast.success(files.length === 1 ? "File uploaded." : "Files uploaded.");
+    toast.success(files.length === 1 ? "Photo uploaded." : "Photos uploaded.");
     if (latest) emit("updated", latest);
   } catch (err) {
-    uploadError.value = err?.response?.data?.message || "Could not upload file.";
-    toast.errorFrom(err, "Could not upload file.");
+    uploadError.value = err?.response?.data?.message || "Could not upload photo.";
+    toast.errorFrom(err, "Could not upload photo.");
   } finally {
     uploading.value = false;
   }
@@ -64,10 +64,10 @@ async function deleteFile(file) {
   try {
     const { data } = await api.delete(`/admin/returns/${props.returnId}/attachments/${file.id}`);
     localFiles.value = Array.isArray(data?.files) ? [...data.files] : localFiles.value.filter((f) => f.id !== file.id);
-    toast.success("File deleted.");
+    toast.success("Photo deleted.");
     emit("updated", data);
   } catch (err) {
-    toast.errorFrom(err, "Could not delete file.");
+    toast.errorFrom(err, "Could not delete photo.");
   }
 }
 </script>
@@ -86,7 +86,7 @@ async function deleteFile(file) {
         </svg>
       </span>
       <div class="min-w-0">
-        <h3 class="h6 fw-semibold mb-0">Files</h3>
+        <h3 class="h6 fw-semibold mb-0">Photo</h3>
         <p class="small text-secondary mb-0">Staff-only image uploads</p>
       </div>
     </div>
@@ -114,10 +114,10 @@ async function deleteFile(file) {
         </button>
       </li>
     </ul>
-    <p v-else class="text-secondary small border-bottom pb-3 mb-0">No files yet.</p>
+    <p v-else class="text-secondary small border-bottom pb-3 mb-0">No photos yet.</p>
 
     <div v-if="canUpload" class="pt-3">
-      <label class="form-label small text-secondary" for="return-upload-files">Upload Images</label>
+      <label class="form-label small text-secondary" for="return-upload-files">Upload Photo</label>
       <input
         id="return-upload-files"
         ref="fileInput"

@@ -134,10 +134,10 @@ function openItem(line) {
 }
 
 function lineStatusClass(status) {
-  if (status === "cancelled") return "so-line-status so-line-status--cancelled";
-  if (status === "fulfilled") return "so-line-status so-line-status--fulfilled";
-  if (status === "backorder") return "so-line-status so-line-status--backorder";
-  return "so-line-status so-line-status--pending";
+  if (status === "cancelled") return "so-line-status--cancelled";
+  if (status === "fulfilled") return "so-line-status--fulfilled";
+  if (status === "backorder") return "so-line-status--backorder";
+  return "so-line-status--pending";
 }
 
 function lineStatusLabel(status) {
@@ -569,21 +569,25 @@ onUnmounted(() => {
                     </td>
                     <td>{{ line.quantity }}</td>
                     <td>{{ line.location || "—" }}</td>
-                    <td>
+                    <td class="so-line-status-cell">
                       <div class="so-line-status-menu" data-line-status-menu>
                         <button
                           type="button"
-                          class="so-line-status-btn"
+                          class="so-line-status so-line-status-btn"
                           :class="lineStatusClass(line.line_status)"
                           :aria-expanded="lineStatusMenuId === line.id ? 'true' : 'false'"
                           @click.stop="toggleLineStatusMenu(line)"
                         >
                           {{ lineStatusLabel(line.line_status) }}
+                          <svg class="so-line-status-btn__chevron" width="10" height="10" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <path d="M5.25 7.5L10 12.25 14.75 7.5" />
+                          </svg>
                         </button>
                         <div
                           v-if="lineStatusMenuId === line.id"
                           class="so-line-status-menu__panel"
                           role="menu"
+                          @click.stop
                         >
                           <button type="button" class="so-line-status-menu__item" role="menuitem" @click="setLineStatus(line, 'cancelled')">Cancel</button>
                           <button type="button" class="so-line-status-menu__item" role="menuitem" @click="setLineStatus(line, 'backorder')">Backorder</button>
@@ -807,8 +811,8 @@ onUnmounted(() => {
   cursor: pointer;
 }
 .so-status-pill.shopify-order-status--ready {
-  background: #d1fae5;
-  color: #047857;
+  background: #dcfce7;
+  color: #166534;
 }
 .so-status-pill.shopify-order-status--draft {
   background: #f1f5f9;
@@ -819,12 +823,12 @@ onUnmounted(() => {
   color: #c2410c;
 }
 .so-status-pill.shopify-order-status--backorder {
-  background: #e0e7ff;
-  color: #4338ca;
+  background: #eef2ff;
+  color: #3730a3;
 }
 .so-status-pill.shopify-order-status--shipped {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: #ecfdf5;
+  color: #047857;
 }
 .so-status-pill.shopify-order-status--cancelled {
   background: #fee2e2;
@@ -900,7 +904,7 @@ onUnmounted(() => {
 .so-card--items {
   background: #fff;
   padding: 1.15rem 0 0;
-  overflow: hidden;
+  overflow: visible;
 }
 .so-card--items .so-card__title {
   padding: 0 1.25rem;
@@ -908,6 +912,7 @@ onUnmounted(() => {
 }
 .so-items-wrap {
   background: #fff;
+  overflow: visible !important;
 }
 .so-items-table {
   --bs-table-bg: #fff;
@@ -958,25 +963,35 @@ onUnmounted(() => {
 }
 .so-item-thumb--empty { border: 1px solid #e5e7eb; }
 .so-line-status {
-  display: inline-block;
-  padding: 0.22rem 0.6rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.22rem 0.55rem;
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
 }
+.so-line-status-cell {
+  position: relative;
+  overflow: visible;
+}
 .so-line-status-btn {
   border: 0;
   cursor: pointer;
+}
+.so-line-status-btn__chevron {
+  opacity: 0.75;
+  flex-shrink: 0;
 }
 .so-line-status-btn:hover { filter: brightness(0.97); }
 .so-line-status--pending { background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
 .so-line-status--cancelled { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
 .so-line-status--fulfilled { background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; }
 .so-line-status--backorder { background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe; }
-.so-line-status-menu { position: relative; display: inline-block; }
+.so-line-status-menu { position: relative; display: inline-block; z-index: 5; }
 .so-line-status-menu__panel {
   position: absolute;
-  z-index: 20;
+  z-index: 40;
   top: calc(100% + 0.25rem);
   left: 0;
   min-width: 9.5rem;

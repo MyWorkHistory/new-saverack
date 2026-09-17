@@ -433,19 +433,6 @@ onMounted(() => {
         </div>
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
-          <h3 class="h6 fw-semibold mb-3">Return Comment</h3>
-          <p class="small text-secondary mb-2">Visible to account users</p>
-          <textarea
-            id="return-comment"
-            v-model="returnComment"
-            class="form-control form-control-sm mb-0"
-            rows="4"
-            maxlength="20000"
-            placeholder="Optional return comment"
-          />
-        </div>
-
-        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Private Note</h3>
           <p class="small text-secondary mb-2">Private note to warehouse only</p>
           <textarea
@@ -472,6 +459,19 @@ onMounted(() => {
           :editable="true"
           @update:fees="returnFees = $event"
         />
+
+        <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
+          <h3 class="h6 fw-semibold mb-3">Return Comment</h3>
+          <p class="small text-secondary mb-2">Visible to account users</p>
+          <textarea
+            id="return-comment"
+            v-model="returnComment"
+            class="form-control form-control-sm mb-0"
+            rows="4"
+            maxlength="20000"
+            placeholder="Optional return comment"
+          />
+        </div>
       </div>
     </div>
   </div>

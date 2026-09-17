@@ -45,6 +45,9 @@ const q = ref("");
 const appliedQ = ref("");
 const category = ref("");
 const type = ref("");
+const draftCategory = ref("");
+const draftType = ref("");
+const filterMenuOpen = ref(false);
 const addOpen = ref(false);
 const deleteOpen = ref(false);
 const deleteTarget = ref(null);
@@ -62,8 +65,8 @@ const allSelected = computed(
 );
 const bulkTypeOptions = computed(() => TYPES[bulkForm.category] || TYPES.packaging);
 
-const typeOptions = computed(() => {
-  if (category.value && TYPES[category.value]) return TYPES[category.value];
+const draftTypeOptions = computed(() => {
+  if (draftCategory.value && TYPES[draftCategory.value]) return TYPES[draftCategory.value];
   return [...TYPES.packaging, ...TYPES.packaging_materials];
 });
 
@@ -108,6 +111,9 @@ function onDocClick(e) {
     manageOpenId.value = null;
     manageMenuRow.value = null;
   }
+  if (!e.target?.closest?.("[data-packaging-filters]")) {
+    filterMenuOpen.value = false;
+  }
 }
 
 function commitSearch() {
@@ -115,9 +121,24 @@ function commitSearch() {
   load(1);
 }
 
-function onCategoryChange() {
-  const allowed = typeOptions.value.map((opt) => opt.value);
-  if (type.value && !allowed.includes(type.value)) type.value = "";
+function onDraftCategoryChange() {
+  const allowed = draftTypeOptions.value.map((opt) => opt.value);
+  if (draftType.value && !allowed.includes(draftType.value)) draftType.value = "";
+}
+
+function applyFilters() {
+  category.value = draftCategory.value;
+  type.value = draftType.value;
+  filterMenuOpen.value = false;
+  load(1);
+}
+
+function resetFilters() {
+  draftCategory.value = "";
+  draftType.value = "";
+  category.value = "";
+  type.value = "";
+  filterMenuOpen.value = false;
   load(1);
 }
 
@@ -341,37 +362,58 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <select
-            v-model="category"
-            class="form-select sip-account-select"
-            aria-label="Filter by category"
-            :disabled="loading"
-            @change="onCategoryChange"
-          >
-            <option value="">All Categories</option>
-            <option v-for="opt in CATEGORIES" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-          </select>
-
-          <select
-            v-model="type"
-            class="form-select sip-account-select"
-            aria-label="Filter by type"
-            :disabled="loading"
-            @change="load(1)"
-          >
-            <option value="">All Types</option>
-            <template v-if="category">
-              <option v-for="opt in typeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-            </template>
-            <template v-else>
-              <optgroup label="Packaging">
-                <option v-for="opt in TYPES.packaging" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-              </optgroup>
-              <optgroup label="Packaging Materials">
-                <option v-for="opt in TYPES.packaging_materials" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-              </optgroup>
-            </template>
-          </select>
+          <div class="position-relative flex-shrink-0" data-packaging-filters>
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+              :aria-expanded="filterMenuOpen"
+              :disabled="loading"
+              @click.stop="filterMenuOpen = !filterMenuOpen"
+            >
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 5h18M6 12h12M10 19h4" />
+              </svg>
+              Filters
+            </button>
+            <div
+              v-if="filterMenuOpen"
+              class="dropdown-menu show shadow border p-0 staff-toolbar-filter-dropdown"
+              style="position: absolute; top: calc(100% + 0.25rem); left: 0; z-index: 1090"
+              @click.stop
+            >
+              <div class="staff-toolbar-filter-dropdown__head">
+                <span>Filters</span>
+                <button type="button" class="btn btn-link btn-sm staff-bulk-clear-link text-decoration-none p-0" @click="resetFilters">
+                  Reset
+                </button>
+              </div>
+              <div class="staff-toolbar-filter-dropdown__body">
+                <label class="form-label" for="pkg-filter-category">Category</label>
+                <select id="pkg-filter-category" v-model="draftCategory" class="form-select mb-3" @change="onDraftCategoryChange">
+                  <option value="">All Categories</option>
+                  <option v-for="opt in CATEGORIES" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                </select>
+                <label class="form-label" for="pkg-filter-type">Type</label>
+                <select id="pkg-filter-type" v-model="draftType" class="form-select mb-3">
+                  <option value="">All Types</option>
+                  <template v-if="draftCategory">
+                    <option v-for="opt in draftTypeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                  </template>
+                  <template v-else>
+                    <optgroup label="Packaging">
+                      <option v-for="opt in TYPES.packaging" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                    </optgroup>
+                    <optgroup label="Packaging Materials">
+                      <option v-for="opt in TYPES.packaging_materials" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                    </optgroup>
+                  </template>
+                </select>
+                <button type="button" class="btn btn-primary staff-page-primary w-100 fw-semibold" @click="applyFilters">
+                  Apply Filters
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

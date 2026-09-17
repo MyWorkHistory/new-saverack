@@ -1,12 +1,17 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
+import ShopifyLocationTransferModal from "../../components/shopify/ShopifyLocationTransferModal.vue";
 import ShopifyPackagingFormModal from "../../components/shopify/ShopifyPackagingFormModal.vue";
+import ShopifyProductLocationEditQtyModal from "../../components/shopify/ShopifyProductLocationEditQtyModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast";
+import { openApiPdfBlob } from "../../utils/openApiPdfBlob.js";
 import { formatCents } from "../../utils/formatMoney.js";
 
 const route = useRoute();
@@ -21,6 +26,57 @@ const removeIconOpen = ref(false);
 const item = ref(null);
 const imageInput = ref(null);
 const form = ref(emptyForm());
+const printBusy = ref(false);
+const actionsOpen = ref(false);
+const deleteOpen = ref(false);
+const deleteBusy = ref(false);
+const locBusy = ref(false);
+const addOpen = ref(false);
+const addBusy = ref(false);
+const locationOptions = ref([]);
+const addForm = ref({ location_id: "", available: 1, reason: "" });
+const expandedLocationGroup = ref(null);
+const locMenuOpenKey = ref(null);
+const locMenuRect = ref({ top: 0, left: 0 });
+const activeLocRow = ref(null);
+const transferOpen = ref(false);
+const transferToId = ref("");
+const transferQty = ref("1");
+const transferReason = ref("");
+const destLocations = ref([]);
+const locQtyOpen = ref(false);
+const locQtyValue = ref("");
+const locQtyReason = ref("");
+
+const defaultLocationGroups = () => [
+  { key: "pick", label: "Pick Locations", icon: "cart", count: 0, locations: [] },
+  { key: "backstock", label: "Backstock Locations", icon: "cube", count: 0, locations: [] },
+  { key: "other", label: "Other Locations", icon: "bag", count: 0, locations: [] },
+];
+
+const locationGroups = computed(() => {
+  const groups = Array.isArray(item.value?.location_groups) ? item.value.location_groups : [];
+  if (!groups.length) return defaultLocationGroups();
+  const iconByKey = { pick: "cart", backstock: "cube", other: "bag" };
+  return groups.map((group) => ({
+    key: group.key,
+    label: group.label,
+    icon: iconByKey[group.key] || "bag",
+    count: Number(group.count || 0),
+    locations: Array.isArray(group.locations) ? group.locations : [],
+  }));
+});
+const addItemReasons = computed(() => (Array.isArray(item.value?.add_item_reasons) ? item.value.add_item_reasons : []));
+const locMenuRow = computed(() => {
+  const key = locMenuOpenKey.value;
+  if (!key) return null;
+  for (const group of locationGroups.value) {
+    const found = (group.locations || []).find((loc) => locRowKey(loc) === key);
+    if (found) return found;
+  }
+  return null;
+});
+const totalOnHand = computed(() => Number(item.value?.total_on_hand ?? item.value?.on_hand ?? 0));
 
 const cubicFeetLabel = computed(() => {
   const n = item.value?.cubic_ft;
@@ -97,6 +153,7 @@ function openEdit() {
     width: fieldOrEmpty(item.value.width),
     height: fieldOrEmpty(item.value.height),
     weight: fieldOrEmpty(item.value.weight),
+    link_url: item.value.link_url || "",
   };
   editOpen.value = true;
 }
@@ -154,6 +211,7 @@ async function removeIcon() {
       width: item.value.width,
       height: item.value.height,
       weight: item.value.weight,
+      link_url: item.value.link_url,
       remove_image: true,
     });
     item.value = data?.item || item.value;
@@ -166,7 +224,195 @@ async function removeIcon() {
   }
 }
 
-onMounted(load);
+function onDocClick(e) {
+  if (!e.target?.closest?.("[data-packaging-actions]")) actionsOpen.value = false;
+  if (!e.target?.closest?.("[data-sid-loc-row-actions]")) locMenuOpenKey.value = null;
+}
+
+function locRowKey(loc) {
+  return String(loc?.item_id || `${loc?.location_id || ""}-${loc?.name || ""}`);
+}
+
+function toggleLocationGroup(key) {
+  expandedLocationGroup.value = expandedLocationGroup.value === key ? null : key;
+}
+
+async function printBarcode() {
+  if (!item.value?.id || printBusy.value) return;
+  if (!String(item.value.sku || "").trim()) {
+    toast.error("Add a SKU before printing a label.");
+    return;
+  }
+  printBusy.value = true;
+  try {
+    await openApiPdfBlob(api, `/shopify/packaging/${item.value.id}/barcode-label.pdf`);
+  } catch (e) {
+    toast.errorFrom(e, "Could not print barcode.");
+  } finally {
+    printBusy.value = false;
+  }
+}
+
+async function confirmDelete() {
+  if (!item.value?.id) return;
+  deleteBusy.value = true;
+  try {
+    await api.delete(`/shopify/packaging/${item.value.id}`);
+    toast.success("Packaging deleted.");
+    router.push({ name: "shopify-packaging" });
+  } catch (e) {
+    toast.errorFrom(e, "Could not delete packaging.");
+  } finally {
+    deleteBusy.value = false;
+  }
+}
+
+async function openAddLocation() {
+  addForm.value = {
+    location_id: "",
+    available: 1,
+    reason: addItemReasons.value[0] || "",
+  };
+  addOpen.value = true;
+  try {
+    const { data } = await api.get("/shopify/locations/options");
+    locationOptions.value = Array.isArray(data?.data) ? data.data : [];
+  } catch (e) {
+    locationOptions.value = [];
+    toast.errorFrom(e, "Could not load locations.");
+  }
+}
+
+async function saveAddLocation() {
+  if (!item.value?.id) return;
+  if (!addForm.value.location_id) {
+    toast.error("Select a location.");
+    return;
+  }
+  if (!addForm.value.reason) {
+    toast.error("Select a reason.");
+    return;
+  }
+  addBusy.value = true;
+  try {
+    const { data } = await api.post(`/shopify/packaging/${item.value.id}/locations`, {
+      location_id: Number(addForm.value.location_id),
+      available: Math.max(1, Number(addForm.value.available) || 1),
+      reason: addForm.value.reason,
+    });
+    item.value = data?.item || item.value;
+    addOpen.value = false;
+    toast.success("Inventory added.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not add inventory.");
+  } finally {
+    addBusy.value = false;
+  }
+}
+
+function placeLocMenu(btn) {
+  if (!(btn instanceof HTMLElement)) return;
+  const r = btn.getBoundingClientRect();
+  let top = r.bottom + 4;
+  let left = r.right - 160;
+  left = Math.max(8, Math.min(left, window.innerWidth - 168));
+  if (top + 88 > window.innerHeight - 8) top = Math.max(8, r.top - 92);
+  locMenuRect.value = { top, left };
+}
+
+async function toggleLocMenu(loc, e) {
+  e?.stopPropagation?.();
+  const key = locRowKey(loc);
+  if (locMenuOpenKey.value === key) {
+    locMenuOpenKey.value = null;
+    return;
+  }
+  const btn = e?.currentTarget;
+  locMenuOpenKey.value = key;
+  await nextTick();
+  requestAnimationFrame(() => {
+    if (btn instanceof HTMLElement) placeLocMenu(btn);
+  });
+}
+
+async function openLocTransfer(loc) {
+  activeLocRow.value = loc;
+  transferToId.value = "";
+  transferQty.value = "1";
+  transferReason.value = addItemReasons.value.includes("Restock") ? "Restock" : (addItemReasons.value[0] || "");
+  locMenuOpenKey.value = null;
+  try {
+    const { data } = await api.get("/shopify/locations/options", { params: { exclude: loc.location_id } });
+    destLocations.value = Array.isArray(data?.data) ? data.data : [];
+  } catch (e) {
+    destLocations.value = [];
+    toast.errorFrom(e, "Could not load destination locations.");
+  }
+  transferOpen.value = true;
+}
+
+async function submitLocTransfer() {
+  if (!item.value?.id || !activeLocRow.value) return;
+  const qty = Number(transferQty.value || 0);
+  if (!transferToId.value) {
+    toast.error("Select a destination location.");
+    return;
+  }
+  if (!qty || qty < 1) {
+    toast.error("Enter a quantity to transfer.");
+    return;
+  }
+  locBusy.value = true;
+  try {
+    const { data } = await api.post(`/shopify/packaging/${item.value.id}/locations/${activeLocRow.value.item_id}/transfer`, {
+      to_location_id: Number(transferToId.value),
+      quantity: qty,
+      reason: transferReason.value,
+    });
+    item.value = data?.item || item.value;
+    transferOpen.value = false;
+    toast.success("Inventory transferred.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not transfer inventory.");
+  } finally {
+    locBusy.value = false;
+  }
+}
+
+function openLocQtyEdit(loc) {
+  activeLocRow.value = loc;
+  locQtyValue.value = String(loc?.available ?? 0);
+  locQtyReason.value = addItemReasons.value[0] || "";
+  locMenuOpenKey.value = null;
+  locQtyOpen.value = true;
+}
+
+async function saveLocQty() {
+  if (!item.value?.id || !activeLocRow.value) return;
+  locBusy.value = true;
+  try {
+    const { data } = await api.patch(`/shopify/packaging/${item.value.id}/locations/${activeLocRow.value.item_id}`, {
+      available: Math.max(0, Number(locQtyValue.value) || 0),
+      reason: locQtyReason.value,
+    });
+    item.value = data?.item || item.value;
+    locQtyOpen.value = false;
+    toast.success("Quantity updated.");
+  } catch (e) {
+    toast.errorFrom(e, "Could not update quantity.");
+  } finally {
+    locBusy.value = false;
+  }
+}
+
+onMounted(() => {
+  document.addEventListener("click", onDocClick);
+  load();
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", onDocClick);
+});
 </script>
 
 <template>
@@ -193,6 +439,19 @@ onMounted(load);
           </svg>
           Back to Packaging
         </button>
+        <div class="sid-header__actions">
+          <button type="button" class="staff-outline-action-btn" :disabled="printBusy" @click="printBarcode">
+            {{ printBusy ? "Generating Label…" : "Print Barcode" }}
+          </button>
+          <div class="position-relative" data-packaging-actions>
+            <button type="button" class="staff-outline-action-btn" :aria-expanded="actionsOpen" @click.stop="actionsOpen = !actionsOpen">
+              Actions
+            </button>
+            <div v-if="actionsOpen" class="dropdown-menu show shadow border py-1" style="position: absolute; top: calc(100% + 0.25rem); right: 0; z-index: 20; min-width: 10rem">
+              <button type="button" class="dropdown-item text-danger" @click="actionsOpen = false; deleteOpen = true">Delete</button>
+            </div>
+          </div>
+        </div>
       </header>
 
       <div class="sid-grid">
@@ -224,12 +483,21 @@ onMounted(load);
                 >
                   Remove Icon
                 </button>
-                <input ref="imageInput" type="file" accept="image/*" class="d-none" @change="onImageSelected" />
+                <input ref="imageInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/avif,.avif" class="d-none" @change="onImageSelected" />
               </div>
 
               <div class="sid-product__info">
                 <div class="sid-product__title-row">
-                  <h1 class="sid-product__title">{{ item.name || "Packaging" }}</h1>
+                  <h1 class="sid-product__title">
+                    <a
+                      v-if="item.link_url"
+                      class="sid-account-link"
+                      :href="item.link_url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >{{ item.name || "Packaging" }}</a>
+                    <template v-else>{{ item.name || "Packaging" }}</template>
+                  </h1>
                   <button type="button" class="staff-outline-action-btn staff-outline-action-btn--sm" @click="openEdit">
                     <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
@@ -343,7 +611,69 @@ onMounted(load);
                 </span>
                 <div>
                   <div class="sid-field__label">Total On Hand</div>
-                  <div class="sid-onhand__value">{{ Number(item.on_hand || 0).toLocaleString("en-US") }}</div>
+                  <div class="sid-onhand__value">{{ totalOnHand.toLocaleString("en-US") }}</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="staff-outline-action-btn sid-onhand__log"
+                @click="router.push({ name: 'shopify-packaging-log', params: { id: String(item.id) } })"
+              >
+                Inventory Log
+              </button>
+            </div>
+          </section>
+
+          <section class="sid-card">
+            <div class="sid-card__head">
+              <div>
+                <div class="sid-card__head-title">
+                  <h2>Locations</h2>
+                </div>
+                <p class="sid-card__sub">Manage inventory by location.</p>
+              </div>
+              <button type="button" class="btn btn-primary staff-page-primary btn-sm fw-semibold" @click="openAddLocation">
+                Add Inventory
+              </button>
+            </div>
+            <div class="sid-locs">
+              <div
+                v-for="group in locationGroups"
+                :key="group.key"
+                class="sid-loc-wrap"
+                :class="{ 'sid-loc-wrap--open': expandedLocationGroup === group.key && group.locations.length }"
+              >
+                <button
+                  type="button"
+                  class="sid-loc"
+                  :disabled="!group.locations.length"
+                  @click="group.locations.length && toggleLocationGroup(group.key)"
+                >
+                  <div class="sid-loc__body">
+                    <div class="sid-loc__title-row">
+                      <span class="sid-loc__title">{{ group.label }}</span>
+                      <span v-if="group.locations.length" class="sid-loc__badge">{{ Number(group.count || 0).toLocaleString("en-US") }}</span>
+                      <span v-if="group.locations.length" class="sid-loc__units">total units</span>
+                    </div>
+                  </div>
+                  <span v-if="!group.locations.length" class="sid-loc__empty-right">No locations</span>
+                </button>
+                <div v-if="expandedLocationGroup === group.key && group.locations.length" class="sid-loc__list">
+                  <div v-for="loc in group.locations" :key="locRowKey(loc)" class="sid-loc__item">
+                    <span class="sid-loc__item-name">{{ loc.name }}</span>
+                    <div class="sid-loc__item-right">
+                      <span class="sid-loc__item-qty">{{ Number(loc.available || 0).toLocaleString("en-US") }}</span>
+                      <button
+                        type="button"
+                        class="staff-action-btn staff-action-btn--more"
+                        data-sid-loc-row-actions
+                        aria-label="Location actions"
+                        @click="toggleLocMenu(loc, $event)"
+                      >
+                        <CrmIconRowActions variant="horizontal" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -370,6 +700,103 @@ onMounted(load);
         @close="removeIconOpen = false"
         @confirm="removeIcon"
       />
+
+      <ConfirmModal
+        :open="deleteOpen"
+        title="Delete Packaging?"
+        :message="item ? `Delete “${item.name}”? This cannot be undone.` : 'Delete this packaging?'"
+        confirm-label="Delete"
+        :busy="deleteBusy"
+        danger
+        @close="deleteOpen = false"
+        @confirm="confirmDelete"
+      />
+
+      <Teleport to="body">
+        <div v-if="addOpen" class="crm-vx-modal-overlay" @click.self="addBusy ? null : (addOpen = false)">
+          <div class="crm-vx-modal crm-vx-modal--sm" @click.stop>
+            <header class="crm-vx-modal__head" style="text-align: left">
+              <h2 class="crm-vx-modal__title">Add Inventory</h2>
+            </header>
+            <div class="crm-vx-modal__body" style="text-align: left">
+              <label class="form-label">Location</label>
+              <CrmSearchableSelect
+                v-model="addForm.location_id"
+                class="mb-3"
+                appearance="staff"
+                aria-label="Select Location"
+                :options="locationOptions"
+                :disabled="addBusy"
+                :allow-empty="false"
+                placeholder="Select Location"
+                search-placeholder="Search locations…"
+                teleport-panel
+              />
+              <label class="form-label" for="pkg-add-qty">QTY</label>
+              <input id="pkg-add-qty" v-model.number="addForm.available" type="number" min="1" class="form-control mb-3" :disabled="addBusy" />
+              <label class="form-label" for="pkg-add-reason">Reason</label>
+              <select id="pkg-add-reason" v-model="addForm.reason" class="form-select" :disabled="addBusy">
+                <option v-for="reason in addItemReasons" :key="reason" :value="reason">{{ reason }}</option>
+              </select>
+            </div>
+            <footer class="crm-vx-modal__footer justify-content-end">
+              <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" :disabled="addBusy" @click="addOpen = false">Cancel</button>
+              <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--primary" :disabled="addBusy" @click="saveAddLocation">
+                {{ addBusy ? "Saving…" : "Add Inventory" }}
+              </button>
+            </footer>
+          </div>
+        </div>
+      </Teleport>
+
+      <ShopifyLocationTransferModal
+        :open="transferOpen"
+        :busy="locBusy"
+        :product-title="item?.name || ''"
+        :sku="item?.sku || ''"
+        :image-url="item?.image_url || ''"
+        :from-name="activeLocRow?.name || ''"
+        :available="Number(activeLocRow?.available || 0)"
+        :to-location-id="transferToId"
+        :quantity="transferQty"
+        :reason="transferReason"
+        :locations="destLocations"
+        :reasons="addItemReasons"
+        @close="transferOpen = false"
+        @submit="submitLocTransfer"
+        @all="transferQty = String(activeLocRow?.available || 0)"
+        @update:to-location-id="transferToId = $event"
+        @update:quantity="transferQty = $event"
+        @update:reason="transferReason = $event"
+      />
+
+      <ShopifyProductLocationEditQtyModal
+        :open="locQtyOpen"
+        :busy="locBusy"
+        :location-name="activeLocRow?.name || ''"
+        :current-qty="Number(activeLocRow?.available || 0)"
+        :quantity="locQtyValue"
+        :reason="locQtyReason"
+        :reasons="addItemReasons"
+        @close="locQtyOpen = false"
+        @submit="saveLocQty"
+        @update:quantity="locQtyValue = $event"
+        @update:reason="locQtyReason = $event"
+      />
+
+      <Teleport to="body">
+        <div
+          v-if="locMenuRow"
+          data-sid-loc-row-actions
+          class="staff-row-menu fixed z-[300] overflow-hidden"
+          role="menu"
+          :style="{ top: `${locMenuRect.top}px`, left: `${locMenuRect.left}px` }"
+          @click.stop
+        >
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="openLocTransfer(locMenuRow)">Transfer</button>
+          <button type="button" class="staff-row-menu__item" role="menuitem" @click="openLocQtyEdit(locMenuRow)">Edit</button>
+        </div>
+      </Teleport>
     </template>
   </div>
 </template>
@@ -378,7 +805,14 @@ onMounted(load);
 .sid-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   margin-bottom: 1rem;
+}
+.sid-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 .sid-back {
   display: inline-flex;
@@ -497,6 +931,9 @@ onMounted(load);
   color: #111827;
   line-height: 1.25;
 }
+.sid-product__title .sid-account-link {
+  color: #2563eb;
+}
 .sid-field__sku,
 .sid-money__value,
 .sid-meta__value {
@@ -552,6 +989,9 @@ onMounted(load);
   color: #111827;
 }
 .sid-onhand--solo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   border-bottom: 0;
   margin-bottom: 0;
   padding-bottom: 0;
@@ -590,5 +1030,100 @@ onMounted(load);
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+.sid-account-link {
+  color: #2563eb;
+  text-decoration: none;
+}
+.sid-account-link:hover {
+  text-decoration: underline;
+}
+.sid-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.sid-card__head-title h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.sid-card__sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+.sid-loc {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.85rem 0.15rem;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.sid-loc:disabled {
+  cursor: default;
+}
+.sid-loc-wrap {
+  border-top: 1px solid #eef2f7;
+}
+.sid-loc-wrap:first-child {
+  border-top: 0;
+}
+.sid-loc__body {
+  flex: 1;
+  min-width: 0;
+}
+.sid-loc__title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.sid-loc__title {
+  font-weight: 700;
+}
+.sid-loc__badge {
+  min-width: 1.45rem;
+  height: 1.45rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sid-loc__units,
+.sid-loc__empty-right {
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+.sid-loc__empty-right {
+  margin-left: auto;
+}
+.sid-loc__list {
+  padding: 0 0 0.75rem 0.25rem;
+}
+.sid-loc__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0;
+}
+.sid-loc__item-name,
+.sid-loc__item-qty {
+  font-weight: 600;
+}
+.sid-loc__item-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 </style>

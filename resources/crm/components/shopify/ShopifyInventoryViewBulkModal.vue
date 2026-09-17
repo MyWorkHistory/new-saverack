@@ -57,11 +57,8 @@ function filterOptions(rows, query) {
   return rows.filter((row) => `${row.type_label || ""} ${row.name || ""}`.toLowerCase().includes(q));
 }
 
-function optionLabel(row, withType) {
+function optionLabel(row) {
   if (!row) return "";
-  if (withType && row.type_label && row.name && row.type_label !== row.name) {
-    return `${row.type_label}: ${row.name}`;
-  }
   return row.name || row.type_label || "Packaging";
 }
 
@@ -219,7 +216,7 @@ function onSave() {
             <select v-model="form.packaging_item_id" class="form-select mb-3" aria-label="Packaging" :disabled="busy || loading">
               <option value="">None</option>
               <option v-for="row in filteredPackaging" :key="row.id" :value="String(row.id)">
-                {{ optionLabel(row, true) }}
+                {{ optionLabel(row) }}
               </option>
             </select>
             <label class="form-label" for="sip-bulk-mat-search">Packaging Materials</label>
@@ -234,7 +231,7 @@ function onSave() {
             <select v-model="form.packaging_material_item_id" class="form-select" aria-label="Packaging Materials" :disabled="busy || loading">
               <option value="">None</option>
               <option v-for="row in filteredMaterials" :key="row.id" :value="String(row.id)">
-                {{ optionLabel(row, false) }}
+                {{ optionLabel(row) }}
               </option>
             </select>
           </template>

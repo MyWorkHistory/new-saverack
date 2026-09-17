@@ -783,6 +783,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/packaging', [ShopifyPackagingController::class, 'index']);
         Route::post('/packaging', [ShopifyPackagingController::class, 'store']);
         Route::post('/packaging/bulk', [ShopifyPackagingController::class, 'bulkUpdate']);
+        Route::get('/packaging/{packaging}/logs', [ShopifyPackagingController::class, 'logs']);
+        Route::get('/packaging/{packaging}/barcode-label.pdf', [ShopifyPackagingController::class, 'barcodeLabelPdf']);
+        Route::post('/packaging/{packaging}/locations', [ShopifyPackagingController::class, 'assignLocation']);
+        Route::patch('/packaging/{packaging}/locations/{locationItem}', [ShopifyPackagingController::class, 'updateLocationQty']);
+        Route::post('/packaging/{packaging}/locations/{locationItem}/transfer', [ShopifyPackagingController::class, 'transferLocation']);
         Route::get('/packaging/{packaging}', [ShopifyPackagingController::class, 'show']);
         Route::patch('/packaging/{packaging}', [ShopifyPackagingController::class, 'update']);
         Route::delete('/packaging/{packaging}', [ShopifyPackagingController::class, 'destroy']);

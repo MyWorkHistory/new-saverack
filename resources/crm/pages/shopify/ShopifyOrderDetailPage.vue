@@ -116,7 +116,11 @@ function onDocClick(e) {
 
 function openItem(line) {
   if (line?.crm_variant_id) {
-    router.push({ name: "shopify-inventory-detail", params: { id: line.crm_variant_id } });
+    const href = router.resolve({
+      name: "shopify-inventory-detail",
+      params: { id: String(line.crm_variant_id) },
+    }).href;
+    window.open(href, "_blank", "noopener,noreferrer");
     return;
   }
   toast.error("Product is not in CRM inventory.");

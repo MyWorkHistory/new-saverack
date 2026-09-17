@@ -3,9 +3,18 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ShopifyPackagingInventoryLog;
 use App\Models\ShopifyPackagingItem;
+use App\Models\ShopifyPackagingLocationItem;
+use App\Models\ShopifyWarehouseLocation;
+use App\Services\ShopifyPackagingInventoryService;
+use App\Services\ShopifyWarehouseInventoryLogService;
+use App\Support\Barcode\QrCodeSvg;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -158,14 +167,16 @@ class ShopifyPackagingController extends Controller
         $this->assertAdmin($request);
 
         $validated = $request->validate([
-            'image' => ['required', 'file', 'image', 'max:5120'],
+            'image' => ['required', 'file', 'max:5120'],
         ]);
 
         /** @var \Illuminate\Http\UploadedFile $file */
         $file = $validated['image'];
-        $ext = strtolower($file->getClientOriginalExtension() ?: 'jpg');
-        if (! in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true)) {
-            $ext = 'jpg';
+        $ext = strtolower($file->getClientOriginalExtension() ?: '');
+        if (! in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'], true)) {
+            throw ValidationException::withMessages([
+                'image' => ['Upload a JPG, PNG, GIF, WEBP, or AVIF image.'],
+            ]);
         }
 
         $path = $file->storeAs('shopify/packaging', 'item-'.$packaging->id.'.'.$ext, 'public');
@@ -181,6 +192,261 @@ class ShopifyPackagingController extends Controller
             'message' => 'Icon updated.',
             'item' => $this->serialize($packaging->fresh()),
         ]);
+    }
+
+    public function assignLocation(
+        Request $request,
+        ShopifyPackagingItem $packaging,
+        ShopifyPackagingInventoryService $inventory
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $validated = $request->validate([
+            'location_id' => ['required', 'integer'],
+            'available' => ['required', 'integer', 'min:1'],
+            'reason' => ['required', 'string', Rule::in(ShopifyWarehouseLocation::addItemReasons())],
+        ]);
+        $inventory->assign(
+            $packaging,
+            (int) $validated['location_id'],
+            (int) $validated['available'],
+            (string) $validated['reason'],
+            $request->user()
+        );
+
+        return response()->json([
+            'message' => 'Inventory added.',
+            'item' => $this->serialize($packaging->fresh()),
+        ]);
+    }
+
+    public function updateLocationQty(
+        Request $request,
+        ShopifyPackagingItem $packaging,
+        ShopifyPackagingLocationItem $locationItem,
+        ShopifyPackagingInventoryService $inventory
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $validated = $request->validate([
+            'available' => ['required', 'integer', 'min:0'],
+            'reason' => ['required', 'string', Rule::in(ShopifyWarehouseLocation::addItemReasons())],
+        ]);
+        $inventory->updateQty(
+            $packaging,
+            $locationItem,
+            (int) $validated['available'],
+            (string) $validated['reason'],
+            $request->user()
+        );
+
+        return response()->json([
+            'message' => 'Quantity updated.',
+            'item' => $this->serialize($packaging->fresh()),
+        ]);
+    }
+
+    public function transferLocation(
+        Request $request,
+        ShopifyPackagingItem $packaging,
+        ShopifyPackagingLocationItem $locationItem,
+        ShopifyPackagingInventoryService $inventory
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $validated = $request->validate([
+            'to_location_id' => ['required', 'integer'],
+            'quantity' => ['required', 'integer', 'min:1'],
+            'reason' => ['required', 'string', Rule::in(ShopifyWarehouseLocation::addItemReasons())],
+        ]);
+        $inventory->transfer(
+            $packaging,
+            $locationItem,
+            (int) $validated['to_location_id'],
+            (int) $validated['quantity'],
+            (string) $validated['reason'],
+            $request->user()
+        );
+
+        return response()->json([
+            'message' => 'Inventory transferred.',
+            'item' => $this->serialize($packaging->fresh()),
+        ]);
+    }
+
+    public function logs(
+        Request $request,
+        ShopifyPackagingItem $packaging,
+        ShopifyWarehouseInventoryLogService $logService
+    ): JsonResponse {
+        $this->assertAdmin($request);
+        $perPage = max(10, min(100, (int) $request->query('per_page', 25)));
+        $q = trim((string) $request->query('q', ''));
+        $dateFrom = trim((string) $request->query('date_from', ''));
+        $dateTo = trim((string) $request->query('date_to', ''));
+        $changedBy = trim((string) $request->query('changed_by', ''));
+        $type = trim((string) $request->query('type', ''));
+        $sort = strtolower(trim((string) $request->query('sort', 'newest')));
+        $dir = $sort === 'oldest' ? 'asc' : 'desc';
+
+        $query = ShopifyPackagingInventoryLog::query()
+            ->with(['user:id,name'])
+            ->where('shopify_packaging_item_id', (int) $packaging->id);
+
+        if ($q !== '') {
+            $query->where('location_name', 'like', '%'.$q.'%');
+        }
+        if ($dateFrom !== '') {
+            try {
+                $query->where('created_at', '>=', Carbon::parse($dateFrom)->startOfDay());
+            } catch (\Throwable $e) {
+            }
+        }
+        if ($dateTo !== '') {
+            try {
+                $query->where('created_at', '<=', Carbon::parse($dateTo)->endOfDay());
+            } catch (\Throwable $e) {
+            }
+        }
+        if ($changedBy !== '') {
+            $query->whereHas('user', function ($builder) use ($changedBy) {
+                $builder->where('name', 'like', '%'.$changedBy.'%');
+            });
+        }
+        if ($type !== '' && strtolower($type) !== 'all') {
+            $query->where('type_label', $type);
+        }
+
+        $page = $query->orderBy('created_at', $dir)->orderBy('id', $dir)->paginate($perPage);
+
+        return response()->json([
+            'variant' => [
+                'id' => (int) $packaging->id,
+                'sku' => $packaging->sku,
+                'title' => $packaging->name,
+                'product_title' => $packaging->name,
+                'image_url' => $packaging->imageUrl(),
+            ],
+            'types' => $logService->filterTypes(),
+            'data' => collect($page->items())->map(function (ShopifyPackagingInventoryLog $row) {
+                return $this->serializeLog($row);
+            })->values(),
+            'meta' => [
+                'current_page' => $page->currentPage(),
+                'last_page' => $page->lastPage(),
+                'per_page' => $page->perPage(),
+                'total' => $page->total(),
+            ],
+        ]);
+    }
+
+    public function barcodeLabelPdf(Request $request, ShopifyPackagingItem $packaging): Response
+    {
+        $this->assertAdmin($request);
+        $sku = trim((string) ($packaging->sku ?? ''));
+        $name = trim((string) $packaging->name);
+        if ($sku === '') {
+            abort(422, 'Add a SKU before printing a label.');
+        }
+        if (mb_strlen($name) > 52) {
+            $name = rtrim(mb_substr($name, 0, 49)).'…';
+        }
+        $pageW = (int) round(4 * 72);
+        $pageH = (int) round(1.5 * 72);
+        $qrSize = 86;
+        $pdf = Pdf::loadView('pdf.shopify.variant-barcode-labels', [
+            'labels' => [[
+                'qrDataUri' => QrCodeSvg::dataUri($sku, 200),
+                'displayCode' => $sku,
+                'productName' => $name,
+            ]],
+            'pageW' => $pageW,
+            'pageH' => $pageH,
+            'qrSize' => $qrSize,
+            'qrLeft' => 8,
+            'qrTop' => round(($pageH - $qrSize) / 2, 1),
+            'textLeft' => 104,
+            'textW' => $pageW - 112,
+            'codeTop' => round($pageH * 0.38, 1),
+            'nameTop' => round($pageH * 0.58, 1),
+            'codeFont' => 15,
+            'nameFont' => 9,
+        ])->setPaper([0, 0, $pageW, $pageH]);
+
+        return response($pdf->output(), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="packaging-label-'.$packaging->id.'.pdf"',
+            'Cache-Control' => 'private, max-age=0, must-revalidate',
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function locationPayload(ShopifyPackagingItem $item): array
+    {
+        $summary = app(ShopifyPackagingInventoryService::class)->locationSummary($item);
+
+        return [
+            'location_groups' => $summary['location_groups'],
+            'total_on_hand' => $summary['total_on_hand'],
+            'add_item_reasons' => ShopifyWarehouseLocation::addItemReasons(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeLog(ShopifyPackagingInventoryLog $row): array
+    {
+        $user = $row->user;
+        $name = $user !== null ? trim((string) $user->name) : '';
+        $isSystem = $user === null || $name === '';
+
+        return [
+            'id' => (int) $row->id,
+            'created_at' => optional($row->created_at)->toIso8601String(),
+            'location_id' => $row->location_id !== null ? (int) $row->location_id : null,
+            'location_name' => $row->location_name,
+            'changed_by' => [
+                'id' => $isSystem ? null : (int) $user->id,
+                'name' => $isSystem ? 'System' : $name,
+                'initials' => $isSystem ? null : $this->initials($name),
+                'is_system' => $isSystem,
+            ],
+            'old_on_hand' => (int) $row->old_on_hand,
+            'new_on_hand' => (int) $row->new_on_hand,
+            'quantity_delta' => (int) $row->quantity_delta,
+            'note' => $row->note,
+            'type' => $row->type,
+            'type_label' => $row->type_label,
+            'direction_label' => $row->directionLabel(),
+            'transfer_group' => $row->transfer_group,
+        ];
+    }
+
+    private function initials(string $name): string
+    {
+        $parts = preg_split('/\s+/', trim($name)) ?: [];
+        $letters = '';
+        foreach (array_slice($parts, 0, 2) as $part) {
+            $letters .= strtoupper(substr($part, 0, 1));
+        }
+
+        return $letters !== '' ? $letters : '??';
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function nullableUrl($value): ?string
+    {
+        $url = trim((string) ($value ?? ''));
+        if ($url === '') {
+            return null;
+        }
+        if (! preg_match('/^https?:\/\//i', $url)) {
+            $url = 'https://'.$url;
+        }
+
+        return $url;
     }
 
     private function fillFromRequest(Request $request, ShopifyPackagingItem $item): void
@@ -202,6 +468,7 @@ class ShopifyPackagingController extends Controller
             'width' => ['nullable', 'numeric', 'min:0'],
             'height' => ['nullable', 'numeric', 'min:0'],
             'weight' => ['nullable', 'numeric', 'min:0'],
+            'link_url' => ['nullable', 'string', 'max:2048'],
         ]);
 
         $category = (string) $validated['category'];
@@ -225,6 +492,7 @@ class ShopifyPackagingController extends Controller
         $item->width = $this->nullableNumber($validated['width'] ?? null);
         $item->height = $this->nullableNumber($validated['height'] ?? null);
         $item->weight = $this->nullableNumber($validated['weight'] ?? null);
+        $item->link_url = $this->nullableUrl($validated['link_url'] ?? null);
     }
 
     /**
@@ -265,7 +533,8 @@ class ShopifyPackagingController extends Controller
             'weight' => $item->weight,
             'cubic_ft' => $item->cubicFeet(),
             'image_url' => $item->imageUrl(),
-        ];
+            'link_url' => $item->link_url,
+        ] + $this->locationPayload($item);
     }
 
     /**

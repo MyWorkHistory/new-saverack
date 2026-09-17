@@ -1096,6 +1096,13 @@ const routes = [
     meta: meta.shopifyPackaging,
   },
   {
+    path: "/admin/shopify/packaging/:id/log",
+    name: "shopify-packaging-log",
+    component: ShopifyInventoryLogPage,
+    props: true,
+    meta: meta.shopifyInventoryLog,
+  },
+  {
     path: "/admin/shopify/packaging/:id",
     name: "shopify-packaging-detail",
     component: ShopifyPackagingDetailPage,

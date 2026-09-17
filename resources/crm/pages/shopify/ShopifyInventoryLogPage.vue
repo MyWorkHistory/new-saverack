@@ -94,9 +94,12 @@ async function load() {
   if (!variantId.value) return;
   loading.value = true;
   try {
-    const { data } = await api.get(`/shopify/inventory/${variantId.value}/logs`, {
-      params: filterParams(),
-    });
+    const { data } = await api.get(
+      route.name === "shopify-packaging-log"
+        ? `/shopify/packaging/${variantId.value}/logs`
+        : `/shopify/inventory/${variantId.value}/logs`,
+      { params: filterParams() },
+    );
     variant.value = data?.variant || null;
     rows.value = Array.isArray(data?.data) ? data.data : [];
     pagination.value = {
@@ -184,9 +187,9 @@ onUnmounted(() => {
     <button
       type="button"
       class="btn btn-link text-decoration-none px-0 mb-2 fw-semibold"
-      @click="router.push({ name: 'shopify-inventory-detail', params: { id: variantId } })"
+      @click="router.push(route.name === 'shopify-packaging-log' ? { name: 'shopify-packaging-detail', params: { id: variantId } } : { name: 'shopify-inventory-detail', params: { id: variantId } })"
     >
-      ← Back to Product
+      ← {{ route.name === "shopify-packaging-log" ? "Back to Packaging" : "Back to Product" }}
     </button>
 
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">

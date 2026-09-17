@@ -249,8 +249,8 @@ class ShopifyInventoryDetailApiTest extends TestCase
             'packaging_item_ids' => [$box->id],
             'packaging_material_item_ids' => [$paper->id, $wrap->id],
         ])->assertOk()
-            ->assertJsonPath('variant.packaging.label', 'Box: 8x8x4')
-            ->assertJsonPath('variant.packaging_items.0.label', 'Box: 8x8x4')
+            ->assertJsonPath('variant.packaging.label', '8x8x4')
+            ->assertJsonPath('variant.packaging_items.0.label', '8x8x4')
             ->assertJsonPath('variant.packaging_materials.0.label', 'Kraft Paper')
             ->assertJsonPath('variant.packaging_materials.1.label', 'Bubble Wrap')
             ->assertJsonPath('message', 'Packaging updated.');

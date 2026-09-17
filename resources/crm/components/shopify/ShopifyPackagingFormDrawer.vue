@@ -45,6 +45,7 @@ function blankForm() {
     width: "",
     height: "",
     weight: "",
+    link_url: "",
   };
 }
 
@@ -86,6 +87,7 @@ function onSave() {
     width: blankToNull(form.width) == null ? null : Number(form.width),
     height: blankToNull(form.height) == null ? null : Number(form.height),
     weight: blankToNull(form.weight) == null ? null : Number(form.weight),
+    link_url: blankToNull(form.link_url),
   });
 }
 
@@ -147,6 +149,9 @@ function close() {
         <input id="pkg-add-weight" v-model="form.weight" type="number" min="0" step="0.001" class="form-control" :disabled="busy" />
       </div>
     </div>
+
+    <label class="form-label mt-3" for="pkg-add-link">Link</label>
+    <input id="pkg-add-link" v-model="form.link_url" type="url" class="form-control" maxlength="2048" placeholder="https://" :disabled="busy" />
 
     <template #footer>
       <div class="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-4 dark:border-gray-800">

@@ -42,6 +42,7 @@ const form = reactive({
   width: "",
   height: "",
   weight: "",
+  link_url: "",
 });
 
 const typeOptions = computed(() => TYPES[form.category] || []);
@@ -62,6 +63,7 @@ watch(
     form.width = src.width == null ? "" : String(src.width);
     form.height = src.height == null ? "" : String(src.height);
     form.weight = src.weight == null ? "" : String(src.weight);
+    form.link_url = src.link_url || "";
     const options = TYPES[form.category] || [];
     if (!options.some((opt) => opt.value === form.type)) {
       form.type = options[0]?.value || "";
@@ -100,6 +102,7 @@ function onSave() {
     width: blankToNull(form.width) == null ? null : Number(form.width),
     height: blankToNull(form.height) == null ? null : Number(form.height),
     weight: blankToNull(form.weight) == null ? null : Number(form.weight),
+    link_url: blankToNull(form.link_url),
   });
 }
 </script>
@@ -171,6 +174,9 @@ function onSave() {
               <input id="pkg-weight" v-model="form.weight" type="number" min="0" step="0.001" class="form-control" :disabled="busy" />
             </div>
           </div>
+
+          <label class="form-label mt-3" for="pkg-link">Link</label>
+          <input id="pkg-link" v-model="form.link_url" type="url" class="form-control" maxlength="2048" placeholder="https://" :disabled="busy" />
         </div>
         <footer class="crm-vx-modal__footer justify-content-end">
           <button type="button" class="crm-vx-modal-btn crm-vx-modal-btn--secondary" :disabled="busy" @click="emit('close')">Cancel</button>

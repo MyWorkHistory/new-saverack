@@ -1945,7 +1945,7 @@ class ShopifyIntegrationController extends Controller
                 'bundle_components' => $components,
                 'inventory' => $inventory,
                 'timeline' => $timeline,
-            ], $warehouseSummary),
+            ], $warehouseSummary, $this->packagingFields($shopifyVariant)),
         ]);
     }
 
@@ -2913,12 +2913,11 @@ class ShopifyIntegrationController extends Controller
             return '';
         }
         $name = trim((string) $item->name);
-        $type = trim($item->typeLabel());
-        if ($prefixType && $type !== '' && strcasecmp($type, $name) !== 0) {
-            return $type.': '.$name;
+        if ($name !== '') {
+            return $name;
         }
 
-        return $name !== '' ? $name : $type;
+        return trim($item->typeLabel());
     }
 
     /**

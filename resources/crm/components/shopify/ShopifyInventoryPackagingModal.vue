@@ -19,24 +19,21 @@ const selectedMaterials = ref([]);
 const packagingPick = ref("");
 const materialPick = ref("");
 
-const availablePackaging = computed(() => selectOptions(packagingOptions.value, selectedPackaging.value, true));
-const availableMaterials = computed(() => selectOptions(materialOptions.value, selectedMaterials.value, false));
+const availablePackaging = computed(() => selectOptions(packagingOptions.value, selectedPackaging.value));
+const availableMaterials = computed(() => selectOptions(materialOptions.value, selectedMaterials.value));
 
-function optionLabel(row, withType) {
+function optionLabel(row) {
   if (!row) return "";
-  if (withType && row.type_label && row.name && row.type_label !== row.name) {
-    return `${row.type_label}: ${row.name}`;
-  }
   return row.name || row.type_label || "Packaging";
 }
 
-function selectOptions(rows, selected, withType) {
+function selectOptions(rows, selected) {
   const taken = new Set(selected.map((row) => Number(row.id)));
   return rows
     .filter((row) => !taken.has(Number(row.id)))
     .map((row) => ({
       id: row.id,
-      name: optionLabel(row, withType),
+      name: optionLabel(row),
     }));
 }
 
@@ -66,7 +63,7 @@ async function loadOptions() {
   }
 }
 
-function addPicked(pick, selected, options, withType) {
+function addPicked(pick, selected, options) {
   const id = String(pick.value || "");
   if (!id) return;
   const row = options.value.find((item) => String(item.id) === id);
@@ -76,15 +73,15 @@ function addPicked(pick, selected, options, withType) {
       {
         id: row.id,
         name: row.name,
-        label: optionLabel(row, withType),
+        label: optionLabel(row),
       },
     ];
   }
   pick.value = "";
 }
 
-watch(packagingPick, () => addPicked(packagingPick, selectedPackaging, packagingOptions, true));
-watch(materialPick, () => addPicked(materialPick, selectedMaterials, materialOptions, false));
+watch(packagingPick, () => addPicked(packagingPick, selectedPackaging, packagingOptions));
+watch(materialPick, () => addPicked(materialPick, selectedMaterials, materialOptions));
 
 watch(
   () => props.open,
@@ -98,8 +95,12 @@ watch(
   },
 );
 
-function removeSelected(selected, id) {
-  selected.value = selected.value.filter((row) => Number(row.id) !== Number(id));
+function removePackaging(id) {
+  selectedPackaging.value = selectedPackaging.value.filter((row) => Number(row.id) !== Number(id));
+}
+
+function removeMaterial(id) {
+  selectedMaterials.value = selectedMaterials.value.filter((row) => Number(row.id) !== Number(id));
 }
 
 function onSave() {
@@ -139,8 +140,8 @@ function onSave() {
           />
           <ul v-if="selectedPackaging.length" class="inv-pack-picks mb-3">
             <li v-for="row in selectedPackaging" :key="row.id" class="inv-pack-pick">
-              <span class="text-truncate">{{ row.label || row.name }}</span>
-              <button type="button" class="inv-pack-pick__remove" :aria-label="`Remove ${row.label || row.name}`" :disabled="busy" @click="removeSelected(selectedPackaging, row.id)">
+              <span class="text-truncate">{{ row.name || row.label }}</span>
+              <button type="button" class="inv-pack-pick__remove" :aria-label="`Remove ${row.label || row.name}`" :disabled="busy" @click.stop="removePackaging(row.id)">
                 <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -165,8 +166,8 @@ function onSave() {
           />
           <ul v-if="selectedMaterials.length" class="inv-pack-picks">
             <li v-for="row in selectedMaterials" :key="row.id" class="inv-pack-pick">
-              <span class="text-truncate">{{ row.label || row.name }}</span>
-              <button type="button" class="inv-pack-pick__remove" :aria-label="`Remove ${row.label || row.name}`" :disabled="busy" @click="removeSelected(selectedMaterials, row.id)">
+              <span class="text-truncate">{{ row.name || row.label }}</span>
+              <button type="button" class="inv-pack-pick__remove" :aria-label="`Remove ${row.label || row.name}`" :disabled="busy" @click.stop="removeMaterial(row.id)">
                 <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>

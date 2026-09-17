@@ -188,7 +188,7 @@ function locationGroup(row, key) {
 
 function locationGroupLabel(key) {
   if (key === "backstock") return "Backstock Locations";
-  if (key === "other") return "Other Locations";
+  if (key === "other") return "Picking Cart";
   return "Pick Locations";
 }
 
@@ -727,7 +727,7 @@ onUnmounted(() => {
               <template v-else-if="viewType === 'locations'">
                 <th class="staff-table-head__th" scope="col">Pick Locations</th>
                 <th class="staff-table-head__th" scope="col">Backstock Locations</th>
-                <th class="staff-table-head__th" scope="col">Other Locations</th>
+                <th class="staff-table-head__th" scope="col">Picking Cart</th>
               </template>
               <template v-else-if="viewType === 'packaging'">
                 <th class="staff-table-head__th" scope="col">Default Packaging</th>
@@ -915,7 +915,7 @@ onUnmounted(() => {
                   </span>
                 </div>
                 <div class="crm-mobile-item-card__meta-row" @click.stop>
-                  <span class="crm-mobile-item-card__meta-label">Other</span>
+                  <span class="crm-mobile-item-card__meta-label">Picking Cart</span>
                   <span class="crm-mobile-item-card__meta-value">
                     <ShopifyInventoryLocationCell :locations="locationGroup(row, 'other')" :label="locationGroupLabel('other')" />
                   </span>

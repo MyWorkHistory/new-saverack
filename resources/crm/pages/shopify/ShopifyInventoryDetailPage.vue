@@ -69,7 +69,7 @@ const locQtyReason = ref("");
 const defaultLocationGroups = () => [
   { key: "pick", label: "Pick Locations", icon: "cart", count: 0, locations: [] },
   { key: "backstock", label: "Backstock Locations", icon: "cube", count: 0, locations: [] },
-  { key: "other", label: "Other Locations", icon: "bag", count: 0, locations: [] },
+  { key: "other", label: "Picking Cart", icon: "bag", count: 0, locations: [] },
 ];
 
 const inventoryStats = computed(() => {

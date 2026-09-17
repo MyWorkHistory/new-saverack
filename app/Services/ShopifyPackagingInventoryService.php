@@ -45,7 +45,7 @@ class ShopifyPackagingInventoryService
                 'sellable' => (bool) $location->sellable,
             ];
             $nameLower = strtolower(trim((string) $location->name));
-            if ($nameLower === $receivingName) {
+            if ($nameLower === $receivingName || ShopifyWarehouseLocation::isPickingCartType($location->type)) {
                 $grouped['other'][] = $entry;
             } elseif ($location->pickable) {
                 $grouped['pick'][] = $entry;
@@ -57,7 +57,7 @@ class ShopifyPackagingInventoryService
         $labels = [
             'pick' => 'Pick Locations',
             'backstock' => 'Backstock Locations',
-            'other' => 'Other Locations',
+            'other' => 'Picking Cart',
         ];
         $groups = [];
         $total = 0;

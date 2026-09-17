@@ -2621,7 +2621,7 @@ class ShopifyIntegrationController extends Controller
                 'sellable' => (bool) $location->sellable,
             ];
             $nameLower = strtolower(trim((string) $location->name));
-            if ($nameLower === $receivingName) {
+            if ($nameLower === $receivingName || ShopifyWarehouseLocation::isPickingCartType($location->type)) {
                 $grouped['other'][] = $entry;
             } elseif ($location->pickable) {
                 $grouped['pick'][] = $entry;
@@ -2642,7 +2642,7 @@ class ShopifyIntegrationController extends Controller
         $labels = [
             'pick' => 'Pick Locations',
             'backstock' => 'Backstock Locations',
-            'other' => 'Other Locations',
+            'other' => 'Picking Cart',
         ];
         $locationGroups = [];
         foreach ($labels as $key => $label) {

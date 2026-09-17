@@ -17,7 +17,10 @@ class ShopifyWarehouseLocation extends Model
         'Small Bin',
         'Small Pallet',
         'Small Shelf',
+        'Picking Cart',
     ];
+
+    public const TYPE_PICKING_CART = 'Picking Cart';
 
     /**
      * CRM 2.0 inventory adjustment reasons (config/inventory.php).
@@ -47,6 +50,11 @@ class ShopifyWarehouseLocation extends Model
         $default = trim((string) config('inventory.default_add_location_reason', 'Account Setup'));
 
         return $default !== '' ? $default : 'Account Setup';
+    }
+
+    public static function isPickingCartType($type): bool
+    {
+        return strcasecmp(trim((string) $type), self::TYPE_PICKING_CART) === 0;
     }
 
     protected $table = 'shopify_warehouse_locations';

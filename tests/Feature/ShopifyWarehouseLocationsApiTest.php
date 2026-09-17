@@ -55,6 +55,7 @@ class ShopifyWarehouseLocationsApiTest extends TestCase
         $this->assertContains('Large Shelf', $types);
         $this->assertContains('Medium Shelf', $types);
         $this->assertContains('Small Shelf', $types);
+        $this->assertContains('Picking Cart', $types);
 
         $reasons = $response->json('add_item_reasons');
         $this->assertIsArray($reasons);

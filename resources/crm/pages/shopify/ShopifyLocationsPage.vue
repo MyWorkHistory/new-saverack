@@ -335,6 +335,7 @@ onMounted(async () => {
       "Small Bin",
       "Small Pallet",
       "Small Shelf",
+      "Picking Cart",
     ];
   }
   void load();

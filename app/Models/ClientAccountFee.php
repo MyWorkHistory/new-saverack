@@ -42,6 +42,8 @@ class ClientAccountFee extends Model
 
     public const LINE_RETURNS_NON_COMPLIANT = 'non_compliant';
 
+    public const LINE_RETURNS_PHOTO = 'photo';
+
     protected $fillable = [
         'client_account_id',
         'pricing_template_id',

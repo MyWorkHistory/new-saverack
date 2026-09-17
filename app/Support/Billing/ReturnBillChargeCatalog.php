@@ -21,6 +21,8 @@ class ReturnBillChargeCatalog
 
   public const NON_COMPLIANT_NAME = 'Non-Compliant Return';
 
+  public const PHOTO_NAME = 'Return Photo';
+
   /** @var array<string, array{display_name: string, group_key: string, subtype: string, fee_line_code: string}> */
   private const DEFINITIONS = [
     ReturnBill::LINE_FIRST_ITEM => [
@@ -58,6 +60,12 @@ class ReturnBillChargeCatalog
       'group_key' => 'returns:non_compliant',
       'subtype' => 'non_compliant',
       'fee_line_code' => ClientAccountFee::LINE_RETURNS_NON_COMPLIANT,
+    ],
+    ReturnBill::LINE_PHOTO => [
+      'display_name' => self::PHOTO_NAME,
+      'group_key' => 'returns:photo',
+      'subtype' => 'photo',
+      'fee_line_code' => ClientAccountFee::LINE_RETURNS_PHOTO,
     ],
   ];
 
@@ -170,12 +178,16 @@ class ReturnBillChargeCatalog
     if ($lineCode === ClientAccountFee::LINE_RETURNS_NON_COMPLIANT) {
       return str_contains($haystack, 'non') && str_contains($haystack, 'compliant');
     }
+    if ($lineCode === ClientAccountFee::LINE_RETURNS_PHOTO) {
+      return str_contains($haystack, 'photo');
+    }
     if ($lineCode === ClientAccountFee::LINE_RETURNS_ADDITIONAL_ITEMS) {
       return str_contains($haystack, 'return') && str_contains($haystack, 'additional');
     }
     if ($lineCode === ClientAccountFee::LINE_RETURNS_PROCESSING) {
       if (str_contains($haystack, 'additional') || str_contains($haystack, 'assembly')
         || str_contains($haystack, 'repack') || str_contains($haystack, 'disposal')
+        || str_contains($haystack, 'photo')
         || (str_contains($haystack, 'non') && str_contains($haystack, 'compliant'))) {
         return false;
       }

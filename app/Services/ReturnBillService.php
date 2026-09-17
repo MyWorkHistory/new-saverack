@@ -171,6 +171,23 @@ class ReturnBillService
                 }
             }
 
+            $photoCents = (int) round($this->feeService()->photoFeeAmount($return) * 100);
+            if ($photoCents !== 0) {
+                $order++;
+                $this->insertItem(
+                    $bill,
+                    $order,
+                    ReturnBill::LINE_PHOTO,
+                    ReturnBillChargeCatalog::displayName(ReturnBill::LINE_PHOTO),
+                    1.0,
+                    $photoCents,
+                    [
+                        'return_id' => $return->id,
+                        'rma_number' => $return->rma_number,
+                    ]
+                );
+            }
+
             $this->recalculateTotal($bill);
             $this->logHistory($bill, $actor, 'created', 'Return bill created from processed return.');
 

@@ -274,6 +274,7 @@ class PricingFeeTemplateService
             'Returns Re-Packaging' => ClientAccountFee::LINE_RETURNS_REPACKAGING,
             'Returns Disposal' => ClientAccountFee::LINE_RETURNS_DISPOSAL,
             'Non-Compliant Return' => ClientAccountFee::LINE_RETURNS_NON_COMPLIANT,
+            'Return Photo' => ClientAccountFee::LINE_RETURNS_PHOTO,
             'Receiving (Per Box)' => 'per_box',
             'Receiving (Per Pallet)' => 'per_pallet',
             'Receiving (Per Item)' => 'per_item',

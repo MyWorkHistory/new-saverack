@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
-import ReturnProcessPhotoCard from "../../components/admin-returns/ReturnProcessPhotoCard.vue";
+import ReturnFilesCard from "../../components/admin-returns/ReturnFilesCard.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import {
@@ -293,10 +293,11 @@ onMounted(() => {
           </button>
         </div>
 
-          <ReturnProcessPhotoCard
-            v-if="ret.process_photo_url"
-            :existing-url="ret.process_photo_url"
-            :required="false"
+          <ReturnFilesCard
+            v-if="(ret.files && ret.files.length) || ret.process_photo_url"
+            :return-id="ret.id"
+            :files="ret.files || (ret.process_photo_url ? [{ id: 'legacy', original_name: 'Return photo', url: ret.process_photo_url }] : [])"
+            :editable="false"
           />
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">

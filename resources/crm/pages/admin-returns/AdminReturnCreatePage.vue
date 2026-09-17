@@ -4,7 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ReturnFeesCard from "../../components/admin-returns/ReturnFeesCard.vue";
-import ReturnProcessPhotoCard from "../../components/admin-returns/ReturnProcessPhotoCard.vue";
+import ReturnFilesCard from "../../components/admin-returns/ReturnFilesCard.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatRmaLabel } from "../../utils/formatReturnDisplay.js";
@@ -24,7 +24,6 @@ const reasonOptions = ref({});
 const returnFees = ref({});
 const defaultReason = ref("unknown");
 const selectedKeys = ref([]);
-const processPhoto = ref(null);
 
 const shipheroOrderId = computed(() => String(route.params.shipheroOrderId || ""));
 const clientAccountId = computed(() => Number(route.query.client_account_id || 0));
@@ -35,7 +34,7 @@ const allSelected = computed(() => {
 });
 
 const hasReturnQty = computed(() => formLines.value.some((l) => Number(l.return_qty) > 0));
-const canProcess = computed(() => hasReturnQty.value && !!processPhoto.value);
+const canProcess = computed(() => hasReturnQty.value);
 
 function lineKey(idx) {
   return idx;
@@ -152,14 +151,18 @@ async function cancelDraft() {
   router.push({ name: "admin-process-returns" });
 }
 
+function onFilesUpdated(data) {
+  if (!data) return;
+  ret.value = { ...(ret.value || {}), ...data };
+  if (data.return_fees) {
+    returnFees.value = { ...returnFees.value, ...data.return_fees };
+  }
+}
+
 async function processReturn() {
   if (!ret.value?.id) return;
   if (!hasReturnQty.value) {
     toast.error("Enter a return quantity for at least one item.");
-    return;
-  }
-  if (!processPhoto.value) {
-    toast.error("Upload a photo before processing this return.");
     return;
   }
   submitBusy.value = true;
@@ -174,21 +177,14 @@ async function processReturn() {
       return_reason: Number(row.return_qty) > 0 ? row.return_reason || defaultReason.value : null,
       restock: row.restock !== false,
     }));
-    const body = new FormData();
-    body.append("photo", processPhoto.value);
-    body.append("return_type", returnType.value);
-    if (warehouseNote.value.trim()) body.append("warehouse_private_note", warehouseNote.value.trim());
-    if (returnComment.value.trim()) body.append("return_comment", returnComment.value.trim());
-    if (returnFees.value.first_item != null) body.append("first_item_fee", String(returnFees.value.first_item));
-    if (returnFees.value.additional_item != null) {
-      body.append("additional_item_fee", String(returnFees.value.additional_item));
-    }
-    lines.forEach((line, index) => {
-      Object.entries(line).forEach(([key, value]) => {
-        if (value == null || value === "") return;
-        body.append(`lines[${index}][${key}]`, typeof value === "boolean" ? (value ? "1" : "0") : String(value));
-      });
-    });
+    const body = {
+      return_type: returnType.value,
+      lines,
+    };
+    if (warehouseNote.value.trim()) body.warehouse_private_note = warehouseNote.value.trim();
+    if (returnComment.value.trim()) body.return_comment = returnComment.value.trim();
+    if (returnFees.value.first_item != null) body.first_item_fee = returnFees.value.first_item;
+    if (returnFees.value.additional_item != null) body.additional_item_fee = returnFees.value.additional_item;
     await api.post(`/admin/returns/${ret.value.id}/process-from-draft`, body);
     toast.success("Return processed.");
     router.push({ name: "admin-process-returns" });
@@ -436,19 +432,6 @@ onMounted(() => {
           <p class="small text-secondary mb-0 mt-2">{{ formatRmaLabel(ret.rma_number) }}</p>
         </div>
 
-        <ReturnFeesCard
-          :return-id="ret.id"
-          :fees="returnFees"
-          :editable="true"
-          @update:fees="returnFees = $event"
-        />
-
-        <ReturnProcessPhotoCard
-          :required="true"
-          :disabled="submitBusy"
-          @select="processPhoto = $event"
-        />
-
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Return Comment</h3>
           <p class="small text-secondary mb-2">Visible to account users</p>
@@ -474,6 +457,21 @@ onMounted(() => {
             placeholder="Notes visible to warehouse staff on this return."
           />
         </div>
+
+        <ReturnFilesCard
+          v-if="ret?.id"
+          :return-id="ret.id"
+          :files="ret.files || []"
+          :editable="true"
+          @updated="onFilesUpdated"
+        />
+
+        <ReturnFeesCard
+          :return-id="ret.id"
+          :fees="returnFees"
+          :editable="true"
+          @update:fees="returnFees = $event"
+        />
       </div>
     </div>
   </div>

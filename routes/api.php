@@ -434,6 +434,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/fee-defaults', [AdminReturnController::class, 'feeDefaults'])->middleware('can:returns.view');
         Route::patch('/{clientAccountReturn}/return-bin', [AdminReturnController::class, 'assignReturnBin'])->middleware('can:returns.update');
         Route::patch('/{clientAccountReturn}/fees', [AdminReturnController::class, 'updateFees'])->middleware('can:returns.update');
+        Route::post('/{clientAccountReturn}/attachments', [AdminReturnController::class, 'storeAttachment'])->middleware('can:returns.update');
+        Route::delete('/{clientAccountReturn}/attachments/{attachment}', [AdminReturnController::class, 'destroyAttachment'])->middleware('can:returns.update');
         Route::post('/{clientAccountReturn}/process-from-draft', [AdminReturnController::class, 'processFromDraft'])->middleware('can:returns.update');
         Route::get('/pending', [AdminReturnController::class, 'pending'])->middleware('can:returns.view');
         Route::get('/order-lookup', [AdminReturnController::class, 'orderLookup'])->middleware('can:returns.view');

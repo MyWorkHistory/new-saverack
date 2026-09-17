@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountReturn;
+use App\Models\ClientAccountReturnAttachment;
 use App\Models\ClientAccountReturnLine;
 use App\Models\ReturnBin;
 use App\Models\ShipHeroInventoryProductIndex;
@@ -397,10 +398,32 @@ class AdminReturnController extends Controller
             'return_fees' => $this->returnFees->serializeReturnFees($return),
             'return_bill_id' => $return->return_bill_id,
             'process_photo_url' => $return->processPhotoUrl(),
+            'files' => $this->serializeReturnFiles($return),
             'return_warehouse_address' => config('returns.return_warehouse_address', []),
         ];
 
         return array_merge($payload, $this->thirdPartyMeta($return));
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function serializeReturnFiles(ClientAccountReturn $return): array
+    {
+        if (! $return->relationLoaded('attachments')) {
+            $return->load(['attachments.uploadedBy:id,name']);
+        }
+
+        return $return->attachments->map(function (ClientAccountReturnAttachment $file) {
+            return [
+                'id' => $file->id,
+                'original_name' => $file->original_name,
+                'mime' => $file->mime,
+                'size' => $file->size,
+                'url' => $file->publicUrl(),
+                'uploaded_by_name' => optional($file->uploadedBy)->name,
+            ];
+        })->values()->all();
     }
 
     /**
@@ -420,13 +443,22 @@ class AdminReturnController extends Controller
             'return-'.$return->id.'-'.Str::uuid().'.'.$ext,
             'public'
         );
-        $old = trim((string) $return->process_photo_path);
-        if ($old !== '' && $old !== $path && Storage::disk('public')->exists($old)) {
-            Storage::disk('public')->delete($old);
+
+        ClientAccountReturnAttachment::query()->create([
+            'client_account_return_id' => $return->id,
+            'uploaded_by_user_id' => optional(request()->user())->id,
+            'original_name' => $file->getClientOriginalName() ?: ('photo.'.$ext),
+            'path' => $path,
+            'mime' => $file->getClientMimeType(),
+            'size' => (int) $file->getSize(),
+        ]);
+
+        if (trim((string) ($return->process_photo_path ?? '')) === '') {
+            $return->process_photo_path = $path;
+            $return->save();
         }
 
-        $return->process_photo_path = $path;
-        $return->save();
+        $this->returnFees->applyPhotoFee($return->fresh());
     }
 
     /**
@@ -629,9 +661,11 @@ class AdminReturnController extends Controller
             'first_item' => $defaults['first_item'],
             'additional_item' => $defaults['additional_item'],
             'non_compliant' => $defaults['non_compliant'],
+            'photo' => $defaults['photo'] ?? null,
             'first_item_label' => 'Returns (First Item)',
             'additional_item_label' => 'Returns (Additional Items)',
             'non_compliant_label' => 'Non-Compliant Return',
+            'photo_label' => 'Return Photo',
         ]);
     }
 
@@ -643,13 +677,67 @@ class AdminReturnController extends Controller
             'first_item' => ['nullable', 'numeric', 'min:0'],
             'additional_item' => ['nullable', 'numeric', 'min:0'],
             'non_compliant' => ['nullable', 'numeric', 'min:0'],
+            'photo' => ['nullable', 'numeric', 'min:0'],
         ]);
         $first = array_key_exists('first_item', $validated) ? (float) $validated['first_item'] : null;
         $additional = array_key_exists('additional_item', $validated) ? (float) $validated['additional_item'] : null;
         $nonCompliant = array_key_exists('non_compliant', $validated) ? (float) $validated['non_compliant'] : null;
-        $this->returnFees->updateReturnFees($clientAccountReturn, $first, $additional, $nonCompliant);
+        $photo = array_key_exists('photo', $validated) ? (float) $validated['photo'] : null;
+        $this->returnFees->updateReturnFees($clientAccountReturn, $first, $additional, $nonCompliant, $photo);
 
-        return response()->json($this->serializeReturnDetail($clientAccountReturn->fresh(['lines', 'clientAccount', 'returnBill'])));
+        return response()->json($this->serializeReturnDetail($clientAccountReturn->fresh(['lines', 'clientAccount', 'returnBill', 'attachments.uploadedBy'])));
+    }
+
+    public function storeAttachment(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('view', $clientAccountReturn);
+
+        $validated = $request->validate([
+            'file' => ['required', 'file', 'max:10240'],
+        ]);
+
+        $this->storeProcessPhoto($clientAccountReturn, $validated['file']);
+
+        return response()->json(
+            $this->serializeReturnDetail($clientAccountReturn->fresh(['lines', 'clientAccount', 'returnBill', 'attachments.uploadedBy'])),
+            201
+        );
+    }
+
+    public function destroyAttachment(
+        Request $request,
+        ClientAccountReturn $clientAccountReturn,
+        ClientAccountReturnAttachment $attachment
+    ): JsonResponse {
+        $this->assertStaff($request);
+        Gate::authorize('view', $clientAccountReturn);
+
+        if ((int) $attachment->client_account_return_id !== (int) $clientAccountReturn->id) {
+            abort(404);
+        }
+
+        $path = trim((string) $attachment->path);
+        $attachment->delete();
+
+        if ($path !== '' && Storage::disk('public')->exists($path)) {
+            Storage::disk('public')->delete($path);
+        }
+
+        if (trim((string) ($clientAccountReturn->process_photo_path ?? '')) === $path) {
+            $next = ClientAccountReturnAttachment::query()
+                ->where('client_account_return_id', $clientAccountReturn->id)
+                ->orderByDesc('id')
+                ->first();
+            $clientAccountReturn->process_photo_path = $next ? $next->path : null;
+            $clientAccountReturn->save();
+        }
+
+        $this->returnFees->clearPhotoFee($clientAccountReturn->fresh(['attachments']));
+
+        return response()->json(
+            $this->serializeReturnDetail($clientAccountReturn->fresh(['lines', 'clientAccount', 'returnBill', 'attachments.uploadedBy']))
+        );
     }
 
     public function processFromDraft(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
@@ -674,10 +762,12 @@ class AdminReturnController extends Controller
             'lines.*.return_reason' => ['nullable', 'string', 'max:64'],
             'lines.*.restock' => ['nullable', 'boolean'],
             'lines.*.return_bin_id' => ['nullable', 'integer', 'exists:return_bins,id'],
-            'photo' => ['required', 'file', 'max:10240'],
+            'photo' => ['nullable', 'file', 'max:10240'],
         ]);
 
-        $this->storeProcessPhoto($clientAccountReturn, $validated['photo']);
+        if ($request->hasFile('photo')) {
+            $this->storeProcessPhoto($clientAccountReturn, $validated['photo']);
+        }
 
         $normalized = $this->processing->validateAndNormalizeAdminLines($validated['lines']);
         $headerBinId = isset($validated['return_bin_id']) ? (int) $validated['return_bin_id'] : null;
@@ -715,21 +805,25 @@ class AdminReturnController extends Controller
             'first_item_fee' => ['nullable', 'numeric', 'min:0'],
             'additional_item_fee' => ['nullable', 'numeric', 'min:0'],
             'non_compliant_fee' => ['nullable', 'numeric', 'min:0'],
+            'photo_fee' => ['nullable', 'numeric', 'min:0'],
             'return_bin_id' => $this->returnBinIdRules(),
-            'photo' => ['required', 'file', 'max:10240'],
+            'photo' => ['nullable', 'file', 'max:10240'],
         ]);
 
-        $this->storeProcessPhoto($clientAccountReturn, $validated['photo']);
+        if ($request->hasFile('photo')) {
+            $this->storeProcessPhoto($clientAccountReturn, $validated['photo']);
+        }
 
         $lineIds = array_map('intval', $validated['line_ids']);
         $lineIds = array_values(array_unique(array_filter($lineIds, fn ($id) => $id > 0)));
 
-        if (isset($validated['first_item_fee']) || isset($validated['additional_item_fee']) || isset($validated['non_compliant_fee'])) {
+        if (isset($validated['first_item_fee']) || isset($validated['additional_item_fee']) || isset($validated['non_compliant_fee']) || isset($validated['photo_fee'])) {
             $this->returnFees->updateReturnFees(
                 $clientAccountReturn,
                 isset($validated['first_item_fee']) ? (float) $validated['first_item_fee'] : null,
                 isset($validated['additional_item_fee']) ? (float) $validated['additional_item_fee'] : null,
                 isset($validated['non_compliant_fee']) ? (float) $validated['non_compliant_fee'] : null,
+                isset($validated['photo_fee']) ? (float) $validated['photo_fee'] : null,
             );
             $clientAccountReturn->refresh();
         }

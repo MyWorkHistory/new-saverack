@@ -48,6 +48,13 @@ const feeRows = computed(() => {
       amount: localFees.value.non_compliant,
     });
   }
+  if (localFees.value.photo_label || localFees.value.photo != null) {
+    rows.push({
+      key: "photo",
+      name: localFees.value.photo_label || "Return Photo",
+      amount: localFees.value.photo,
+    });
+  }
   return rows;
 });
 
@@ -83,6 +90,7 @@ async function saveFeeAmount({ amount }) {
   if (key === "first_item") payload.first_item = parsed;
   if (key === "additional_item") payload.additional_item = parsed;
   if (key === "non_compliant") payload.non_compliant = parsed;
+  if (key === "photo") payload.photo = parsed;
 
   if (props.returnId) {
     feeModalSaving.value = true;
@@ -104,6 +112,7 @@ async function saveFeeAmount({ amount }) {
   if (key === "first_item") localFees.value.first_item = parsed;
   if (key === "additional_item") localFees.value.additional_item = parsed;
   if (key === "non_compliant") localFees.value.non_compliant = parsed;
+  if (key === "photo") localFees.value.photo = parsed;
   emit("update:fees", { ...localFees.value });
   feeModalOpen.value = false;
   feeEditTarget.value = null;

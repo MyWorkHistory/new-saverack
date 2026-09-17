@@ -27,6 +27,8 @@ class ReturnBill extends Model
 
     public const LINE_NON_COMPLIANT = 'non_compliant';
 
+    public const LINE_PHOTO = 'photo';
+
     protected $fillable = [
         'bill_number',
         'status',

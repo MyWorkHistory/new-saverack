@@ -73,6 +73,7 @@ class ClientAccountReturn extends Model
         'return_fee_first_item',
         'return_fee_additional_item',
         'return_fee_non_compliant',
+        'return_fee_photo',
         'is_non_compliant',
         'is_third_party',
         'non_compliant_reason',
@@ -94,6 +95,7 @@ class ClientAccountReturn extends Model
         'return_fee_first_item' => 'decimal:4',
         'return_fee_additional_item' => 'decimal:4',
         'return_fee_non_compliant' => 'decimal:4',
+        'return_fee_photo' => 'decimal:4',
         'fees_locked_at' => 'datetime',
         'processed_at' => 'datetime',
         'return_bin_number' => 'integer',
@@ -115,6 +117,12 @@ class ClientAccountReturn extends Model
         return $this->hasMany(ClientAccountReturnLine::class, 'client_account_return_id')
             ->orderBy('sort_order')
             ->orderBy('id');
+    }
+
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(ClientAccountReturnAttachment::class, 'client_account_return_id')
+            ->orderByDesc('id');
     }
 
     public function returnBill(): BelongsTo

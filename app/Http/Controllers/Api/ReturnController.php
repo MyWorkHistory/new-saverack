@@ -206,6 +206,17 @@ class ReturnController extends Controller
             'return_fees' => app(ReturnFeeService::class)->serializeReturnFees($return),
             'return_bill_id' => $return->return_bill_id,
             'process_photo_url' => $return->processPhotoUrl(),
+            'files' => $return->relationLoaded('attachments')
+                ? $return->attachments->map(function ($file) {
+                    return [
+                        'id' => $file->id,
+                        'original_name' => $file->original_name,
+                        'mime' => $file->mime,
+                        'size' => $file->size,
+                        'url' => $file->publicUrl(),
+                    ];
+                })->values()->all()
+                : [],
         ], $this->thirdPartyMeta($return));
     }
 
@@ -501,6 +512,8 @@ class ReturnController extends Controller
     public function show(Request $request, ClientAccountReturn $clientAccountReturn): JsonResponse
     {
         $this->authorizeReturn($request, $clientAccountReturn);
+
+        $clientAccountReturn->load(['lines', 'clientAccount', 'attachments']);
 
         return response()->json($this->serializeReturn($clientAccountReturn));
     }

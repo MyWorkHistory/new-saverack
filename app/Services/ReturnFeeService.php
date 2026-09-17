@@ -31,10 +31,15 @@ class ReturnFeeService
             'non compliant',
             'noncompliant',
         ],
+        ClientAccountFee::LINE_RETURNS_PHOTO => [
+            'return photo',
+            'returns photo',
+            'photo',
+        ],
     ];
 
     /**
-     * @return array{first_item: float|null, additional_item: float|null, non_compliant: float|null}
+     * @return array{first_item: float|null, additional_item: float|null, non_compliant: float|null, photo: float|null}
      */
     public function accountDefaults(ClientAccount $account): array
     {
@@ -45,6 +50,7 @@ class ReturnFeeService
             'first_item' => $this->amountForLine($account, ClientAccountFee::LINE_RETURNS_PROCESSING),
             'additional_item' => $this->amountForLine($account, ClientAccountFee::LINE_RETURNS_ADDITIONAL_ITEMS),
             'non_compliant' => $this->amountForLine($account, ClientAccountFee::LINE_RETURNS_NON_COMPLIANT),
+            'photo' => $this->amountForLine($account, ClientAccountFee::LINE_RETURNS_PHOTO),
         ];
     }
 
@@ -68,6 +74,11 @@ class ReturnFeeService
         if ($return->isNonCompliant()
             && $this->shouldApplyDefault($return->return_fee_non_compliant, $defaults['non_compliant'])) {
             $return->return_fee_non_compliant = $defaults['non_compliant'];
+            $changed = true;
+        }
+        if ($this->returnHasPhotos($return)
+            && $this->shouldApplyDefault($return->return_fee_photo, $defaults['photo'])) {
+            $return->return_fee_photo = $defaults['photo'];
             $changed = true;
         }
 
@@ -131,11 +142,83 @@ class ReturnFeeService
             $payload['non_compliant_label'] = 'Non-Compliant Return';
         }
 
+        if ($this->returnHasPhotos($return)) {
+            $photo = $return->return_fee_photo !== null
+                ? (float) $return->return_fee_photo
+                : ($defaults['photo'] ?? null);
+            if (! $return->feesAreLocked()
+                && ($photo === null || $photo == 0.0)
+                && isset($defaults['photo'])
+                && $defaults['photo'] !== null
+                && $defaults['photo'] > 0) {
+                $photo = $defaults['photo'];
+            }
+            if (! $return->feesAreLocked() && $photo !== null) {
+                $this->persistPhotoFee($return, $photo);
+            }
+            $payload['photo'] = $photo;
+            $payload['photo_label'] = 'Return Photo';
+        }
+
         return $payload;
     }
 
+    public function applyPhotoFee(ClientAccountReturn $return): void
+    {
+        if ($return->feesAreLocked()) {
+            return;
+        }
+        $defaults = $this->defaultsForReturn($return);
+        $amount = $defaults['photo'] ?? null;
+        if ($amount === null) {
+            $amount = 0.0;
+        }
+        if ($return->return_fee_photo !== null && (float) $return->return_fee_photo > 0) {
+            return;
+        }
+        $return->return_fee_photo = round((float) $amount, 4);
+        $return->saveQuietly();
+    }
+
+    public function clearPhotoFee(ClientAccountReturn $return): void
+    {
+        if ($return->feesAreLocked()) {
+            return;
+        }
+        if ($this->returnHasPhotos($return)) {
+            return;
+        }
+        if ($return->return_fee_photo === null) {
+            return;
+        }
+        $return->return_fee_photo = null;
+        $return->saveQuietly();
+    }
+
+    public function photoFeeAmount(ClientAccountReturn $return): float
+    {
+        if (! $this->returnHasPhotos($return)) {
+            return 0.0;
+        }
+        $fees = $this->serializeReturnFees($return);
+
+        return (float) ($fees['photo'] ?? 0);
+    }
+
+    public function returnHasPhotos(ClientAccountReturn $return): bool
+    {
+        if ($return->relationLoaded('attachments')) {
+            return $return->attachments->isNotEmpty();
+        }
+        if (trim((string) ($return->process_photo_path ?? '')) !== '') {
+            return true;
+        }
+
+        return $return->attachments()->exists();
+    }
+
     /**
-     * @return array{first_item: float|null, additional_item: float|null, non_compliant: float|null}
+     * @return array{first_item: float|null, additional_item: float|null, non_compliant: float|null, photo: float|null}
      */
     private function defaultsForReturn(ClientAccountReturn $return): array
     {
@@ -145,6 +228,7 @@ class ReturnFeeService
                 'first_item' => null,
                 'additional_item' => null,
                 'non_compliant' => null,
+                'photo' => null,
             ];
         }
 
@@ -157,10 +241,19 @@ class ReturnFeeService
                 'first_item' => null,
                 'additional_item' => null,
                 'non_compliant' => null,
+                'photo' => null,
             ];
         }
 
         return $this->accountDefaults($account);
+    }
+
+    private function persistPhotoFee(ClientAccountReturn $return, float $photo): void
+    {
+        if ((float) ($return->return_fee_photo ?? 0) != $photo) {
+            $return->return_fee_photo = round($photo, 4);
+            $return->saveQuietly();
+        }
     }
 
     private function persistResolvedFees(
@@ -193,7 +286,8 @@ class ReturnFeeService
         ClientAccountReturn $return,
         ?float $firstItem,
         ?float $additionalItem,
-        ?float $nonCompliant = null
+        ?float $nonCompliant = null,
+        ?float $photo = null
     ): ClientAccountReturn {
         if ($return->feesAreLocked()) {
             throw ValidationException::withMessages([
@@ -208,6 +302,9 @@ class ReturnFeeService
         }
         if ($nonCompliant !== null && $return->isNonCompliant()) {
             $return->return_fee_non_compliant = round($nonCompliant, 4);
+        }
+        if ($photo !== null && $this->returnHasPhotos($return)) {
+            $return->return_fee_photo = round($photo, 4);
         }
         $return->save();
 
@@ -299,7 +396,6 @@ class ReturnFeeService
             return true;
         }
 
-        // Catalog/template rows occasionally land with a mismatched group; recover by name.
         $haystack = $this->feeHaystack($fee);
 
         return str_contains($haystack, 'return');
@@ -326,12 +422,16 @@ class ReturnFeeService
         if ($lineCode === ClientAccountFee::LINE_RETURNS_NON_COMPLIANT) {
             return str_contains($haystack, 'non') && str_contains($haystack, 'compliant');
         }
+        if ($lineCode === ClientAccountFee::LINE_RETURNS_PHOTO) {
+            return str_contains($haystack, 'photo');
+        }
         if ($lineCode === ClientAccountFee::LINE_RETURNS_ADDITIONAL_ITEMS) {
             return str_contains($haystack, 'return') && str_contains($haystack, 'additional');
         }
         if ($lineCode === ClientAccountFee::LINE_RETURNS_PROCESSING) {
             if (str_contains($haystack, 'additional') || str_contains($haystack, 'assembly')
                 || str_contains($haystack, 'repack') || str_contains($haystack, 'disposal')
+                || str_contains($haystack, 'photo')
                 || (str_contains($haystack, 'non') && str_contains($haystack, 'compliant'))) {
                 return false;
             }

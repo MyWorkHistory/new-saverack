@@ -2621,7 +2621,7 @@ class ShopifyIntegrationController extends Controller
                 'sellable' => (bool) $location->sellable,
             ];
             $nameLower = strtolower(trim((string) $location->name));
-            if ($nameLower === $receivingName || ShopifyWarehouseLocation::isPickingCartType($location->type)) {
+            if ($nameLower === $receivingName || \App\Models\ShopifyWarehouseLocation::isPickingCartType($location->type)) {
                 $grouped['other'][] = $entry;
             } elseif ($location->pickable) {
                 $grouped['pick'][] = $entry;

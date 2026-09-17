@@ -205,6 +205,7 @@ class ReturnController extends Controller
             'created_source' => $return->created_source,
             'return_fees' => app(ReturnFeeService::class)->serializeReturnFees($return),
             'return_bill_id' => $return->return_bill_id,
+            'process_photo_url' => $return->processPhotoUrl(),
         ], $this->thirdPartyMeta($return));
     }
 

@@ -23,6 +23,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -395,10 +396,37 @@ class AdminReturnController extends Controller
             'admin_default_return_reason' => ReturnReasonOptions::adminDefaultKey(),
             'return_fees' => $this->returnFees->serializeReturnFees($return),
             'return_bill_id' => $return->return_bill_id,
+            'process_photo_url' => $return->processPhotoUrl(),
             'return_warehouse_address' => config('returns.return_warehouse_address', []),
         ];
 
         return array_merge($payload, $this->thirdPartyMeta($return));
+    }
+
+    /**
+     * @param  \Illuminate\Http\UploadedFile  $file
+     */
+    private function storeProcessPhoto(ClientAccountReturn $return, $file): void
+    {
+        $ext = strtolower((string) $file->getClientOriginalExtension());
+        if (! in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'], true)) {
+            throw ValidationException::withMessages([
+                'photo' => ['Upload a JPG, PNG, GIF, WEBP, or AVIF photo.'],
+            ]);
+        }
+
+        $path = $file->storeAs(
+            'returns/process',
+            'return-'.$return->id.'-'.Str::uuid().'.'.$ext,
+            'public'
+        );
+        $old = trim((string) $return->process_photo_path);
+        if ($old !== '' && $old !== $path && Storage::disk('public')->exists($old)) {
+            Storage::disk('public')->delete($old);
+        }
+
+        $return->process_photo_path = $path;
+        $return->save();
     }
 
     /**
@@ -646,7 +674,10 @@ class AdminReturnController extends Controller
             'lines.*.return_reason' => ['nullable', 'string', 'max:64'],
             'lines.*.restock' => ['nullable', 'boolean'],
             'lines.*.return_bin_id' => ['nullable', 'integer', 'exists:return_bins,id'],
+            'photo' => ['required', 'file', 'max:10240'],
         ]);
+
+        $this->storeProcessPhoto($clientAccountReturn, $validated['photo']);
 
         $normalized = $this->processing->validateAndNormalizeAdminLines($validated['lines']);
         $headerBinId = isset($validated['return_bin_id']) ? (int) $validated['return_bin_id'] : null;
@@ -685,7 +716,10 @@ class AdminReturnController extends Controller
             'additional_item_fee' => ['nullable', 'numeric', 'min:0'],
             'non_compliant_fee' => ['nullable', 'numeric', 'min:0'],
             'return_bin_id' => $this->returnBinIdRules(),
+            'photo' => ['required', 'file', 'max:10240'],
         ]);
+
+        $this->storeProcessPhoto($clientAccountReturn, $validated['photo']);
 
         $lineIds = array_map('intval', $validated['line_ids']);
         $lineIds = array_values(array_unique(array_filter($lineIds, fn ($id) => $id > 0)));

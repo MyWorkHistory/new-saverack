@@ -198,7 +198,7 @@ class AdminReturnThirdPartyWorkflowTest extends TestCase
         $lineId = (int) $lineResponse->json('lines.0.id');
         $bin = ReturnBin::query()->create(['name' => 'TP Bin 8']);
 
-        $this->postJson('/api/admin/returns/'.$returnId.'/process', [
+        $this->postWithPhoto('/api/admin/returns/'.$returnId.'/process', [
             'line_ids' => [$lineId],
             'restock_by_line_id' => [$lineId => true],
             'return_bin_id' => $bin->id,

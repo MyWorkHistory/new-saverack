@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ReturnFeesCard from "../../components/admin-returns/ReturnFeesCard.vue";
+import ReturnProcessPhotoCard from "../../components/admin-returns/ReturnProcessPhotoCard.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatRmaLabel } from "../../utils/formatReturnDisplay.js";
@@ -23,6 +24,7 @@ const reasonOptions = ref({});
 const returnFees = ref({});
 const defaultReason = ref("unknown");
 const selectedKeys = ref([]);
+const processPhoto = ref(null);
 
 const shipheroOrderId = computed(() => String(route.params.shipheroOrderId || ""));
 const clientAccountId = computed(() => Number(route.query.client_account_id || 0));
@@ -33,7 +35,7 @@ const allSelected = computed(() => {
 });
 
 const hasReturnQty = computed(() => formLines.value.some((l) => Number(l.return_qty) > 0));
-const canProcess = computed(() => hasReturnQty.value);
+const canProcess = computed(() => hasReturnQty.value && !!processPhoto.value);
 
 function lineKey(idx) {
   return idx;
@@ -156,6 +158,10 @@ async function processReturn() {
     toast.error("Enter a return quantity for at least one item.");
     return;
   }
+  if (!processPhoto.value) {
+    toast.error("Upload a photo before processing this return.");
+    return;
+  }
   submitBusy.value = true;
   try {
     const lines = formLines.value.map((row) => ({
@@ -168,17 +174,22 @@ async function processReturn() {
       return_reason: Number(row.return_qty) > 0 ? row.return_reason || defaultReason.value : null,
       restock: row.restock !== false,
     }));
-    const payload = {
-      return_type: returnType.value,
-      warehouse_private_note: warehouseNote.value.trim() || null,
-      return_comment: returnComment.value.trim() || null,
-      lines,
-    };
-    if (returnFees.value.first_item != null) payload.first_item_fee = returnFees.value.first_item;
+    const body = new FormData();
+    body.append("photo", processPhoto.value);
+    body.append("return_type", returnType.value);
+    if (warehouseNote.value.trim()) body.append("warehouse_private_note", warehouseNote.value.trim());
+    if (returnComment.value.trim()) body.append("return_comment", returnComment.value.trim());
+    if (returnFees.value.first_item != null) body.append("first_item_fee", String(returnFees.value.first_item));
     if (returnFees.value.additional_item != null) {
-      payload.additional_item_fee = returnFees.value.additional_item;
+      body.append("additional_item_fee", String(returnFees.value.additional_item));
     }
-    await api.post(`/admin/returns/${ret.value.id}/process-from-draft`, payload);
+    lines.forEach((line, index) => {
+      Object.entries(line).forEach(([key, value]) => {
+        if (value == null || value === "") return;
+        body.append(`lines[${index}][${key}]`, typeof value === "boolean" ? (value ? "1" : "0") : String(value));
+      });
+    });
+    await api.post(`/admin/returns/${ret.value.id}/process-from-draft`, body);
     toast.success("Return processed.");
     router.push({ name: "admin-process-returns" });
   } catch (e) {
@@ -430,6 +441,12 @@ onMounted(() => {
           :fees="returnFees"
           :editable="true"
           @update:fees="returnFees = $event"
+        />
+
+        <ReturnProcessPhotoCard
+          :required="true"
+          :disabled="submitBusy"
+          @select="processPhoto = $event"
         />
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">

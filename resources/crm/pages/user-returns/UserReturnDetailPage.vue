@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import ReturnProcessPhotoCard from "../../components/admin-returns/ReturnProcessPhotoCard.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import {
@@ -291,6 +292,12 @@ onMounted(() => {
             View Shipping Label
           </button>
         </div>
+
+          <ReturnProcessPhotoCard
+            v-if="ret.process_photo_url"
+            :existing-url="ret.process_photo_url"
+            :required="false"
+          />
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">
           <h3 class="h6 fw-semibold mb-3">Return Comment</h3>

@@ -253,7 +253,7 @@ class AdminReturnProcessWorkflowTest extends TestCase
             })
             ->andReturn(['warehouse_id' => 'wh-returns-test', 'warehouse_name' => 'Main', 'locations' => []]);
 
-        $this->postJson('/api/admin/returns/'.$return->id.'/process', [
+        $this->postWithPhoto('/api/admin/returns/'.$return->id.'/process', [
             'line_ids' => [$lineA->id],
             'restock_by_line_id' => [$lineA->id => true],
         ])
@@ -285,7 +285,7 @@ class AdminReturnProcessWorkflowTest extends TestCase
             })
             ->andReturn(['warehouse_id' => 'wh-returns-test', 'warehouse_name' => 'Main', 'locations' => []]);
 
-        $this->postJson('/api/admin/returns/'.$return->id.'/process', [
+        $this->postWithPhoto('/api/admin/returns/'.$return->id.'/process', [
             'line_ids' => [$lineA->id],
             'restock_by_line_id' => [$lineA->id => false],
         ])
@@ -305,7 +305,7 @@ class AdminReturnProcessWorkflowTest extends TestCase
         Sanctum::actingAs($staff);
         $this->mockInventoryStaging();
 
-        $this->postJson('/api/admin/returns/'.$return->id.'/process', [
+        $this->postWithPhoto('/api/admin/returns/'.$return->id.'/process', [
             'line_ids' => [$lineA->id],
             'restock_by_line_id' => [$lineA->id => true],
             'return_bin_id' => $bin->id,
@@ -357,7 +357,7 @@ class AdminReturnProcessWorkflowTest extends TestCase
         Sanctum::actingAs($this->staffUser());
         $this->mockInventoryStaging();
 
-        $this->postJson('/api/admin/returns/'.$return->id.'/process-from-draft', [
+        $this->postWithPhoto('/api/admin/returns/'.$return->id.'/process-from-draft', [
             'return_type' => ClientAccountReturn::TYPE_DIRECT,
             'lines' => [
                 [
@@ -407,7 +407,7 @@ class AdminReturnProcessWorkflowTest extends TestCase
             })
             ->andReturn(['warehouse_id' => 'wh-returns-test', 'warehouse_name' => 'Main', 'locations' => []]);
 
-        $this->postJson('/api/admin/returns/'.$return->id.'/process-from-draft', [
+        $this->postWithPhoto('/api/admin/returns/'.$return->id.'/process-from-draft', [
             'return_type' => ClientAccountReturn::TYPE_DIRECT,
             'lines' => [
                 [
@@ -450,7 +450,7 @@ class AdminReturnProcessWorkflowTest extends TestCase
         Sanctum::actingAs($this->staffUser());
         $this->mockInventoryStaging();
 
-        $this->postJson('/api/admin/returns/'.$return->id.'/process-from-draft', [
+        $this->postWithPhoto('/api/admin/returns/'.$return->id.'/process-from-draft', [
             'return_type' => ClientAccountReturn::TYPE_DIRECT,
             'lines' => [
                 [

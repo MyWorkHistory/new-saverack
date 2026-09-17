@@ -167,7 +167,7 @@ class AdminReturnBinWorkflowTest extends TestCase
         $bin = $this->makeBin('Process Bin');
         Sanctum::actingAs($this->staffUser(['returns.view']));
 
-        $this->postJson('/api/admin/returns/'.$return->id.'/process', [
+        $this->postWithPhoto('/api/admin/returns/'.$return->id.'/process', [
             'line_ids' => [$line->id],
             'return_bin_id' => $bin->id,
         ])

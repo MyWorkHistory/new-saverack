@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 
 class ClientAccountReturn extends Model
 {
@@ -82,6 +83,7 @@ class ClientAccountReturn extends Model
         'processed_by_user_id',
         'return_bin_number',
         'return_bin_id',
+        'process_photo_path',
     ];
 
     protected $casts = [
@@ -170,5 +172,15 @@ class ClientAccountReturn extends Model
         $channel = self::thirdPartyTypeFromReturnType($returnType);
 
         return $channel === 'amazon' ? 'Amazon' : 'Other';
+    }
+
+    public function processPhotoUrl(): ?string
+    {
+        $path = trim((string) $this->process_photo_path);
+        if ($path === '') {
+            return null;
+        }
+
+        return Storage::disk('public')->url($path);
     }
 }

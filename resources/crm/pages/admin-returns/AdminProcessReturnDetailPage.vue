@@ -6,6 +6,7 @@ import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import Modal from "../../components/Modal.vue";
 import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalogPanel.vue";
 import ReturnFeesCard from "../../components/admin-returns/ReturnFeesCard.vue";
+import ReturnProcessPhotoCard from "../../components/admin-returns/ReturnProcessPhotoCard.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
 import { formatDateUs } from "../../utils/formatUserDates.js";
@@ -38,6 +39,7 @@ const referenceDraft = ref("");
 const referenceBusy = ref(false);
 const returnCommentDraft = ref("");
 const returnCommentBusy = ref(false);
+const processPhoto = ref(null);
 
 const returnId = computed(() => String(route.params.id || ""));
 
@@ -63,7 +65,7 @@ const allSelected = computed(() => {
 });
 
 const canProcess = computed(() => {
-  if (!isPending.value) return false;
+  if (!isPending.value || !processPhoto.value) return false;
   if (isStaffManagedPending.value) {
     return lines.value.some((line) => selected.value.has(line.id) && Number(line.return_qty) > 0);
   }
@@ -428,20 +430,26 @@ async function processReturn() {
     toast.error("Select at least one item to process.");
     return;
   }
+  if (!processPhoto.value) {
+    toast.error("Upload a photo before processing this return.");
+    return;
+  }
   processing.value = true;
   try {
     const restockByLineId = {};
     for (const lineId of lineIds) {
       restockByLineId[lineId] = lineRestock.value[lineId] !== false;
     }
-    const payload = {
-      line_ids: lineIds,
-      restock_by_line_id: restockByLineId,
-    };
-    if (returnFees.value.first_item != null) payload.first_item_fee = returnFees.value.first_item;
-    if (returnFees.value.additional_item != null) payload.additional_item_fee = returnFees.value.additional_item;
-    if (returnFees.value.non_compliant != null) payload.non_compliant_fee = returnFees.value.non_compliant;
-    await api.post(`/admin/returns/${ret.value.id}/process`, payload);
+    const body = new FormData();
+    body.append("photo", processPhoto.value);
+    lineIds.forEach((id) => body.append("line_ids[]", String(id)));
+    Object.entries(restockByLineId).forEach(([id, restock]) => {
+      body.append(`restock_by_line_id[${id}]`, restock ? "1" : "0");
+    });
+    if (returnFees.value.first_item != null) body.append("first_item_fee", String(returnFees.value.first_item));
+    if (returnFees.value.additional_item != null) body.append("additional_item_fee", String(returnFees.value.additional_item));
+    if (returnFees.value.non_compliant != null) body.append("non_compliant_fee", String(returnFees.value.non_compliant));
+    await api.post(`/admin/returns/${ret.value.id}/process`, body);
     toast.success("Return processed.");
     router.push({ name: "admin-process-returns" });
   } catch (e) {
@@ -761,6 +769,14 @@ onMounted(load);
           :editable="isPending"
           :return-bill-id="ret.return_bill_id"
           @update:fees="returnFees = $event"
+        />
+
+        <ReturnProcessPhotoCard
+          v-if="isPending || ret.process_photo_url"
+          :existing-url="ret.process_photo_url || ''"
+          :required="isPending"
+          :disabled="processing"
+          @select="processPhoto = $event"
         />
 
         <div class="staff-table-card staff-datatable-card staff-datatable-card--white p-4">

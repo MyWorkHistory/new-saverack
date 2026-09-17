@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Models\EmailTemplate;
 use App\Models\Lead;
 use App\Services\LeadService;
-use App\Support\OldListLeadCatalog;
+use App\Support\LeadCsvParser;
 use App\Models\LeadStatusEvent;
 use App\Models\Permission;
 use App\Models\PricingFeeTemplate;
@@ -533,10 +533,11 @@ TEXT;
             'follow_up_at' => now()->addDay()->toDateString(),
         ]);
 
-        $result = app(LeadService::class)->importIfEmailMissing(
-            array_slice(OldListLeadCatalog::rows(), 0, 2),
-            Lead::STATUS_OLD_LIST
-        );
+        $csv = "Lead Status,Name,Company,Email,Lead Source,Last Activity Time\n"
+            ."Old List,Margaret Davis,MD Prescriptives,info@mdprescriptives.com,Bizy Email,1/27/2025\n"
+            ."Old List,Justin,Already,support@evexiascience.com,Bizy Email,1/27/2025\n";
+
+        $result = app(LeadService::class)->importCsvContents($csv);
 
         $this->assertSame(1, $result['created']);
         $this->assertSame(1, $result['skipped']);
@@ -547,6 +548,14 @@ TEXT;
         $imported = Lead::query()->where('email', 'info@mdprescriptives.com')->first();
         $this->assertNotNull($imported);
         $this->assertSame(Lead::STATUS_OLD_LIST, $imported->status);
+        $this->assertSame(Lead::REFERRAL_BIZY, $imported->referral);
         $this->assertSame('2025-01-27', $imported->created_at->toDateString());
+
+        $quoted = LeadCsvParser::parse(
+            "Lead Status,Name,Company,Email,Lead Source,Last Activity Time\n"
+            ."\"Old List\",\"Vijay Love, Indus\",\"Love, Indus\",vijay@loveindus.com,Google,\n"
+        );
+        $this->assertSame('Love, Indus', $quoted['rows'][0]['company_name']);
+        $this->assertSame(Lead::REFERRAL_GOOGLE, $quoted['rows'][0]['referral']);
     }
 }

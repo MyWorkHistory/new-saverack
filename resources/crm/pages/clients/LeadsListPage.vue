@@ -16,6 +16,7 @@ import LeadCreateDrawer from "../../components/leads/LeadCreateDrawer.vue";
 import LeadQuickAddDrawer from "../../components/leads/LeadQuickAddDrawer.vue";
 import LeadStatusUpdateModal from "../../components/leads/LeadStatusUpdateModal.vue";
 import LeadSummaryCards from "../../components/leads/LeadSummaryCards.vue";
+import ShopifyCsvUploadModal from "../../components/shopify/ShopifyCsvUploadModal.vue";
 import {
   LEAD_FOLLOW_UP_DAY_OPTIONS,
   LEAD_REFERRALS,
@@ -84,6 +85,16 @@ const createOpen = ref(false);
 const createBusy = ref(false);
 const createDrawerRef = ref(null);
 const quickAddOpen = ref(false);
+const csvImportOpen = ref(false);
+const csvImportBusy = ref(false);
+const CSV_IMPORT_COLUMNS = [
+  { label: "Lead Status", required: false },
+  { label: "Name", required: false },
+  { label: "Company", required: false },
+  { label: "Email", required: true },
+  { label: "Lead Source", required: false },
+  { label: "Last Activity Time", required: false },
+];
 const quickAddBusy = ref(false);
 const quickAddDrawerRef = ref(null);
 
@@ -508,6 +519,30 @@ async function onQuickAdd(payload) {
   }
 }
 
+async function submitCsvImport({ file }) {
+  if (!file) return;
+  csvImportBusy.value = true;
+  try {
+    const body = new FormData();
+    body.append("file", file);
+    const { data } = await api.post("/leads/import-csv", body);
+    csvImportOpen.value = false;
+    const created = Number(data?.created || 0);
+    const skipped = Number(data?.skipped || 0);
+    const invalid = Number(data?.invalid || 0);
+    let message = `Imported ${created} lead${created === 1 ? "" : "s"}.`;
+    if (skipped) message += ` Skipped ${skipped} existing email${skipped === 1 ? "" : "s"}.`;
+    if (invalid) message += ` ${invalid} row${invalid === 1 ? "" : "s"} could not be read.`;
+    toast.success(message);
+    await loadMeta();
+    await fetchRows();
+  } catch (e) {
+    toast.errorFrom(e, "Could not upload CSV.");
+  } finally {
+    csvImportBusy.value = false;
+  }
+}
+
 function openDelete(row) {
   deleteTarget.value = row;
   deleteOpen.value = true;
@@ -670,6 +705,17 @@ onUnmounted(() => {
       :busy="quickAddBusy"
       @submit="onQuickAdd"
     />
+    <ShopifyCsvUploadModal
+      :open="csvImportOpen"
+      title="Upload Leads"
+      subtitle="Emails already on a lead are skipped. Keep commas inside quotes if a name or company has one."
+      :columns="CSV_IMPORT_COLUMNS"
+      template-name="leads-old-list.csv"
+      submit-label="Upload CSV"
+      :busy="csvImportBusy"
+      @update:open="csvImportOpen = $event"
+      @submit="submitCsvImport"
+    />
     <LeadBulkEmailDrawer
       v-model:open="bulkEmailOpen"
       :selected-count="selectedCount"
@@ -719,6 +765,14 @@ onUnmounted(() => {
         <p class="text-secondary small mb-0">Track sales leads and follow-ups</p>
       </div>
       <div class="d-flex flex-wrap align-items-center gap-2 ms-md-auto flex-shrink-0">
+        <button
+          v-if="canCreate"
+          type="button"
+          class="btn btn-outline-primary staff-page-primary fw-semibold"
+          @click="csvImportOpen = true"
+        >
+          Upload CSV
+        </button>
         <button
           v-if="canCreate"
           type="button"

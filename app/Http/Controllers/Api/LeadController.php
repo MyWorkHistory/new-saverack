@@ -87,6 +87,37 @@ class LeadController extends Controller
         return response()->json($this->leads->toDetailArray($lead), 201);
     }
 
+    public function importCsv(Request $request): JsonResponse
+    {
+        Gate::authorize('create', Lead::class);
+
+        $validated = $request->validate([
+            'file' => ['required', 'file', 'max:20480'],
+        ]);
+
+        $file = $validated['file'];
+        $name = strtolower((string) $file->getClientOriginalName());
+        if (substr($name, -4) !== '.csv') {
+            return response()->json([
+                'message' => 'Choose a CSV file.',
+                'errors' => ['file' => ['Choose a CSV file.']],
+            ], 422);
+        }
+
+        if (function_exists('set_time_limit')) {
+            set_time_limit(300);
+        }
+
+        $contents = file_get_contents($file->getRealPath());
+        if ($contents === false) {
+            return response()->json(['message' => 'Could not read that CSV.'], 422);
+        }
+
+        $result = $this->leads->importCsvContents($contents);
+
+        return response()->json($result);
+    }
+
     public function quickAdd(Request $request): JsonResponse
     {
         Gate::authorize('create', Lead::class);

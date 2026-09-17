@@ -9,6 +9,7 @@ use App\Models\LeadFee;
 use App\Models\LeadStatusEvent;
 use App\Models\PricingFeeTemplate;
 use App\Models\User;
+use App\Support\LeadCsvParser;
 use App\Support\LeadQuickAddParser;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -1202,70 +1203,172 @@ class LeadService
     }
 
     /**
-     * Create leads from a prepared list. Existing emails are skipped.
+     * Import a leads CSV. Existing emails are skipped, including duplicates in the file.
      *
-     * @param  list<array{name: string, company_name: string, email: string, referral: string, last_activity?: string|null}>  $rows
-     * @return array{created: int, skipped: int}
+     * @return array{created: int, skipped: int, invalid: int}
      */
-    public function importIfEmailMissing(array $rows, string $status = Lead::STATUS_OLD_LIST): array
+    public function importCsvContents(string $contents): array
     {
-        if (! in_array($status, Lead::STATUSES, true)) {
-            throw new InvalidArgumentException('Invalid lead status.');
-        }
+        $parsed = LeadCsvParser::parse($contents);
 
+        return $this->importIfEmailMissing($parsed['rows'], $parsed['invalid']);
+    }
+
+    /**
+     * @param  list<array{name?: string, company_name?: string, email?: string, referral?: string, status?: string, last_activity?: string|null}>  $rows
+     * @return array{created: int, skipped: int, invalid: int}
+     */
+    public function importIfEmailMissing(array $rows, int $invalid = 0): array
+    {
+        $existing = [];
+        Lead::query()->select('email')->orderBy('id')->chunk(1000, function ($leads) use (&$existing) {
+            foreach ($leads as $lead) {
+                $email = strtolower(trim((string) $lead->email));
+                if ($email !== '') {
+                    $existing[$email] = true;
+                }
+            }
+        });
+
+        $feeTemplates = PricingFeeTemplate::query()->orderBy('sort_order')->orderBy('id')->get()->filter(function ($template) {
+            return PricingFeeTemplate::isAccountScheduleCategory((string) $template->category);
+        })->values();
         $created = 0;
         $skipped = 0;
+        $feeRows = [];
+        $eventRows = [];
+        $now = now()->toDateTimeString();
+
+        $flush = function () use (&$feeRows, &$eventRows) {
+            if ($feeRows !== []) {
+                foreach (array_chunk($feeRows, 500) as $chunk) {
+                    LeadFee::query()->insert($chunk);
+                }
+                $feeRows = [];
+            }
+            if ($eventRows !== []) {
+                foreach (array_chunk($eventRows, 500) as $chunk) {
+                    LeadStatusEvent::query()->insert($chunk);
+                }
+                $eventRows = [];
+            }
+        };
 
         foreach ($rows as $row) {
             $email = strtolower(trim((string) ($row['email'] ?? '')));
             $company = trim((string) ($row['company_name'] ?? ''));
-            if ($email === '' || $company === '' || $this->emailAlreadyExists($email)) {
+            if ($email === '' || isset($existing[$email])) {
                 $skipped++;
                 continue;
             }
-
-            $lastActivity = $this->nullableTrim($row['last_activity'] ?? null);
-            $createdAt = null;
-            if ($lastActivity !== null) {
-                try {
-                    $createdAt = \Illuminate\Support\Carbon::createFromFormat('n/j/Y', $lastActivity)->startOfDay();
-                } catch (\Throwable $e) {
-                    $createdAt = null;
-                }
+            if ($company === '') {
+                $company = trim((string) ($row['name'] ?? ''));
+            }
+            if ($company === '') {
+                $company = $email;
             }
 
-            $lead = Lead::query()->create([
+            $status = (string) ($row['status'] ?? Lead::STATUS_OLD_LIST);
+            if (! in_array($status, Lead::STATUSES, true)) {
+                $status = Lead::STATUS_OLD_LIST;
+            }
+
+            $createdAt = $this->parseImportDate($row['last_activity'] ?? null);
+            $stamp = $createdAt !== null ? $createdAt->toDateTimeString() : $now;
+            $lead = new Lead([
                 'status' => $status,
                 'referral' => Lead::normalizeReferral($row['referral'] ?? Lead::REFERRAL_BIZY),
-                'company_name' => $company,
+                'company_name' => mb_substr($company, 0, 255),
                 'email' => $email,
-                'name' => $this->nullableTrim($row['name'] ?? null),
+                'name' => $this->limitNullable($row['name'] ?? null, 255),
                 'follow_up_days' => null,
                 'follow_up_at' => null,
             ]);
+            $lead->created_at = $stamp;
+            $lead->updated_at = $stamp;
+            $lead->save();
 
-            if ($createdAt !== null) {
-                $lead->created_at = $createdAt;
-                $lead->updated_at = $createdAt;
-                $lead->save();
+            foreach ($feeTemplates as $template) {
+                $feeRows[] = [
+                    'lead_id' => $lead->id,
+                    'pricing_template_id' => $template->id,
+                    'fee_group' => PricingFeeTemplate::categoryToFeeGroup((string) $template->category),
+                    'line_code' => 'template_'.$template->id,
+                    'label' => $template->name,
+                    'description' => $template->description,
+                    'icon_path' => $template->icon_path,
+                    'amount' => $template->amount,
+                    'currency' => 'USD',
+                    'sort_order' => (int) $template->sort_order,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
             }
 
-            $this->provisionDefaultFees($lead);
-
-            LeadStatusEvent::query()->create([
+            $eventRows[] = [
                 'lead_id' => $lead->id,
                 'status' => $status,
                 'follow_up_days' => null,
-                'note' => 'Imported from old list',
-            ]);
+                'email_template_id' => null,
+                'template_name' => null,
+                'user_id' => null,
+                'note' => 'Imported from CSV',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
 
+            $existing[$email] = true;
             $created++;
+
+            if (count($feeRows) >= 500 || count($eventRows) >= 500) {
+                $flush();
+            }
         }
+
+        $flush();
 
         return [
             'created' => $created,
             'skipped' => $skipped,
+            'invalid' => $invalid,
         ];
+    }
+
+    /**
+     * @param  mixed  $value
+     */
+    private function parseImportDate($value): ?\Illuminate\Support\Carbon
+    {
+        $raw = $this->nullableTrim($value);
+        if ($raw === null) {
+            return null;
+        }
+
+        foreach (['n/j/Y', 'm/d/Y', 'Y-m-d'] as $format) {
+            try {
+                $date = \Illuminate\Support\Carbon::createFromFormat($format, $raw);
+            } catch (\Throwable $e) {
+                $date = false;
+            }
+            if ($date instanceof \Illuminate\Support\Carbon) {
+                return $date->startOfDay();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  mixed  $value
+     */
+    private function limitNullable($value, int $max): ?string
+    {
+        $trimmed = $this->nullableTrim($value);
+        if ($trimmed === null) {
+            return null;
+        }
+
+        return mb_substr($trimmed, 0, $max);
     }
 
     private function emailAlreadyExists(string $email, ?int $ignoreLeadId = null): bool

@@ -258,6 +258,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/meta', [LeadController::class, 'meta']);
             Route::get('/', [LeadController::class, 'index']);
             Route::post('/', [LeadController::class, 'store']);
+            Route::post('/import-csv', [LeadController::class, 'importCsv']);
             Route::post('/quick-add', [LeadController::class, 'quickAdd']);
             Route::post('/bulk-email', [LeadController::class, 'bulkEmail']);
             Route::post('/bulk-status', [LeadController::class, 'bulkStatus']);

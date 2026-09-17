@@ -340,6 +340,10 @@ class ShopifyOrderListService
             }
         }
 
+        if ($this->hasBackorderLine($order)) {
+            return self::DISPLAY_BACKORDER;
+        }
+
         $holds = is_array($order->crm_hold_reasons) ? $order->crm_hold_reasons : [];
         if ($holds !== []) {
             return self::DISPLAY_ON_HOLD;
@@ -421,12 +425,28 @@ class ShopifyOrderListService
         if ($raw === 'cancelled') {
             return 'cancelled';
         }
+        $lineRaw = is_array($line->raw_json) ? $line->raw_json : [];
+        if (strtolower(trim((string) ($lineRaw['crm_line_status'] ?? ''))) === 'backorder') {
+            return 'backorder';
+        }
         if (! $order->ignoresShopifyCancel()
             && ($order->cancelled_at !== null || $order->crm_fulfillment_cancelled_at !== null)) {
             return 'cancelled';
         }
 
         return 'pending';
+    }
+
+    public function hasBackorderLine(ShopifyOrder $order): bool
+    {
+        $order->loadMissing('lineItems');
+        foreach ($order->lineItems as $line) {
+            if ($this->lineDisplayStatus($order, $line) === 'backorder') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function displayStatusLabel(string $status): string

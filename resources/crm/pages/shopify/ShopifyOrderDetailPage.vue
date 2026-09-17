@@ -9,6 +9,7 @@ import ShopifyOrderEditAddressModal from "../../components/shopify/ShopifyOrderE
 import ShopifyOrderEditItemsModal from "../../components/shopify/ShopifyOrderEditItemsModal.vue";
 import ShopifyOrderEditShippingModal from "../../components/shopify/ShopifyOrderEditShippingModal.vue";
 import ShopifyOrderFulfillModal from "../../components/shopify/ShopifyOrderFulfillModal.vue";
+import ShopifyOrderLineFulfillModal from "../../components/shopify/ShopifyOrderLineFulfillModal.vue";
 import ShopifyOrderHoldModal from "../../components/shopify/ShopifyOrderHoldModal.vue";
 import ShopifyOrderReprocessModal from "../../components/shopify/ShopifyOrderReprocessModal.vue";
 import ShopifyOrderReshipModal from "../../components/shopify/ShopifyOrderReshipModal.vue";
@@ -33,6 +34,9 @@ const actionsMenuOpen = ref(false);
 const holdModalOpen = ref(false);
 const cancelModalOpen = ref(false);
 const fulfillModalOpen = ref(false);
+const lineStatusMenuId = ref(null);
+const lineFulfillOpen = ref(false);
+const lineFulfillTarget = ref(null);
 const reshipModalOpen = ref(false);
 const reprocessModalOpen = ref(false);
 const statusPickerOpen = ref(false);
@@ -112,6 +116,9 @@ function onDocClick(e) {
   if (!e.target?.closest?.("[data-shopify-order-detail-actions]")) {
     actionsMenuOpen.value = false;
   }
+  if (!e.target?.closest?.("[data-line-status-menu]")) {
+    lineStatusMenuId.value = null;
+  }
 }
 
 function openItem(line) {
@@ -129,13 +136,47 @@ function openItem(line) {
 function lineStatusClass(status) {
   if (status === "cancelled") return "so-line-status so-line-status--cancelled";
   if (status === "fulfilled") return "so-line-status so-line-status--fulfilled";
+  if (status === "backorder") return "so-line-status so-line-status--backorder";
   return "so-line-status so-line-status--pending";
 }
 
 function lineStatusLabel(status) {
   if (status === "cancelled") return "Cancelled";
   if (status === "fulfilled") return "Fulfilled";
+  if (status === "backorder") return "Backorder";
   return "Pending";
+}
+
+function toggleLineStatusMenu(line) {
+  lineStatusMenuId.value = lineStatusMenuId.value === line.id ? null : line.id;
+}
+
+async function setLineStatus(line, status) {
+  lineStatusMenuId.value = null;
+  if (!line?.id || !orderId.value) return;
+  if (status === "fulfilled") {
+    if (line.line_status === "fulfilled") {
+      toast.error("This item is already fulfilled.");
+      return;
+    }
+    lineFulfillTarget.value = line;
+    lineFulfillOpen.value = true;
+    return;
+  }
+  if (line.line_status === status) return;
+  const result = await actions.applyLineStatus(orderId.value, line.id, status);
+  if (result) await load();
+}
+
+async function confirmLineFulfill({ trackingNumber } = {}) {
+  const line = lineFulfillTarget.value;
+  if (!line?.id || !orderId.value) return;
+  const result = await actions.applyLineStatus(orderId.value, line.id, "fulfilled", trackingNumber || "");
+  if (result) {
+    lineFulfillOpen.value = false;
+    lineFulfillTarget.value = null;
+    await load();
+  }
 }
 
 function timelineIconClass(type) {
@@ -384,7 +425,19 @@ onUnmounted(() => {
                 {{ createdLabel }}
               </span>
               <span v-if="createdLabel" class="so-detail-meta__sep">|</span>
-              <span class="so-detail-meta__item">Sales Channel: {{ order.sales_channel || (order.source === 'crm' ? 'CRM' : 'Shopify') }}</span>
+              <span class="so-detail-meta__item">
+                Account:
+                <RouterLink
+                  v-if="order.client_account_id"
+                  class="so-detail-meta__account"
+                  :to="{ name: 'client-account-detail', params: { id: String(order.client_account_id) } }"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {{ order.account_name || "—" }}
+                </RouterLink>
+                <template v-else>{{ order.account_name || "—" }}</template>
+              </span>
             </p>
           </div>
           <div class="d-flex flex-wrap align-items-center gap-2">
@@ -517,7 +570,26 @@ onUnmounted(() => {
                     <td>{{ line.quantity }}</td>
                     <td>{{ line.location || "—" }}</td>
                     <td>
-                      <span :class="lineStatusClass(line.line_status)">{{ lineStatusLabel(line.line_status) }}</span>
+                      <div class="so-line-status-menu" data-line-status-menu>
+                        <button
+                          type="button"
+                          class="so-line-status-btn"
+                          :class="lineStatusClass(line.line_status)"
+                          :aria-expanded="lineStatusMenuId === line.id ? 'true' : 'false'"
+                          @click.stop="toggleLineStatusMenu(line)"
+                        >
+                          {{ lineStatusLabel(line.line_status) }}
+                        </button>
+                        <div
+                          v-if="lineStatusMenuId === line.id"
+                          class="so-line-status-menu__panel"
+                          role="menu"
+                        >
+                          <button type="button" class="so-line-status-menu__item" role="menuitem" @click="setLineStatus(line, 'cancelled')">Cancel</button>
+                          <button type="button" class="so-line-status-menu__item" role="menuitem" @click="setLineStatus(line, 'backorder')">Backorder</button>
+                          <button type="button" class="so-line-status-menu__item" role="menuitem" @click="setLineStatus(line, 'fulfilled')">Fulfilled</button>
+                        </div>
+                      </div>
                     </td>
                   </tr>
                   <tr v-if="!lineItems.length">
@@ -667,6 +739,13 @@ onUnmounted(() => {
       @close="fulfillModalOpen = false"
       @confirm="confirmFulfill"
     />
+    <ShopifyOrderLineFulfillModal
+      :open="lineFulfillOpen"
+      :busy="actions.busy.value"
+      :line="lineFulfillTarget"
+      @close="lineFulfillOpen = false"
+      @confirm="confirmLineFulfill"
+    />
     <ShopifyOrderReshipModal
       :open="reshipModalOpen"
       :busy="actions.busy.value"
@@ -762,6 +841,12 @@ onUnmounted(() => {
 .so-detail-meta__item { display: inline-flex; align-items: center; gap: 0.35rem; }
 .so-detail-meta__cal { color: #9ca3af; }
 .so-detail-meta__sep { color: #d1d5db; }
+.so-detail-meta__account {
+  color: #2563eb;
+  font-weight: 600;
+  text-decoration: none;
+}
+.so-detail-meta__account:hover { text-decoration: underline; }
 .so-btn-outline {
   border: 1px solid #3b82f6;
   color: #2563eb;
@@ -879,9 +964,41 @@ onUnmounted(() => {
   font-size: 0.75rem;
   font-weight: 600;
 }
+.so-line-status-btn {
+  border: 0;
+  cursor: pointer;
+}
+.so-line-status-btn:hover { filter: brightness(0.97); }
 .so-line-status--pending { background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
 .so-line-status--cancelled { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
 .so-line-status--fulfilled { background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; }
+.so-line-status--backorder { background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe; }
+.so-line-status-menu { position: relative; display: inline-block; }
+.so-line-status-menu__panel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  min-width: 9.5rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.55rem;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  padding: 0.25rem;
+}
+.so-line-status-menu__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #111827;
+}
+.so-line-status-menu__item:hover { background: #f3f4f6; }
 .so-recipient-addr { color: #374151; line-height: 1.45; }
 .so-recipient-addr__line { margin: 0; }
 .so-ship-dl > div {

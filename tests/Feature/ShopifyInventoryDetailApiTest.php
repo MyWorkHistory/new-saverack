@@ -103,6 +103,30 @@ class ShopifyInventoryDetailApiTest extends TestCase
         $this->assertSame(ShopifyProduct::KIND_BUNDLE, $parent->product->crm_product_kind);
     }
 
+    public function test_list_search_matches_barcode_only_when_exact(): void
+    {
+        $this->actingAsAdmin();
+        [, $parent, $child] = $this->seedBundlePair();
+
+        $parent->barcode = '555242';
+        $parent->save();
+        $child->barcode = '555243';
+        $child->save();
+
+        $this->getJson('/api/shopify/inventory?q=555')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 0);
+
+        $this->getJson('/api/shopify/inventory?q=42')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 0);
+
+        $this->getJson('/api/shopify/inventory?q=555242')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.id', $parent->id);
+    }
+
     public function test_list_bundle_filter_uses_crm_product_kind(): void
     {
         $this->actingAsAdmin();

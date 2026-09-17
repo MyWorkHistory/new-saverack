@@ -780,6 +780,10 @@ GQL
                         $fulfilled = (int) $existingLine->fulfilled_quantity;
                         $lineNode['crm_quantity_locked'] = true;
                     }
+                    $prevLineStatus = strtolower(trim((string) ($prevRaw['crm_line_status'] ?? '')));
+                    if ($prevLineStatus === 'backorder' && empty($lineNode['crm_line_cancelled'])) {
+                        $lineNode['crm_line_status'] = 'backorder';
+                    }
                 }
                 ShopifyOrderLineItem::query()->updateOrCreate(
                     [

@@ -308,6 +308,25 @@ export function useShopifyOrderActions({ onUpdated } = {}) {
     }
   }
 
+  async function applyLineStatus(orderId, lineId, status, trackingNumber = "") {
+    if (!orderId || !lineId || !status) return null;
+    busy.value = true;
+    try {
+      const body = { status };
+      if (trackingNumber) body.tracking_number = trackingNumber;
+      const { data } = await api.post(`/shopify/orders/${orderId}/line-items/${lineId}/status`, body);
+      const label = status === "cancelled" ? "Cancelled" : status === "backorder" ? "Backorder" : "Fulfilled";
+      toast.success(`Item marked ${label}.`);
+      onUpdated?.(data?.order);
+      return data?.order ?? null;
+    } catch (e) {
+      toast.errorFrom(e, "Could not update item status.");
+      return null;
+    } finally {
+      busy.value = false;
+    }
+  }
+
   async function updateShippingMethod(orderId, payload) {
     if (!orderId) return null;
     busy.value = true;
@@ -331,6 +350,7 @@ export function useShopifyOrderActions({ onUpdated } = {}) {
     removeHolds,
     cancelOrder,
     fulfillOrder,
+    applyLineStatus,
     reshipOrder,
     reprocessOrder,
     applyDisplayStatus,

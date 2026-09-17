@@ -735,6 +735,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/orders/{shopifyOrder}/remove-holds', [ShopifyIntegrationController::class, 'orderRemoveHolds']);
         Route::post('/orders/{shopifyOrder}/cancel', [ShopifyIntegrationController::class, 'orderCancel']);
         Route::post('/orders/{shopifyOrder}/fulfill-all', [ShopifyIntegrationController::class, 'orderFulfillAll']);
+        Route::post('/orders/{shopifyOrder}/line-items/{lineItem}/status', [ShopifyIntegrationController::class, 'orderLineStatus']);
         Route::post('/orders/{shopifyOrder}/reship', [ShopifyIntegrationController::class, 'orderReship']);
         Route::post('/orders/{shopifyOrder}/reprocess', [ShopifyIntegrationController::class, 'orderReprocess']);
         Route::post('/orders/{shopifyOrder}/display-status', [ShopifyIntegrationController::class, 'orderDisplayStatus']);

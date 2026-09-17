@@ -378,6 +378,19 @@ GQL
             return $this->fulfillCrmOrderLocally($order, $actor, $trackingNumber, $deductLineItemIds);
         }
 
+        $order->loadMissing(['lineItems', 'fulfillmentOrders.lineItems', 'connection']);
+
+        $selectedIds = null;
+        $selectionKeys = null;
+        if ($deductLineItemIds !== null) {
+            $selectedIds = array_values(array_unique(array_filter(array_map('intval', $deductLineItemIds))));
+            if ($selectedIds === []) {
+                throw new RuntimeException('Select at least one item to fulfill.');
+            }
+            // CRM-added lines are replaced with real Shopify line ids after push/sync.
+            $selectionKeys = $this->lineSelectionKeys($order, $selectedIds);
+        }
+
         // Item edits stay in CRM until the order is fulfilled.
         $order = $this->edits->pushPendingItemEditsToShopify($order);
 
@@ -400,11 +413,12 @@ GQL
 
         $order->loadMissing(['lineItems', 'fulfillmentOrders.lineItems', 'connection']);
 
-        $selectedIds = null;
-        if ($deductLineItemIds !== null) {
-            $selectedIds = array_values(array_unique(array_filter(array_map('intval', $deductLineItemIds))));
+        if ($selectionKeys !== null) {
+            $selectedIds = $this->resolveLineIdsFromKeys($order, $selectionKeys);
             if ($selectedIds === []) {
-                throw new RuntimeException('Select at least one item to fulfill.');
+                throw new RuntimeException(
+                    'Could not match the selected items after syncing edits to Shopify. Sync the order and try again.'
+                );
             }
         }
 
@@ -415,6 +429,12 @@ GQL
             } catch (\Throwable $e) {
                 report($e);
             }
+            $order->load(['fulfillmentOrders.lineItems']);
+            $items = $this->collectFulfillableFoItems($order, $selectedIds);
+        }
+
+        if ($items === []) {
+            $this->healFoRemainingFromOrderLines($order, $selectedIds);
             $order->load(['fulfillmentOrders.lineItems']);
             $items = $this->collectFulfillableFoItems($order, $selectedIds);
         }
@@ -460,6 +480,77 @@ GQL
             'fulfillment' => $result['fulfillment'],
             'order' => $orderOut->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']),
         ];
+    }
+
+    /**
+     * Set one item to Cancelled, Backorder, or Fulfilled.
+     * Fulfilled sends that item and tracking to Shopify. Cancel and Backorder stay in CRM.
+     */
+    public function applyLineStatus(
+        ShopifyOrder $order,
+        ShopifyOrderLineItem $line,
+        string $status,
+        ?string $trackingNumber = null,
+        ?User $actor = null
+    ): ShopifyOrder {
+        if ((int) $line->shopify_order_id !== (int) $order->id) {
+            throw new RuntimeException('Item does not belong to this order.');
+        }
+
+        $status = strtolower(trim($status));
+        if ($status === 'cancel') {
+            $status = 'cancelled';
+        }
+        if (! in_array($status, ['cancelled', 'backorder', 'fulfilled'], true)) {
+            throw new RuntimeException('Unsupported item status.');
+        }
+
+        $label = trim((string) ($line->title ?: $line->sku ?: 'Item'));
+
+        if ($status === 'fulfilled') {
+            if ($this->list->rawLineStatus($line) === 'fulfilled') {
+                throw new RuntimeException('This item is already fulfilled.');
+            }
+            $this->prepareLineForFulfill($order, $line);
+            $order = $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']) ?? $order;
+            if ($this->list->isCancelled($order)) {
+                $order->crm_fulfillment_cancelled_at = null;
+                $order->cancelled_at = null;
+                $raw = is_array($order->raw_json) ? $order->raw_json : [];
+                $raw['crm_ignore_shopify_cancel'] = true;
+                $order->raw_json = $raw;
+                $order->save();
+            }
+            $result = $this->fulfillAllRemaining($order, $actor, $trackingNumber, [(int) $line->id]);
+            $order = $result['order'];
+            $this->clearLineStatusFlag($order, (int) $line->id);
+
+            return $this->syncOrderStatusFromLines($order);
+        }
+
+        if ($status === 'cancelled') {
+            $this->cancelLineInCrm($order, $line);
+            $this->activities->record(
+                $order,
+                ShopifyOrderActivity::TYPE_STATUS,
+                'Item cancelled',
+                $label,
+                $actor
+            );
+
+            return $this->syncOrderStatusFromLines($order);
+        }
+
+        $this->markLineBackorder($order, $line);
+        $this->activities->record(
+            $order,
+            ShopifyOrderActivity::TYPE_STATUS,
+            'Item marked backorder',
+            $label,
+            $actor
+        );
+
+        return $this->syncOrderStatusFromLines($order);
     }
 
     /**
@@ -957,8 +1048,9 @@ GQL
                 if ($remaining <= 0) {
                     continue;
                 }
-                $orderLineId = (int) ($line->shopify_order_line_item_id ?? 0);
-                $orderLine = $orderLineId > 0 ? $order->lineItems->firstWhere('id', $orderLineId) : null;
+                $resolved = $this->resolveOrderLineForFoLine($order, $line);
+                $orderLine = $resolved['line'];
+                $orderLineId = $resolved['id'];
                 if ($orderLine !== null && $this->list->rawLineStatus($orderLine) === 'cancelled') {
                     continue;
                 }
@@ -976,6 +1068,184 @@ GQL
         }
 
         return $items;
+    }
+
+    /**
+     * @return array{line:?ShopifyOrderLineItem, id:int}
+     */
+    private function resolveOrderLineForFoLine(ShopifyOrder $order, $foLine): array
+    {
+        $orderLineId = (int) ($foLine->shopify_order_line_item_id ?? 0);
+        $orderLine = $orderLineId > 0 ? $order->lineItems->firstWhere('id', $orderLineId) : null;
+        $foShopifyLineId = trim((string) ($foLine->shopify_line_item_id ?? ''));
+
+        if ($orderLine === null && $foShopifyLineId !== '') {
+            $orderLine = $order->lineItems->firstWhere('shopify_line_item_id', $foShopifyLineId);
+            if ($orderLine !== null) {
+                $orderLineId = (int) $orderLine->id;
+                if ((int) ($foLine->shopify_order_line_item_id ?? 0) !== $orderLineId) {
+                    $foLine->shopify_order_line_item_id = $orderLineId;
+                    $foLine->save();
+                }
+            }
+        }
+
+        return [
+            'line' => $orderLine,
+            'id' => $orderLineId,
+        ];
+    }
+
+    /**
+     * Stable fingerprints for selected lines so we can rematch after Shopify push/sync.
+     *
+     * @param  list<int>  $lineIds
+     * @return list<array{shopify_line_item_id:string, shopify_variant_id:string, sku:string, quantity:int}>
+     */
+    private function lineSelectionKeys(ShopifyOrder $order, array $lineIds): array
+    {
+        $order->loadMissing('lineItems');
+        $keys = [];
+        foreach ($lineIds as $id) {
+            $line = $order->lineItems->firstWhere('id', (int) $id);
+            if ($line === null) {
+                continue;
+            }
+            $sid = trim((string) ($line->shopify_line_item_id ?? ''));
+            if ($sid !== '' && strpos($sid, 'crm-line-') === 0) {
+                $sid = '';
+            }
+            $keys[] = [
+                'shopify_line_item_id' => $sid,
+                'shopify_variant_id' => trim((string) ($line->shopify_variant_id ?? '')),
+                'sku' => trim((string) ($line->sku ?? '')),
+                'quantity' => (int) $line->quantity,
+            ];
+        }
+
+        return $keys;
+    }
+
+    /**
+     * @param  list<array{shopify_line_item_id:string, shopify_variant_id:string, sku:string, quantity:int}>  $keys
+     * @return list<int>
+     */
+    private function resolveLineIdsFromKeys(ShopifyOrder $order, array $keys): array
+    {
+        $order->loadMissing('lineItems');
+        $used = [];
+        $ids = [];
+
+        foreach ($keys as $key) {
+            if (! is_array($key)) {
+                continue;
+            }
+            $match = null;
+            $wantSid = trim((string) ($key['shopify_line_item_id'] ?? ''));
+            if ($wantSid !== '') {
+                foreach ($order->lineItems as $line) {
+                    $lineId = (int) $line->id;
+                    if (isset($used[$lineId])) {
+                        continue;
+                    }
+                    if (trim((string) ($line->shopify_line_item_id ?? '')) === $wantSid) {
+                        $match = $line;
+                        break;
+                    }
+                }
+            }
+
+            if ($match === null) {
+                $wantVariant = trim((string) ($key['shopify_variant_id'] ?? ''));
+                $wantSku = trim((string) ($key['sku'] ?? ''));
+                foreach ($order->lineItems as $line) {
+                    $lineId = (int) $line->id;
+                    if (isset($used[$lineId])) {
+                        continue;
+                    }
+                    $sid = trim((string) ($line->shopify_line_item_id ?? ''));
+                    if ($sid !== '' && strpos($sid, 'crm-line-') === 0) {
+                        continue;
+                    }
+                    $variant = trim((string) ($line->shopify_variant_id ?? ''));
+                    $sku = trim((string) ($line->sku ?? ''));
+                    if ($wantVariant !== '' && $variant === $wantVariant) {
+                        if ($wantSku === '' || $sku === $wantSku) {
+                            $match = $line;
+                            break;
+                        }
+                    }
+                    if ($wantVariant === '' && $wantSku !== '' && $sku === $wantSku) {
+                        $match = $line;
+                        break;
+                    }
+                }
+            }
+
+            if ($match !== null) {
+                $used[(int) $match->id] = true;
+                $ids[] = (int) $match->id;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * After CRM qty edits / adds, Shopify FO remaining can lag. Align FO remaining
+     * to the order line fulfillable qty so partial fulfill can still run.
+     *
+     * @param  list<int>|null  $onlyOrderLineItemIds
+     */
+    private function healFoRemainingFromOrderLines(ShopifyOrder $order, ?array $onlyOrderLineItemIds = null): void
+    {
+        $order->loadMissing(['lineItems', 'fulfillmentOrders.lineItems']);
+        $allowed = null;
+        if ($onlyOrderLineItemIds !== null) {
+            $allowed = array_fill_keys(array_map('intval', $onlyOrderLineItemIds), true);
+        }
+
+        foreach ($order->lineItems as $lineItem) {
+            $lineId = (int) $lineItem->id;
+            if ($allowed !== null && ! isset($allowed[$lineId])) {
+                continue;
+            }
+            if ($this->list->rawLineStatus($lineItem) !== 'pending') {
+                continue;
+            }
+            $need = max(0, (int) $lineItem->fulfillable_quantity);
+            if ($need <= 0) {
+                continue;
+            }
+
+            $matched = false;
+            foreach ($order->fulfillmentOrders as $fo) {
+                $status = strtolower(trim((string) ($fo->status ?? '')));
+                if (in_array($status, ['closed', 'cancelled', 'incomplete'], true)) {
+                    continue;
+                }
+                foreach ($fo->lineItems as $foLine) {
+                    $resolved = $this->resolveOrderLineForFoLine($order, $foLine);
+                    if ((int) $resolved['id'] !== $lineId) {
+                        continue;
+                    }
+                    $matched = true;
+                    if ((int) $foLine->remaining_quantity < $need) {
+                        $foLine->remaining_quantity = $need;
+                        if ((int) $foLine->total_quantity < $need) {
+                            $foLine->total_quantity = $need;
+                        }
+                        $foLine->save();
+                    }
+                }
+            }
+
+            if (! $matched) {
+                // No FO row yet for a CRM-added / edited line: create a local open FO line
+                // so Shopify fulfillment can still target it after sync assigns real FO ids.
+                continue;
+            }
+        }
     }
 
     /**
@@ -1238,5 +1508,158 @@ GQL
         if ($errors !== []) {
             throw new RuntimeException((string) ($errors[0]['message'] ?? 'Could not remove hold tags.'));
         }
+    }
+
+    private function cancelLineInCrm(ShopifyOrder $order, ShopifyOrderLineItem $line): void
+    {
+        $displayQty = max(1, (int) $line->quantity);
+        $raw = is_array($line->raw_json) ? $line->raw_json : [];
+        $raw['crm_line_cancelled'] = true;
+        $raw['crm_original_quantity'] = max($displayQty, (int) ($raw['crm_original_quantity'] ?? 0));
+        unset($raw['crm_line_status']);
+        $line->quantity = $displayQty;
+        $line->fulfilled_quantity = 0;
+        $line->fulfillable_quantity = 0;
+        $line->raw_json = $raw;
+        $line->save();
+        $this->setFoRemainingForLine($order, $line, 0);
+    }
+
+    private function markLineBackorder(ShopifyOrder $order, ShopifyOrderLineItem $line): void
+    {
+        $raw = is_array($line->raw_json) ? $line->raw_json : [];
+        $qty = max(1, (int) $line->quantity, (int) ($raw['crm_original_quantity'] ?? 0));
+        $fulfilled = max(0, (int) $line->fulfilled_quantity);
+        if ($fulfilled > $qty) {
+            $fulfilled = $qty;
+        }
+        unset($raw['crm_line_cancelled']);
+        $raw['crm_line_status'] = 'backorder';
+        $raw['crm_original_quantity'] = $qty;
+        $line->quantity = $qty;
+        $line->fulfilled_quantity = $fulfilled;
+        $line->fulfillable_quantity = max(0, $qty - $fulfilled);
+        $line->raw_json = $raw;
+        $line->save();
+        $this->setFoRemainingForLine($order, $line, (int) $line->fulfillable_quantity);
+    }
+
+    private function prepareLineForFulfill(ShopifyOrder $order, ShopifyOrderLineItem $line): void
+    {
+        $raw = is_array($line->raw_json) ? $line->raw_json : [];
+        $qty = max(1, (int) $line->quantity, (int) ($raw['crm_original_quantity'] ?? 0));
+        $fulfilled = max(0, (int) $line->fulfilled_quantity);
+        if ($fulfilled >= $qty && $this->list->rawLineStatus($line) === 'fulfilled') {
+            throw new RuntimeException('This item is already fulfilled.');
+        }
+        unset($raw['crm_line_cancelled'], $raw['crm_line_status']);
+        $raw['crm_original_quantity'] = $qty;
+        $line->quantity = $qty;
+        $line->fulfilled_quantity = min($fulfilled, $qty);
+        $line->fulfillable_quantity = max(0, $qty - (int) $line->fulfilled_quantity);
+        $line->raw_json = $raw;
+        $line->save();
+        $this->setFoRemainingForLine($order, $line, (int) $line->fulfillable_quantity);
+    }
+
+    private function clearLineStatusFlag(ShopifyOrder $order, int $lineId): void
+    {
+        $order->loadMissing('lineItems');
+        $line = $order->lineItems->firstWhere('id', $lineId);
+        if ($line === null) {
+            return;
+        }
+        $raw = is_array($line->raw_json) ? $line->raw_json : [];
+        if (! isset($raw['crm_line_status']) && empty($raw['crm_line_cancelled'])) {
+            return;
+        }
+        unset($raw['crm_line_status'], $raw['crm_line_cancelled']);
+        $line->raw_json = $raw;
+        $line->save();
+    }
+
+    private function setFoRemainingForLine(ShopifyOrder $order, ShopifyOrderLineItem $line, int $remaining): void
+    {
+        $order->loadMissing('fulfillmentOrders.lineItems');
+        foreach ($order->fulfillmentOrders as $fo) {
+            foreach ($fo->lineItems as $foLine) {
+                $matchesLocal = (int) ($foLine->shopify_order_line_item_id ?? 0) === (int) $line->id;
+                $sid = trim((string) ($foLine->shopify_line_item_id ?? ''));
+                $matchesShopify = $sid !== '' && $sid === trim((string) ($line->shopify_line_item_id ?? ''));
+                if (! $matchesLocal && ! $matchesShopify) {
+                    continue;
+                }
+                $foLine->remaining_quantity = max(0, $remaining);
+                $foLine->save();
+            }
+        }
+    }
+
+    /**
+     * Roll item statuses up to the order: all cancelled, all fulfilled, or any backorder.
+     */
+    private function syncOrderStatusFromLines(ShopifyOrder $order): ShopifyOrder
+    {
+        $order = $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems']) ?? $order;
+        $statuses = [];
+        foreach ($order->lineItems as $line) {
+            $statuses[] = $this->list->lineDisplayStatus($order, $line);
+        }
+
+        $allCancelled = $statuses !== [] && count(array_filter($statuses, static function ($status) {
+            return $status !== 'cancelled';
+        })) === 0;
+        $allFulfilled = $statuses !== [] && count(array_filter($statuses, static function ($status) {
+            return $status !== 'fulfilled';
+        })) === 0;
+        $anyBackorder = in_array('backorder', $statuses, true);
+
+        $raw = is_array($order->raw_json) ? $order->raw_json : [];
+        if ($allCancelled) {
+            if ($order->crm_fulfillment_cancelled_at === null) {
+                $order->crm_fulfillment_cancelled_at = now();
+            }
+            $order->crm_hold_reasons = [];
+            if (strtolower(trim((string) ($raw['crm_display_hint'] ?? ''))) === 'backorder') {
+                unset($raw['crm_display_hint']);
+            }
+            $status = strtolower(trim((string) $order->fulfillment_status));
+            if ($status === 'fulfilled') {
+                $order->fulfillment_status = 'unfulfilled';
+            }
+        } elseif ($allFulfilled) {
+            $order->fulfillment_status = 'fulfilled';
+            $order->crm_fulfillment_cancelled_at = null;
+            $order->cancelled_at = null;
+            $order->crm_hold_reasons = [];
+            $raw['crm_ignore_shopify_cancel'] = true;
+            if (strtolower(trim((string) ($raw['crm_display_hint'] ?? ''))) === 'backorder') {
+                unset($raw['crm_display_hint']);
+            }
+        } elseif ($anyBackorder) {
+            $order->crm_fulfillment_cancelled_at = null;
+            $order->cancelled_at = null;
+            $order->crm_hold_reasons = [];
+            $raw['crm_ignore_shopify_cancel'] = true;
+            $raw['crm_display_hint'] = 'backorder';
+            $status = strtolower(trim((string) $order->fulfillment_status));
+            if ($status === '' || $status === 'fulfilled') {
+                $order->fulfillment_status = 'partial';
+            }
+        } else {
+            if ($order->crm_fulfillment_cancelled_at !== null && ! $allCancelled) {
+                $order->crm_fulfillment_cancelled_at = null;
+                $order->cancelled_at = null;
+                $raw['crm_ignore_shopify_cancel'] = true;
+            }
+            if (strtolower(trim((string) ($raw['crm_display_hint'] ?? ''))) === 'backorder') {
+                $raw['crm_display_hint'] = 'ready_to_ship';
+            }
+        }
+
+        $order->raw_json = $raw;
+        $order->save();
+
+        return $order->fresh(['connection.clientAccount', 'lineItems', 'fulfillmentOrders.lineItems', 'fulfillments']);
     }
 }

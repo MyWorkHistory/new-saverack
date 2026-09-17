@@ -7,6 +7,7 @@ use App\Models\ClientAccount;
 use App\Models\ClientAccountShopifyConnection;
 use App\Models\ShopifyLocation;
 use App\Models\ShopifyOrder;
+use App\Models\ShopifyOrderLineItem;
 use App\Models\ShopifyPackagingItem;
 use App\Models\ShopifyProductVariant;
 use App\Models\ShopifyWarehouseLocationItem;
@@ -915,6 +916,41 @@ class ShopifyIntegrationController extends Controller
         ]);
     }
 
+    public function orderLineStatus(Request $request, ShopifyOrder $shopifyOrder, ShopifyOrderLineItem $lineItem, ShopifyOrderActionService $actions): JsonResponse
+    {
+        $this->assertAdmin($request);
+
+        $validated = $request->validate([
+            'status' => ['required', 'string', 'in:cancelled,cancel,backorder,fulfilled'],
+            'tracking_number' => ['nullable', 'string', 'max:191'],
+        ]);
+
+        try {
+            $order = $actions->applyLineStatus(
+                $shopifyOrder,
+                $lineItem,
+                (string) $validated['status'],
+                $validated['tracking_number'] ?? null,
+                $request->user()
+            );
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['message' => 'Could not update item status.'], 500);
+        }
+
+        $order->load([
+            'connection.clientAccount',
+            'lineItems',
+            'fulfillmentOrders.lineItems',
+            'fulfillments',
+        ]);
+
+        return response()->json(['order' => $this->orderDetail($order)]);
+    }
+
     public function orderReship(Request $request, ShopifyOrder $shopifyOrder, ShopifyOrderActionService $actions): JsonResponse
     {
         $this->assertAdmin($request);
@@ -1597,7 +1633,7 @@ class ShopifyIntegrationController extends Controller
             $query->where(function ($builder) use ($q) {
                 $builder->where('sku', 'like', '%'.$q.'%')
                     ->orWhere('title', 'like', '%'.$q.'%')
-                    ->orWhere('barcode', 'like', '%'.$q.'%')
+                    ->orWhere('barcode', $q)
                     ->orWhere('shopify_variant_id', 'like', '%'.$q.'%')
                     ->orWhereHas('product', function ($p) use ($q) {
                         $p->where('title', 'like', '%'.$q.'%');

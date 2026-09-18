@@ -60,7 +60,7 @@ function onSubmit() {
         <p class="small text-secondary mb-4">Optional. Tracking is sent to Shopify with this item.</p>
         <div class="d-flex justify-content-end gap-2">
           <button type="button" class="btn btn-light" :disabled="busy" @click="onClose">Cancel</button>
-          <button type="button" class="btn btn-success fw-semibold" :disabled="busy" @click="onSubmit">
+          <button type="button" class="btn btn-primary staff-page-primary fw-semibold" :disabled="busy" @click="onSubmit">
             {{ busy ? "Saving…" : "Mark Fulfilled" }}
           </button>
         </div>

@@ -484,8 +484,8 @@ GQL
      */
     public function updateItems(ShopifyOrder $order, array $payload, ?User $actor = null): ShopifyOrder
     {
-        // Item edits (qty, add, remove, cancel) stay in CRM.
-        // Shopify is updated only when the whole order is fulfilled, or cancelled with the Shopify checkbox.
+        // Item edits (qty, add, remove) stay in CRM until fulfill.
+        // CRM line cancel is CRM-only and is never pushed to Shopify.
         return $this->updateItemsLocal($order, $payload, $actor);
     }
 
@@ -800,8 +800,9 @@ GQL
     }
 
     /**
-     * Push CRM item edits to Shopify. Called only when the order is fulfilled
+     * Push CRM item qty/add/remove edits to Shopify. Called only when the order is fulfilled
      * (or would otherwise ship the pre-edit Shopify quantities).
+     * CRM-cancelled lines are left unchanged in Shopify.
      */
     public function pushPendingItemEditsToShopify(ShopifyOrder $order): ShopifyOrder
     {
@@ -822,8 +823,8 @@ GQL
                 $adds[] = $line;
                 continue;
             }
+            // Cancel is CRM-only — do not zero/remove the line in Shopify.
             if (! empty($lineRaw['crm_line_cancelled'])) {
-                $qtyUpdates[] = ['variant_id' => trim((string) ($line->shopify_variant_id ?? '')), 'qty' => 0];
                 continue;
             }
             if (! empty($lineRaw['crm_quantity_locked'])) {

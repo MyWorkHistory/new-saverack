@@ -1390,4 +1390,133 @@ class ShopifyOrderActionsApiTest extends TestCase
 
         $this->assertSame(1, (int) $first->fresh()->fulfilled_quantity);
     }
+
+    public function test_line_status_cancel_does_not_call_shopify(): void
+    {
+        $this->actingAsAdmin();
+        [, $connection, $order] = $this->seedOrder();
+        $line = \App\Models\ShopifyOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => '9701',
+            'shopify_variant_id' => '8701',
+            'sku' => 'CANCEL-CRM',
+            'title' => 'Cancel CRM Only',
+            'quantity' => 2,
+            'fulfillable_quantity' => 2,
+            'fulfilled_quantity' => 0,
+            'price' => 10,
+        ]);
+
+        $client = Mockery::mock(\App\Services\ShopifyClient::class);
+        $client->shouldReceive('forConnection')->never();
+        $client->shouldReceive('graphql')->never();
+        $this->app->instance(\App\Services\ShopifyClient::class, $client);
+        $this->app->forgetInstance(ShopifyOrderActionService::class);
+
+        $this->postJson('/api/shopify/orders/'.$order->id.'/line-items/'.$line->id.'/status', [
+            'status' => 'cancelled',
+        ])->assertOk()
+            ->assertJsonPath('order.line_items.0.line_status', 'cancelled');
+
+        $line->refresh();
+        $this->assertSame(2, (int) $line->quantity);
+        $this->assertTrue((bool) (($line->raw_json['crm_line_cancelled'] ?? false)));
+    }
+
+    public function test_push_pending_edits_skips_crm_cancelled_lines(): void
+    {
+        $this->actingAsAdmin();
+        [, $connection, $order] = $this->seedOrder();
+        \App\Models\ShopifyOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => '9801',
+            'shopify_variant_id' => '8801',
+            'sku' => 'KEEP-SHOPIFY',
+            'title' => 'Cancelled In CRM',
+            'quantity' => 1,
+            'fulfillable_quantity' => 0,
+            'fulfilled_quantity' => 0,
+            'price' => 10,
+            'raw_json' => ['crm_line_cancelled' => true],
+        ]);
+        \App\Models\ShopifyOrderLineItem::query()->create([
+            'connection_id' => $connection->id,
+            'shopify_order_id' => $order->id,
+            'shopify_line_item_id' => '9802',
+            'shopify_variant_id' => '8802',
+            'sku' => 'LOCKED-QTY',
+            'title' => 'Qty Locked',
+            'quantity' => 3,
+            'fulfillable_quantity' => 3,
+            'fulfilled_quantity' => 0,
+            'price' => 10,
+            'raw_json' => ['crm_quantity_locked' => true],
+        ]);
+
+        $client = Mockery::mock(\App\Services\ShopifyClient::class);
+        $client->shouldReceive('forConnection')->andReturnSelf();
+        $client->shouldReceive('graphql')->times(3)->andReturnUsing(function (string $query, array $vars = []) {
+            if (str_contains($query, 'orderEditBegin')) {
+                return [
+                    'orderEditBegin' => [
+                        'calculatedOrder' => [
+                            'id' => 'gid://shopify/CalculatedOrder/1',
+                            'lineItems' => [
+                                'edges' => [
+                                    [
+                                        'node' => [
+                                            'id' => 'gid://shopify/CalculatedLineItem/1',
+                                            'quantity' => 1,
+                                            'variant' => ['id' => 'gid://shopify/ProductVariant/8801'],
+                                        ],
+                                    ],
+                                    [
+                                        'node' => [
+                                            'id' => 'gid://shopify/CalculatedLineItem/2',
+                                            'quantity' => 1,
+                                            'variant' => ['id' => 'gid://shopify/ProductVariant/8802'],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                        'userErrors' => [],
+                    ],
+                ];
+            }
+            if (str_contains($query, 'orderEditSetQuantity')) {
+                $this->assertSame('gid://shopify/CalculatedLineItem/2', (string) ($vars['lineItemId'] ?? ''));
+                $this->assertSame(3, (int) ($vars['quantity'] ?? 0));
+
+                return [
+                    'orderEditSetQuantity' => [
+                        'calculatedOrder' => ['id' => 'gid://shopify/CalculatedOrder/1'],
+                        'userErrors' => [],
+                    ],
+                ];
+            }
+            if (str_contains($query, 'orderEditCommit')) {
+                return [
+                    'orderEditCommit' => [
+                        'order' => ['id' => 'gid://shopify/Order/5001'],
+                        'userErrors' => [],
+                    ],
+                ];
+            }
+
+            $this->fail('Unexpected Shopify GraphQL call: '.$query);
+        });
+        $this->app->instance(\App\Services\ShopifyClient::class, $client);
+
+        $sync = Mockery::mock(\App\Services\ShopifyOrderSyncService::class);
+        $sync->shouldReceive('refreshOrderByShopifyId')
+            ->once()
+            ->andReturn($order->fresh(['lineItems', 'connection', 'fulfillmentOrders.lineItems']));
+        $this->app->instance(\App\Services\ShopifyOrderSyncService::class, $sync);
+
+        $edits = $this->app->make(\App\Services\ShopifyOrderEditService::class);
+        $edits->pushPendingItemEditsToShopify($order->fresh(['lineItems', 'connection']));
+    }
 }

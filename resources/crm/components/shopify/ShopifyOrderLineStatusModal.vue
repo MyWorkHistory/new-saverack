@@ -119,7 +119,7 @@ function backToPick() {
           <p class="small text-secondary mb-4">Optional. Tracking is sent to Shopify with this item.</p>
           <div class="d-flex justify-content-end gap-2">
             <button type="button" class="btn btn-light" :disabled="busy" @click="backToPick">Back</button>
-            <button type="button" class="btn btn-success fw-semibold" :disabled="busy" @click="onFulfillConfirm">
+            <button type="button" class="btn btn-primary staff-page-primary fw-semibold" :disabled="busy" @click="onFulfillConfirm">
               {{ busy ? "Saving…" : "Mark Fulfilled" }}
             </button>
           </div>

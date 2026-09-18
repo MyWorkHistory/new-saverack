@@ -456,7 +456,7 @@ onUnmounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide sip">
-    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
+      <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
       <div class="min-w-0">
         <h1 class="h4 mb-1 fw-semibold text-body">Products</h1>
         <p class="small text-secondary mb-0">
@@ -466,24 +466,31 @@ onUnmounted(() => {
       <div class="d-flex flex-wrap align-items-center gap-2">
         <button
           type="button"
-          class="btn btn-primary staff-page-primary fw-semibold d-inline-flex align-items-center gap-1"
+          class="btn btn-primary staff-page-primary fw-semibold d-inline-flex align-items-center justify-content-center gap-1 sip-add-btn"
+          aria-label="Add Product"
           @click="addOpen = true"
         >
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
-          Add Product
+          <span class="sip-add-btn__label">Add Product</span>
         </button>
         <div class="position-relative" data-sip-actions>
           <button
             type="button"
-            class="btn btn-outline-primary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+            class="btn btn-outline-primary staff-toolbar-btn d-inline-flex align-items-center justify-content-center gap-2 sip-actions-btn"
             :aria-expanded="actionsMenuOpen"
+            aria-label="Actions"
             @click.stop="actionsMenuOpen = !actionsMenuOpen"
           >
-            Actions
-            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <span class="sip-actions-btn__label">Actions</span>
+            <svg class="sip-actions-btn__chevron" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+            </svg>
+            <svg class="sip-actions-btn__dots" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="5" cy="12" r="1.75" />
+              <circle cx="12" cy="12" r="1.75" />
+              <circle cx="19" cy="12" r="1.75" />
             </svg>
           </button>
           <div
@@ -862,46 +869,80 @@ onUnmounted(() => {
           <article
             v-for="row in rows"
             :key="`mobile-${row.id}`"
-            class="crm-mobile-item-card"
+            class="crm-mobile-item-card sip-mobile-card"
             @click="openRow(row)"
           >
             <div class="crm-mobile-item-card__head">
-              <div class="crm-mobile-item-card__head-start d-flex align-items-center gap-2" @click.stop>
+              <div class="crm-mobile-item-card__head-start" @click.stop>
                 <input
                   type="checkbox"
-                  class="form-check-input m-0"
+                  class="form-check-input m-0 crm-mobile-item-card__check"
                   :checked="isSelected(row.id)"
+                  :aria-label="`Select ${row.sku || row.product_title || 'product'}`"
                   @change="toggleSelect(row.id)"
-                />
-                <span class="crm-mobile-item-card__sku crm-mobile-item-card__sku--plain">
-                  {{ row.sku || "—" }}
+                >
+              </div>
+              <div class="crm-mobile-item-card__head-end" data-sip-row-actions @click.stop>
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': rowMenu?.id === row.id }"
+                  aria-label="Row actions"
+                  @click="toggleRowMenu(row, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+
+            <div class="sip-mobile-card__product">
+              <div class="sip-mobile-card__thumb" aria-hidden="true">
+                <img
+                  v-if="row.image_url"
+                  :src="row.image_url"
+                  alt=""
+                >
+                <span v-else class="sip-mobile-card__thumb-empty">
+                  <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
+                  </svg>
                 </span>
               </div>
-            </div>
-            <div class="crm-mobile-item-card__product">
-              <div class="crm-mobile-item-card__copy">
-                <div class="crm-mobile-item-card__name">
+              <div class="sip-mobile-card__copy min-w-0">
+                <div class="sip-mobile-card__name text-break">
                   {{ row.product_title || row.title || "—" }}
                 </div>
-                <div class="small text-secondary">{{ row.account_name || "—" }}</div>
+                <div class="sip-mobile-card__sku text-break">{{ row.sku || "—" }}</div>
+                <div class="sip-mobile-card__meta-grid">
+                  <div class="sip-mobile-card__meta-pair">
+                    <span class="sip-mobile-card__meta-label">Account</span>
+                    <span class="sip-mobile-card__meta-value">{{ row.account_name || "—" }}</span>
+                  </div>
+                  <div v-if="viewType === 'inventory'" class="sip-mobile-card__meta-pair">
+                    <span class="sip-mobile-card__meta-label">Bundle</span>
+                    <span class="sip-mobile-card__meta-value">{{ row.bundle ? "Yes" : "No" }}</span>
+                  </div>
+                </div>
               </div>
             </div>
-            <div class="crm-mobile-item-card__meta">
-              <template v-if="viewType === 'inventory'">
-                <div class="crm-mobile-item-card__meta-row">
-                  <span class="crm-mobile-item-card__meta-label">On Hand</span>
-                  <span class="crm-mobile-item-card__meta-value">{{ row.on_hand ?? 0 }}</span>
-                </div>
-                <div class="crm-mobile-item-card__meta-row">
-                  <span class="crm-mobile-item-card__meta-label">Allocated</span>
-                  <span class="crm-mobile-item-card__meta-value">{{ row.allocated ?? 0 }}</span>
-                </div>
-                <div class="crm-mobile-item-card__meta-row">
-                  <span class="crm-mobile-item-card__meta-label">Backorder</span>
-                  <span class="crm-mobile-item-card__meta-value">{{ row.backorder ?? 0 }}</span>
-                </div>
-              </template>
-              <template v-else-if="viewType === 'locations'">
+
+            <div v-if="viewType === 'inventory'" class="sip-mobile-card__stats">
+              <div class="sip-mobile-card__stat">
+                <span class="sip-mobile-card__stat-label">On Hand</span>
+                <span class="sip-mobile-card__stat-value">{{ Number(row.on_hand ?? row.available_total ?? 0).toLocaleString("en-US") }}</span>
+              </div>
+              <div class="sip-mobile-card__stat">
+                <span class="sip-mobile-card__stat-label">Allocated</span>
+                <span class="sip-mobile-card__stat-value">{{ Number(row.allocated ?? 0).toLocaleString("en-US") }}</span>
+              </div>
+              <div class="sip-mobile-card__stat">
+                <span class="sip-mobile-card__stat-label">Backorder</span>
+                <span class="sip-mobile-card__stat-value">{{ Number(row.backorder ?? 0).toLocaleString("en-US") }}</span>
+              </div>
+            </div>
+
+            <div v-else class="crm-mobile-item-card__meta sip-mobile-card__extra-meta">
+              <template v-if="viewType === 'locations'">
                 <div class="crm-mobile-item-card__meta-row" @click.stop>
                   <span class="crm-mobile-item-card__meta-label">Pick</span>
                   <span class="crm-mobile-item-card__meta-value">
@@ -939,20 +980,22 @@ onUnmounted(() => {
               </template>
               <template v-else>
                 <div class="crm-mobile-item-card__meta-row">
-                  <span class="crm-mobile-item-card__meta-label">Size</span>
-                  <span class="crm-mobile-item-card__meta-value">
-                    {{ dimLabel(row.length, row.dimension_unit) }} × {{ dimLabel(row.width, row.dimension_unit) }} × {{ dimLabel(row.height, row.dimension_unit) }}
-                  </span>
+                  <span class="crm-mobile-item-card__meta-label">Length</span>
+                  <span class="crm-mobile-item-card__meta-value">{{ dimLabel(row.length, row.dimension_unit) }}</span>
+                </div>
+                <div class="crm-mobile-item-card__meta-row">
+                  <span class="crm-mobile-item-card__meta-label">Width</span>
+                  <span class="crm-mobile-item-card__meta-value">{{ dimLabel(row.width, row.dimension_unit) }}</span>
+                </div>
+                <div class="crm-mobile-item-card__meta-row">
+                  <span class="crm-mobile-item-card__meta-label">Height</span>
+                  <span class="crm-mobile-item-card__meta-value">{{ dimLabel(row.height, row.dimension_unit) }}</span>
+                </div>
+                <div class="crm-mobile-item-card__meta-row">
+                  <span class="crm-mobile-item-card__meta-label">Cubic Ft</span>
+                  <span class="crm-mobile-item-card__meta-value">{{ cubicFeetLabel(row) }}</span>
                 </div>
               </template>
-              <button
-                v-if="hasRowActions"
-                type="button"
-                class="btn btn-outline-secondary btn-sm mt-2"
-                @click.stop="openViewEdit(row)"
-              >
-                Edit
-              </button>
             </div>
           </article>
         </template>
@@ -1020,7 +1063,18 @@ onUnmounted(() => {
         :style="{ top: `${rowMenuRect.top}px`, left: `${rowMenuRect.left}px` }"
         @click.stop
       >
-        <button type="button" class="staff-row-menu__item" role="menuitem" @click="openViewEdit(rowMenu)">Edit</button>
+        <button type="button" class="staff-row-menu__item" role="menuitem" @click="openRow(rowMenu)">
+          View Product
+        </button>
+        <button
+          v-if="hasRowActions"
+          type="button"
+          class="staff-row-menu__item"
+          role="menuitem"
+          @click="openViewEdit(rowMenu)"
+        >
+          Edit
+        </button>
       </div>
     </Teleport>
   </div>
@@ -1103,13 +1157,142 @@ onUnmounted(() => {
   color: #111827;
   line-height: 1.25;
 }
+.sip-actions-btn__dots {
+  display: none;
+}
+.sip-mobile-card__product {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+  margin-bottom: 0.85rem;
+}
+.sip-mobile-card__thumb {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: #f3f4f6;
+  border: 1px solid #eceff3;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sip-mobile-card__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.sip-mobile-card__thumb-empty {
+  color: #c0c4cc;
+  display: inline-flex;
+}
+.sip-mobile-card__name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.3;
+  margin-bottom: 0.15rem;
+}
+.sip-mobile-card__sku {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #2563eb;
+  line-height: 1.3;
+  margin-bottom: 0.45rem;
+}
+.sip-mobile-card__meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem 0.75rem;
+}
+.sip-mobile-card__meta-pair {
+  min-width: 0;
+}
+.sip-mobile-card__meta-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #94a3b8;
+  line-height: 1.2;
+}
+.sip-mobile-card__meta-value {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #1e293b;
+  word-break: break-word;
+}
+.sip-mobile-card__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid #eef0f3;
+  margin: 0 -1rem -0.75rem;
+  padding: 0.75rem 0.35rem;
+}
+.sip-mobile-card__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.2rem;
+  padding: 0 0.35rem;
+  border-right: 1px solid #eef0f3;
+}
+.sip-mobile-card__stat:last-child {
+  border-right: 0;
+}
+.sip-mobile-card__stat-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+.sip-mobile-card__stat-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.2;
+}
+.sip-mobile-card__extra-meta {
+  margin-bottom: 0;
+  border-top: 1px solid #eef0f3;
+  padding-top: 0.75rem;
+}
 @media (max-width: 991.98px) {
   .sip-account-select {
     max-width: none;
-    width: 100%;
+    width: auto;
+    min-width: 8.5rem;
+    flex: 1 1 auto;
   }
   .sip-search-wrap {
     max-width: none;
+    flex: 1 1 100%;
+  }
+  .sip-add-btn {
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+    border-radius: 0.65rem;
+  }
+  .sip-add-btn__label {
+    display: none;
+  }
+  .sip-actions-btn {
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+    border-radius: 0.65rem;
+  }
+  .sip-actions-btn__label,
+  .sip-actions-btn__chevron {
+    display: none;
+  }
+  .sip-actions-btn__dots {
+    display: block;
   }
 }
 </style>

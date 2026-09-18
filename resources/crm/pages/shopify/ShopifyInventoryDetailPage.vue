@@ -96,6 +96,14 @@ const locationGroups = computed(() => {
   }));
 });
 
+const primaryPickLocation = computed(() => {
+  const pick = locationGroups.value.find((group) => group.key === "pick");
+  const locs = Array.isArray(pick?.locations) ? [...pick.locations] : [];
+  if (!locs.length) return null;
+  locs.sort((a, b) => Number(b.available || 0) - Number(a.available || 0));
+  return locs[0];
+});
+
 const locMenuRow = computed(() => {
   const key = locMenuOpenKey.value;
   if (!key) return null;
@@ -754,9 +762,7 @@ onUnmounted(() => {
       </header>
 
       <div class="sid-grid">
-        <div class="sid-col">
-          <!-- Product + dimensions (one card, divider before specs) -->
-          <section class="sid-card">
+<section class="sid-card sid-area-product">
             <div class="sid-product">
               <button
                 type="button"
@@ -848,280 +854,11 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
-
-            <div class="sid-specs">
-              <div class="sid-specs__item">
-                <span class="sid-specs__icon" aria-hidden="true">
-                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m0 0l-3.75-3.75M20.25 12L16.5 15.75M3.75 12L7.5 8.25M3.75 12L7.5 15.75" />
-                  </svg>
-                </span>
-                <div class="sid-field__label">Length</div>
-                <div class="sid-specs__value">{{ formatDim(variant.length) }}</div>
-              </div>
-              <div class="sid-specs__item">
-                <span class="sid-specs__icon" aria-hidden="true">
-                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3.75v16.5m0 0l3.75-3.75M12 20.25L8.25 16.5M12 3.75L8.25 7.5M12 3.75L15.75 7.5" />
-                  </svg>
-                </span>
-                <div class="sid-field__label">Width</div>
-                <div class="sid-specs__value">{{ formatDim(variant.width) }}</div>
-              </div>
-              <div class="sid-specs__item">
-                <span class="sid-specs__icon" aria-hidden="true">
-                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3.75v16.5m0 0l3.75-3.75M12 20.25L8.25 16.5M12 3.75L8.25 7.5M12 3.75L15.75 7.5" />
-                  </svg>
-                </span>
-                <div class="sid-field__label">Height</div>
-                <div class="sid-specs__value">{{ formatDim(variant.height) }}</div>
-              </div>
-              <div class="sid-specs__item">
-                <span class="sid-specs__icon" aria-hidden="true">
-                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
-                  </svg>
-                </span>
-                <div class="sid-field__label">Cubic Ft</div>
-                <div class="sid-specs__value">
-                  <template v-if="cubicFeet != null">{{ formatNum(cubicFeet, 3) }} ft³</template>
-                  <template v-else>—</template>
-                </div>
-              </div>
-              <div class="sid-specs__item">
-                <span class="sid-specs__icon" aria-hidden="true">
-                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 7.5V6.75A3.75 3.75 0 0112 3h0a3.75 3.75 0 013.75 3.75V7.5M6.75 7.5h10.5c1.243 0 2.25 1.455 2.25 3.25v3c0 3.038-2.015 5.5-4.5 5.5h-6c-2.485 0-4.5-2.462-4.5-5.5v-3c0-1.795 1.007-3.25 2.25-3.25z" />
-                  </svg>
-                </span>
-                <div class="sid-field__label">Weight</div>
-                <div class="sid-specs__value">
-                  <template v-if="variant.weight != null && variant.weight !== ''">
-                    {{ formatNum(variant.weight) }} {{ weightUnitLabel }}
-                  </template>
-                  <template v-else>—</template>
-                </div>
-              </div>
-            </div>
           </section>
 
-          <!-- Bundle Components (CRM type = Bundle only) -->
-          <section v-if="isBundle" class="sid-card">
-            <div class="sid-card__head">
-              <div>
-                <div class="sid-card__head-title">
-                  <span class="sid-card__head-icon sid-card__head-icon--bundle" aria-hidden="true">
-                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.55">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007z" />
-                    </svg>
-                  </span>
-                  <h2>Bundle Components</h2>
-                </div>
-                <p class="sid-card__sub">Items included in this bundle</p>
-              </div>
-              <button
-                type="button"
-                class="btn btn-primary staff-page-primary btn-sm fw-semibold d-inline-flex align-items-center gap-1"
-                :disabled="bundleBusy"
-                @click="openBundleItems"
-              >
-                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                </svg>
-                Add Items
-              </button>
-            </div>
-
-            <div v-if="!bundleComponents.length" class="sid-bundle-empty">
-              <svg width="42" height="42" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
-              </svg>
-              <p>No items in this bundle yet.</p>
-            </div>
-
-            <div v-else class="sid-bundle-table-wrap">
-              <table class="table staff-data-table sid-bundle-table mb-0">
-                <thead>
-                  <tr>
-                    <th class="staff-table-head__th" scope="col">Name</th>
-                    <th class="staff-table-head__th" scope="col">SKU</th>
-                    <th class="staff-table-head__th" scope="col">QTY</th>
-                    <th
-                      class="staff-table-head__th text-center staff-actions-col"
-                      scope="col"
-                    >
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in bundleComponents" :key="row.id">
-                    <td>
-                      <div class="sid-bundle-name">
-                        <span class="sid-bundle-name__thumb">
-                          <img v-if="row.image_url" :src="row.image_url" alt="" />
-                          <span v-else class="sid-bundle-name__thumb-empty" />
-                        </span>
-                        <span class="sid-bundle-name__text">{{ row.title || "Product" }}</span>
-                      </div>
-                    </td>
-                    <td>{{ row.sku || "—" }}</td>
-                    <td>{{ row.quantity }}</td>
-                    <td class="staff-actions-cell text-center" @click.stop>
-                      <div
-                        data-sid-bundle-row-actions
-                        class="staff-actions-inner staff-actions-inner--single justify-content-center"
-                      >
-                        <button
-                          type="button"
-                          class="staff-action-btn staff-action-btn--more"
-                          :class="{ 'is-open': rowMenuOpenId === row.id }"
-                          :aria-expanded="rowMenuOpenId === row.id ? 'true' : 'false'"
-                          aria-haspopup="true"
-                          aria-label="Row actions"
-                          @click="toggleBundleMenu(row, $event)"
-                        >
-                          <CrmIconRowActions variant="horizontal" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="sid-card sid-packaging">
-            <div class="sid-packaging__toolbar">
-              <button
-                type="button"
-                class="staff-outline-action-btn staff-outline-action-btn--sm"
-                :disabled="packagingBusy"
-                @click="packagingOpen = true"
-              >
-                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
-                </svg>
-                Edit
-              </button>
-            </div>
-            <div class="sid-specs sid-packaging__specs">
-              <div class="sid-specs__item">
-                <span class="sid-specs__icon" aria-hidden="true">
-                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
-                  </svg>
-                </span>
-                <div class="sid-field__label">Packaging</div>
-                <div class="sid-specs__value">
-                  <template v-if="packagingItems.length">
-                    <template v-for="(item, index) in packagingItems" :key="item.id">
-                      <a
-                        class="sid-account-link"
-                        :href="packagingHref(item)"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >{{ item.label || item.name }}</a><span v-if="index < packagingItems.length - 1">, </span>
-                    </template>
-                  </template>
-                  <span v-else>—</span>
-                </div>
-              </div>
-              <div class="sid-specs__item">
-                <span class="sid-specs__icon" aria-hidden="true">
-                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                  </svg>
-                </span>
-                <div class="sid-field__label">Packaging Materials</div>
-                <div class="sid-specs__value">
-                  <template v-if="packagingMaterials.length">
-                    <template v-for="(item, index) in packagingMaterials" :key="item.id">
-                      <a
-                        class="sid-account-link"
-                        :href="packagingHref(item)"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >{{ item.label || item.name }}</a><span v-if="index < packagingMaterials.length - 1">, </span>
-                    </template>
-                  </template>
-                  <span v-else>—</span>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <!-- Timeline (product field changes only) -->
-          <section class="sid-card">
-            <div class="sid-card__head">
-              <div>
-                <div class="sid-card__head-title">
-                  <span class="sid-card__head-icon" aria-hidden="true">
-                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.55">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </span>
-                  <h2>Timeline</h2>
-                </div>
-              </div>
-            </div>
-            <ul v-if="timeline.length" class="sid-timeline list-unstyled mb-0">
-              <li v-for="ev in timeline" :key="ev.id" class="sid-timeline__item">
-                <span class="sid-timeline__icon" :class="timelineIconClass(ev.type)" aria-hidden="true">
-                  <svg v-if="timelineGlyph(ev.type) === 'gear'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  <svg v-else-if="timelineGlyph(ev.type) === 'barcode'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">
-                    <path stroke-linecap="round" d="M3.75 5.25v13.5M7.5 5.25v13.5M10.5 5.25v13.5M14.25 5.25v13.5M17.25 5.25v13.5M20.25 5.25v13.5" />
-                  </svg>
-                  <svg v-else-if="timelineGlyph(ev.type) === 'weight'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v3m0 0a3 3 0 013 3v1.5H9V9a3 3 0 013-3zm-6.75 7.5h13.5c.75 0 1.35.72 1.2 1.44l-1.2 5.76A2.25 2.25 0 0116.56 21H7.44a2.25 2.25 0 01-2.19-1.8l-1.2-5.76c-.15-.72.45-1.44 1.2-1.44z" />
-                  </svg>
-                  <svg v-else-if="timelineGlyph(ev.type) === 'ruler'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 7.5L7.5 3l13.5 13.5-4.5 4.5L3 7.5z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 7.5l1.5-1.5M10.5 10.5l1.5-1.5M13.5 13.5l1.5-1.5" />
-                  </svg>
-                  <svg v-else-if="timelineGlyph(ev.type) === 'box'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
-                  </svg>
-                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
-                  </svg>
-                </span>
-                <div class="sid-timeline__body">
-                  <div class="sid-timeline__row">
-                    <div class="min-w-0">
-                      <div class="sid-timeline__title">{{ ev.title }}</div>
-                      <div
-                        v-if="ev.type === 'packaging_updated' && packagingLines(ev.detail).length"
-                        class="sid-timeline__chips"
-                      >
-                        <span v-for="line in packagingLines(ev.detail)" :key="line" class="sid-timeline__chip">{{ line }}</span>
-                      </div>
-                      <div
-                        v-if="ev.type === 'dimensions_updated' && ev.meta"
-                        class="sid-timeline__chips"
-                      >
-                        <span class="sid-timeline__chip">Length: {{ formatTimelineDim(ev.meta.length) }}</span>
-                        <span class="sid-timeline__chip">Width: {{ formatTimelineDim(ev.meta.width) }}</span>
-                        <span class="sid-timeline__chip">Height: {{ formatTimelineDim(ev.meta.height) }}</span>
-                      </div>
-                      <div class="sid-timeline__when">{{ formatTimelineWhen(ev.created_at) }}</div>
-                    </div>
-                    <div class="sid-timeline__actor">{{ ev.actor_label || "System" }}</div>
-                  </div>
-                </div>
-              </li>
-            </ul>
-            <p v-else class="text-secondary mb-0 small">No timeline events yet.</p>
-          </section>
-        </div>
-
-        <div class="sid-col">
-          <!-- Inventory summary -->
-          <section class="sid-card">
+        <aside class="sid-side">
+<!-- Inventory summary -->
+          <section class="sid-card sid-area-inventory">
             <div class="sid-onhand">
               <div class="sid-onhand__main">
                 <span class="sid-onhand__icon" aria-hidden="true">
@@ -1134,13 +871,28 @@ onUnmounted(() => {
                   <div class="sid-onhand__value">{{ inventoryStats.total_on_hand.toLocaleString("en-US") }}</div>
                 </div>
               </div>
-              <button
-                type="button"
-                class="staff-outline-action-btn sid-onhand__log"
-                @click="router.push({ name: 'shopify-inventory-log', params: { id: String(variant.id) } })"
-              >
-                Inventory Log
-              </button>
+              <div class="sid-onhand__aside">
+                <button
+                  type="button"
+                  class="staff-outline-action-btn sid-onhand__log"
+                  @click="router.push({ name: 'shopify-inventory-log', params: { id: String(variant.id) } })"
+                >
+                  Inventory Log
+                </button>
+                <div v-if="primaryPickLocation" class="sid-onhand__pick">
+                  <span class="sid-onhand__pick-icon" aria-hidden="true">
+                    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                    </svg>
+                  </span>
+                  <div>
+                    <div class="sid-field__label">Pick Location</div>
+                    <div class="sid-onhand__pick-name">{{ primaryPickLocation.name }}</div>
+                    <div class="sid-onhand__pick-units">{{ Number(primaryPickLocation.available || 0).toLocaleString("en-US") }} units</div>
+                  </div>
+                </div>
+              </div>
             </div>
             <div class="sid-stats">
               <div class="sid-stat">
@@ -1190,8 +942,8 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <!-- Locations -->
-          <section class="sid-card">
+<!-- Locations -->
+          <section class="sid-card sid-area-locations">
             <div class="sid-card__head">
               <div>
                 <div class="sid-card__head-title">
@@ -1292,9 +1044,300 @@ onUnmounted(() => {
               </div>
             </div>
           </section>
-        </div>
+
+        </aside>
+          <section class="sid-card sid-area-measurements">
+            <div class="sid-card__head">
+              <div>
+                <div class="sid-card__head-title">
+                  <span class="sid-card__head-icon" aria-hidden="true">
+                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.55">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                    </svg>
+                  </span>
+                  <h2>Product Measurements</h2>
+                </div>
+              </div>
+            </div>
+            <div class="sid-specs sid-specs--measurements">
+              <div class="sid-specs__item">
+                <span class="sid-specs__icon" aria-hidden="true">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m0 0l-3.75-3.75M20.25 12L16.5 15.75M3.75 12L7.5 8.25M3.75 12L7.5 15.75" />
+                  </svg>
+                </span>
+                <div class="sid-field__label">Length</div>
+                <div class="sid-specs__value">{{ formatDim(variant.length) }}</div>
+              </div>
+              <div class="sid-specs__item">
+                <span class="sid-specs__icon" aria-hidden="true">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3.75v16.5m0 0l3.75-3.75M12 20.25L8.25 16.5M12 3.75L8.25 7.5M12 3.75L15.75 7.5" />
+                  </svg>
+                </span>
+                <div class="sid-field__label">Width</div>
+                <div class="sid-specs__value">{{ formatDim(variant.width) }}</div>
+              </div>
+              <div class="sid-specs__item">
+                <span class="sid-specs__icon" aria-hidden="true">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3.75v16.5m0 0l3.75-3.75M12 20.25L8.25 16.5M12 3.75L8.25 7.5M12 3.75L15.75 7.5" />
+                  </svg>
+                </span>
+                <div class="sid-field__label">Height</div>
+                <div class="sid-specs__value">{{ formatDim(variant.height) }}</div>
+              </div>
+              <div class="sid-specs__item">
+                <span class="sid-specs__icon" aria-hidden="true">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                  </svg>
+                </span>
+                <div class="sid-field__label">Cubic Ft</div>
+                <div class="sid-specs__value">
+                  <template v-if="cubicFeet != null">{{ formatNum(cubicFeet, 3) }} ft³</template>
+                  <template v-else>—</template>
+                </div>
+              </div>
+              <div class="sid-specs__item">
+                <span class="sid-specs__icon" aria-hidden="true">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 7.5V6.75A3.75 3.75 0 0112 3h0a3.75 3.75 0 013.75 3.75V7.5M6.75 7.5h10.5c1.243 0 2.25 1.455 2.25 3.25v3c0 3.038-2.015 5.5-4.5 5.5h-6c-2.485 0-4.5-2.462-4.5-5.5v-3c0-1.795 1.007-3.25 2.25-3.25z" />
+                  </svg>
+                </span>
+                <div class="sid-field__label">Weight</div>
+                <div class="sid-specs__value">
+                  <template v-if="variant.weight != null && variant.weight !== ''">
+                    {{ formatNum(variant.weight) }} {{ weightUnitLabel }}
+                  </template>
+                  <template v-else>—</template>
+                </div>
+              </div>
+            </div>
+          </section>
+
+<section class="sid-card sid-packaging sid-area-packaging">
+            <div class="sid-card__head">
+              <div>
+                <div class="sid-card__head-title">
+                  <span class="sid-card__head-icon" aria-hidden="true">
+                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.55">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                    </svg>
+                  </span>
+                  <h2>Packaging</h2>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="staff-outline-action-btn staff-outline-action-btn--sm"
+                :disabled="packagingBusy"
+                @click="packagingOpen = true"
+              >
+                <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
+                </svg>
+                Edit
+              </button>
+            </div>
+            <div class="sid-specs sid-packaging__specs">
+              <div class="sid-specs__item">
+                <span class="sid-specs__icon" aria-hidden="true">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                  </svg>
+                </span>
+                <div class="sid-field__label">Packaging</div>
+                <div class="sid-specs__value">
+                  <template v-if="packagingItems.length">
+                    <template v-for="(item, index) in packagingItems" :key="item.id">
+                      <a
+                        class="sid-account-link"
+                        :href="packagingHref(item)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >{{ item.label || item.name }}</a><span v-if="index < packagingItems.length - 1">, </span>
+                    </template>
+                  </template>
+                  <span v-else>—</span>
+                </div>
+              </div>
+              <div class="sid-specs__item">
+                <span class="sid-specs__icon" aria-hidden="true">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                  </svg>
+                </span>
+                <div class="sid-field__label">Packaging Materials</div>
+                <div class="sid-specs__value">
+                  <template v-if="packagingMaterials.length">
+                    <template v-for="(item, index) in packagingMaterials" :key="item.id">
+                      <a
+                        class="sid-account-link"
+                        :href="packagingHref(item)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >{{ item.label || item.name }}</a><span v-if="index < packagingMaterials.length - 1">, </span>
+                    </template>
+                  </template>
+                  <span v-else>—</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+<!-- Bundle Components (CRM type = Bundle only) -->
+          <section v-if="isBundle" class="sid-card sid-area-bundle">
+            <div class="sid-card__head">
+              <div>
+                <div class="sid-card__head-title">
+                  <span class="sid-card__head-icon sid-card__head-icon--bundle" aria-hidden="true">
+                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.55">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007z" />
+                    </svg>
+                  </span>
+                  <h2>Bundle Components</h2>
+                </div>
+                <p class="sid-card__sub">Items included in this bundle</p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-primary staff-page-primary btn-sm fw-semibold d-inline-flex align-items-center gap-1"
+                :disabled="bundleBusy"
+                @click="openBundleItems"
+              >
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Add Items
+              </button>
+            </div>
+
+            <div v-if="!bundleComponents.length" class="sid-bundle-empty">
+              <svg width="42" height="42" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+              </svg>
+              <p>No items in this bundle yet.</p>
+            </div>
+
+            <div v-else class="sid-bundle-table-wrap">
+              <table class="table staff-data-table sid-bundle-table mb-0">
+                <thead>
+                  <tr>
+                    <th class="staff-table-head__th" scope="col">Name</th>
+                    <th class="staff-table-head__th" scope="col">SKU</th>
+                    <th class="staff-table-head__th" scope="col">QTY</th>
+                    <th
+                      class="staff-table-head__th text-center staff-actions-col"
+                      scope="col"
+                    >
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in bundleComponents" :key="row.id">
+                    <td>
+                      <div class="sid-bundle-name">
+                        <span class="sid-bundle-name__thumb">
+                          <img v-if="row.image_url" :src="row.image_url" alt="" />
+                          <span v-else class="sid-bundle-name__thumb-empty" />
+                        </span>
+                        <span class="sid-bundle-name__text">{{ row.title || "Product" }}</span>
+                      </div>
+                    </td>
+                    <td>{{ row.sku || "—" }}</td>
+                    <td>{{ row.quantity }}</td>
+                    <td class="staff-actions-cell text-center" @click.stop>
+                      <div
+                        data-sid-bundle-row-actions
+                        class="staff-actions-inner staff-actions-inner--single justify-content-center"
+                      >
+                        <button
+                          type="button"
+                          class="staff-action-btn staff-action-btn--more"
+                          :class="{ 'is-open': rowMenuOpenId === row.id }"
+                          :aria-expanded="rowMenuOpenId === row.id ? 'true' : 'false'"
+                          aria-haspopup="true"
+                          aria-label="Row actions"
+                          @click="toggleBundleMenu(row, $event)"
+                        >
+                          <CrmIconRowActions variant="horizontal" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+<!-- Timeline (product field changes only) -->
+          <section class="sid-card sid-area-timeline">
+            <div class="sid-card__head">
+              <div>
+                <div class="sid-card__head-title">
+                  <span class="sid-card__head-icon" aria-hidden="true">
+                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.55">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </span>
+                  <h2>Timeline</h2>
+                </div>
+              </div>
+            </div>
+            <ul v-if="timeline.length" class="sid-timeline list-unstyled mb-0">
+              <li v-for="ev in timeline" :key="ev.id" class="sid-timeline__item">
+                <span class="sid-timeline__icon" :class="timelineIconClass(ev.type)" aria-hidden="true">
+                  <svg v-if="timelineGlyph(ev.type) === 'gear'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <svg v-else-if="timelineGlyph(ev.type) === 'barcode'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">
+                    <path stroke-linecap="round" d="M3.75 5.25v13.5M7.5 5.25v13.5M10.5 5.25v13.5M14.25 5.25v13.5M17.25 5.25v13.5M20.25 5.25v13.5" />
+                  </svg>
+                  <svg v-else-if="timelineGlyph(ev.type) === 'weight'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v3m0 0a3 3 0 013 3v1.5H9V9a3 3 0 013-3zm-6.75 7.5h13.5c.75 0 1.35.72 1.2 1.44l-1.2 5.76A2.25 2.25 0 0116.56 21H7.44a2.25 2.25 0 01-2.19-1.8l-1.2-5.76c-.15-.72.45-1.44 1.2-1.44z" />
+                  </svg>
+                  <svg v-else-if="timelineGlyph(ev.type) === 'ruler'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 7.5L7.5 3l13.5 13.5-4.5 4.5L3 7.5z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 7.5l1.5-1.5M10.5 10.5l1.5-1.5M13.5 13.5l1.5-1.5" />
+                  </svg>
+                  <svg v-else-if="timelineGlyph(ev.type) === 'box'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                  </svg>
+                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
+                  </svg>
+                </span>
+                <div class="sid-timeline__body">
+                  <div class="sid-timeline__row">
+                    <div class="min-w-0">
+                      <div class="sid-timeline__title">{{ ev.title }}</div>
+                      <div
+                        v-if="ev.type === 'packaging_updated' && packagingLines(ev.detail).length"
+                        class="sid-timeline__chips"
+                      >
+                        <span v-for="line in packagingLines(ev.detail)" :key="line" class="sid-timeline__chip">{{ line }}</span>
+                      </div>
+                      <div
+                        v-if="ev.type === 'dimensions_updated' && ev.meta"
+                        class="sid-timeline__chips"
+                      >
+                        <span class="sid-timeline__chip">Length: {{ formatTimelineDim(ev.meta.length) }}</span>
+                        <span class="sid-timeline__chip">Width: {{ formatTimelineDim(ev.meta.width) }}</span>
+                        <span class="sid-timeline__chip">Height: {{ formatTimelineDim(ev.meta.height) }}</span>
+                      </div>
+                      <div class="sid-timeline__when">{{ formatTimelineWhen(ev.created_at) }}</div>
+                    </div>
+                    <div class="sid-timeline__actor">{{ ev.actor_label || "System" }}</div>
+                  </div>
+                </div>
+              </li>
+            </ul>
+            <p v-else class="text-secondary mb-0 small">No timeline events yet.</p>
+          </section>
       </div>
-    </template>
 
     <ShopifyInventoryEditProductModal
       v-model:open="editOpen"
@@ -1533,9 +1576,27 @@ onUnmounted(() => {
 .sid-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr);
+  grid-template-areas:
+    "product side"
+    "measurements side"
+    "packaging side"
+    "bundle side"
+    "timeline side";
   gap: 1rem;
   align-items: start;
 }
+.sid-area-product { grid-area: product; }
+.sid-side {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+.sid-area-measurements { grid-area: measurements; }
+.sid-area-packaging { grid-area: packaging; }
+.sid-area-bundle { grid-area: bundle; }
+.sid-area-timeline { grid-area: timeline; }
 .sid-col {
   display: flex;
   flex-direction: column;
@@ -1800,6 +1861,11 @@ onUnmounted(() => {
   padding-top: 1.2rem;
   border-top: 1px solid #e5e7eb;
 }
+.sid-specs--measurements {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
 .sid-specs__item {
   text-align: center;
   min-width: 0;
@@ -1966,6 +2032,34 @@ onUnmounted(() => {
 .sid-onhand__log {
   flex-shrink: 0;
   margin-top: 0.15rem;
+}
+.sid-onhand__aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.65rem;
+  flex-shrink: 0;
+}
+.sid-onhand__pick {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  text-align: left;
+}
+.sid-onhand__pick-icon {
+  color: #2563eb;
+  margin-top: 0.1rem;
+  flex-shrink: 0;
+}
+.sid-onhand__pick-name {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.2;
+}
+.sid-onhand__pick-units {
+  font-size: 0.78rem;
+  color: #6b7280;
 }
 .sid-onhand__icon {
   display: inline-flex;
@@ -2280,32 +2374,93 @@ onUnmounted(() => {
 @media (max-width: 991.98px) {
   .sid-grid {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "product"
+      "side"
+      "measurements"
+      "packaging"
+      "bundle"
+      "timeline";
   }
-  .sid-specs {
+  .sid-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .sid-header__actions {
+    margin-left: 0;
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.55rem;
+  }
+  .sid-header__actions .staff-outline-action-btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .sid-product {
+    gap: 0.85rem;
+  }
+  .sid-product__img {
+    width: 5.5rem;
+    height: 5.5rem;
+  }
+  .sid-product__title {
+    font-size: 1.15rem;
+  }
+  .sid-onhand {
+    flex-wrap: wrap;
+  }
+  .sid-onhand__aside {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+  .sid-specs,
+  .sid-specs--measurements {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     row-gap: 0.9rem;
   }
   .sid-packaging__specs {
-    grid-template-columns: repeat(2, minmax(0, 14rem));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: stretch;
+    gap: 1rem;
+  }
+  .sid-card__head .btn-sm {
+    white-space: nowrap;
   }
 }
 @media (max-width: 575.98px) {
   .sid-product {
-    flex-direction: column;
+    flex-direction: row;
+    align-items: flex-start;
   }
   .sid-product__img {
-    width: 100%;
-    height: 12rem;
+    width: 4.75rem;
+    height: 4.75rem;
   }
   .sid-product__meta {
     grid-template-columns: 1fr;
   }
-  .sid-specs {
+  .sid-specs,
+  .sid-specs--measurements {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .sid-packaging__specs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr 1fr;
     gap: 1rem;
+  }
+  .sid-onhand__value {
+    font-size: 1.55rem;
+  }
+  .sid-bundle-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sid-bundle-name__text {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 </style>

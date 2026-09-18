@@ -238,16 +238,18 @@ function submit() {
   inset: 0;
   z-index: 1200;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 1rem;
+  overflow-y: auto;
   background: rgba(15, 23, 42, 0.45);
   backdrop-filter: blur(2px);
 }
 .shopify-bundle-items {
   width: 100%;
   max-width: 36rem;
-  max-height: min(92vh, 44rem);
+  max-height: calc(100vh - 2rem);
+  margin: auto;
   display: flex;
   flex-direction: column;
   background: #fff;

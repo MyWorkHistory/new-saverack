@@ -376,12 +376,15 @@ async function toggleManageMenu(row, e) {
 }
 
 function formatOrderDate(iso) {
-  if (!iso) return { date: "—", time: "" };
+  if (!iso) return { date: "—", time: "", full: "—" };
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return { date: "—", time: "" };
+  if (Number.isNaN(d.getTime())) return { date: "—", time: "", full: "—" };
+  const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   return {
-    date: d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-    time: d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+    date,
+    time,
+    full: `${date}, ${time}`,
   };
 }
 
@@ -649,11 +652,12 @@ onUnmounted(() => {
       </div>
       <button
         type="button"
-        class="btn btn-primary staff-page-primary fw-semibold d-inline-flex align-items-center gap-2 flex-shrink-0"
+        class="btn btn-primary staff-page-primary fw-semibold d-inline-flex align-items-center justify-content-center gap-2 flex-shrink-0 shopify-orders-create-btn"
+        aria-label="Create Order"
         @click="openCreateOrder"
       >
         <span aria-hidden="true">+</span>
-        Create Order
+        <span class="shopify-orders-create-btn__label">Create Order</span>
       </button>
     </div>
 
@@ -867,50 +871,26 @@ onUnmounted(() => {
 
       <div
         v-if="selectedCount"
-        class="staff-bulk-selection-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-3"
+        class="staff-bulk-selection-bar shopify-orders-bulk-bar d-flex flex-wrap align-items-center gap-2 gap-md-3 px-3 px-md-4 py-2 py-md-3"
       >
-        <input
-          type="checkbox"
-          class="form-check-input m-0"
-          :checked="allSelected"
-          aria-label="Select all orders on page"
-          @change="toggleSelectAll"
-        >
-        <span class="small staff-bulk-selection-bar__count">
-          {{ selectedCount }} order{{ selectedCount === 1 ? "" : "s" }} selected
-        </span>
-        <button
-          type="button"
-          class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn orders-bulk-toolbar-btn d-inline-flex align-items-center gap-2"
-          @click="exportCsv(true)"
-        >
-          <svg
-            width="14"
-            height="14"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
+        <div class="shopify-orders-bulk-bar__meta d-flex align-items-center gap-2 min-w-0">
+          <input
+            type="checkbox"
+            class="form-check-input m-0"
+            :checked="allSelected"
+            aria-label="Select all orders on page"
+            @change="toggleSelectAll"
           >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
-            />
-          </svg>
-          Export
-        </button>
-        <div
-          class="position-relative staff-toolbar-bulk-dropdown"
-          data-shopify-orders-bulk-actions
-        >
+          <span class="small staff-bulk-selection-bar__count text-nowrap">
+            {{ selectedCount }} order{{ selectedCount === 1 ? "" : "s" }} selected
+          </span>
+        </div>
+        <div class="shopify-orders-bulk-bar__actions d-flex align-items-center gap-2 flex-wrap">
           <button
             type="button"
             class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn orders-bulk-toolbar-btn d-inline-flex align-items-center gap-2"
-            @click.stop="bulkMenuOpen = !bulkMenuOpen"
+            @click="exportCsv(true)"
           >
-            Bulk Actions
             <svg
               width="14"
               height="14"
@@ -923,56 +903,84 @@ onUnmounted(() => {
               <path
                 stroke-linecap="round"
                 stroke-linejoin="round"
-                d="M19 9l-7 7-7-7"
+                d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
               />
             </svg>
+            Export
           </button>
           <div
-            v-if="bulkMenuOpen"
-            class="dropdown-menu show shadow border p-0 staff-toolbar-filter-dropdown shopify-orders-bulk-menu"
-            role="menu"
-            @click.stop
+            class="position-relative staff-toolbar-bulk-dropdown"
+            data-shopify-orders-bulk-actions
           >
             <button
               type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              @click="openHoldModal(selectedIds)"
+              class="btn btn-outline-secondary btn-sm orders-toolbar-outline-btn orders-bulk-toolbar-btn d-inline-flex align-items-center gap-2"
+              @click.stop="bulkMenuOpen = !bulkMenuOpen"
             >
-              Hold Order
+              Bulk Actions
+              <svg
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
             </button>
-            <button
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              @click="openCancelModal(selectedIds)"
+            <div
+              v-if="bulkMenuOpen"
+              class="dropdown-menu show shadow border p-0 staff-toolbar-filter-dropdown shopify-orders-bulk-menu"
+              role="menu"
+              @click.stop
             >
-              Cancel Order
-            </button>
-            <button
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              @click="openFulfillModal(selectedIds)"
-            >
-              Mark Fulfilled
-            </button>
-            <button
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              @click="openBulkReship"
-            >
-              Re-Ship Order
-            </button>
-            <button
-              type="button"
-              class="staff-row-menu__item"
-              role="menuitem"
-              @click="openReprocessModal(selectedIds)"
-            >
-              Reprocess Order
-            </button>
+              <button
+                type="button"
+                class="staff-row-menu__item"
+                role="menuitem"
+                @click="openHoldModal(selectedIds)"
+              >
+                Hold Order
+              </button>
+              <button
+                type="button"
+                class="staff-row-menu__item"
+                role="menuitem"
+                @click="openCancelModal(selectedIds)"
+              >
+                Cancel Order
+              </button>
+              <button
+                type="button"
+                class="staff-row-menu__item"
+                role="menuitem"
+                @click="openFulfillModal(selectedIds)"
+              >
+                Mark Fulfilled
+              </button>
+              <button
+                type="button"
+                class="staff-row-menu__item"
+                role="menuitem"
+                @click="openBulkReship"
+              >
+                Re-Ship Order
+              </button>
+              <button
+                type="button"
+                class="staff-row-menu__item"
+                role="menuitem"
+                @click="openReprocessModal(selectedIds)"
+              >
+                Reprocess Order
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1013,10 +1021,8 @@ onUnmounted(() => {
         <CrmLoadingSpinner message="Loading orders…" />
       </div>
 
-      <div
-        v-else
-        class="table-responsive staff-table-wrap"
-      >
+      <template v-else>
+        <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table shopify-orders-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -1134,6 +1140,83 @@ onUnmounted(() => {
           </tbody>
         </table>
       </div>
+
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Orders">
+        <div v-if="!rows.length" class="crm-mobile-item-card__empty">
+          No orders found.
+        </div>
+        <template v-else>
+          <article
+            v-for="row in rows"
+            :key="`mobile-${row.id}`"
+            class="crm-mobile-item-card shopify-orders-mobile-card"
+          >
+            <div class="crm-mobile-item-card__head">
+              <div class="crm-mobile-item-card__head-start" @click.stop>
+                <input
+                  type="checkbox"
+                  class="form-check-input m-0 crm-mobile-item-card__check"
+                  :checked="selectedIds.includes(row.id)"
+                  :aria-label="`Select order ${row.name}`"
+                  @change="toggleSelect(row.id)"
+                >
+                <button
+                  type="button"
+                  class="badge rounded-pill fw-medium shopify-order-status shopify-order-status--clickable border-0"
+                  :class="displayStatusClass(row.display_status)"
+                  @click="openStatusPicker(row)"
+                >
+                  {{ displayStatusLabel(row.display_status) }}
+                </button>
+              </div>
+              <div class="crm-mobile-item-card__head-end" data-shopify-orders-row-actions @click.stop>
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': manageOpenId === row.id }"
+                  :aria-expanded="manageOpenId === row.id"
+                  aria-haspopup="true"
+                  aria-label="Row actions"
+                  @click="toggleManageMenu(row, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+            <div class="crm-mobile-item-card__meta">
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Order #</span>
+                <span class="crm-mobile-item-card__meta-value">
+                  <button
+                    type="button"
+                    class="btn btn-link p-0 shopify-orders-order-link fw-semibold text-decoration-none"
+                    @click="openRow(row)"
+                  >
+                    {{ formatShopifyOrderName(row.name) || "—" }}
+                  </button>
+                </span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Recipient</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.recipient_name || "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Order Date</span>
+                <span class="crm-mobile-item-card__meta-value">{{ formatOrderDate(row.shopify_created_at).full }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Country</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.country || "—" }}</span>
+              </div>
+              <div class="crm-mobile-item-card__meta-row">
+                <span class="crm-mobile-item-card__meta-label">Shipping Method</span>
+                <span class="crm-mobile-item-card__meta-value">{{ row.shipping_method || "—" }}</span>
+              </div>
+            </div>
+          </article>
+        </template>
+      </div>
+      </template>
 
       <CrmListTableFooter
         :total="pagination.total"
@@ -1471,11 +1554,80 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
+.shopify-orders-create-btn__label {
+  display: inline;
+}
+
+.shopify-orders-bulk-bar__actions {
+  margin-left: auto;
+}
+
+.shopify-orders-mobile-card .crm-mobile-item-card__meta {
+  margin-bottom: 0;
+}
+
 @media (max-width: 991.98px) {
   .shopify-orders-filter-dropdown {
     left: auto;
     right: 0;
     transform: none;
+  }
+
+  .shopify-orders-create-btn {
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+    border-radius: 0.65rem;
+    font-size: 1.35rem;
+    line-height: 1;
+  }
+
+  .shopify-orders-create-btn__label {
+    display: none;
+  }
+
+  .shopify-orders-search-wrap {
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .orders-toolbar-account {
+    width: auto;
+    min-width: 8.5rem;
+    flex: 1 1 auto;
+  }
+
+  .shopify-orders-bulk-bar {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 0.5rem !important;
+  }
+
+  .shopify-orders-bulk-bar__meta {
+    width: 100%;
+  }
+
+  .shopify-orders-bulk-bar__actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .shopify-orders-bulk-bar__actions .orders-bulk-toolbar-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+    min-height: 2rem;
+    padding-inline: 0.55rem;
+    font-size: 0.8125rem;
+  }
+
+  .shopify-orders-bulk-bar .staff-toolbar-bulk-dropdown {
+    flex: 1 1 auto;
+  }
+
+  .shopify-orders-bulk-bar .staff-toolbar-bulk-dropdown > .btn {
+    width: 100%;
+    justify-content: center;
   }
 }
 </style>

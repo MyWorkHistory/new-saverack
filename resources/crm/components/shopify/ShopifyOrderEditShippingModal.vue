@@ -132,19 +132,24 @@ function onConfirm() {
   inset: 0;
   z-index: 1200;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 1rem;
+  overflow-y: auto;
   background: rgba(15, 23, 42, 0.45);
 }
 .so-modal {
   position: relative;
   width: 100%;
   max-width: 28rem;
+  max-height: calc(100vh - 2rem);
+  overflow-x: hidden;
+  overflow-y: auto;
   background: #fff;
   border-radius: 0.85rem;
   box-shadow: 0 20px 45px rgba(15, 23, 42, 0.2);
   padding: 1.35rem 1.5rem 1.25rem;
+  margin: auto;
 }
 .so-modal__close {
   position: absolute;

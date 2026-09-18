@@ -136,17 +136,22 @@ function backToPick() {
   z-index: 1300;
   background: rgba(17, 24, 39, 0.45);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 1rem;
+  overflow-y: auto;
 }
 .so-modal {
   width: min(26rem, 100%);
+  max-height: calc(100vh - 2rem);
+  overflow-x: hidden;
+  overflow-y: auto;
   background: #fff;
   border-radius: 0.85rem;
   padding: 1.25rem 1.25rem 1.1rem;
   position: relative;
   box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18);
+  margin: auto;
 }
 .so-modal__close {
   position: absolute;

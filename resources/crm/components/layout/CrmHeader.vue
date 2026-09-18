@@ -3,7 +3,6 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmSearchableSelect from "../common/CrmSearchableSelect.vue";
-import { BRAND_MARK_SRC } from "../../utils/brandAssets.js";
 import { buildOrderDetailReturnTo } from "../../utils/orderDetailReturn.js";
 import { useCrmSidebar } from "../../composables/useCrmSidebar";
 import UserEditModal from "../users/UserEditModal.vue";
@@ -23,7 +22,6 @@ const router = useRouter();
 const route = useRoute();
 const toast = useToast();
 const { isMobileOpen, toggleSidebar } = useCrmSidebar();
-const markSrc = computed(() => BRAND_MARK_SRC());
 
 const isPortalUser = computed(() => (props.user?.client_account_id ?? 0) > 0);
 
@@ -238,23 +236,6 @@ onUnmounted(() => {
               />
             </svg>
           </button>
-
-          <RouterLink
-            v-if="!isPortalUser"
-            to="/admin/home"
-            class="d-none d-sm-flex d-lg-none align-items-center gap-2 text-decoration-none text-body flex-shrink-0"
-          >
-            <img
-              :src="markSrc"
-              alt=""
-              width="44"
-              height="44"
-              class="rounded object-fit-contain"
-            />
-            <span class="fw-bold text-truncate" style="max-width: 5.5rem"
-              >Save Rack</span
-            >
-          </RouterLink>
         </div>
 
         <template v-if="isPortalUser">
@@ -390,7 +371,7 @@ onUnmounted(() => {
 
         <template v-else>
           <div
-            class="crm-portal-navbar-search d-flex align-items-center gap-2 flex-grow-1 min-w-0"
+            class="crm-portal-navbar-search d-none d-lg-flex align-items-center gap-2 flex-grow-1 min-w-0"
           >
             <CrmSearchableSelect
               v-model="staffLookupAccountId"

@@ -271,21 +271,26 @@ const statusLabel = (status) => {
   inset: 0;
   z-index: 1200;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 1rem;
+  overflow-y: auto;
   background: rgba(15, 23, 42, 0.45);
 }
 .so-modal {
   position: relative;
   width: 100%;
   max-width: 26rem;
+  max-height: calc(100vh - 2rem);
+  overflow-x: hidden;
+  overflow-y: auto;
   background: #fff;
   border-radius: 0.85rem;
   box-shadow: 0 20px 45px rgba(15, 23, 42, 0.2);
   padding: 1.35rem 1.5rem 1.25rem;
+  margin: auto;
 }
-.so-modal--wide { max-width: 52rem; }
+.so-modal--wide { max-width: min(52rem, calc(100vw - 2rem)); }
 .so-modal__close {
   position: absolute;
   top: 0.65rem;
@@ -295,9 +300,9 @@ const statusLabel = (status) => {
   color: #9ca3af;
   font-size: 1.4rem;
 }
-.so-modal__title { margin: 0; font-size: 1.2rem; font-weight: 700; }
+.so-modal__title { margin: 0; font-size: 1.2rem; font-weight: 700; padding-right: 1.5rem; }
 .so-modal__lead { margin: 0 0 1rem; color: #4b5563; font-size: 0.95rem; }
-.so-modal__foot { display: flex; justify-content: flex-end; gap: 0.55rem; }
+.so-modal__foot { display: flex; justify-content: flex-end; gap: 0.55rem; flex-wrap: wrap; }
 .so-edit-search__menu {
   position: absolute;
   z-index: 5;
@@ -321,6 +326,10 @@ const statusLabel = (status) => {
   padding: 0.55rem 0.85rem;
 }
 .so-edit-search__item:hover { background: #f8fafc; }
+.so-edit-search__item span {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
 .so-item-thumb {
   width: 40px;
   height: 40px;
@@ -340,5 +349,34 @@ const statusLabel = (status) => {
 .so-line-status--pending { background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
 .so-line-status--cancelled { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
 .so-line-status--fulfilled { background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; }
-.so-edit-table-wrap { overflow: visible; }
+.so-edit-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.so-edit-table .fw-semibold,
+.so-edit-table .small {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 575.98px) {
+  .so-modal-overlay { padding: 0.75rem; align-items: flex-start; }
+  .so-modal {
+    padding: 1.1rem 1rem 1rem;
+    max-height: calc(100vh - 1.5rem);
+  }
+  .so-edit-search {
+    flex-wrap: wrap;
+  }
+  .so-edit-search > .flex-grow-1,
+  .so-edit-search > .position-relative {
+    flex: 1 1 100% !important;
+  }
+  .so-edit-search > .btn {
+    width: 100%;
+  }
+  .so-edit-table th:nth-child(3),
+  .so-edit-table td:nth-child(3) {
+    display: none;
+  }
+}
 </style>

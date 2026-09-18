@@ -230,12 +230,15 @@ function formatAddressLines(r) {
   if (locality) lines.push(locality);
   const country = String(r.country || "").trim();
   if (country) lines.push(country);
-  const email = String(r.email || order.value?.email || "").trim();
-  if (email) lines.push(email);
-  const phone = String(r.phone || order.value?.phone || "").trim();
-  if (phone) lines.push(phone);
   return lines;
 }
+
+const recipientEmail = computed(() =>
+  String(recipient.value?.email || order.value?.email || "").trim(),
+);
+const recipientPhone = computed(() =>
+  String(recipient.value?.phone || order.value?.phone || "").trim(),
+);
 
 function carrierLabel(code) {
   const c = String(code || "").toUpperCase();
@@ -334,11 +337,6 @@ async function confirmEditItems(payload) {
 
 async function confirmEditAddress(payload) {
   if (!orderId.value) return;
-  if (isFulfilledStatus(order.value?.display_status)) {
-    toast.error("You can't update the address on a fulfilled order.");
-    editAddressOpen.value = false;
-    return;
-  }
   const result = await actions.updateShippingAddress(orderId.value, payload);
   if (result) {
     editAddressOpen.value = false;
@@ -395,8 +393,8 @@ onUnmounted(() => {
         >
           ← Back to Orders
         </button>
-        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
-          <div class="min-w-0">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 so-detail-hero__row">
+          <div class="min-w-0 so-detail-hero__meta">
             <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
               <h1 class="so-detail-title mb-0">
                 Order #{{ formatShopifyOrderName(order.name || order.display_name) || "—" }}
@@ -434,10 +432,10 @@ onUnmounted(() => {
               </span>
             </p>
           </div>
-          <div class="d-flex flex-wrap align-items-center gap-2">
+          <div class="d-flex flex-wrap align-items-center gap-2 so-detail-hero__actions">
             <button
               type="button"
-              class="btn so-btn-outline fw-semibold d-inline-flex align-items-center gap-2"
+              class="btn so-btn-outline fw-semibold d-inline-flex align-items-center justify-content-center gap-2 so-detail-hero__action-btn"
               @click="editItemsOpen = true"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -446,10 +444,10 @@ onUnmounted(() => {
               </svg>
               Edit Order
             </button>
-            <div class="position-relative" data-shopify-order-detail-actions>
+            <div class="position-relative so-detail-hero__more" data-shopify-order-detail-actions>
               <button
                 type="button"
-                class="btn so-btn-outline fw-semibold d-inline-flex align-items-center gap-2"
+                class="btn so-btn-outline fw-semibold d-inline-flex align-items-center justify-content-center gap-2 so-detail-hero__action-btn w-100"
                 @click.stop="actionsMenuOpen = !actionsMenuOpen"
               >
                 More Actions
@@ -529,8 +527,7 @@ onUnmounted(() => {
       </header>
 
       <div class="so-detail-grid">
-        <div class="so-detail-main">
-          <section class="so-card so-card--items mb-3">
+        <section class="so-card so-card--items so-detail-items mb-3 mb-lg-0">
             <h2 class="so-card__title so-card__title--with-icon">
               <span class="so-section-icon so-section-icon--items" aria-hidden="true">
                 <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -539,7 +536,7 @@ onUnmounted(() => {
               </span>
               <span>Items ({{ lineItems.length }})</span>
             </h2>
-            <div class="table-responsive so-items-wrap">
+            <div class="table-responsive so-items-wrap d-none d-lg-block">
               <table class="table align-middle mb-0 so-items-table">
                 <thead>
                   <tr>
@@ -555,9 +552,9 @@ onUnmounted(() => {
                       <button type="button" class="so-item-link" @click="openItem(line)">
                         <img v-if="line.image_url" :src="line.image_url" alt="" class="so-item-thumb">
                         <div v-else class="so-item-thumb so-item-thumb--empty" />
-                        <span class="text-start">
-                          <span class="d-block fw-semibold so-item-link__title">{{ line.title || "Item" }}</span>
-                          <span class="d-block small text-secondary">SKU: {{ line.sku || "—" }}</span>
+                        <span class="text-start min-w-0">
+                          <span class="d-block fw-semibold so-item-link__title text-break">{{ line.title || "Item" }}</span>
+                          <span class="d-block small text-secondary text-break">SKU: {{ line.sku || "—" }}</span>
                         </span>
                       </button>
                     </td>
@@ -580,9 +577,116 @@ onUnmounted(() => {
                 </tbody>
               </table>
             </div>
+            <div class="so-items-mobile d-lg-none">
+              <p v-if="!lineItems.length" class="text-secondary mb-0 px-3 pb-3">No line items.</p>
+              <article
+                v-for="line in lineItems"
+                :key="`m-line-${line.id}`"
+                class="so-items-mobile__row"
+              >
+                <button type="button" class="so-items-mobile__product" @click="openItem(line)">
+                  <img v-if="line.image_url" :src="line.image_url" alt="" class="so-item-thumb">
+                  <div v-else class="so-item-thumb so-item-thumb--empty" />
+                  <span class="so-items-mobile__copy min-w-0">
+                    <span class="d-block fw-semibold so-item-link__title text-break">{{ line.title || "Item" }}</span>
+                    <span class="d-block small text-secondary text-break">SKU: {{ line.sku || "—" }}</span>
+                    <span class="d-block small text-secondary">Qty {{ line.quantity }} · Location {{ line.location || "—" }}</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  class="so-line-status so-line-status-btn flex-shrink-0"
+                  :class="lineStatusClass(line.line_status)"
+                  @click="openLineStatus(line)"
+                >
+                  {{ lineStatusLabel(line.line_status) }}
+                </button>
+              </article>
+            </div>
           </section>
 
-          <section class="so-card">
+        <aside class="so-detail-side">
+          <section class="so-card mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+              <h2 class="so-card__title so-card__title--with-icon mb-0">
+                <span class="so-section-icon so-section-icon--recipient" aria-hidden="true">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </span>
+                <span>Recipient</span>
+              </h2>
+              <button
+                type="button"
+                class="btn btn-sm so-btn-outline fw-semibold"
+                @click="editAddressOpen = true"
+              >
+                Edit
+              </button>
+            </div>
+            <div class="fw-bold mb-1 text-body">{{ recipient?.name || order.recipient_name || "—" }}</div>
+            <div v-if="formatAddressLines(recipient).length" class="text-body so-recipient-addr">
+              <p
+                v-for="(line, idx) in formatAddressLines(recipient)"
+                :key="'addr-' + idx"
+                class="mb-0 so-recipient-addr__line"
+              >
+                {{ line }}
+              </p>
+            </div>
+            <p v-else class="mb-0 text-body so-recipient-addr">—</p>
+            <a
+              v-if="recipientEmail"
+              class="d-inline-block mt-2 so-recipient-email text-break"
+              :href="`mailto:${recipientEmail}`"
+            >{{ recipientEmail }}</a>
+            <p v-if="recipientPhone" class="mb-0 mt-1 text-body so-recipient-addr">{{ recipientPhone }}</p>
+          </section>
+
+          <section class="so-card mb-3 mb-lg-0">
+            <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+              <h2 class="so-card__title so-card__title--with-icon mb-0">
+                <span class="so-section-icon so-section-icon--shipping" aria-hidden="true">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m6 0a2 2 0 104 0" />
+                  </svg>
+                </span>
+                <span>Shipping Method</span>
+              </h2>
+              <button type="button" class="btn btn-sm so-btn-outline fw-semibold" @click="editShippingOpen = true">
+                Edit
+              </button>
+            </div>
+            <dl class="so-ship-dl mb-0">
+              <div>
+                <dt>Requested</dt>
+                <dd>{{ shipping?.requested || order.shipping_method || "—" }}</dd>
+              </div>
+              <div>
+                <dt>Carrier</dt>
+                <dd class="d-inline-flex align-items-center gap-2">
+                  <ShopifyCarrierLogo v-if="shipping?.carrier" :carrier="shipping.carrier" :size="26" />
+                  <span>{{ carrierLabel(shipping?.carrier) }}</span>
+                </dd>
+              </div>
+              <div>
+                <dt>Service</dt>
+                <dd>{{ shipping?.service || "—" }}</dd>
+              </div>
+              <div>
+                <dt>Price</dt>
+                <dd class="fw-bold">
+                  <template v-if="shipping?.price != null">
+                    ${{ Number(shipping.price).toFixed(2) }}
+                  </template>
+                  <template v-else>—</template>
+                </dd>
+              </div>
+            </dl>
+          </section>
+        </aside>
+
+        <section class="so-card so-detail-timeline">
             <h2 class="so-card__title so-card__title--with-icon">
               <span class="so-section-icon so-section-icon--timeline" aria-hidden="true">
                 <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -625,83 +729,6 @@ onUnmounted(() => {
             </ul>
             <p v-else class="text-secondary mb-0 small">No timeline events yet.</p>
           </section>
-        </div>
-
-        <aside class="so-detail-side">
-          <section class="so-card mb-3">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-              <h2 class="so-card__title so-card__title--with-icon mb-0">
-                <span class="so-section-icon so-section-icon--recipient" aria-hidden="true">
-                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                </span>
-                <span>Recipient</span>
-              </h2>
-              <button
-                v-if="!isFulfilledStatus(order.display_status)"
-                type="button"
-                class="btn btn-sm so-btn-outline fw-semibold"
-                @click="editAddressOpen = true"
-              >
-                Edit
-              </button>
-            </div>
-            <div class="fw-bold mb-1 text-body">{{ recipient?.name || order.recipient_name || "—" }}</div>
-            <div v-if="formatAddressLines(recipient).length" class="text-body so-recipient-addr">
-              <p
-                v-for="(line, idx) in formatAddressLines(recipient)"
-                :key="'addr-' + idx"
-                class="mb-0 so-recipient-addr__line"
-              >
-                {{ line }}
-              </p>
-            </div>
-            <p v-else class="mb-0 text-body so-recipient-addr">—</p>
-          </section>
-
-          <section class="so-card">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-              <h2 class="so-card__title so-card__title--with-icon mb-0">
-                <span class="so-section-icon so-section-icon--shipping" aria-hidden="true">
-                  <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m6 0a2 2 0 104 0" />
-                  </svg>
-                </span>
-                <span>Shipping Method</span>
-              </h2>
-              <button type="button" class="btn btn-sm so-btn-outline fw-semibold" @click="editShippingOpen = true">
-                Edit
-              </button>
-            </div>
-            <dl class="so-ship-dl mb-0">
-              <div>
-                <dt>Requested</dt>
-                <dd>{{ shipping?.requested || order.shipping_method || "—" }}</dd>
-              </div>
-              <div>
-                <dt>Carrier</dt>
-                <dd class="d-inline-flex align-items-center gap-2">
-                  <ShopifyCarrierLogo v-if="shipping?.carrier" :carrier="shipping.carrier" :size="26" />
-                  <span>{{ carrierLabel(shipping?.carrier) }}</span>
-                </dd>
-              </div>
-              <div>
-                <dt>Service</dt>
-                <dd>{{ shipping?.service || "—" }}</dd>
-              </div>
-              <div>
-                <dt>Price</dt>
-                <dd class="fw-bold">
-                  <template v-if="shipping?.price != null">
-                    ${{ Number(shipping.price).toFixed(2) }}
-                  </template>
-                  <template v-else>—</template>
-                </dd>
-              </div>
-            </dl>
-          </section>
-        </aside>
       </div>
     </template>
 
@@ -843,11 +870,80 @@ onUnmounted(() => {
 .so-detail-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 22rem;
+  grid-template-areas:
+    "items side"
+    "timeline side";
   gap: 1.25rem;
   align-items: start;
 }
-@media (max-width: 992px) {
-  .so-detail-grid { grid-template-columns: 1fr; }
+.so-detail-items { grid-area: items; }
+.so-detail-side { grid-area: side; }
+.so-detail-timeline { grid-area: timeline; }
+@media (max-width: 991.98px) {
+  .so-detail-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "items"
+      "side"
+      "timeline";
+    gap: 0.875rem;
+  }
+  .so-detail-hero__row {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+  .so-detail-hero__actions {
+    width: 100%;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.65rem;
+  }
+  .so-detail-hero__more {
+    min-width: 0;
+  }
+  .so-detail-hero__action-btn {
+    width: 100%;
+    min-height: 2.65rem;
+  }
+  .so-detail-meta__sep {
+    display: none;
+  }
+  .so-detail-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+}
+.so-items-mobile__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1.15rem;
+  border-top: 1px solid #f1f2f4;
+}
+.so-items-mobile__product {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+}
+.so-items-mobile__copy {
+  display: block;
+  min-width: 0;
+}
+.so-recipient-email {
+  color: #2563eb;
+  font-weight: 500;
+  text-decoration: none;
+}
+.so-recipient-email:hover {
+  text-decoration: underline;
 }
 .so-card {
   background: #fff;

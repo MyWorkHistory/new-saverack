@@ -186,11 +186,14 @@ function openRow(row) {
   window.open(inventoryDetailHref(row), "_blank", "noopener,noreferrer");
 }
 
-function packagingListLabel(row, listKey, singleKey) {
+function packagingChipItems(row, listKey, singleKey) {
   const list = Array.isArray(row?.[listKey]) ? row[listKey] : [];
   const labels = list.map((item) => item?.label || item?.name).filter(Boolean);
-  if (labels.length) return labels.join(", ");
-  return row?.[singleKey]?.label || "—";
+  if (labels.length) {
+    return labels.map((name) => ({ name, available: 1 }));
+  }
+  const single = row?.[singleKey]?.label || row?.[singleKey]?.name;
+  return single ? [{ name: String(single), available: 1 }] : [];
 }
 
 function locationGroup(row, key) {
@@ -868,8 +871,20 @@ onUnmounted(() => {
                 </td>
               </template>
               <template v-else-if="viewType === 'packaging'">
-                <td class="text-body">{{ packagingListLabel(row, "packaging_items", "packaging") }}</td>
-                <td class="text-body">{{ packagingListLabel(row, "packaging_materials", "packaging_material") }}</td>
+                <td @click.stop>
+                  <ShopifyInventoryLocationCell
+                    :locations="packagingChipItems(row, 'packaging_items', 'packaging')"
+                    label="Default Packaging"
+                    :show-primary="false"
+                  />
+                </td>
+                <td @click.stop>
+                  <ShopifyInventoryLocationCell
+                    :locations="packagingChipItems(row, 'packaging_materials', 'packaging_material')"
+                    label="Packaging Materials"
+                    :show-primary="false"
+                  />
+                </td>
               </template>
               <template v-else-if="viewType === 'weights'">
                 <td class="text-body">{{ weightLabel(row) }}</td>
@@ -1005,13 +1020,25 @@ onUnmounted(() => {
                 </div>
               </template>
               <template v-else-if="viewType === 'packaging'">
-                <div class="crm-mobile-item-card__meta-row">
+                <div class="crm-mobile-item-card__meta-row" @click.stop>
                   <span class="crm-mobile-item-card__meta-label">Packaging</span>
-                  <span class="crm-mobile-item-card__meta-value">{{ packagingListLabel(row, "packaging_items", "packaging") }}</span>
+                  <span class="crm-mobile-item-card__meta-value">
+                    <ShopifyInventoryLocationCell
+                      :locations="packagingChipItems(row, 'packaging_items', 'packaging')"
+                      label="Default Packaging"
+                      :show-primary="false"
+                    />
+                  </span>
                 </div>
-                <div class="crm-mobile-item-card__meta-row">
+                <div class="crm-mobile-item-card__meta-row" @click.stop>
                   <span class="crm-mobile-item-card__meta-label">Materials</span>
-                  <span class="crm-mobile-item-card__meta-value">{{ packagingListLabel(row, "packaging_materials", "packaging_material") }}</span>
+                  <span class="crm-mobile-item-card__meta-value">
+                    <ShopifyInventoryLocationCell
+                      :locations="packagingChipItems(row, 'packaging_materials', 'packaging_material')"
+                      label="Packaging Materials"
+                      :show-primary="false"
+                    />
+                  </span>
                 </div>
               </template>
               <template v-else-if="viewType === 'weights'">

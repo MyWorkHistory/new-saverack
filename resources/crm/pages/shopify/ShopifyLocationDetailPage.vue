@@ -68,6 +68,7 @@ const transferQty = ref("0");
 const transferReason = ref("");
 
 const headerActionsOpen = ref(false);
+const navMenuOpen = ref(false);
 const filterMenuOpen = ref(false);
 const selectedIds = ref([]);
 const bulkTransferOpen = ref(false);
@@ -228,6 +229,7 @@ function onDocClick(e) {
   if (!e.target?.closest?.("[data-shopify-loc-item-actions]")) manageOpenId.value = null;
   if (!e.target?.closest?.("[data-shopify-loc-sku-search]")) skuSearchOpen.value = false;
   if (!e.target?.closest?.("[data-shopify-loc-header-actions]")) headerActionsOpen.value = false;
+  if (!e.target?.closest?.("[data-shopify-loc-nav-menu]")) navMenuOpen.value = false;
   if (!e.target?.closest?.("[data-shopify-loc-filters]")) filterMenuOpen.value = false;
 }
 
@@ -679,7 +681,52 @@ onUnmounted(() => {
     </div>
 
     <template v-else-if="location">
-      <div class="d-flex flex-wrap align-items-center justify-content-end gap-2 mb-3">
+      <header class="shopify-loc-detail-nav d-lg-none">
+        <button
+          type="button"
+          class="shopify-loc-detail-nav__back"
+          aria-label="Back to Locations"
+          @click="router.push({ name: 'shopify-locations' })"
+        >
+          <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+          </svg>
+        </button>
+        <h1 class="shopify-loc-detail-nav__title">{{ location.name }}</h1>
+        <div class="position-relative" data-shopify-loc-nav-menu>
+          <button
+            type="button"
+            class="shopify-loc-detail-nav__more"
+            :aria-expanded="navMenuOpen"
+            aria-label="Location menu"
+            @click.stop="navMenuOpen = !navMenuOpen; headerActionsOpen = false"
+          >
+            <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="5" r="1.75" />
+              <circle cx="12" cy="12" r="1.75" />
+              <circle cx="12" cy="19" r="1.75" />
+            </svg>
+          </button>
+          <div
+            v-if="navMenuOpen"
+            class="dropdown-menu dropdown-menu-end show shadow border py-1"
+            style="position: absolute; top: calc(100% + 0.25rem); right: 0; z-index: 1090; min-width: 12.5rem"
+            @click.stop
+          >
+            <button type="button" class="dropdown-item small" @click="printLocationSheet(); navMenuOpen = false">
+              Print
+            </button>
+            <button type="button" class="dropdown-item small" @click="openEdit(); navMenuOpen = false">
+              Edit Location
+            </button>
+            <button type="button" class="dropdown-item small text-danger" @click="navMenuOpen = false; openDeleteLocation()">
+              Delete Location
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div class="d-none d-lg-flex flex-wrap align-items-center justify-content-end gap-2 mb-3">
         <button
           type="button"
           class="btn btn-sm btn-primary staff-page-primary d-inline-flex align-items-center gap-2"
@@ -721,7 +768,7 @@ onUnmounted(() => {
 
       <div class="shopify-loc-summary mb-3">
         <div class="shopify-loc-summary__main">
-          <div class="shopify-loc-hero-icon" aria-hidden="true">
+          <div class="shopify-loc-hero-icon d-none d-lg-inline-flex" aria-hidden="true">
             <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="#2563eb" stroke-width="1.7">
               <path
                 stroke-linecap="round"
@@ -736,7 +783,7 @@ onUnmounted(() => {
             </svg>
           </div>
           <div class="shopify-loc-summary__info min-w-0">
-            <h1 class="shopify-loc-summary__title">{{ location.name }}</h1>
+            <h1 class="shopify-loc-summary__title d-none d-lg-block">{{ location.name }}</h1>
             <div class="shopify-loc-meta">
               <div class="shopify-loc-meta__col">
                 <div class="shopify-loc-meta__label">Type</div>
@@ -761,6 +808,41 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <div class="shopify-loc-detail-actions d-lg-none mb-3">
+        <button type="button" class="btn btn-primary staff-page-primary fw-semibold" @click="openAddItem">
+          Add Item
+        </button>
+        <div class="position-relative" data-shopify-loc-header-actions>
+          <button
+            type="button"
+            class="btn btn-outline-primary d-inline-flex align-items-center justify-content-center gap-1"
+            :aria-expanded="headerActionsOpen"
+            @click.stop="headerActionsOpen = !headerActionsOpen; navMenuOpen = false"
+          >
+            Actions
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+            </svg>
+          </button>
+          <div
+            v-if="headerActionsOpen"
+            class="dropdown-menu show shadow border py-1"
+            style="position: absolute; top: calc(100% + 0.25rem); right: 0; z-index: 1090; min-width: 12.5rem"
+            @click.stop
+          >
+            <button type="button" class="dropdown-item small" @click="printLocationSheet(); headerActionsOpen = false">
+              Print
+            </button>
+            <button type="button" class="dropdown-item small" @click="openEdit(); headerActionsOpen = false">
+              Edit Location
+            </button>
+            <button type="button" class="dropdown-item small text-danger" @click="headerActionsOpen = false; openDeleteLocation()">
+              Delete Location
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
         <div class="staff-table-toolbar px-3 px-md-4">
           <div class="staff-table-toolbar--row shopify-loc-toolbar-row">
@@ -775,7 +857,7 @@ onUnmounted(() => {
                   v-model="searchQuery"
                   type="search"
                   class="form-control"
-                  placeholder="Search by name or SKU…"
+                  placeholder="Search by name or SKU..."
                   autocomplete="off"
                   enterkeyhint="search"
                   aria-label="Search products at this location"
@@ -783,19 +865,6 @@ onUnmounted(() => {
                   @keydown.enter.prevent="applyFilters"
                 />
               </div>
-            </div>
-            <div class="shopify-loc-toolbar-account">
-              <CrmSearchableSelect
-                v-model="filterAccountId"
-                class="staff-toolbar-search staff-toolbar-search--inline w-100"
-                appearance="staff"
-                aria-label="Filter by account"
-                :options="accountOptions"
-                :disabled="accountsLoading || loading"
-                placeholder="All Accounts"
-                empty-label="All Accounts"
-                search-placeholder="Search Accounts…"
-              />
             </div>
             <div class="position-relative flex-shrink-0" data-shopify-loc-filters>
               <button
@@ -828,6 +897,19 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
+            <div class="shopify-loc-toolbar-account">
+              <CrmSearchableSelect
+                v-model="filterAccountId"
+                class="staff-toolbar-search staff-toolbar-search--inline w-100"
+                appearance="staff"
+                aria-label="Filter by account"
+                :options="accountOptions"
+                :disabled="accountsLoading || loading"
+                placeholder="All Accounts"
+                empty-label="All Accounts"
+                search-placeholder="Search Accounts…"
+              />
+            </div>
           </div>
         </div>
 
@@ -851,7 +933,7 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <div class="table-responsive staff-table-wrap">
+        <div class="table-responsive staff-table-wrap d-none d-lg-block">
           <table class="table table-hover align-middle mb-0 staff-data-table">
             <thead class="table-light staff-table-head">
               <tr>
@@ -956,6 +1038,50 @@ onUnmounted(() => {
             </tbody>
           </table>
         </div>
+
+        <div class="crm-mobile-item-cards d-lg-none" aria-label="Location inventory">
+          <div v-if="loading" class="crm-mobile-item-card__empty">
+            <CrmLoadingSpinner message="Loading Inventory…" />
+          </div>
+          <div v-else-if="!items.length" class="crm-mobile-item-card__empty">
+            No inventory at this location yet.
+          </div>
+          <article
+            v-for="row in items"
+            v-else
+            :key="`m-${row.id}`"
+            class="crm-mobile-item-card shopify-loc-item-card"
+          >
+            <div class="shopify-loc-item-card__row">
+              <div class="shopify-loc-item-card__thumb" aria-hidden="true">
+                <img v-if="row.image_url" :src="row.image_url" alt="" />
+                <span v-else class="shopify-loc-item-card__thumb-empty">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
+                  </svg>
+                </span>
+              </div>
+              <div class="shopify-loc-item-card__copy min-w-0">
+                <div class="shopify-loc-item-card__name text-break">{{ row.product_title || "—" }}</div>
+                <div class="shopify-loc-item-card__sku text-break">{{ row.sku || "—" }}</div>
+                <div class="shopify-loc-item-card__account text-break">{{ row.account_name || "—" }}</div>
+              </div>
+              <div class="shopify-loc-item-card__qty">{{ row.available }}</div>
+              <div data-shopify-loc-item-actions class="shopify-loc-item-card__actions" @click.stop>
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': manageOpenId === row.id }"
+                  aria-label="Row actions"
+                  @click="toggleManageMenu(row, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+          </article>
+        </div>
+
         <p class="small text-secondary px-3 px-md-4 py-3 mb-0 border-top">
           Showing {{ items.length ? 1 : 0 }} to {{ items.length }} of {{ pagination.total }} items.
         </p>
@@ -1572,5 +1698,176 @@ onUnmounted(() => {
 .shopify-loc-drawer-slide-enter-from,
 .shopify-loc-drawer-slide-leave-to {
   transform: translateX(100%);
+}
+
+.shopify-loc-detail-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+.shopify-loc-detail-nav__back,
+.shopify-loc-detail-nav__more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.45rem;
+  background: transparent;
+  color: #2563eb;
+  flex-shrink: 0;
+}
+.shopify-loc-detail-nav__more {
+  color: #334155;
+}
+.shopify-loc-detail-nav__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shopify-loc-detail-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+.shopify-loc-detail-actions > .btn,
+.shopify-loc-detail-actions > .position-relative > .btn {
+  width: 100%;
+  min-height: 2.5rem;
+}
+.shopify-loc-item-card {
+  padding: 0.75rem 0.85rem;
+}
+.shopify-loc-item-card__row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+.shopify-loc-item-card__thumb {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.45rem;
+  overflow: hidden;
+  background: #f3f4f6;
+  border: 1px solid #eceff3;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.shopify-loc-item-card__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.shopify-loc-item-card__thumb-empty {
+  color: #c0c4cc;
+  display: inline-flex;
+}
+.shopify-loc-item-card__copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.shopify-loc-item-card__name {
+  font-size: 0.8rem;
+  color: #64748b;
+  line-height: 1.25;
+  margin-bottom: 0.1rem;
+}
+.shopify-loc-item-card__sku {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.25;
+  margin-bottom: 0.1rem;
+}
+.shopify-loc-item-card__account {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  line-height: 1.25;
+}
+.shopify-loc-item-card__qty {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+  flex-shrink: 0;
+  min-width: 1.5rem;
+  text-align: right;
+}
+.shopify-loc-item-card__actions {
+  flex-shrink: 0;
+}
+
+@media (max-width: 991.98px) {
+  .shopify-loc-summary {
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .shopify-loc-summary__main {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .shopify-loc-meta {
+    gap: 0.65rem 0.85rem;
+  }
+  .shopify-loc-meta__col {
+    min-width: 0;
+  }
+  .shopify-loc-summary__aside {
+    align-items: flex-end;
+    margin-left: auto;
+  }
+  .shopify-loc-qty-card {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    text-align: right;
+  }
+  .shopify-loc-qty-card__label {
+    font-size: 0.68rem;
+    margin-bottom: 0.15rem;
+  }
+  .shopify-loc-qty-card__value {
+    font-size: 1.55rem;
+    font-weight: 700;
+    color: #2563eb;
+    line-height: 1.1;
+  }
+  .shopify-loc-toolbar-row.staff-table-toolbar--row,
+  .staff-table-toolbar--row.shopify-loc-toolbar-row {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    grid-template-columns: none;
+    grid-template-rows: none;
+  }
+  .shopify-loc-toolbar-search {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
+  .shopify-loc-toolbar-row > [data-shopify-loc-filters] {
+    flex: 0 0 auto;
+  }
+  .shopify-loc-toolbar-account {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: none;
+  }
 }
 </style>

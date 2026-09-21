@@ -348,23 +348,24 @@ onUnmounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide">
-    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
+    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3 shopify-loc-page-head">
       <div class="min-w-0">
         <h1 class="h4 mb-1 fw-semibold text-body">Locations</h1>
-        <p class="small text-secondary mb-0">Manage and organize all your warehouse locations.</p>
+        <p class="small text-secondary mb-0">View and manage warehouse locations.</p>
       </div>
-      <div class="d-flex flex-wrap align-items-center gap-2">
+      <div class="d-flex flex-wrap align-items-center gap-2 shopify-loc-page-head__actions">
         <button
           type="button"
-          class="btn btn-primary staff-page-primary d-inline-flex align-items-center gap-2"
+          class="btn btn-primary staff-page-primary d-inline-flex align-items-center justify-content-center gap-2 shopify-loc-add-btn"
+          aria-label="Add Location"
           @click="openAdd"
         >
           <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
           </svg>
-          Add Location
+          <span class="shopify-loc-add-btn__label">Add Location</span>
         </button>
-        <div class="position-relative" data-shopify-loc-actions>
+        <div class="position-relative d-none d-lg-block" data-shopify-loc-actions>
           <button
             type="button"
             class="btn btn-outline-secondary orders-toolbar-outline-btn dropdown-toggle"
@@ -500,7 +501,7 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <div class="table-responsive staff-table-wrap">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -591,6 +592,83 @@ onUnmounted(() => {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Locations">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <CrmLoadingSpinner message="Loading Locations…" />
+        </div>
+        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">
+          No locations yet. Add a location or import a CSV.
+        </div>
+        <article
+          v-for="row in rows"
+          v-else
+          :key="`m-${row.id}`"
+          class="crm-mobile-item-card shopify-loc-mobile-card"
+          role="button"
+          tabindex="0"
+          @click="openRow(row)"
+          @keydown.enter.prevent="openRow(row)"
+        >
+          <div class="crm-mobile-item-card__head">
+            <div class="crm-mobile-item-card__head-start" @click.stop>
+              <input
+                type="checkbox"
+                class="form-check-input m-0 crm-mobile-item-card__check"
+                :checked="selectedIds.includes(row.id)"
+                :aria-label="`Select ${row.name}`"
+                @change="toggleSelect(row.id)"
+              >
+              <span class="shopify-loc-mobile-card__name">{{ row.name }}</span>
+            </div>
+            <div class="crm-mobile-item-card__head-end" data-shopify-loc-row-actions @click.stop>
+              <button
+                type="button"
+                class="staff-action-btn staff-action-btn--more"
+                :class="{ 'is-open': manageOpenId === row.id }"
+                aria-label="Row actions"
+                @click="toggleManageMenu(row, $event)"
+              >
+                <CrmIconRowActions variant="horizontal" />
+              </button>
+            </div>
+          </div>
+          <div class="shopify-loc-mobile-card__stats">
+            <div class="shopify-loc-mobile-card__stat">
+              <span class="shopify-loc-mobile-card__stat-label">Type</span>
+              <span class="shopify-loc-mobile-card__stat-value">{{ row.type || "—" }}</span>
+            </div>
+            <div class="shopify-loc-mobile-card__stat">
+              <span class="shopify-loc-mobile-card__stat-label">Quantity</span>
+              <span class="shopify-loc-mobile-card__stat-value">{{ Number(row.total_qty || 0) }}</span>
+            </div>
+            <div class="shopify-loc-mobile-card__stat" @click.stop>
+              <span class="shopify-loc-mobile-card__stat-label">Pickable</span>
+              <button
+                type="button"
+                class="inventory-detail__toggle"
+                :class="row.pickable ? 'inventory-detail__toggle--on' : 'inventory-detail__toggle--off'"
+                :aria-label="`Pickable ${row.pickable ? 'on' : 'off'}`"
+                @click="toggleFlag(row, 'pickable')"
+              >
+                <span class="inventory-detail__toggle-track"><span class="inventory-detail__toggle-thumb" /></span>
+              </button>
+            </div>
+            <div class="shopify-loc-mobile-card__stat" @click.stop>
+              <span class="shopify-loc-mobile-card__stat-label">Sellable</span>
+              <button
+                type="button"
+                class="inventory-detail__toggle"
+                :class="row.sellable ? 'inventory-detail__toggle--on' : 'inventory-detail__toggle--off'"
+                :aria-label="`Sellable ${row.sellable ? 'on' : 'off'}`"
+                @click="toggleFlag(row, 'sellable')"
+              >
+                <span class="inventory-detail__toggle-track"><span class="inventory-detail__toggle-thumb" /></span>
+              </button>
+            </div>
+          </div>
+        </article>
       </div>
 
       <CrmListTableFooter
@@ -733,6 +811,46 @@ onUnmounted(() => {
 .shopify-loc-row {
   cursor: pointer;
 }
+.shopify-loc-mobile-card__name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.3;
+  word-break: break-word;
+}
+.shopify-loc-mobile-card__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid #eef0f3;
+  margin: 0 -1rem -0.75rem;
+  padding: 0.7rem 0.25rem;
+}
+.shopify-loc-mobile-card__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.35rem;
+  padding: 0 0.25rem;
+  border-right: 1px solid #eef0f3;
+  min-width: 0;
+}
+.shopify-loc-mobile-card__stat:last-child {
+  border-right: 0;
+}
+.shopify-loc-mobile-card__stat-label {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: #94a3b8;
+  line-height: 1.2;
+}
+.shopify-loc-mobile-card__stat-value {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+  word-break: break-word;
+}
 .inventory-detail__toggle {
   border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 999px;
@@ -758,12 +876,45 @@ onUnmounted(() => {
   transition: transform 0.15s ease;
 }
 .inventory-detail__toggle--on .inventory-detail__toggle-track {
-  background: #22c55e;
+  background: #3b82f6;
 }
 .inventory-detail__toggle--on .inventory-detail__toggle-thumb {
   transform: translateX(14px);
 }
 .inventory-detail__toggle--off .inventory-detail__toggle-track {
   background: #ef4444;
+}
+@media (max-width: 991.98px) {
+  .shopify-loc-page-head {
+    align-items: flex-start !important;
+    margin-bottom: 0.85rem !important;
+  }
+  .shopify-loc-add-btn {
+    width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    border-radius: 0.55rem;
+  }
+  .shopify-loc-add-btn__label {
+    display: none;
+  }
+  .shopify-loc-toolbar.staff-table-toolbar--row,
+  .staff-table-toolbar--row.shopify-loc-toolbar {
+    display: flex !important;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.45rem;
+    grid-template-columns: none;
+    grid-template-rows: none;
+  }
+  .shopify-loc-search {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
+  .shopify-loc-toolbar > [data-shopify-loc-filters] {
+    flex: 0 0 auto;
+  }
 }
 </style>

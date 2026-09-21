@@ -313,27 +313,28 @@ onUnmounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide sip">
-    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
+    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4 sip-page-head">
       <div class="min-w-0">
         <h1 class="h4 mb-1 fw-semibold text-body">Packaging</h1>
         <p class="small text-secondary mb-0">View and manage packaging and packaging materials.</p>
       </div>
       <button
         type="button"
-        class="btn btn-primary staff-page-primary fw-semibold d-inline-flex align-items-center gap-1"
+        class="btn btn-primary staff-page-primary fw-semibold d-inline-flex align-items-center justify-content-center gap-1 sip-add-btn"
+        aria-label="Add Packaging"
         @click="openAdd"
       >
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
         </svg>
-        Add Packaging
+        <span class="sip-add-btn__label">Add Packaging</span>
       </button>
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
       <div class="staff-table-toolbar">
-        <div class="staff-table-toolbar--row sip-toolbar-row">
-          <div class="sip-search-wrap flex-grow-1">
+        <div class="staff-table-toolbar--row sip-toolbar">
+          <div class="sip-search-wrap">
             <div class="input-group orders-toolbar-search-group">
               <span class="input-group-text bg-white border-end-0 text-secondary">
                 <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -362,10 +363,10 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="position-relative flex-shrink-0" data-packaging-filters>
+          <div class="position-relative flex-shrink-0 sip-filters-wrap" data-packaging-filters>
             <button
               type="button"
-              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
+              class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2 sip-filters-btn"
               :aria-expanded="filterMenuOpen"
               :disabled="loading"
               @click.stop="filterMenuOpen = !filterMenuOpen"
@@ -461,7 +462,7 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <div class="table-responsive staff-table-wrap">
+      <div class="table-responsive staff-table-wrap d-none d-lg-block">
         <table class="table table-hover align-middle mb-0 staff-data-table">
           <thead class="table-light staff-table-head">
             <tr>
@@ -551,6 +552,95 @@ onUnmounted(() => {
         </table>
       </div>
 
+      <div class="crm-mobile-item-cards d-lg-none" aria-label="Packaging">
+        <div v-if="loading" class="crm-mobile-item-card__empty">
+          <div class="d-flex justify-content-center py-3">
+            <CrmLoadingSpinner message="Loading Packaging…" />
+          </div>
+        </div>
+        <div v-else-if="!rows.length" class="crm-mobile-item-card__empty">
+          No packaging found.
+        </div>
+        <template v-else>
+          <article
+            v-for="row in rows"
+            :key="`m-${row.id}`"
+            class="crm-mobile-item-card sip-mobile-card"
+            role="button"
+            tabindex="0"
+            @click="openRow(row)"
+            @keydown.enter.prevent="openRow(row)"
+          >
+            <div class="crm-mobile-item-card__head">
+              <div class="crm-mobile-item-card__head-start" @click.stop>
+                <input
+                  type="checkbox"
+                  class="form-check-input m-0 crm-mobile-item-card__check"
+                  :checked="isSelected(row.id)"
+                  :aria-label="`Select ${row.name || row.id}`"
+                  @change="toggleSelect(row.id)"
+                >
+              </div>
+              <div class="crm-mobile-item-card__head-end" data-packaging-row-actions @click.stop>
+                <button
+                  type="button"
+                  class="staff-action-btn staff-action-btn--more"
+                  :class="{ 'is-open': manageOpenId === row.id }"
+                  aria-label="Row actions"
+                  @click="toggleManageMenu(row, $event)"
+                >
+                  <CrmIconRowActions variant="horizontal" />
+                </button>
+              </div>
+            </div>
+
+            <div class="sip-mobile-card__product">
+              <div class="sip-mobile-card__thumb" aria-hidden="true">
+                <img v-if="row.image_url" :src="row.image_url" alt="" >
+                <span v-else class="sip-mobile-card__thumb-empty">
+                  <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                  </svg>
+                </span>
+              </div>
+              <div class="sip-mobile-card__copy min-w-0">
+                <div class="sip-mobile-card__name text-break">{{ row.name || "—" }}</div>
+                <div class="sip-mobile-card__meta-grid">
+                  <div class="sip-mobile-card__meta-pair">
+                    <span class="sip-mobile-card__meta-label">Category</span>
+                    <span class="sip-mobile-card__meta-value">{{ row.category_label || "—" }}</span>
+                  </div>
+                  <div class="sip-mobile-card__meta-pair">
+                    <span class="sip-mobile-card__meta-label">Type</span>
+                    <span class="sip-mobile-card__meta-value">{{ row.type_label || "—" }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sip-mobile-card__stats">
+              <div class="sip-mobile-card__stat">
+                <span class="sip-mobile-card__stat-label">Cost</span>
+                <span class="sip-mobile-card__stat-value">{{ formatCents(row.cost_cents) }}</span>
+              </div>
+              <div class="sip-mobile-card__stat">
+                <span class="sip-mobile-card__stat-label">Price</span>
+                <span class="sip-mobile-card__stat-value">{{ formatCents(row.price_cents) }}</span>
+              </div>
+              <div class="sip-mobile-card__stat">
+                <span class="sip-mobile-card__stat-label">On Hand</span>
+                <span
+                  class="sip-mobile-card__stat-value"
+                  :class="{ 'sip-mobile-card__onhand--low': Number(row.on_hand || 0) > 0 && Number(row.on_hand || 0) <= 10 }"
+                >
+                  {{ Number(row.on_hand || 0).toLocaleString("en-US") }}
+                </span>
+              </div>
+            </div>
+          </article>
+        </template>
+      </div>
+
       <CrmListTableFooter
         :total="pagination.total"
         :current-page="pagination.current_page"
@@ -628,7 +718,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.sip-toolbar-row {
+.sip-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -638,11 +728,6 @@ onUnmounted(() => {
   flex: 1 1 16rem;
   min-width: 12rem;
   max-width: 28rem;
-}
-.sip-account-select {
-  width: auto;
-  min-width: 11rem;
-  max-width: 16rem;
 }
 .sip-row {
   cursor: pointer;
@@ -686,11 +771,141 @@ onUnmounted(() => {
   color: #111827;
   line-height: 1.25;
 }
+.sip-mobile-card__product {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+  margin-bottom: 0.7rem;
+}
+.sip-mobile-card__thumb {
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: #f3f4f6;
+  border: 1px solid #eceff3;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sip-mobile-card__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.sip-mobile-card__thumb-empty {
+  color: #c0c4cc;
+  display: inline-flex;
+}
+.sip-mobile-card__name {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.3;
+  margin-bottom: 0.4rem;
+}
+.sip-mobile-card__meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem 0.65rem;
+}
+.sip-mobile-card__meta-pair {
+  min-width: 0;
+}
+.sip-mobile-card__meta-label {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: #94a3b8;
+  line-height: 1.2;
+}
+.sip-mobile-card__meta-value {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #1e293b;
+  word-break: break-word;
+}
+.sip-mobile-card__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid #eef0f3;
+  margin: 0 -1rem -0.75rem;
+  padding: 0.7rem 0.25rem;
+}
+.sip-mobile-card__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.2rem;
+  padding: 0 0.3rem;
+  border-right: 1px solid #eef0f3;
+}
+.sip-mobile-card__stat:last-child {
+  border-right: 0;
+}
+.sip-mobile-card__stat-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+.sip-mobile-card__stat-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.2;
+}
+.sip-mobile-card__onhand--low {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: #ffedd5;
+  color: #c2410c;
+}
 @media (max-width: 991.98px) {
-  .sip-account-select,
+  .sip-page-head {
+    align-items: flex-start !important;
+    margin-bottom: 0.85rem !important;
+  }
+  .sip-add-btn {
+    width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    border-radius: 0.55rem;
+  }
+  .sip-add-btn__label {
+    display: none;
+  }
+  .sip-toolbar.staff-table-toolbar--row,
+  .staff-table-toolbar--row.sip-toolbar {
+    display: flex !important;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+    grid-template-columns: none;
+    grid-template-rows: none;
+  }
   .sip-search-wrap {
-    max-width: none;
+    flex: none;
     width: 100%;
+    max-width: none;
+    min-width: 0;
+  }
+  .sip-filters-wrap {
+    width: 100%;
+  }
+  .sip-filters-btn {
+    width: 100%;
+    justify-content: center;
+    min-height: 2.25rem;
   }
 }
 </style>

@@ -947,18 +947,20 @@ onUnmounted(() => {
   margin-top: 0.85rem;
 }
 .sid-product__meta {
-  display: flex;
-  gap: 1.5rem;
-  margin-top: 1.1rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem 1.25rem;
+  margin-top: 1.05rem;
 }
 .sid-meta {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.55rem;
 }
 .sid-meta__icon {
   display: inline-flex;
   color: #9ca3af;
+  margin-top: 0.05rem;
 }
 .sid-specs {
   display: grid;
@@ -1019,15 +1021,135 @@ onUnmounted(() => {
   line-height: 1.05;
 }
 @media (max-width: 991.98px) {
-  .sid-grid,
-  .sid-specs,
-  .sid-product {
+  .sid-grid {
     grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  .sid-header {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.45rem;
+    margin-bottom: 0.85rem;
+  }
+  .sid-back {
+    font-size: 0.8125rem;
+    flex-shrink: 0;
+  }
+  .sid-header__actions {
+    margin-left: auto;
+    width: auto;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.4rem;
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .sid-header__actions .staff-outline-action-btn {
+    width: auto;
+    justify-content: center;
+    white-space: nowrap;
+    font-size: 0.72rem;
+    padding: 0.35rem 0.55rem;
+    min-height: 2rem;
+    gap: 0.3rem;
+  }
+  .sid-card {
+    padding: 0.85rem;
+    border-radius: 0.75rem;
+  }
+  .sid-product {
+    gap: 0.85rem;
+    align-items: stretch;
+  }
+  .sid-product__img {
+    width: 8.5rem;
+    height: auto;
+    min-height: 8.5rem;
+    border-radius: 0.65rem;
+    align-self: stretch;
+  }
+  .sid-product__info {
     display: flex;
     flex-direction: column;
+    min-width: 0;
+  }
+  .sid-product__title-row {
+    margin-bottom: 0.45rem;
+    gap: 0.4rem;
+  }
+  .sid-product__title {
+    font-size: 0.98rem;
+    line-height: 1.25;
+  }
+  .sid-product__title-row .staff-outline-action-btn--sm {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.45rem;
+    min-height: 1.65rem;
+  }
+  .sid-field__sku {
+    font-size: 1.05rem;
+  }
+  .sid-field__label {
+    font-size: 0.68rem;
+  }
+  .sid-money {
+    gap: 1.25rem;
+    margin-top: 0.55rem;
+  }
+  .sid-money__value {
+    font-size: 0.9rem;
+  }
+  .sid-product__meta {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.45rem 0.65rem;
+    margin-top: auto;
+    padding-top: 0.5rem;
+  }
+  .sid-meta__value {
+    font-size: 0.8125rem;
+  }
+  .sid-meta__icon svg {
+    width: 15px;
+    height: 15px;
   }
   .sid-specs {
-    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: 0.9rem;
+  }
+  .sid-onhand--solo {
+    gap: 0.65rem;
+  }
+  .sid-onhand__icon {
+    width: 2.15rem;
+    height: 2.15rem;
+  }
+  .sid-onhand__icon svg {
+    width: 1.15rem;
+    height: 1.15rem;
+  }
+  .sid-onhand__value {
+    font-size: 1.35rem;
+  }
+  .sid-onhand__log {
+    font-size: 0.7rem;
+    padding: 0.3rem 0.45rem;
+    min-height: 1.85rem;
+    white-space: nowrap;
+  }
+  .sid-card__head .btn-sm {
+    white-space: nowrap;
+  }
+}
+@media (max-width: 575.98px) {
+  .sid-product__img {
+    width: 7.75rem;
+    height: auto;
+    min-height: 7.75rem;
+    align-self: stretch;
+  }
+  .sid-specs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

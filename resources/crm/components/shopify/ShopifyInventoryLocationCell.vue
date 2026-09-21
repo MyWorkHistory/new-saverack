@@ -6,6 +6,7 @@ const PREVIEW = 2;
 const props = defineProps({
   locations: { type: Array, default: () => [] },
   label: { type: String, default: "Locations" },
+  showPrimary: { type: Boolean, default: true },
 });
 
 let closeActive = null;
@@ -93,7 +94,7 @@ onUnmounted(() => {
           <li v-for="(name, index) in names" :key="`${name}-${index}`">
             <span class="sip-loc-popover__num">{{ index + 1 }}</span>
             <span class="sip-loc-popover__name">{{ name }}</span>
-            <span v-if="index === 0" class="sip-loc-popover__primary">Primary</span>
+            <span v-if="showPrimary && index === 0" class="sip-loc-popover__primary">Primary</span>
           </li>
         </ol>
       </div>

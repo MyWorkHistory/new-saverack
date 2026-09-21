@@ -241,90 +241,92 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="position-relative flex-shrink-0" data-sil-filters>
-            <button
-              type="button"
-              class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
-              :aria-expanded="filterMenuOpen"
-              :disabled="loading"
-              @click.stop="filterMenuOpen = !filterMenuOpen"
-            >
-              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-              </svg>
-              <span class="staff-toolbar-filter-text">Filters</span>
-            </button>
-            <div
-              v-if="filterMenuOpen"
-              class="dropdown-menu show shadow border p-0 staff-toolbar-filter-dropdown"
-              role="dialog"
-              aria-label="Inventory log filters"
-              style="position: absolute; top: calc(100% + 0.25rem); right: 0; z-index: 1090"
-              @click.stop
-            >
-              <div class="staff-toolbar-filter-dropdown__head">
-                <span>Filters</span>
-                <button
-                  type="button"
-                  class="btn btn-link btn-sm staff-bulk-clear-link text-decoration-none p-0"
-                  @click="resetFilters"
-                >
-                  Reset
-                </button>
-              </div>
-              <div class="staff-toolbar-filter-dropdown__body">
-                <label class="form-label" for="sil-date-from">Date From</label>
-                <input id="sil-date-from" v-model="filters.date_from" type="date" class="form-control mb-3">
+          <div class="sil-toolbar-controls">
+            <div class="position-relative flex-shrink-0" data-sil-filters>
+              <button
+                type="button"
+                class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn d-inline-flex align-items-center gap-2"
+                :aria-expanded="filterMenuOpen"
+                :disabled="loading"
+                @click.stop="filterMenuOpen = !filterMenuOpen"
+              >
+                <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                <span class="staff-toolbar-filter-text">Filters</span>
+              </button>
+              <div
+                v-if="filterMenuOpen"
+                class="dropdown-menu show shadow border p-0 staff-toolbar-filter-dropdown"
+                role="dialog"
+                aria-label="Inventory log filters"
+                style="position: absolute; top: calc(100% + 0.25rem); right: 0; z-index: 1090"
+                @click.stop
+              >
+                <div class="staff-toolbar-filter-dropdown__head">
+                  <span>Filters</span>
+                  <button
+                    type="button"
+                    class="btn btn-link btn-sm staff-bulk-clear-link text-decoration-none p-0"
+                    @click="resetFilters"
+                  >
+                    Reset
+                  </button>
+                </div>
+                <div class="staff-toolbar-filter-dropdown__body">
+                  <label class="form-label" for="sil-date-from">Date From</label>
+                  <input id="sil-date-from" v-model="filters.date_from" type="date" class="form-control mb-3">
 
-                <label class="form-label" for="sil-date-to">Date To</label>
-                <input id="sil-date-to" v-model="filters.date_to" type="date" class="form-control mb-3">
+                  <label class="form-label" for="sil-date-to">Date To</label>
+                  <input id="sil-date-to" v-model="filters.date_to" type="date" class="form-control mb-3">
 
-                <label class="form-label" for="sil-changed-by">Changed By</label>
-                <input
-                  id="sil-changed-by"
-                  v-model="filters.changed_by"
-                  type="text"
-                  class="form-control mb-3"
-                  placeholder="Name…"
-                >
+                  <label class="form-label" for="sil-changed-by">Changed By</label>
+                  <input
+                    id="sil-changed-by"
+                    v-model="filters.changed_by"
+                    type="text"
+                    class="form-control mb-3"
+                    placeholder="Name…"
+                  >
 
-                <label class="form-label" for="sil-type">Type</label>
-                <select id="sil-type" v-model="filters.type" class="form-select mb-3">
-                  <option value="">All Types</option>
-                  <option v-for="t in typeOptions" :key="t" :value="t">{{ t }}</option>
-                </select>
+                  <label class="form-label" for="sil-type">Type</label>
+                  <select id="sil-type" v-model="filters.type" class="form-select mb-3">
+                    <option value="">All Types</option>
+                    <option v-for="t in typeOptions" :key="t" :value="t">{{ t }}</option>
+                  </select>
 
-                <button
-                  type="button"
-                  class="btn btn-primary staff-page-primary w-100 fw-semibold"
-                  @click="applyFilters"
-                >
-                  Apply Filters
-                </button>
+                  <button
+                    type="button"
+                    class="btn btn-primary staff-page-primary w-100 fw-semibold"
+                    @click="applyFilters"
+                  >
+                    Apply Filters
+                  </button>
+                </div>
               </div>
             </div>
+
+            <select
+              v-model="sort"
+              class="form-select sil-sort-select flex-shrink-0"
+              aria-label="Sort order"
+              :disabled="loading"
+              @change="onSortChange"
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+
+            <button
+              v-if="hasActiveFilters"
+              type="button"
+              class="btn btn-link btn-sm text-decoration-none d-inline-flex align-items-center gap-1 sil-clear-filters"
+              :disabled="loading"
+              @click="clearFilters"
+            >
+              Clear Filters
+            </button>
           </div>
-
-          <select
-            v-model="sort"
-            class="form-select sil-sort-select flex-shrink-0"
-            aria-label="Sort order"
-            :disabled="loading"
-            @change="onSortChange"
-          >
-            <option value="newest">Newest first</option>
-            <option value="oldest">Oldest first</option>
-          </select>
-
-          <button
-            v-if="hasActiveFilters"
-            type="button"
-            class="btn btn-link btn-sm text-decoration-none d-inline-flex align-items-center gap-1"
-            :disabled="loading"
-            @click="clearFilters"
-          >
-            Clear Filters
-          </button>
         </div>
       </div>
 
@@ -414,36 +416,44 @@ onUnmounted(() => {
                 <div class="sil-mobile-card__date">{{ formatDate(row.created_at).date }}</div>
                 <div class="sil-mobile-card__time">{{ formatDate(row.created_at).time }}</div>
               </div>
-              <span class="sil-loc-pill sil-mobile-card__loc">
-                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-                </svg>
-                {{ row.location_name || "—" }}
-              </span>
-              <div class="sil-mobile-card__user">
-                <span
-                  v-if="row.changed_by?.is_system"
-                  class="sil-avatar sil-avatar--system"
-                  aria-hidden="true"
-                >
-                  <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <div class="sil-mobile-card__top-end">
+                <span class="sil-loc-pill sil-mobile-card__loc">
+                  <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
                   </svg>
+                  {{ row.location_name || "—" }}
                 </span>
-                <span v-else class="sil-avatar">{{ row.changed_by?.initials || "?" }}</span>
-                <span class="sil-mobile-card__user-name">{{ row.changed_by?.name || "System" }}</span>
+                <div class="sil-mobile-card__user">
+                  <span
+                    v-if="row.changed_by?.is_system"
+                    class="sil-avatar sil-avatar--system"
+                    aria-hidden="true"
+                  >
+                    <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </span>
+                  <span v-else class="sil-avatar">{{ row.changed_by?.initials || "?" }}</span>
+                  <span class="sil-mobile-card__user-name">{{ row.changed_by?.name || "System" }}</span>
+                </div>
               </div>
             </div>
 
             <div class="sil-mobile-card__qty">
               <div class="sil-mobile-card__qty-flow">
-                <span class="sil-mobile-card__qty-num">{{ row.old_on_hand }}</span>
+                <div class="sil-mobile-card__qty-col">
+                  <span class="sil-mobile-card__qty-label">Old On Hand</span>
+                  <span class="sil-mobile-card__qty-num">{{ row.old_on_hand }}</span>
+                </div>
                 <svg class="sil-mobile-card__qty-arrow" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
                 </svg>
-                <span class="sil-mobile-card__qty-num">{{ row.new_on_hand }}</span>
+                <div class="sil-mobile-card__qty-col">
+                  <span class="sil-mobile-card__qty-label">New On Hand</span>
+                  <span class="sil-mobile-card__qty-num">{{ row.new_on_hand }}</span>
+                </div>
               </div>
               <span
                 class="sil-delta"
@@ -513,6 +523,14 @@ onUnmounted(() => {
   align-items: center;
   gap: 0.65rem;
 }
+.sil-toolbar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .sil-search {
   min-width: 14rem;
   max-width: 28rem;
@@ -552,10 +570,11 @@ onUnmounted(() => {
 .sil-delta {
   display: inline-flex;
   align-items: center;
-  padding: 0.1rem 0.45rem;
+  padding: 0.15rem 0.55rem;
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 700;
+  flex-shrink: 0;
 }
 .sil-delta--plus {
   background: #dcfce7;
@@ -572,14 +591,15 @@ onUnmounted(() => {
   text-decoration: underline !important;
 }
 .sil-mobile-card__top {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: start;
-  gap: 0.5rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
   margin-bottom: 0.85rem;
 }
 .sil-mobile-card__when {
   min-width: 0;
+  flex-shrink: 0;
 }
 .sil-mobile-card__date {
   font-size: 0.875rem;
@@ -591,33 +611,40 @@ onUnmounted(() => {
   font-size: 0.75rem;
   color: #64748b;
   line-height: 1.3;
+  margin-top: 0.1rem;
+}
+.sil-mobile-card__top-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem 0.55rem;
+  min-width: 0;
 }
 .sil-mobile-card__loc {
-  justify-self: center;
-  max-width: 100%;
+  flex-shrink: 0;
 }
 .sil-mobile-card__user {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 0.4rem;
   min-width: 0;
 }
 .sil-mobile-card__user-name {
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 600;
   color: #334155;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 6.5rem;
+  max-width: 7.5rem;
 }
 .sil-mobile-card__qty {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.65rem 0;
+  gap: 0.65rem;
+  padding: 0.7rem 0;
   border-top: 1px solid #eef0f3;
   border-bottom: 1px solid #eef0f3;
   margin-bottom: 0.75rem;
@@ -628,6 +655,19 @@ onUnmounted(() => {
   gap: 0.55rem;
   min-width: 0;
 }
+.sil-mobile-card__qty-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.sil-mobile-card__qty-label {
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: #94a3b8;
+  line-height: 1.2;
+  white-space: nowrap;
+}
 .sil-mobile-card__qty-num {
   font-size: 1.05rem;
   font-weight: 700;
@@ -637,12 +677,13 @@ onUnmounted(() => {
 .sil-mobile-card__qty-arrow {
   color: #94a3b8;
   flex-shrink: 0;
+  margin-top: 0.85rem;
 }
 .sil-mobile-card__note-text {
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   font-weight: 500;
   color: #1f2937;
-  line-height: 1.35;
+  line-height: 1.4;
   word-break: break-word;
 }
 .sil-mobile-card__direction {
@@ -651,31 +692,56 @@ onUnmounted(() => {
   color: #64748b;
 }
 @media (max-width: 991.98px) {
+  .sil-toolbar.staff-table-toolbar--row,
+  .staff-table-toolbar--row.sil-toolbar {
+    display: flex !important;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+    grid-template-columns: none;
+    grid-template-rows: none;
+  }
   .sil-search {
-    flex: 1 1 100%;
+    flex: none;
+    width: 100%;
     max-width: none;
     min-width: 0;
   }
-  .sil-toolbar > [data-sil-filters],
-  .sil-sort-select {
-    flex: 1 1 auto;
+  .sil-toolbar-controls {
+    flex-wrap: nowrap;
+    gap: 0.45rem;
+    width: 100%;
+    flex: none;
+  }
+  .sil-toolbar-controls > [data-sil-filters] {
+    flex: 0 0 auto;
   }
   .sil-sort-select {
+    flex: 1 1 auto;
     min-width: 0;
     width: auto;
+    height: 2.25rem;
+    font-size: 0.8125rem;
+  }
+  .sil-clear-filters {
+    display: none;
   }
   .sil-footer {
     flex-direction: column;
     align-items: center !important;
     text-align: center;
+    gap: 0.65rem !important;
   }
-  .sil-mobile-card__top {
-    grid-template-columns: minmax(4.5rem, 0.9fr) minmax(0, 1.1fr) minmax(4.5rem, 1fr);
+  .sil-footer__showing {
+    width: 100%;
   }
 }
 @media (max-width: 420px) {
   .sil-mobile-card__user-name {
-    max-width: 4.75rem;
+    max-width: 5.25rem;
+  }
+  .sil-mobile-card__qty-label {
+    font-size: 0.62rem;
   }
 }
 </style>

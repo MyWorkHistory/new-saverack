@@ -456,14 +456,14 @@ onUnmounted(() => {
 
 <template>
   <div class="staff-page staff-page--wide sip">
-      <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
+    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4 sip-page-head">
       <div class="min-w-0">
         <h1 class="h4 mb-1 fw-semibold text-body">Products</h1>
         <p class="small text-secondary mb-0">
           View and manage your product inventory across all accounts.
         </p>
       </div>
-      <div class="d-flex flex-wrap align-items-center gap-2">
+      <div class="d-flex flex-wrap align-items-center gap-2 sip-page-head__actions">
         <button
           type="button"
           class="btn btn-primary staff-page-primary fw-semibold d-inline-flex align-items-center justify-content-center gap-1 sip-add-btn"
@@ -475,7 +475,7 @@ onUnmounted(() => {
           </svg>
           <span class="sip-add-btn__label">Add Product</span>
         </button>
-        <div class="position-relative" data-sip-actions>
+        <div class="position-relative d-none d-lg-block" data-sip-actions>
           <button
             type="button"
             class="btn btn-outline-primary staff-toolbar-btn d-inline-flex align-items-center justify-content-center gap-2 sip-actions-btn"
@@ -486,11 +486,6 @@ onUnmounted(() => {
             <span class="sip-actions-btn__label">Actions</span>
             <svg class="sip-actions-btn__chevron" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-            </svg>
-            <svg class="sip-actions-btn__dots" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <circle cx="5" cy="12" r="1.75" />
-              <circle cx="12" cy="12" r="1.75" />
-              <circle cx="19" cy="12" r="1.75" />
             </svg>
           </button>
           <div
@@ -523,37 +518,37 @@ onUnmounted(() => {
     </div>
 
     <div class="staff-table-card staff-datatable-card staff-datatable-card--white w-100">
-      <div class="staff-table-toolbar">
-        <div class="staff-table-toolbar--row sip-toolbar-row">
-          <div class="sip-search-wrap flex-grow-1">
-            <div class="input-group orders-toolbar-search-group">
-              <span class="input-group-text bg-white border-end-0 text-secondary">
-                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                </svg>
-              </span>
-              <input
-                v-model="q"
-                type="search"
-                class="form-control border-start-0"
-                placeholder="Search by name, SKU, or barcode."
-                autocomplete="off"
-                enterkeyhint="search"
-                aria-label="Search products"
-                :disabled="loading"
-                @keydown.enter.prevent="commitSearch"
-              />
-              <button
-                type="button"
-                class="btn btn-primary staff-page-primary orders-toolbar-search-btn fw-semibold"
-                :disabled="loading"
-                @click="commitSearch"
-              >
-                Search
-              </button>
-            </div>
+      <div class="staff-table-toolbar sip-toolbar">
+        <div class="sip-search-wrap">
+          <div class="input-group orders-toolbar-search-group">
+            <span class="input-group-text bg-white border-end-0 text-secondary">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+              </svg>
+            </span>
+            <input
+              v-model="q"
+              type="search"
+              class="form-control border-start-0"
+              placeholder="Search by name, SKU, or barcode"
+              autocomplete="off"
+              enterkeyhint="search"
+              aria-label="Search products"
+              :disabled="loading"
+              @keydown.enter.prevent="commitSearch"
+            />
+            <button
+              type="button"
+              class="btn btn-primary staff-page-primary orders-toolbar-search-btn fw-semibold sip-search-btn"
+              :disabled="loading"
+              @click="commitSearch"
+            >
+              Search
+            </button>
           </div>
+        </div>
 
+        <div class="sip-toolbar__controls">
           <select
             v-model="accountId"
             class="form-select sip-account-select"
@@ -579,7 +574,7 @@ onUnmounted(() => {
               :disabled="loading"
               @click.stop="filterMenuOpen = !filterMenuOpen"
             >
-              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
               </svg>
               <span class="staff-toolbar-filter-text">Filters</span>
@@ -642,7 +637,7 @@ onUnmounted(() => {
           <button
             v-if="hasActiveFilters"
             type="button"
-            class="btn btn-link btn-sm text-decoration-none d-inline-flex align-items-center gap-1 sip-clear-filters"
+            class="btn btn-link btn-sm text-decoration-none d-inline-flex align-items-center gap-1 sip-clear-filters d-none d-lg-inline-flex"
             :disabled="loading"
             @click="clearFilters"
           >
@@ -652,16 +647,48 @@ onUnmounted(() => {
             Clear Filters
           </button>
 
-          <div class="sip-view-type ms-lg-auto">
+          <div class="sip-view-type">
             <select
               id="sip-view-type"
               v-model="viewType"
-              class="form-select sip-account-select"
+              class="form-select sip-view-select"
               aria-label="View"
               :disabled="loading"
             >
               <option v-for="opt in VIEW_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
+          </div>
+
+          <div class="position-relative flex-shrink-0 d-lg-none" data-sip-actions>
+            <button
+              type="button"
+              class="btn btn-outline-secondary staff-toolbar-btn orders-toolbar-outline-btn sip-toolbar-more"
+              :aria-expanded="actionsMenuOpen"
+              aria-label="Actions"
+              @click.stop="actionsMenuOpen = !actionsMenuOpen"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <circle cx="5" cy="12" r="1.75" />
+                <circle cx="12" cy="12" r="1.75" />
+                <circle cx="19" cy="12" r="1.75" />
+              </svg>
+            </button>
+            <div
+              v-if="actionsMenuOpen"
+              class="dropdown-menu show shadow border p-1 sip-actions-menu"
+              role="menu"
+              @click.stop
+            >
+              <button type="button" class="dropdown-item d-flex align-items-center gap-2" role="menuitem" @click="openActions('sync')">
+                Sync Account
+              </button>
+              <button type="button" class="dropdown-item d-flex align-items-center gap-2" role="menuitem" @click="openActions('import')">
+                Import Products
+              </button>
+              <button type="button" class="dropdown-item d-flex align-items-center gap-2" role="menuitem" @click="openActions('bulk')">
+                Bulk Edit
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1081,7 +1108,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.sip-toolbar-row {
+.sip-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1092,7 +1119,16 @@ onUnmounted(() => {
   min-width: 12rem;
   max-width: 28rem;
 }
-.sip-account-select {
+.sip-toolbar__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.sip-account-select,
+.sip-view-select {
   width: auto;
   min-width: 11rem;
   max-width: 16rem;
@@ -1104,6 +1140,7 @@ onUnmounted(() => {
 .sip-view-type {
   display: flex;
   align-items: center;
+  margin-left: auto;
 }
 .sip-actions-menu {
   right: 0;
@@ -1157,20 +1194,17 @@ onUnmounted(() => {
   color: #111827;
   line-height: 1.25;
 }
-.sip-actions-btn__dots {
-  display: none;
-}
 .sip-mobile-card__product {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
+  gap: 0.7rem;
   min-width: 0;
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.7rem;
 }
 .sip-mobile-card__thumb {
-  width: 3.5rem;
-  height: 3.5rem;
-  border-radius: 0.5rem;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 0.45rem;
   overflow: hidden;
   background: #f3f4f6;
   border: 1px solid #eceff3;
@@ -1189,37 +1223,37 @@ onUnmounted(() => {
   display: inline-flex;
 }
 .sip-mobile-card__name {
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 700;
   color: #111827;
   line-height: 1.3;
-  margin-bottom: 0.15rem;
+  margin-bottom: 0.1rem;
 }
 .sip-mobile-card__sku {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: #2563eb;
   line-height: 1.3;
-  margin-bottom: 0.45rem;
+  margin-bottom: 0.4rem;
 }
 .sip-mobile-card__meta-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.35rem 0.75rem;
+  gap: 0.3rem 0.65rem;
 }
 .sip-mobile-card__meta-pair {
   min-width: 0;
 }
 .sip-mobile-card__meta-label {
   display: block;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 500;
   color: #94a3b8;
   line-height: 1.2;
 }
 .sip-mobile-card__meta-value {
   display: block;
-  font-size: 0.8125rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: #1e293b;
   word-break: break-word;
@@ -1229,29 +1263,29 @@ onUnmounted(() => {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   border-top: 1px solid #eef0f3;
   margin: 0 -1rem -0.75rem;
-  padding: 0.75rem 0.35rem;
+  padding: 0.65rem 0.25rem;
 }
 .sip-mobile-card__stat {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 0.2rem;
-  padding: 0 0.35rem;
+  gap: 0.15rem;
+  padding: 0 0.3rem;
   border-right: 1px solid #eef0f3;
 }
 .sip-mobile-card__stat:last-child {
   border-right: 0;
 }
 .sip-mobile-card__stat-label {
-  font-size: 0.65rem;
+  font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: #94a3b8;
 }
 .sip-mobile-card__stat-value {
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-weight: 700;
   color: #111827;
   line-height: 1.2;
@@ -1262,37 +1296,77 @@ onUnmounted(() => {
   padding-top: 0.75rem;
 }
 @media (max-width: 991.98px) {
-  .sip-account-select {
-    max-width: none;
-    width: auto;
-    min-width: 8.5rem;
-    flex: 1 1 auto;
+  .sip-page-head {
+    align-items: flex-start !important;
+    margin-bottom: 0.85rem !important;
   }
-  .sip-search-wrap {
-    max-width: none;
-    flex: 1 1 100%;
+  .sip-page-head__actions {
+    flex-shrink: 0;
   }
   .sip-add-btn {
-    width: 2.75rem;
-    height: 2.75rem;
+    width: 2.5rem;
+    height: 2.5rem;
     padding: 0;
-    border-radius: 0.65rem;
+    border-radius: 0.55rem;
   }
   .sip-add-btn__label {
     display: none;
   }
-  .sip-actions-btn {
-    width: 2.75rem;
-    height: 2.75rem;
-    padding: 0;
-    border-radius: 0.65rem;
+  .sip-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
   }
-  .sip-actions-btn__label,
-  .sip-actions-btn__chevron {
+  .sip-search-wrap {
+    max-width: none;
+    flex: none;
+    width: 100%;
+    min-width: 0;
+  }
+  .sip-search-btn {
     display: none;
   }
-  .sip-actions-btn__dots {
-    display: block;
+  .sip-toolbar__controls {
+    flex-wrap: nowrap;
+    gap: 0.35rem;
+    width: 100%;
+  }
+  .sip-account-select,
+  .sip-view-select {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    width: auto;
+    height: 2.25rem;
+    padding: 0.25rem 1.75rem 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.2;
+    border-radius: 0.45rem;
+  }
+  .sip-view-type {
+    margin-left: 0;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .sip-view-type .sip-view-select {
+    width: 100%;
+  }
+  .sip-toolbar__controls > [data-sip-filters],
+  .sip-toolbar__controls > [data-sip-actions] {
+    flex: 0 0 auto;
+  }
+  .sip-toolbar__controls .staff-toolbar-btn {
+    height: 2.25rem;
+    min-height: 2.25rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    border-radius: 0.45rem;
+  }
+  .sip-toolbar-more {
+    width: 2.25rem;
+    padding-inline: 0 !important;
+    justify-content: center;
   }
 }
 </style>

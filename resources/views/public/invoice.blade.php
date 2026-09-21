@@ -457,7 +457,7 @@
         </div>
 
         <div class="detail-note">
-            For a detailed breakdown of charges associated with each order, please log in to your account.
+            Expand each service above for the order-level charge breakdown.
         </div>
 
         <div class="invoice-summary">

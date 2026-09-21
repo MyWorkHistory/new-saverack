@@ -198,7 +198,13 @@ onUnmounted(() => {
         <p class="mb-1 text-body">
           <span class="fw-semibold">{{ productTitle }}</span>
           <span class="text-secondary mx-1">|</span>
-          <span class="text-primary fw-semibold">{{ productSku }}</span>
+          <button
+            type="button"
+            class="btn btn-link p-0 align-baseline fw-semibold text-decoration-none sil-sku-link"
+            @click="router.push({ name: route.name === 'shopify-packaging-log' ? 'shopify-packaging-detail' : 'shopify-inventory-detail', params: { id: variantId } })"
+          >
+            {{ productSku }}
+          </button>
         </p>
         <p class="small text-secondary mb-0">Track every inventory change by location</p>
       </div>
@@ -327,7 +333,7 @@ onUnmounted(() => {
       </div>
 
       <template v-else>
-        <div class="table-responsive staff-table-wrap">
+        <div class="table-responsive staff-table-wrap d-none d-lg-block">
           <table class="table table-hover align-middle mb-0 staff-data-table">
             <thead class="table-light staff-table-head">
               <tr>
@@ -394,8 +400,70 @@ onUnmounted(() => {
           </table>
         </div>
 
-        <div class="staff-table-footer d-flex flex-wrap align-items-center justify-content-between gap-2 px-3 px-md-4 py-3">
-          <div class="small text-secondary">
+        <div class="crm-mobile-item-cards d-lg-none" aria-label="Inventory log">
+          <div v-if="rows.length === 0" class="crm-mobile-item-card__empty">
+            No inventory log entries yet.
+          </div>
+          <article
+            v-for="row in rows"
+            :key="`m-${row.id}`"
+            class="crm-mobile-item-card sil-mobile-card"
+          >
+            <div class="sil-mobile-card__top">
+              <div class="sil-mobile-card__when">
+                <div class="sil-mobile-card__date">{{ formatDate(row.created_at).date }}</div>
+                <div class="sil-mobile-card__time">{{ formatDate(row.created_at).time }}</div>
+              </div>
+              <span class="sil-loc-pill sil-mobile-card__loc">
+                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                </svg>
+                {{ row.location_name || "—" }}
+              </span>
+              <div class="sil-mobile-card__user">
+                <span
+                  v-if="row.changed_by?.is_system"
+                  class="sil-avatar sil-avatar--system"
+                  aria-hidden="true"
+                >
+                  <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </span>
+                <span v-else class="sil-avatar">{{ row.changed_by?.initials || "?" }}</span>
+                <span class="sil-mobile-card__user-name">{{ row.changed_by?.name || "System" }}</span>
+              </div>
+            </div>
+
+            <div class="sil-mobile-card__qty">
+              <div class="sil-mobile-card__qty-flow">
+                <span class="sil-mobile-card__qty-num">{{ row.old_on_hand }}</span>
+                <svg class="sil-mobile-card__qty-arrow" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                </svg>
+                <span class="sil-mobile-card__qty-num">{{ row.new_on_hand }}</span>
+              </div>
+              <span
+                class="sil-delta"
+                :class="Number(row.quantity_delta) >= 0 ? 'sil-delta--plus' : 'sil-delta--minus'"
+              >
+                {{ deltaLabel(row.quantity_delta) }}
+              </span>
+            </div>
+
+            <div class="sil-mobile-card__note">
+              <div class="sil-mobile-card__note-text">{{ row.note || "—" }}</div>
+              <div v-if="row.direction_label" class="sil-mobile-card__direction">
+                {{ row.direction_label }}
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div class="staff-table-footer sil-footer d-flex flex-wrap align-items-center justify-content-between gap-2 px-3 px-md-4 py-3">
+          <div class="small text-secondary sil-footer__showing">
             Showing
             <span class="fw-semibold text-body">{{ showingFrom }}</span>
             to
@@ -496,5 +564,118 @@ onUnmounted(() => {
 .sil-delta--minus {
   background: #fee2e2;
   color: #b91c1c;
+}
+.sil-sku-link {
+  color: #2563eb !important;
+}
+.sil-sku-link:hover {
+  text-decoration: underline !important;
+}
+.sil-mobile-card__top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+.sil-mobile-card__when {
+  min-width: 0;
+}
+.sil-mobile-card__date {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.25;
+}
+.sil-mobile-card__time {
+  font-size: 0.75rem;
+  color: #64748b;
+  line-height: 1.3;
+}
+.sil-mobile-card__loc {
+  justify-self: center;
+  max-width: 100%;
+}
+.sil-mobile-card__user {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.sil-mobile-card__user-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #334155;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 6.5rem;
+}
+.sil-mobile-card__qty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  border-top: 1px solid #eef0f3;
+  border-bottom: 1px solid #eef0f3;
+  margin-bottom: 0.75rem;
+}
+.sil-mobile-card__qty-flow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+.sil-mobile-card__qty-num {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.2;
+}
+.sil-mobile-card__qty-arrow {
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+.sil-mobile-card__note-text {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #1f2937;
+  line-height: 1.35;
+  word-break: break-word;
+}
+.sil-mobile-card__direction {
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+@media (max-width: 991.98px) {
+  .sil-search {
+    flex: 1 1 100%;
+    max-width: none;
+    min-width: 0;
+  }
+  .sil-toolbar > [data-sil-filters],
+  .sil-sort-select {
+    flex: 1 1 auto;
+  }
+  .sil-sort-select {
+    min-width: 0;
+    width: auto;
+  }
+  .sil-footer {
+    flex-direction: column;
+    align-items: center !important;
+    text-align: center;
+  }
+  .sil-mobile-card__top {
+    grid-template-columns: minmax(4.5rem, 0.9fr) minmax(0, 1.1fr) minmax(4.5rem, 1fr);
+  }
+}
+@media (max-width: 420px) {
+  .sil-mobile-card__user-name {
+    max-width: 4.75rem;
+  }
 }
 </style>

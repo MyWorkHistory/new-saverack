@@ -860,6 +860,16 @@ class InvoiceService
         } elseif ($invoice->amount_paid_cents > 0) {
             $invoice->status = Invoice::STATUS_PARTIAL;
             $invoice->paid_at = null;
+        } else {
+            $invoice->paid_at = null;
+            if (in_array($invoice->status, [
+                Invoice::STATUS_PAID,
+                Invoice::STATUS_PARTIAL,
+                Invoice::STATUS_PROCESSING,
+                Invoice::STATUS_PAYMENT_FAILED,
+            ], true)) {
+                $invoice->status = Invoice::STATUS_SENT;
+            }
         }
     }
 
@@ -1028,6 +1038,76 @@ class InvoiceService
             ] + $paymentMeta);
 
             return $invoice->fresh(['items', 'clientAccount']);
+        });
+    }
+
+    /**
+     * Undo applied payment on an invoice and optionally restore the amount to available funds.
+     *
+     * @param  array<string, mixed>  $meta
+     */
+    public function cancelAppliedPayment(
+        Invoice $invoice,
+        ?User $actor,
+        ?int $amountCents = null,
+        bool $restoreToAvailableFunds = true,
+        array $meta = []
+    ): Invoice {
+        BillingAvailableFundsSchema::ensureColumn();
+        if ($invoice->isVoid()) {
+            throw new \RuntimeException('Cannot cancel payment on a void invoice.');
+        }
+
+        return DB::transaction(function () use ($invoice, $actor, $amountCents, $restoreToAvailableFunds, $meta) {
+            $locked = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->first();
+            if ($locked === null) {
+                throw new \RuntimeException('Invoice not found.');
+            }
+            $invoice = $locked;
+            $paid = max(0, (int) $invoice->amount_paid_cents);
+            if ($paid <= 0) {
+                throw new \RuntimeException('This invoice has no applied payment to cancel.');
+            }
+
+            $cancel = $amountCents === null ? $paid : max(0, (int) $amountCents);
+            if ($cancel <= 0) {
+                throw new \InvalidArgumentException('Amount must be positive.');
+            }
+            if ($cancel > $paid) {
+                throw new \InvalidArgumentException('Cannot cancel more than the amount paid.');
+            }
+
+            $from = $invoice->status;
+            $invoice->amount_paid_cents = $paid - $cancel;
+            $this->recalculateTotals($invoice);
+            $invoice->save();
+
+            $availableFundsCents = null;
+            if ($restoreToAvailableFunds) {
+                $account = ClientAccount::query()
+                    ->whereKey($invoice->client_account_id)
+                    ->lockForUpdate()
+                    ->first();
+                if ($account === null) {
+                    throw new \RuntimeException('Invoice account is unavailable.');
+                }
+                $account->billing_available_funds_cents = max(0, (int) $account->billing_available_funds_cents) + $cancel;
+                $account->save();
+                $availableFundsCents = (int) $account->billing_available_funds_cents;
+            }
+
+            $this->logHistory($invoice, $actor, 'payment_cancelled', $from, $invoice->status, [
+                'amount_cents' => $cancel,
+                'restored_to_available_funds' => $restoreToAvailableFunds,
+                'available_funds_cents' => $availableFundsCents,
+                'history_message' => sprintf(
+                    'Cancelled %s applied payment%s.',
+                    $this->formatCentsForHistory($cancel, $invoice->currency),
+                    $restoreToAvailableFunds ? ' (restored to available funds)' : ''
+                ),
+            ] + $meta);
+
+            return $invoice->fresh(['items', 'histories.user', 'clientAccount', 'createdBy']) ?? $invoice;
         });
     }
 
@@ -1383,6 +1463,7 @@ class InvoiceService
             case 'sent':
             case 'payment_applied':
             case 'payment_allocated':
+            case 'payment_cancelled':
             case 'voided':
             case 'emailed':
             case 'whatsapp_sent':
@@ -3006,10 +3087,13 @@ class InvoiceService
                     $orderNumber = '—';
                 }
                 $isVolDetail = $categoryKey === 'storage' && $this->detailRowIsStorageByVolume($detail);
+                $detailName = trim((string) ($detail['name'] ?? ''));
                 if ($isVolDetail) {
-                    $detailName = trim((string) ($detail['name'] ?? ''));
                     $detailDesc = trim((string) ($detail['description'] ?? ''));
                     $orderLabel = $detailName !== '' ? $detailName : ($detailDesc !== '' ? $detailDesc : $orderNumber);
+                } elseif ($categoryKey === 'wholesale' && $detailName !== '') {
+                    // Match admin: show fee name (Wholesale Fulfillment, Labeling, …) not order #.
+                    $orderLabel = $detailName;
                 } else {
                     $orderLabel = $orderNumber;
                 }

@@ -374,6 +374,32 @@ class InvoiceController extends Controller
         ]);
     }
 
+    public function cancelPayment(Request $request, Invoice $invoice): JsonResponse
+    {
+        $this->authorize('recordPayment', $invoice);
+        $validated = $request->validate([
+            'amount_cents' => ['nullable', 'integer', 'min:1', 'max:99999999999'],
+            'restore_to_available_funds' => ['nullable', 'boolean'],
+        ]);
+
+        try {
+            $invoice = $this->invoices->cancelAppliedPayment(
+                $invoice,
+                $request->user(),
+                isset($validated['amount_cents']) ? (int) $validated['amount_cents'] : null,
+                array_key_exists('restore_to_available_funds', $validated)
+                    ? (bool) $validated['restore_to_available_funds']
+                    : true,
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json($this->invoices->toDetailArray($invoice));
+    }
+
     public function stripePaymentMethods(Invoice $invoice, StripeInvoicePaymentService $stripePayments): JsonResponse
     {
         $this->authorize('recordPayment', $invoice);

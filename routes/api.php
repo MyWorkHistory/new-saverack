@@ -679,6 +679,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->name('invoices.set-available-funds');
     Route::post('invoices/{invoice}/pay-allocate', [InvoiceController::class, 'payAllocate'])
         ->name('invoices.pay-allocate');
+    Route::post('invoices/{invoice}/cancel-payment', [InvoiceController::class, 'cancelPayment'])
+        ->name('invoices.cancel-payment');
     Route::post('invoices/{invoice}/pay', [InvoiceController::class, 'pay'])
         ->name('invoices.pay');
     Route::post('invoices/{invoice}/record-payment', [InvoiceController::class, 'recordPayment'])

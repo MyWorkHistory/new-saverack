@@ -94,6 +94,8 @@ const payFilterStatus = ref("all");
 
 const voidModalOpen = ref(false);
 const voidBusy = ref(false);
+const cancelPaymentModalOpen = ref(false);
+const cancelPaymentBusy = ref(false);
 const statusModalOpen = ref(false);
 const statusForm = ref("draft");
 const statusSaving = ref(false);
@@ -290,6 +292,14 @@ const canEditAvailableBalance = computed(() => !!invoice.value && canUpdate.valu
 
 const canVoidInvoice = computed(
   () => !!invoice.value && canUpdate.value && currentStatusKey.value !== "void",
+);
+
+const canCancelPayment = computed(
+  () =>
+    !!invoice.value &&
+    canUpdate.value &&
+    currentStatusKey.value !== "void" &&
+    Number(invoice.value.amount_paid_cents) > 0,
 );
 
 const canRestoreDraft = computed(
@@ -699,6 +709,7 @@ const HISTORY_ACTION_LABELS = {
   funds_added: "Funds Added",
   payment_applied: "Payment Applied",
   payment_allocated: "Payment Allocated",
+  payment_cancelled: "Payment Cancelled",
   available_balance_updated: "Available Balance Updated",
 };
 
@@ -740,6 +751,11 @@ function historyPrimaryLines(h, currency) {
     if (amount !== null) {
       lines.push(`${formatCents(amount, cur)} applied`);
     }
+  } else if (action === "payment_cancelled") {
+    const amount = historyMetaCents(meta, "amount_cents");
+    if (amount !== null) {
+      lines.push(`${formatCents(amount, cur)} cancelled`);
+    }
   } else if (action === "payment_allocated") {
     const total = historyMetaCents(meta, "total_applied_cents");
     if (total !== null) {
@@ -758,7 +774,12 @@ function historyPrimaryLines(h, currency) {
 }
 
 function historyShowPaymentContext(action) {
-  return action === "funds_added" || action === "payment_applied" || action === "payment_allocated";
+  return (
+    action === "funds_added" ||
+    action === "payment_applied" ||
+    action === "payment_allocated" ||
+    action === "payment_cancelled"
+  );
 }
 
 function formatQtyOneDecimal(v) {
@@ -2292,6 +2313,34 @@ async function confirmVoid() {
   }
 }
 
+function openCancelPaymentModal() {
+  cancelPaymentModalOpen.value = true;
+}
+
+function closeCancelPaymentModal(force = false) {
+  if (cancelPaymentBusy.value && !force) return;
+  cancelPaymentModalOpen.value = false;
+}
+
+async function confirmCancelPayment() {
+  if (!invoice.value) return;
+  cancelPaymentBusy.value = true;
+  try {
+    const { data } = await api.post(`/invoices/${invoice.value.id}/cancel-payment`, {
+      restore_to_available_funds: true,
+    });
+    invoice.value = data;
+    accountAvailableFundsCents.value = Number(data?.client_account_available_funds_cents || 0);
+    toast.success("Payment cancelled. Funds restored to available balance.");
+    closeCancelPaymentModal(true);
+    await load();
+  } catch (e) {
+    toast.errorFrom(e, "Could not cancel payment.");
+  } finally {
+    cancelPaymentBusy.value = false;
+  }
+}
+
 async function restoreInvoiceDraft() {
   if (!invoice.value) return;
   try {
@@ -3112,9 +3161,20 @@ function onDocKeydown(e) {
                     <span>Total</span>
                     <span>{{ formatCents(invoice.total_cents, invoice.currency) }}</span>
                   </div>
-                  <div class="d-flex justify-content-between small">
+                  <div class="d-flex justify-content-between small align-items-center gap-2">
                     <span class="text-secondary">Paid</span>
-                    <span>{{ formatCents(invoice.amount_paid_cents, invoice.currency) }}</span>
+                    <span class="d-inline-flex align-items-center gap-2">
+                      <span>{{ formatCents(invoice.amount_paid_cents, invoice.currency) }}</span>
+                      <button
+                        v-if="canCancelPayment"
+                        type="button"
+                        class="btn btn-link btn-sm text-danger p-0 align-baseline"
+                        :disabled="cancelPaymentBusy"
+                        @click="openCancelPaymentModal"
+                      >
+                        Cancel
+                      </button>
+                    </span>
                   </div>
                   <div
                     class="d-flex justify-content-between fw-semibold text-primary pt-2 mt-2 border-top"
@@ -4187,6 +4247,27 @@ function onDocKeydown(e) {
       danger
       @close="closeVoidModal"
       @confirm="confirmVoid"
+    />
+
+    <ConfirmModal
+      :open="cancelPaymentModalOpen"
+      title="Cancel Applied Payment?"
+      :subtitle="
+        invoice
+          ? `Unapply ${formatCents(invoice.amount_paid_cents, invoice.currency)} and restore it to available funds.`
+          : ''
+      "
+      :message="
+        invoice
+          ? `This will set Paid back to $0.00 and restore the balance due to ${formatCents(invoice.total_cents, invoice.currency)}.`
+          : ''
+      "
+      confirm-label="Cancel Payment"
+      cancel-label="Keep Payment"
+      :busy="cancelPaymentBusy"
+      danger
+      @close="closeCancelPaymentModal"
+      @confirm="confirmCancelPayment"
     />
 
     <ConfirmModal

@@ -2441,12 +2441,12 @@ onUnmounted(() => {
     border-radius: 0.75rem;
   }
   .sid-product__top {
-    gap: 0.75rem;
+    gap: 0.85rem;
   }
   .sid-product__img {
-    width: 5.25rem;
-    height: 5.25rem;
-    border-radius: 0.55rem;
+    width: 7.25rem;
+    height: 7.25rem;
+    border-radius: 0.65rem;
   }
   .sid-product__title-row {
     margin-bottom: 0.45rem;
@@ -2567,8 +2567,8 @@ onUnmounted(() => {
 }
 @media (max-width: 575.98px) {
   .sid-product__img {
-    width: 4.75rem;
-    height: 4.75rem;
+    width: 6.5rem;
+    height: 6.5rem;
   }
   .sid-specs,
   .sid-specs--measurements {

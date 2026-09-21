@@ -1,9 +1,10 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import api from "../../services/api";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
+import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import ShopifyInventoryAddProductModal from "../../components/shopify/ShopifyInventoryAddProductModal.vue";
 import ShopifyInventoryBulkEditModal from "../../components/shopify/ShopifyInventoryBulkEditModal.vue";
 import ShopifyInventoryImportProductsModal from "../../components/shopify/ShopifyInventoryImportProductsModal.vue";
@@ -69,6 +70,14 @@ const tableColspan = computed(() => {
 
 const allSelected = computed(
   () => rows.value.length > 0 && rows.value.every((r) => selectedIds.value.includes(r.id)),
+);
+
+const accountOptions = computed(() =>
+  (accounts.value || []).map((a) => ({
+    id: a.id,
+    name: a.company_name || a.name || `Account #${a.id}`,
+    email: "",
+  })),
 );
 
 const hasActiveFilters = computed(() => {
@@ -154,12 +163,15 @@ function resetFilters() {
 
 function clearFilters() {
   q.value = "";
-  accountId.value = "";
   filters.status = "active";
   filters.bundle = "";
   filters.allocated = "all";
   filters.backorder = "all";
   pagination.value.current_page = 1;
+  if (accountId.value) {
+    accountId.value = "";
+    return;
+  }
   void load();
 }
 
@@ -439,6 +451,10 @@ function onPerPageChange(size) {
   void load();
 }
 
+watch(accountId, () => {
+  onAccountChange();
+});
+
 onMounted(() => {
   setCrmPageMeta({
     title: "Save Rack | Products",
@@ -549,22 +565,21 @@ onUnmounted(() => {
         </div>
 
         <div class="sip-toolbar__controls">
-          <select
-            v-model="accountId"
-            class="form-select sip-account-select"
-            aria-label="Filter by account"
-            :disabled="loading"
-            @change="onAccountChange"
-          >
-            <option value="">All Accounts</option>
-            <option
-              v-for="a in accounts"
-              :key="a.id"
-              :value="String(a.id)"
-            >
-              {{ a.company_name || `Account #${a.id}` }}
-            </option>
-          </select>
+          <div class="sip-toolbar-account flex-shrink-0">
+            <CrmSearchableSelect
+              v-model="accountId"
+              class="staff-toolbar-search staff-toolbar-search--inline"
+              appearance="staff"
+              aria-label="All Accounts"
+              :options="accountOptions"
+              :disabled="loading"
+              placeholder="All Accounts"
+              search-placeholder="Search Accounts…"
+              :allow-empty="true"
+              empty-label="All Accounts"
+              button-id="sip-account-trigger"
+            />
+          </div>
 
           <div class="position-relative flex-shrink-0" data-sip-filters>
             <button
@@ -940,16 +955,17 @@ onUnmounted(() => {
                   {{ row.product_title || row.title || "—" }}
                 </div>
                 <div class="sip-mobile-card__sku text-break">{{ row.sku || "—" }}</div>
-                <div class="sip-mobile-card__meta-grid">
-                  <div class="sip-mobile-card__meta-pair">
-                    <span class="sip-mobile-card__meta-label">Account</span>
-                    <span class="sip-mobile-card__meta-value">{{ row.account_name || "—" }}</span>
-                  </div>
-                  <div v-if="viewType === 'inventory'" class="sip-mobile-card__meta-pair">
-                    <span class="sip-mobile-card__meta-label">Bundle</span>
-                    <span class="sip-mobile-card__meta-value">{{ row.bundle ? "Yes" : "No" }}</span>
-                  </div>
-                </div>
+              </div>
+            </div>
+
+            <div class="sip-mobile-card__meta-rows">
+              <div class="sip-mobile-card__meta-row">
+                <span class="sip-mobile-card__meta-label">Account</span>
+                <span class="sip-mobile-card__meta-value">{{ row.account_name || "—" }}</span>
+              </div>
+              <div v-if="viewType === 'inventory'" class="sip-mobile-card__meta-row">
+                <span class="sip-mobile-card__meta-label">Bundle</span>
+                <span class="sip-mobile-card__meta-value">{{ row.bundle ? "Yes" : "No" }}</span>
               </div>
             </div>
 
@@ -1127,7 +1143,17 @@ onUnmounted(() => {
   flex: 1 1 auto;
   min-width: 0;
 }
-.sip-account-select,
+.sip-toolbar-account {
+  flex: 0 0 auto;
+  width: min(11.5rem, 100%);
+}
+.sip-toolbar-account :deep(.crm-searchable-select--staff .crm-searchable-select__trigger) {
+  height: auto;
+  min-height: 2.375rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  box-shadow: none;
+}
 .sip-view-select {
   width: auto;
   min-width: 11rem;
@@ -1234,26 +1260,30 @@ onUnmounted(() => {
   font-weight: 600;
   color: #2563eb;
   line-height: 1.3;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0;
 }
-.sip-mobile-card__meta-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.3rem 0.65rem;
+.sip-mobile-card__meta-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.7rem;
 }
-.sip-mobile-card__meta-pair {
-  min-width: 0;
+.sip-mobile-card__meta-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.35;
 }
 .sip-mobile-card__meta-label {
-  display: block;
-  font-size: 0.68rem;
+  flex-shrink: 0;
   font-weight: 500;
   color: #94a3b8;
-  line-height: 1.2;
 }
 .sip-mobile-card__meta-value {
-  display: block;
-  font-size: 0.78rem;
+  min-width: 0;
+  text-align: right;
   font-weight: 600;
   color: #1e293b;
   word-break: break-word;
@@ -1331,7 +1361,19 @@ onUnmounted(() => {
     gap: 0.35rem;
     width: 100%;
   }
-  .sip-account-select,
+  .sip-toolbar-account {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    width: auto;
+  }
+  .sip-toolbar-account :deep(.crm-searchable-select--staff .crm-searchable-select__trigger) {
+    min-height: 2.25rem;
+    height: 2.25rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    border-radius: 0.45rem;
+  }
   .sip-view-select {
     flex: 1 1 0;
     min-width: 0;

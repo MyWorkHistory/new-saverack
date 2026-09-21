@@ -439,16 +439,33 @@ onUnmounted(() => {
           </svg>
           Back to Packaging
         </button>
-        <div class="sid-header__actions">
+        <div class="staff-detail-tab-bar-actions sid-header__actions">
           <button type="button" class="staff-outline-action-btn" :disabled="printBusy" @click="printBarcode">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V6.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v.852m10.5 0V9.75m0 0a48.063 48.063 0 01-10.5 0" />
+            </svg>
             {{ printBusy ? "Generating Label…" : "Print Barcode" }}
           </button>
-          <div class="position-relative" data-packaging-actions>
-            <button type="button" class="staff-outline-action-btn" :aria-expanded="actionsOpen" @click.stop="actionsOpen = !actionsOpen">
+          <div class="sid-actions-wrap" data-packaging-actions>
+            <button
+              type="button"
+              class="staff-outline-action-btn"
+              :class="{ 'staff-outline-action-btn--active': actionsOpen }"
+              :aria-expanded="actionsOpen"
+              @click.stop="actionsOpen = !actionsOpen"
+            >
               Actions
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+              </svg>
             </button>
-            <div v-if="actionsOpen" class="dropdown-menu show shadow border py-1" style="position: absolute; top: calc(100% + 0.25rem); right: 0; z-index: 20; min-width: 10rem">
-              <button type="button" class="dropdown-item text-danger" @click="actionsOpen = false; deleteOpen = true">Delete</button>
+            <div v-if="actionsOpen" class="sid-menu" role="menu">
+              <button type="button" class="sid-menu__item sid-menu__item--danger" role="menuitem" @click="actionsOpen = false; deleteOpen = true">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.133-2.201a51.964 51.964 0 00-3.736 0c-1.223.037-2.133 1.02-2.133 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                </svg>
+                Delete
+              </button>
             </div>
           </div>
         </div>
@@ -628,11 +645,24 @@ onUnmounted(() => {
             <div class="sid-card__head">
               <div>
                 <div class="sid-card__head-title">
+                  <span class="sid-card__head-icon" aria-hidden="true">
+                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.55">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                    </svg>
+                  </span>
                   <h2>Locations</h2>
                 </div>
                 <p class="sid-card__sub">Manage inventory by location.</p>
               </div>
-              <button type="button" class="btn btn-primary staff-page-primary btn-sm fw-semibold" @click="openAddLocation">
+              <button
+                type="button"
+                class="btn btn-primary staff-page-primary btn-sm fw-semibold d-inline-flex align-items-center gap-1"
+                @click="openAddLocation"
+              >
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
                 Add Inventory
               </button>
             </div>
@@ -646,27 +676,56 @@ onUnmounted(() => {
                 <button
                   type="button"
                   class="sid-loc"
+                  :class="{ 'sid-loc--expanded': expandedLocationGroup === group.key && group.locations.length }"
+                  :aria-expanded="expandedLocationGroup === group.key && group.locations.length ? 'true' : 'false'"
                   :disabled="!group.locations.length"
                   @click="group.locations.length && toggleLocationGroup(group.key)"
                 >
+                  <span class="sid-loc__icon" :class="`sid-loc__icon--${group.key}`" aria-hidden="true">
+                    <svg v-if="group.icon === 'cart'" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+                    </svg>
+                    <svg v-else-if="group.icon === 'cube'" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                    </svg>
+                    <svg v-else width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007z" />
+                    </svg>
+                  </span>
                   <div class="sid-loc__body">
                     <div class="sid-loc__title-row">
                       <span class="sid-loc__title">{{ group.label }}</span>
-                      <span v-if="group.locations.length" class="sid-loc__badge">{{ Number(group.count || 0).toLocaleString("en-US") }}</span>
+                      <span v-if="group.locations.length" class="sid-loc__badge">
+                        {{ Number(group.count || 0).toLocaleString("en-US") }}
+                      </span>
                       <span v-if="group.locations.length" class="sid-loc__units">total units</span>
                     </div>
                   </div>
                   <span v-if="!group.locations.length" class="sid-loc__empty-right">No locations</span>
                 </button>
                 <div v-if="expandedLocationGroup === group.key && group.locations.length" class="sid-loc__list">
+                  <div class="sid-loc__cols" aria-hidden="true">
+                    <span>Location</span>
+                    <span>Qty</span>
+                  </div>
                   <div v-for="loc in group.locations" :key="locRowKey(loc)" class="sid-loc__item">
-                    <span class="sid-loc__item-name">{{ loc.name }}</span>
+                    <div class="sid-loc__item-left">
+                      <span class="sid-loc__item-pin" aria-hidden="true">
+                        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                        </svg>
+                      </span>
+                      <span class="sid-loc__item-name">{{ loc.name }}</span>
+                    </div>
                     <div class="sid-loc__item-right">
                       <span class="sid-loc__item-qty">{{ Number(loc.available || 0).toLocaleString("en-US") }}</span>
                       <button
                         type="button"
                         class="staff-action-btn staff-action-btn--more"
                         data-sid-loc-row-actions
+                        :class="{ 'is-open': locMenuOpenKey === locRowKey(loc) }"
+                        :aria-expanded="locMenuOpenKey === locRowKey(loc) ? 'true' : 'false'"
                         aria-label="Location actions"
                         @click="toggleLocMenu(loc, $event)"
                       >
@@ -813,6 +872,54 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+.sid-actions-wrap {
+  position: relative;
+}
+.sid-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  min-width: 13.75rem;
+  padding: 0.35rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.6rem;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+}
+.sid-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.4rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+}
+.sid-menu__item svg {
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+.sid-menu__item:hover {
+  background: #f9fafb;
+  color: #111827;
+}
+.sid-menu__item--danger {
+  color: #dc2626;
+}
+.sid-menu__item--danger svg {
+  color: #dc2626;
+}
+.sid-menu__item--danger:hover {
+  background: #fef2f2;
+  color: #b91c1c;
 }
 .sid-back {
   display: inline-flex;
@@ -1167,33 +1274,80 @@ onUnmounted(() => {
   gap: 0.75rem;
   margin-bottom: 0.75rem;
 }
+.sid-card__head-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
 .sid-card__head-title h2 {
   margin: 0;
   font-size: 1.05rem;
   font-weight: 700;
+  color: #111827;
+}
+.sid-card__head-icon {
+  display: inline-flex;
+  color: #3b82f6;
 }
 .sid-card__sub {
-  margin: 0.2rem 0 0;
+  margin: 0.2rem 0 0 1.7rem;
   font-size: 0.8rem;
   color: #9ca3af;
 }
-.sid-loc {
+.sid-locs {
   display: flex;
-  align-items: center;
-  width: 100%;
-  padding: 0.85rem 0.15rem;
-  border: 0;
-  background: transparent;
-  text-align: left;
-}
-.sid-loc:disabled {
-  cursor: default;
+  flex-direction: column;
+  gap: 0;
 }
 .sid-loc-wrap {
+  display: flex;
+  flex-direction: column;
   border-top: 1px solid #eef2f7;
 }
 .sid-loc-wrap:first-child {
   border-top: 0;
+}
+.sid-loc {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.95rem 0.15rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.sid-loc:disabled {
+  cursor: default;
+}
+.sid-loc:not(:disabled):hover,
+.sid-loc--expanded {
+  background: transparent;
+}
+.sid-loc__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.5rem;
+  flex-shrink: 0;
+}
+.sid-loc__icon svg {
+  width: 1.35rem;
+  height: 1.35rem;
+  display: block;
+}
+.sid-loc__icon--pick,
+.sid-loc__icon--backstock {
+  background: #eff6ff;
+  color: #2563eb;
+}
+.sid-loc__icon--other {
+  background: #f3e8ff;
+  color: #7c3aed;
 }
 .sid-loc__body {
   flex: 1;
@@ -1202,13 +1356,18 @@ onUnmounted(() => {
 .sid-loc__title-row {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 0.45rem;
+  flex-wrap: wrap;
 }
 .sid-loc__title {
+  font-size: 0.9rem;
   font-weight: 700;
+  color: #0f172a;
 }
 .sid-loc__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 1.45rem;
   height: 1.45rem;
   padding: 0 0.4rem;
@@ -1217,35 +1376,72 @@ onUnmounted(() => {
   color: #1d4ed8;
   font-size: 0.75rem;
   font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  line-height: 1;
 }
-.sid-loc__units,
-.sid-loc__empty-right {
+.sid-loc__units {
+  font-size: 0.78rem;
   color: #94a3b8;
-  font-size: 0.8rem;
+  font-weight: 500;
 }
 .sid-loc__empty-right {
   margin-left: auto;
+  font-size: 0.8125rem;
+  color: #94a3b8;
+  flex-shrink: 0;
 }
 .sid-loc__list {
-  padding: 0 0 0.75rem 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0 0.15rem 0.85rem 2.65rem;
+}
+.sid-loc__cols {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.15rem 2.6rem 0.35rem 1.55rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
 }
 .sid-loc__item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.45rem 0;
+  padding: 0.55rem 0.15rem;
+  color: inherit;
+  font-size: 0.9rem;
 }
-.sid-loc__item-name,
-.sid-loc__item-qty {
+.sid-loc__item-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+.sid-loc__item-pin {
+  display: inline-flex;
+  color: #2563eb;
+  flex-shrink: 0;
+}
+.sid-loc__item-name {
   font-weight: 600;
+  color: #111827;
+  min-width: 0;
 }
 .sid-loc__item-right {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.55rem;
+  flex-shrink: 0;
+}
+.sid-loc__item-qty {
+  font-weight: 700;
+  color: #0f172a;
+  min-width: 1.5rem;
+  text-align: right;
 }
 </style>

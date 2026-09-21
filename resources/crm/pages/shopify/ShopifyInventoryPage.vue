@@ -955,17 +955,16 @@ onUnmounted(() => {
                   {{ row.product_title || row.title || "—" }}
                 </div>
                 <div class="sip-mobile-card__sku text-break">{{ row.sku || "—" }}</div>
-              </div>
-            </div>
-
-            <div class="sip-mobile-card__meta-rows">
-              <div class="sip-mobile-card__meta-row">
-                <span class="sip-mobile-card__meta-label">Account</span>
-                <span class="sip-mobile-card__meta-value">{{ row.account_name || "—" }}</span>
-              </div>
-              <div v-if="viewType === 'inventory'" class="sip-mobile-card__meta-row">
-                <span class="sip-mobile-card__meta-label">Bundle</span>
-                <span class="sip-mobile-card__meta-value">{{ row.bundle ? "Yes" : "No" }}</span>
+                <div class="sip-mobile-card__meta-rows">
+                  <div class="sip-mobile-card__meta-row">
+                    <span class="sip-mobile-card__meta-label">Account</span>
+                    <span class="sip-mobile-card__meta-value">{{ row.account_name || "—" }}</span>
+                  </div>
+                  <div v-if="viewType === 'inventory'" class="sip-mobile-card__meta-row">
+                    <span class="sip-mobile-card__meta-label">Bundle</span>
+                    <span class="sip-mobile-card__meta-value">{{ row.bundle ? "Yes" : "No" }}</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1223,14 +1222,14 @@ onUnmounted(() => {
 .sip-mobile-card__product {
   display: flex;
   align-items: flex-start;
-  gap: 0.7rem;
+  gap: 0.75rem;
   min-width: 0;
   margin-bottom: 0.7rem;
 }
 .sip-mobile-card__thumb {
-  width: 3.25rem;
-  height: 3.25rem;
-  border-radius: 0.45rem;
+  width: 5.5rem;
+  height: 5.5rem;
+  border-radius: 0.5rem;
   overflow: hidden;
   background: #f3f4f6;
   border: 1px solid #eceff3;
@@ -1260,21 +1259,20 @@ onUnmounted(() => {
   font-weight: 600;
   color: #2563eb;
   line-height: 1.3;
-  margin-bottom: 0;
+  margin-bottom: 0.4rem;
 }
 .sip-mobile-card__meta-rows {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  margin-bottom: 0.7rem;
+  gap: 0.25rem;
 }
 .sip-mobile-card__meta-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.75rem;
-  font-size: 0.8125rem;
-  line-height: 1.35;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.3;
 }
 .sip-mobile-card__meta-label {
   flex-shrink: 0;

@@ -764,94 +764,92 @@ onUnmounted(() => {
       <div class="sid-grid">
 <section class="sid-card sid-area-product">
             <div class="sid-product">
-              <div class="sid-product__top">
-                <button
-                  type="button"
-                  class="sid-product__img sid-product__img--clickable"
-                  :disabled="imageBusy"
-                  :title="imageBusy ? 'Uploading…' : 'Click to upload image'"
-                  @click="pickImage"
-                >
-                  <img
-                    v-if="variant.image_url"
-                    :src="variant.image_url"
-                    :alt="variant.product_title || 'Product'"
-                  />
-                  <span v-else class="sid-product__img-empty" aria-hidden="true">
-                    <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.35">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
-                    </svg>
-                  </span>
-                  <span class="sid-product__img-hint">{{ imageBusy ? "Uploading…" : "Click to Upload" }}</span>
-                </button>
-                <input
-                  ref="imageInput"
-                  type="file"
-                  accept="image/*"
-                  class="d-none"
-                  @change="onImageSelected"
+              <button
+                type="button"
+                class="sid-product__img sid-product__img--clickable"
+                :disabled="imageBusy"
+                :title="imageBusy ? 'Uploading…' : 'Click to upload image'"
+                @click="pickImage"
+              >
+                <img
+                  v-if="variant.image_url"
+                  :src="variant.image_url"
+                  :alt="variant.product_title || 'Product'"
                 />
+                <span v-else class="sid-product__img-empty" aria-hidden="true">
+                  <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.35">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
+                  </svg>
+                </span>
+                <span class="sid-product__img-hint">{{ imageBusy ? "Uploading…" : "Click to Upload" }}</span>
+              </button>
+              <input
+                ref="imageInput"
+                type="file"
+                accept="image/*"
+                class="d-none"
+                @change="onImageSelected"
+              />
 
-                <div class="sid-product__info">
-                  <div class="sid-product__title-row">
-                    <h1 class="sid-product__title">
-                      {{ variant.product_title || variant.title || "Product" }}
-                    </h1>
-                    <button type="button" class="staff-outline-action-btn staff-outline-action-btn--sm" @click="openEdit">
-                      <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
+              <div class="sid-product__info">
+                <div class="sid-product__title-row">
+                  <h1 class="sid-product__title">
+                    {{ variant.product_title || variant.title || "Product" }}
+                  </h1>
+                  <button type="button" class="staff-outline-action-btn staff-outline-action-btn--sm" @click="openEdit">
+                    <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 16.323a4.5 4.5 0 01-1.897 1.13L2.25 18l.547-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
+                    </svg>
+                    Edit
+                  </button>
+                </div>
+
+                <div class="sid-field">
+                  <div class="sid-field__label">SKU</div>
+                  <div class="sid-field__sku">{{ variant.sku || "—" }}</div>
+                </div>
+
+                <div class="sid-field sid-field--gap">
+                  <div class="sid-field__label">Barcode</div>
+                  <div class="sid-field__barcode">
+                    <span>{{ variant.barcode || "—" }}</span>
+                  </div>
+                </div>
+
+                <div class="sid-product__meta">
+                  <div class="sid-meta">
+                    <span class="sid-meta__icon" aria-hidden="true">
+                      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955a1.125 1.125 0 011.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
                       </svg>
-                      Edit
-                    </button>
-                  </div>
-
-                  <div class="sid-field">
-                    <div class="sid-field__label">SKU</div>
-                    <div class="sid-field__sku">{{ variant.sku || "—" }}</div>
-                  </div>
-
-                  <div class="sid-field sid-field--gap">
-                    <div class="sid-field__label">Barcode</div>
-                    <div class="sid-field__barcode">
-                      <span>{{ variant.barcode || "—" }}</span>
+                    </span>
+                    <div>
+                      <div class="sid-field__label">Account</div>
+                      <div class="sid-meta__value">
+                        <RouterLink
+                          v-if="variant.client_account_id"
+                          class="sid-account-link"
+                          :to="{ name: 'client-account-detail', params: { id: String(variant.client_account_id) } }"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {{ variant.account_name || "—" }}
+                        </RouterLink>
+                        <template v-else>{{ variant.account_name || "—" }}</template>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
-
-              <div class="sid-product__meta">
-                <div class="sid-meta">
-                  <span class="sid-meta__icon" aria-hidden="true">
-                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955a1.125 1.125 0 011.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
-                    </svg>
-                  </span>
-                  <div>
-                    <div class="sid-field__label">Account</div>
-                    <div class="sid-meta__value">
-                      <RouterLink
-                        v-if="variant.client_account_id"
-                        class="sid-account-link"
-                        :to="{ name: 'client-account-detail', params: { id: String(variant.client_account_id) } }"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {{ variant.account_name || "—" }}
-                      </RouterLink>
-                      <template v-else>{{ variant.account_name || "—" }}</template>
+                  <div class="sid-meta">
+                    <span class="sid-meta__icon" aria-hidden="true">
+                      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6z" />
+                      </svg>
+                    </span>
+                    <div>
+                      <div class="sid-field__label">Type</div>
+                      <div class="sid-meta__value">{{ productTypeLabel }}</div>
                     </div>
-                  </div>
-                </div>
-                <div class="sid-meta">
-                  <span class="sid-meta__icon" aria-hidden="true">
-                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6z" />
-                    </svg>
-                  </span>
-                  <div>
-                    <div class="sid-field__label">Type</div>
-                    <div class="sid-meta__value">{{ productTypeLabel }}</div>
                   </div>
                 </div>
               </div>
@@ -1653,11 +1651,6 @@ onUnmounted(() => {
 }
 .sid-product {
   display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-.sid-product__top {
-  display: flex;
   gap: 1.35rem;
   align-items: flex-start;
 }
@@ -1842,8 +1835,6 @@ onUnmounted(() => {
   grid-template-columns: 1fr 1fr;
   gap: 0.85rem 1.25rem;
   margin-top: 1.05rem;
-  padding-top: 1.05rem;
-  border-top: 1px solid #eef0f3;
 }
 .sid-meta {
   display: flex;
@@ -2440,13 +2431,21 @@ onUnmounted(() => {
     padding: 0.85rem;
     border-radius: 0.75rem;
   }
-  .sid-product__top {
+  .sid-product {
     gap: 0.85rem;
+    align-items: stretch;
   }
   .sid-product__img {
-    width: 7.25rem;
-    height: 7.25rem;
+    width: 8.5rem;
+    height: auto;
+    min-height: 8.5rem;
     border-radius: 0.65rem;
+    align-self: stretch;
+  }
+  .sid-product__info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
   }
   .sid-product__title-row {
     margin-bottom: 0.45rem;
@@ -2462,7 +2461,7 @@ onUnmounted(() => {
     min-height: 1.65rem;
   }
   .sid-field--gap {
-    margin-top: 0.4rem;
+    margin-top: 0.35rem;
   }
   .sid-field__sku {
     font-size: 1.05rem;
@@ -2475,9 +2474,9 @@ onUnmounted(() => {
   }
   .sid-product__meta {
     grid-template-columns: 1fr 1fr;
-    gap: 0.55rem 0.75rem;
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
+    gap: 0.45rem 0.65rem;
+    margin-top: auto;
+    padding-top: 0.5rem;
   }
   .sid-meta__value {
     font-size: 0.8125rem;
@@ -2567,8 +2566,10 @@ onUnmounted(() => {
 }
 @media (max-width: 575.98px) {
   .sid-product__img {
-    width: 6.5rem;
-    height: 6.5rem;
+    width: 7.75rem;
+    height: auto;
+    min-height: 7.75rem;
+    align-self: stretch;
   }
   .sid-specs,
   .sid-specs--measurements {

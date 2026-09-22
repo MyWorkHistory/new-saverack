@@ -637,7 +637,7 @@ onUnmounted(() => {
           <div class="shopify-loc-mobile-card__stats">
             <div class="shopify-loc-mobile-card__stat">
               <span class="shopify-loc-mobile-card__stat-label">Type</span>
-              <span class="shopify-loc-mobile-card__stat-value">{{ row.type || "—" }}</span>
+              <span class="shopify-loc-mobile-card__stat-value shopify-loc-mobile-card__stat-value--plain">{{ row.type || "—" }}</span>
             </div>
             <div class="shopify-loc-mobile-card__stat">
               <span class="shopify-loc-mobile-card__stat-label">Quantity</span>
@@ -850,6 +850,9 @@ onUnmounted(() => {
   color: #0f172a;
   line-height: 1.2;
   word-break: break-word;
+}
+.shopify-loc-mobile-card__stat-value--plain {
+  font-weight: 400;
 }
 .inventory-detail__toggle {
   border: 1px solid rgba(15, 23, 42, 0.12);

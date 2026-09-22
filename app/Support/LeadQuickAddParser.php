@@ -130,7 +130,7 @@ final class LeadQuickAddParser
             }
 
             if (! preg_match(
-                '/^(Full\s*Name|Company\s*Name|Email|Phone\s*Number|Store\s*Website\s*URL|Tell\s*us\s*about\s*any\s*special\s*requirements)\s*[:\t]+\s*(.*)$/iu',
+                '/^(Full\s*Name|Company\s*Name|Email|Phone\s*Number|(?:Store\s*)?Website(?:\s*URL)?|Tell\s*us\s*about\s*any\s*special\s*requirements)\s*[:\t]+\s*(.*)$/iu',
                 $line,
                 $m
             )) {
@@ -153,13 +153,20 @@ final class LeadQuickAddParser
                 $fields['email'] = $value;
             } elseif ($label === 'phone number') {
                 $fields['phone'] = $value;
-            } elseif ($label === 'store website url') {
+            } elseif (preg_match('/^(?:store\s+)?website(?:\s+url)?$/', $label)) {
                 $fields['website'] = $value;
             } elseif ($label === 'tell us about any special requirements') {
                 $fields['requirements'] = $value;
             }
 
             $i++;
+        }
+
+        if ($fields['website'] === '' && $freeform !== '') {
+            [$extractedWebsite, $freeform] = self::extractWebsiteFromText($freeform);
+            if ($extractedWebsite !== '') {
+                $fields['website'] = $extractedWebsite;
+            }
         }
 
         $commentParts = [];
@@ -183,6 +190,34 @@ final class LeadQuickAddParser
             'name' => $name !== '' ? $name : null,
             'comment' => $comment,
         ];
+    }
+
+    /**
+     * Pull a Website / Store Website URL line out of freeform text so it does not land in notes.
+     *
+     * @return array{0: string, 1: string} [website, remainingText]
+     */
+    private static function extractWebsiteFromText(string $text): array
+    {
+        $website = '';
+        $kept = [];
+        foreach (preg_split('/\n/', $text) ?: [] as $line) {
+            $trim = trim((string) $line);
+            if (
+                $website === ''
+                && preg_match(
+                    '/^(?:Store\s*)?Website(?:\s*URL)?\s*[:\t]+\s*(.+)$/iu',
+                    $trim,
+                    $m
+                )
+            ) {
+                $website = trim((string) ($m[1] ?? ''));
+                continue;
+            }
+            $kept[] = $line;
+        }
+
+        return [$website, trim(implode("\n", $kept))];
     }
 
     private static function normalizeFullName(string $raw): string

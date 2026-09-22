@@ -39,7 +39,7 @@ const subtitle = computed(() =>
 
 const placeholder = computed(() =>
   isGoogle.value
-    ? "Full Name\t:\tLast, First\nCompany Name\t:\t…\nEmail\t:\t…\nPhone Number\t:\t…\nStore Website URL\t:\t…\nTell us about any special requirements\t:\t…\n\nSubject: …"
+    ? "Full Name\t:\tLast, First\nCompany Name\t:\t…\nEmail\t:\t…\nPhone Number\t:\t…\nWebsite\t:\t…\nTell us about any special requirements\t:\t…\n\nSubject: …"
     : "Paste company, website, email, and any email thread…",
 );
 

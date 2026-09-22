@@ -75,4 +75,26 @@ TEXT;
         $this->assertStringContainsString('Subject: 3PL Partnership Inquiry', (string) $parsed['comment']);
         $this->assertStringContainsString('Are you currently accepting new startup brands?', (string) $parsed['comment']);
     }
+
+    public function test_parses_google_website_label_variant(): void
+    {
+        $text = <<<'TEXT'
+Full Name	:	YUKI, Khona
+Company Name	:	Kultured Rider
+Email	:	designs@kulturedrider.com
+Phone Number	:	5551234567
+Website	:	www.kulturedrider.com
+Tell us about any special requirements	:	Looking for fulfillment.
+TEXT;
+
+        $parsed = LeadQuickAddParser::parse($text, 'google');
+
+        $this->assertSame('YUKI Khona', $parsed['name']);
+        $this->assertSame('Kultured Rider', $parsed['company_name']);
+        $this->assertSame('designs@kulturedrider.com', $parsed['email']);
+        $this->assertSame('www.kulturedrider.com', $parsed['website']);
+        $this->assertStringContainsString('Phone: 5551234567', (string) $parsed['comment']);
+        $this->assertStringContainsString('Looking for fulfillment.', (string) $parsed['comment']);
+        $this->assertStringNotContainsString('Website', (string) $parsed['comment']);
+    }
 }

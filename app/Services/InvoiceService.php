@@ -2194,6 +2194,20 @@ class InvoiceService
                 $orderNumber = $asnNum;
             }
         }
+        if (($orderNumber === null || $orderNumber === '') && is_array($item->metadata)) {
+            $rma = trim((string) ($item->metadata['rma_number'] ?? ''));
+            if ($rma !== '') {
+                $orderNumber = $rma;
+            }
+        }
+        // Custom bill "Reference #" is stored on invoice item sku (newer lines also set metadata.order_number).
+        if (($orderNumber === null || $orderNumber === '') && is_array($item->metadata)) {
+            $source = strtolower(trim((string) ($item->metadata['source'] ?? '')));
+            $isCustomBill = $source === 'custom_bill' || ! empty($item->metadata['custom_bill_id']);
+            if ($isCustomBill && is_string($item->sku) && trim($item->sku) !== '') {
+                $orderNumber = trim($item->sku);
+            }
+        }
         if (($orderNumber === null || $orderNumber === '') && $isStorage) {
             $orderNumber = $this->extractStorageLocationId($item->description)
                 ?? $this->extractStorageLocationId($item->display_name);

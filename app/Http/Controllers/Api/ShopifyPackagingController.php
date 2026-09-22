@@ -147,6 +147,13 @@ class ShopifyPackagingController extends Controller
         $this->fillFromRequest($request, $packaging);
         $packaging->save();
 
+        try {
+            app(\App\Services\ShopifyShippingPackageSyncService::class)
+                ->syncPackagingItemToShopify($packaging->fresh());
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         return response()->json([
             'message' => 'Packaging updated.',
             'item' => $this->serialize($packaging->fresh()),

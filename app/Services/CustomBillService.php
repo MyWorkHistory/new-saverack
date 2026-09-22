@@ -304,6 +304,7 @@ class CustomBillService
                 }
 
                 $name = trim((string) $item->name);
+                $reference = trim((string) ($item->sku ?? ''));
                 $this->invoices->addInvoiceItem($invoice, [
                     'description' => $name,
                     'display_name' => $name,
@@ -314,12 +315,14 @@ class CustomBillService
                     'unit_price_cents' => $unitCents,
                     'line_total_cents' => $lineTotal,
                     'group_key' => 'custom_bill:'.(int) $bill->id,
-                    'metadata' => [
+                    'metadata' => array_filter([
                         'source' => 'custom_bill',
                         'custom_bill_id' => (int) $bill->id,
                         'custom_bill_item_id' => (int) $item->id,
                         'custom_bill_number' => (int) $bill->bill_number,
-                    ],
+                        // Custom bill "Reference #" → invoice Order #
+                        'order_number' => $reference !== '' ? $reference : null,
+                    ], static fn ($v) => $v !== null && $v !== ''),
                 ], $actor);
                 $invoice = $invoice->fresh();
             }

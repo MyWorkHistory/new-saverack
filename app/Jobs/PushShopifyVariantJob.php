@@ -45,6 +45,17 @@ class PushShopifyVariantJob implements ShouldQueue
 
         try {
             $products->pushVariantToShopify($variant, $this->fields);
+            if (
+                array_key_exists('weight', $this->fields)
+                || ! empty($this->fields['sync_shipping_package'])
+                || array_key_exists('shipping_package_id', $this->fields)
+            ) {
+                \Illuminate\Support\Facades\Cache::put(
+                    'shopify.crm_shipping_push.'.$this->variantId,
+                    1,
+                    now()->addSeconds(120)
+                );
+            }
             Log::info('shopify.variant.push_ok', [
                 'variant_id' => $this->variantId,
                 'shopify_variant_id' => $variant->shopify_variant_id,

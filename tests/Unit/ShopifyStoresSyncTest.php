@@ -163,6 +163,11 @@ class ShopifyStoresSyncTest extends TestCase
 
         $variant = ShopifyProductVariant::query()->where('shopify_variant_id', '20')->first();
         $this->assertNotNull($variant);
+        // Shopify shipping weight is not imported — CRM owns weight.
+        $this->assertNull($variant->weight);
+        $variant->weight = 1.5;
+        $variant->weight_unit = 'POUNDS';
+        $variant->barcode = 'BAR-1';
         $variant->length = 11;
         $variant->width = 8;
         $variant->height = 3;
@@ -179,6 +184,19 @@ class ShopifyStoresSyncTest extends TestCase
         $this->assertEquals(8, (float) $variant->width);
         $this->assertEquals(3, (float) $variant->height);
         $this->assertSame('INCHES', $variant->dimension_unit);
+    }
+
+    public function test_new_variant_does_not_import_shopify_weight(): void
+    {
+        $connection = $this->connection();
+        $service = app(ShopifyProductSyncService::class);
+        $service->upsertProductFromShopifyNode($connection, $this->productNode('BAR-1', 1.5, 'POUNDS'), true);
+
+        $variant = ShopifyProductVariant::query()->where('shopify_variant_id', '20')->first();
+        $this->assertNotNull($variant);
+        $this->assertSame('BAR-1', $variant->barcode);
+        $this->assertNull($variant->weight);
+        $this->assertNull($variant->weight_unit);
     }
 
     public function test_variant_save_dispatches_push_with_barcode_weight_and_dims(): void

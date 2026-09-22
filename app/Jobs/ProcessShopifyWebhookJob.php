@@ -3,11 +3,14 @@
 namespace App\Jobs;
 
 use App\Models\ClientAccountShopifyConnection;
+use App\Models\ShopifyProduct;
+use App\Models\ShopifyProductVariant;
 use App\Models\ShopifyWebhookEvent;
 use App\Services\ShopifyBootstrapImportService;
 use App\Services\ShopifyClient;
 use App\Services\ShopifyOrderSyncService;
 use App\Services\ShopifyProductSyncService;
+use App\Services\ShopifyShippingPackageSyncService;
 use App\Support\ShopifyGid;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -89,6 +92,10 @@ class ProcessShopifyWebhookJob implements ShouldQueue
                 }
                 $force = str_contains($topic, 'create');
                 $products->upsertProductFromShopifyNode($connection, $payload, $force);
+                // CRM owns weight + shipping package — re-push after Shopify changes.
+                if (! $force) {
+                    $this->reassertCrmShipping($connection, $productId);
+                }
             } elseif ($kind === 'inventory') {
                 $this->markProcessed($event, 'Shopify inventory webhooks do not update CRM quantity.');
 
@@ -178,5 +185,40 @@ class ProcessShopifyWebhookJob implements ShouldQueue
             'topic' => $event->topic,
             'message' => $message,
         ]);
+    }
+
+    private function reassertCrmShipping(ClientAccountShopifyConnection $connection, string $shopifyProductId): void
+    {
+        $product = ShopifyProduct::query()
+            ->where('connection_id', $connection->id)
+            ->where('shopify_product_id', ShopifyGid::toId($shopifyProductId))
+            ->first();
+        if ($product === null) {
+            return;
+        }
+
+        $variants = ShopifyProductVariant::query()
+            ->where('shopify_product_id', $product->id)
+            ->get();
+        if ($variants->isEmpty()) {
+            return;
+        }
+
+        $pkgSync = app(ShopifyShippingPackageSyncService::class);
+        foreach ($variants as $variant) {
+            if (\Illuminate\Support\Facades\Cache::has('shopify.crm_shipping_push.'.$variant->id)) {
+                continue;
+            }
+            $hasWeight = $variant->weight !== null && $variant->weight !== '';
+            $hasPackaging = $pkgSync->primaryPackaging($variant) !== null;
+            if (! $hasWeight && ! $hasPackaging) {
+                continue;
+            }
+            try {
+                $pkgSync->dispatchVariantShippingPush($variant);
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }
     }
 }

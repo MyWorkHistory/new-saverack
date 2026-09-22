@@ -2207,7 +2207,7 @@ class ShopifyIntegrationController extends Controller
     }
 
     /**
-     * CRM-only packaging assignment. Not pushed to Shopify or ShipHero.
+     * Assign packaging in CRM and push primary packaging + product weight to Shopify.
      */
     public function updateVariantPackaging(Request $request, ShopifyProductVariant $shopifyVariant): JsonResponse
     {
@@ -2248,6 +2248,13 @@ class ShopifyIntegrationController extends Controller
             } catch (Throwable $e) {
                 report($e);
             }
+        }
+
+        try {
+            app(\App\Services\ShopifyShippingPackageSyncService::class)
+                ->dispatchVariantShippingPush($shopifyVariant);
+        } catch (Throwable $e) {
+            report($e);
         }
 
         return response()->json([
@@ -3035,6 +3042,12 @@ class ShopifyIntegrationController extends Controller
                     ."Packaging Materials: ".($afterMaterial !== '' ? $afterMaterial : '—'),
                     $request->user()
                 );
+            }
+            try {
+                app(\App\Services\ShopifyShippingPackageSyncService::class)
+                    ->dispatchVariantShippingPush($variant);
+            } catch (Throwable $e) {
+                report($e);
             }
             $updated++;
         }

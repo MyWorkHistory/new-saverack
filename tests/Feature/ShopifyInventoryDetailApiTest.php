@@ -247,7 +247,7 @@ class ShopifyInventoryDetailApiTest extends TestCase
         Storage::disk('public')->assertExists($parent->crm_image_path);
     }
 
-    public function test_packaging_assignment_stays_in_crm(): void
+    public function test_packaging_assignment_pushes_to_shopify(): void
     {
         \Illuminate\Support\Facades\Queue::fake();
         $this->actingAsAdmin();
@@ -257,6 +257,10 @@ class ShopifyInventoryDetailApiTest extends TestCase
             'name' => '8x8x4',
             'category' => 'packaging',
             'type' => 'box',
+            'length' => 8,
+            'width' => 8,
+            'height' => 4,
+            'weight' => 0.5,
         ]);
         $paper = \App\Models\ShopifyPackagingItem::query()->create([
             'name' => 'Kraft Paper',
@@ -294,6 +298,10 @@ class ShopifyInventoryDetailApiTest extends TestCase
             ->values()
             ->all();
         $this->assertSame([$paper->id, $wrap->id], $materialIds);
-        \Illuminate\Support\Facades\Queue::assertNothingPushed();
+        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\PushShopifyVariantJob::class, function ($job) use ($parent, $box) {
+            return (int) $job->variantId === (int) $parent->id
+                && ! empty($job->fields['sync_shipping_package'])
+                && (int) ($job->fields['packaging_item_id'] ?? 0) === (int) $box->id;
+        });
     }
 }

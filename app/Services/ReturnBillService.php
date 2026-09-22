@@ -346,6 +346,13 @@ class ReturnBillService
                 if ($name === '') {
                     $name = ReturnBillChargeCatalog::displayName($lineType);
                 }
+                $returnOrderNumber = '';
+                if ($bill->clientAccountReturn !== null) {
+                    $returnOrderNumber = trim((string) ($bill->clientAccountReturn->order_number ?? ''));
+                    if ($returnOrderNumber === '') {
+                        $returnOrderNumber = trim((string) ($bill->clientAccountReturn->reference_number ?? ''));
+                    }
+                }
 
                 $this->invoices->addOrMergeReturnLine($invoice, [
                     'description' => $name,
@@ -356,14 +363,15 @@ class ReturnBillService
                     'unit_price_cents' => $unitCents,
                     'line_total_cents' => $lineTotal,
                     'group_key' => $groupKey,
-                    'metadata' => [
+                    'metadata' => array_filter([
                         'source' => 'return_bill',
                         'return_bill_id' => (int) $bill->id,
                         'return_bill_item_id' => (int) $item->id,
                         'return_bill_number' => (int) $bill->bill_number,
                         'return_id' => $bill->client_account_return_id,
                         'rma_number' => $bill->clientAccountReturn !== null ? $bill->clientAccountReturn->rma_number : null,
-                    ],
+                        'order_number' => $returnOrderNumber !== '' ? $returnOrderNumber : null,
+                    ], static fn ($v) => $v !== null && $v !== ''),
                 ], $actor);
                 $invoice = $invoice->fresh();
             }

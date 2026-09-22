@@ -394,14 +394,15 @@ class AsnBillService
                     'unit_price_cents' => $unitCents,
                     'line_total_cents' => $lineTotal,
                     'group_key' => 'asn_bill:'.(int) $bill->id.':'.$lineType,
-                    'metadata' => [
+                    'metadata' => array_filter([
                         'source' => 'asn_bill',
                         'asn_bill_id' => (int) $bill->id,
                         'asn_bill_item_id' => (int) $item->id,
                         'asn_bill_number' => (int) $bill->bill_number,
                         'client_account_asn_id' => (int) $bill->client_account_asn_id,
-                        'asn_number' => $asnNumber,
-                    ],
+                        'asn_number' => $asnNumber !== '' ? $asnNumber : null,
+                        'order_number' => $asnNumber !== '' ? $asnNumber : null,
+                    ], static fn ($v) => $v !== null && $v !== ''),
                 ], $actor);
                 $invoice = $invoice->fresh();
             }

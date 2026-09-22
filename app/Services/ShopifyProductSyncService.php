@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ClientAccountShopifyConnection;
 use App\Models\ShopifyInventoryLevel;
 use App\Models\ShopifyLocation;
+use App\Models\ShopifyPackagingItem;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
 use App\Support\ShopifyGid;
@@ -254,22 +255,7 @@ GQL
 
         if ($isNew) {
             $variant->barcode = (string) ($node['barcode'] ?? $variant->barcode);
-
-            $weight = null;
-            $weightUnit = null;
-            if (is_array($node['inventoryItem']['measurement']['weight'] ?? null)) {
-                $weight = $node['inventoryItem']['measurement']['weight']['value'] ?? null;
-                $weightUnit = $node['inventoryItem']['measurement']['weight']['unit'] ?? null;
-            } elseif (isset($node['weight'])) {
-                $weight = $node['weight'];
-                $weightUnit = $node['weight_unit'] ?? $node['weightUnit'] ?? null;
-            }
-            if ($weight !== null && $weight !== '') {
-                $variant->weight = (float) $weight;
-            }
-            if ($weightUnit !== null && $weightUnit !== '') {
-                $variant->weight_unit = (string) $weightUnit;
-            }
+            // CRM owns product weight + shipping package. Do not import Shopify shipping weight.
         }
 
         $variant->shopify_updated_at = $this->parseTime($node['updatedAt'] ?? $node['updated_at'] ?? null);
@@ -488,21 +474,50 @@ GQL
         }
         $weightValue = array_key_exists('weight', $fields) ? $fields['weight'] : $variant->weight;
         $weightUnitField = array_key_exists('weight_unit', $fields) ? $fields['weight_unit'] : $variant->weight_unit;
+        $shippingPackageId = array_key_exists('shipping_package_id', $fields)
+            ? $fields['shipping_package_id']
+            : null;
+
+        if (
+            ($shippingPackageId === null || $shippingPackageId === '')
+            && ! empty($fields['sync_shipping_package'])
+        ) {
+            try {
+                $pkgSync = app(ShopifyShippingPackageSyncService::class);
+                $packaging = null;
+                if (! empty($fields['packaging_item_id'])) {
+                    $packaging = ShopifyPackagingItem::query()->find((int) $fields['packaging_item_id']);
+                }
+                if ($packaging === null) {
+                    $packaging = $pkgSync->primaryPackaging($variant);
+                }
+                if ($packaging !== null && $variant->connection) {
+                    $shippingPackageId = $pkgSync->ensurePackageForConnection($variant->connection, $packaging);
+                }
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }
+
+        $measurement = [];
         if ($weightValue !== null && $weightValue !== '') {
             $unit = strtoupper((string) ($weightUnitField ?? 'POUNDS'));
             if (! in_array($unit, ['GRAMS', 'KILOGRAMS', 'OUNCES', 'POUNDS'], true)) {
                 $unit = 'POUNDS';
             }
+            $measurement['weight'] = [
+                'value' => (float) $weightValue,
+                'unit' => $unit,
+            ];
+        }
+        if (is_string($shippingPackageId) && trim($shippingPackageId) !== '') {
+            $measurement['shippingPackageId'] = trim($shippingPackageId);
+        }
+
+        if ($measurement !== []) {
             $variantInput['inventoryItem'] = array_merge(
                 $variantInput['inventoryItem'] ?? [],
-                [
-                    'measurement' => [
-                        'weight' => [
-                            'value' => (float) $weightValue,
-                            'unit' => $unit,
-                        ],
-                    ],
-                ]
+                ['measurement' => $measurement]
             );
         }
 

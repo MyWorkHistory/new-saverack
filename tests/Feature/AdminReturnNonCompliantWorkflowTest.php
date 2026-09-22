@@ -257,4 +257,35 @@ class AdminReturnNonCompliantWorkflowTest extends TestCase
             'return_qty' => 2,
         ])->assertUnprocessable();
     }
+
+    public function test_reference_number_persists_on_process_detail_reload(): void
+    {
+        $account = $this->account('ref');
+        Sanctum::actingAs($this->staffUser(['returns.update']));
+
+        $create = $this->postJson('/api/admin/returns/non-compliant', [
+            'client_account_id' => $account->id,
+            'declared_items' => 1,
+            'reason' => 'unable_to_identify_customer',
+            'reference_number' => null,
+        ])->assertCreated();
+
+        $returnId = (int) $create->json('id');
+
+        $this->patchJson('/api/admin/returns/'.$returnId.'/reference', [
+            'reference_number' => 'REF-PERSIST-99',
+        ])
+            ->assertOk()
+            ->assertJsonPath('reference_number', 'REF-PERSIST-99');
+
+        $this->assertDatabaseHas('client_account_returns', [
+            'id' => $returnId,
+            'reference_number' => 'REF-PERSIST-99',
+        ]);
+
+        // Process detail reloads via portal show — must include reference_number.
+        $this->getJson('/api/returns/'.$returnId)
+            ->assertOk()
+            ->assertJsonPath('reference_number', 'REF-PERSIST-99');
+    }
 }

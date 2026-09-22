@@ -189,6 +189,7 @@ class ReturnController extends Controller
             'shiphero_order_id' => $return->shiphero_order_id,
             'order_number' => $return->order_number,
             'customer_name' => $return->customer_name,
+            'reference_number' => $return->reference_number,
             'items_count' => $return->items_count,
             'warehouse_private_note' => $return->warehouse_private_note,
             'return_comment' => $return->return_comment,

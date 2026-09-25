@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\ClientAccount;
 use App\Models\ClientAccountAsn;
 use App\Models\ClientAccountAsnLine;
+use App\Models\ClientAccountAsnTracking;
 use App\Models\Permission;
 use App\Models\User;
 use App\Services\ShipHeroInventoryService;
@@ -657,5 +658,56 @@ class AsnApiTest extends TestCase
         ])
             ->assertCreated()
             ->assertJsonPath('sku', 'STAFF-ADD-1');
+    }
+
+    public function test_portal_asn_export_includes_lines_tracking_boxes_and_pallets(): void
+    {
+        $account = $this->account();
+        $user = User::factory()->create(['client_account_id' => $account->id]);
+        $user->permissions()->attach($this->inventoryViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => 'ASN-EXPORT-1',
+            'status' => ClientAccountAsn::STATUS_PENDING,
+            'total_boxes' => 4,
+            'total_pallets' => 2,
+            'expected_qty' => 10,
+            'accepted_qty' => 8,
+            'rejected_qty' => 1,
+        ]);
+        ClientAccountAsnLine::create([
+            'client_account_asn_id' => $asn->id,
+            'sku' => 'WIDGET-1',
+            'name' => 'Widget One',
+            'expected_qty' => 10,
+            'accepted_qty' => 8,
+            'rejected_qty' => 1,
+            'sort_order' => 0,
+        ]);
+        ClientAccountAsnTracking::create([
+            'client_account_asn_id' => $asn->id,
+            'carrier' => 'UPS',
+            'tracking_number' => '1Z999EXPORT',
+            'sort_order' => 0,
+        ]);
+
+        $list = $this->get('/api/asns/export-csv?client_account_id='.$account->id);
+        $list->assertOk();
+        $this->assertStringContainsString('text/csv', (string) $list->headers->get('content-type'));
+        $csv = $list->streamedContent();
+        $this->assertStringContainsString('ASN #', $csv);
+        $this->assertStringContainsString('ASN-EXPORT-1', $csv);
+        $this->assertStringContainsString('WIDGET-1', $csv);
+        $this->assertStringContainsString('1Z999EXPORT', $csv);
+        $this->assertStringContainsString('Total Boxes', $csv);
+        $this->assertStringContainsString('Total Pallets', $csv);
+
+        $detail = $this->get('/api/asns/'.$asn->id.'/export-csv');
+        $detail->assertOk();
+        $detailCsv = $detail->streamedContent();
+        $this->assertStringContainsString('WIDGET-1', $detailCsv);
+        $this->assertStringContainsString('1Z999EXPORT', $detailCsv);
     }
 }

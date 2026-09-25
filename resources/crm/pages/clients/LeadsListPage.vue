@@ -16,6 +16,7 @@ import LeadCreateDrawer from "../../components/leads/LeadCreateDrawer.vue";
 import LeadQuickAddDrawer from "../../components/leads/LeadQuickAddDrawer.vue";
 import LeadStatusUpdateModal from "../../components/leads/LeadStatusUpdateModal.vue";
 import LeadSummaryCards from "../../components/leads/LeadSummaryCards.vue";
+import CrmExportCsvButton from "../../components/common/CrmExportCsvButton.vue";
 import CrmListTableFooter from "../../components/common/CrmListTableFooter.vue";
 import { LIST_PAGE_SIZE_DEFAULT } from "../../constants/pagination.js";
 import ShopifyCsvUploadModal from "../../components/shopify/ShopifyCsvUploadModal.vue";
@@ -46,6 +47,28 @@ function userHasPerm(key) {
 const canCreate = computed(() => userHasPerm("leads.create"));
 const canUpdate = computed(() => userHasPerm("leads.update"));
 const canDelete = computed(() => userHasPerm("leads.delete"));
+
+const exportParams = computed(() => {
+  const params = {};
+  const search = String(query.value.search || "").trim();
+  if (search) {
+    params.search = search;
+    return params;
+  }
+  if (query.value.status && query.value.status !== "all") {
+    params.status = query.value.status;
+  }
+  if (query.value.referral && query.value.referral !== "all") {
+    params.referral = query.value.referral;
+  }
+  if (query.value.follow_up_days && query.value.follow_up_days !== "all") {
+    params.follow_up_days = query.value.follow_up_days;
+  }
+  if (query.value.email_template_id && query.value.email_template_id !== "all") {
+    params.email_template_id = query.value.email_template_id;
+  }
+  return params;
+});
 
 setCrmPageMeta({ title: "Save Rack | Leads", description: "Sales leads directory." });
 
@@ -781,6 +804,12 @@ onUnmounted(() => {
         <p class="text-secondary small mb-0">Track sales leads and follow-ups</p>
       </div>
       <div class="d-flex flex-wrap align-items-center gap-2 ms-md-auto flex-shrink-0">
+        <CrmExportCsvButton
+          path="/leads/export-csv"
+          :params="exportParams"
+          filename-base="leads"
+          :disabled="loading"
+        />
         <button
           v-if="canCreate"
           type="button"

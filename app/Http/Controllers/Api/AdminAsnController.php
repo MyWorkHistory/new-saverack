@@ -15,7 +15,10 @@ use App\Models\User;
 use App\Services\AsnBillService;
 use App\Services\AsnReceivingService;
 use App\Services\OrderDashboardSnapshotService;
+use App\Support\AsnCsvExport;
 use App\Support\Billing\AsnBillChargeCatalog;
+use App\Support\CsvExporter;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +26,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminAsnController extends Controller
 {
@@ -228,13 +232,81 @@ class AdminAsnController extends Controller
         $this->assertStaff($request);
         Gate::authorize('viewAny', ClientAccountAsn::class);
 
-        $validated = $request->validate([
+        $validated = $request->validate($this->listFilterRules(true));
+
+        $perPage = (int) ($validated['per_page'] ?? 25);
+        $sortBy = (string) ($validated['sort_by'] ?? 'created_at');
+        $sortDir = strtolower((string) ($validated['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
+
+        $query = $this->filteredListQuery($validated)
+            ->with(['trackings', 'clientAccount']);
+
+        $query->orderBy($sortBy, $sortDir)->orderBy('id', $sortDir);
+        $paginator = $query->paginate($perPage);
+
+        return response()->json([
+            'data' => collect($paginator->items())->map(fn (ClientAccountAsn $a) => $this->serializeListRow($a))->values()->all(),
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+            ],
+        ]);
+    }
+
+    public function exportCsv(Request $request): StreamedResponse
+    {
+        $this->assertStaff($request);
+        Gate::authorize('viewAny', ClientAccountAsn::class);
+
+        $validated = $request->validate($this->listFilterRules(false));
+        $query = $this->filteredListQuery($validated)
+            ->with(['lines', 'trackings', 'vendorLines', 'clientAccount', 'processedBy'])
+            ->orderBy('id');
+
+        return CsvExporter::stream(
+            'asns-export-'.date('Y-m-d').'.csv',
+            AsnCsvExport::headers(),
+            function ($out) use ($query) {
+                $query->chunkById(100, function ($asns) use ($out) {
+                    foreach ($asns as $asn) {
+                        AsnCsvExport::writeAsn($out, $asn, $this->receiving);
+                    }
+                });
+            }
+        );
+    }
+
+    public function exportDetailCsv(Request $request, ClientAccountAsn $asn): StreamedResponse
+    {
+        $this->assertStaff($request);
+        $this->authorizeAsn($request, $asn);
+        $safeNumber = preg_replace('/[^A-Za-z0-9._-]+/', '_', (string) $asn->asn_number) ?: 'asn';
+
+        return CsvExporter::stream(
+            'asn-'.$safeNumber.'-'.date('Y-m-d').'.csv',
+            AsnCsvExport::headers(),
+            function ($out) use ($asn) {
+                AsnCsvExport::writeAsn($out, $asn, $this->receiving);
+            }
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function listFilterRules(bool $includePaging): array
+    {
+        $rules = [
             'client_account_id' => ['nullable', 'integer', 'exists:client_accounts,id'],
             'status' => ['nullable', 'string', Rule::in(ClientAccountAsn::STATUSES)],
             'q' => ['nullable', 'string', 'max:255'],
-            'page' => ['nullable', 'integer', 'min:1'],
-            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-            'sort_by' => ['nullable', 'string', Rule::in([
+        ];
+        if ($includePaging) {
+            $rules['page'] = ['nullable', 'integer', 'min:1'];
+            $rules['per_page'] = ['nullable', 'integer', 'min:1', 'max:100'];
+            $rules['sort_by'] = ['nullable', 'string', Rule::in([
                 'status',
                 'asn_number',
                 'created_at',
@@ -242,17 +314,20 @@ class AdminAsnController extends Controller
                 'accepted_qty',
                 'rejected_qty',
                 'total_boxes',
-            ])],
-            'sort_dir' => ['nullable', 'string', Rule::in(['asc', 'desc'])],
-        ]);
+            ])];
+            $rules['sort_dir'] = ['nullable', 'string', Rule::in(['asc', 'desc'])];
+        }
 
+        return $rules;
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function filteredListQuery(array $validated): Builder
+    {
+        $query = ClientAccountAsn::query();
         $q = isset($validated['q']) ? trim((string) $validated['q']) : '';
-        $perPage = (int) ($validated['per_page'] ?? 25);
-        $sortBy = (string) ($validated['sort_by'] ?? 'created_at');
-        $sortDir = strtolower((string) ($validated['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
-
-        $query = ClientAccountAsn::query()
-            ->with(['trackings', 'clientAccount']);
 
         if (! empty($validated['client_account_id'])) {
             $query->where('client_account_id', (int) $validated['client_account_id']);
@@ -271,18 +346,7 @@ class AdminAsnController extends Controller
             });
         }
 
-        $query->orderBy($sortBy, $sortDir)->orderBy('id', $sortDir);
-        $paginator = $query->paginate($perPage);
-
-        return response()->json([
-            'data' => collect($paginator->items())->map(fn (ClientAccountAsn $a) => $this->serializeListRow($a))->values()->all(),
-            'meta' => [
-                'current_page' => $paginator->currentPage(),
-                'last_page' => $paginator->lastPage(),
-                'per_page' => $paginator->perPage(),
-                'total' => $paginator->total(),
-            ],
-        ]);
+        return $query;
     }
 
     public function show(Request $request, ClientAccountAsn $asn): JsonResponse

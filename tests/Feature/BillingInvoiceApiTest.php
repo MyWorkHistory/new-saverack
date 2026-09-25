@@ -3708,4 +3708,66 @@ class BillingInvoiceApiTest extends TestCase
         $this->assertContains('#20177', array_column($upsRow['details'], 'order_number'));
         $this->assertContains('#20163', array_column($upsRow['details'], 'order_number'));
     }
+
+    public function test_invoice_export_csv_includes_header_and_line_items(): void
+    {
+        $user = User::factory()->create();
+        $user->permissions()->attach($this->billingViewPermission()->id);
+        Sanctum::actingAs($user);
+
+        $account = ClientAccount::query()->create([
+            'status' => ClientAccount::STATUS_ACTIVE,
+            'company_name' => 'Export Invoice Co',
+            'email' => 'export-invoice@example.test',
+            'default_payment_type' => 'ACH',
+        ]);
+        $invoice = Invoice::query()->create([
+            'invoice_number' => 'INV-EXPORT-1',
+            'client_account_id' => $account->id,
+            'status' => Invoice::STATUS_SENT,
+            'currency' => 'USD',
+            'subtotal_cents' => 1500,
+            'tax_cents' => 0,
+            'total_cents' => 1500,
+            'amount_paid_cents' => 0,
+            'balance_due_cents' => 1500,
+            'internal_notes' => 'Staff only note',
+        ]);
+        InvoiceItem::query()->create([
+            'invoice_id' => $invoice->id,
+            'sort_order' => 0,
+            'category' => 'fulfillment',
+            'description' => 'Pick and pack',
+            'display_name' => 'Pick and Pack',
+            'sku' => 'FUL-001',
+            'quantity' => 3,
+            'unit' => 'ea',
+            'unit_price_cents' => 500,
+            'line_total_cents' => 1500,
+            'metadata' => [
+                'order_number' => 'ORD-7788',
+                'asn_number' => 'ASN-22',
+            ],
+        ]);
+
+        $list = $this->get('/api/invoices/export-csv');
+        $list->assertOk();
+        $this->assertStringContainsString('text/csv', (string) $list->headers->get('content-type'));
+        $csv = $list->streamedContent();
+        $this->assertStringContainsString('Invoice #', $csv);
+        $this->assertStringContainsString('INV-EXPORT-1', $csv);
+        $this->assertStringContainsString('Export Invoice Co', $csv);
+        $this->assertStringContainsString('Pick and Pack', $csv);
+        $this->assertStringContainsString('FUL-001', $csv);
+        $this->assertStringContainsString('ORD-7788', $csv);
+        $this->assertStringContainsString('ASN-22', $csv);
+        $this->assertStringContainsString('Staff only note', $csv);
+
+        $detail = $this->get('/api/invoices/'.$invoice->id.'/export-csv');
+        $detail->assertOk();
+        $detailCsv = $detail->streamedContent();
+        $this->assertStringContainsString('INV-EXPORT-1', $detailCsv);
+        $this->assertStringContainsString('FUL-001', $detailCsv);
+        $this->assertStringContainsString('15.00', $detailCsv);
+    }
 }

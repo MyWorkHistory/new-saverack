@@ -12,6 +12,7 @@ import {
 import { useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import CrmExportCsvButton from "../../components/common/CrmExportCsvButton.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -156,6 +157,15 @@ const query = reactive({
   status: "all",
   client_account_id: "",
   payment_type: "",
+});
+
+const exportParams = computed(() => {
+  const params = {};
+  if (query.search) params.search = query.search;
+  if (query.status && query.status !== "all") params.status = query.status;
+  if (query.client_account_id) params.client_account_id = query.client_account_id;
+  if (query.payment_type) params.payment_type = query.payment_type;
+  return params;
 });
 
 let searchDebounce = null;
@@ -1073,8 +1083,15 @@ onUnmounted(() => {
           }}
         </p>
       </div>
-      <div v-if="canCreate" class="d-flex flex-wrap gap-2 ms-md-auto">
+      <div class="d-flex flex-wrap gap-2 ms-md-auto">
+        <CrmExportCsvButton
+          path="/invoices/export-csv"
+          :params="exportParams"
+          filename-base="invoices"
+          :disabled="loading"
+        />
         <button
+          v-if="canCreate"
           type="button"
           class="btn btn-outline-secondary flex-shrink-0"
           @click="openImportModal"
@@ -1082,6 +1099,7 @@ onUnmounted(() => {
           Import CSV
         </button>
         <button
+          v-if="canCreate"
           type="button"
           class="btn btn-primary staff-page-primary flex-shrink-0"
           @click="addDrawerOpen = true"

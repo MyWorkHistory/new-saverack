@@ -2795,9 +2795,12 @@ class InvoiceService
             ->whereDate('due_at', '<=', InvoiceLifecycleStatus::latestDueDateNotPastDue()->toDateString());
     }
 
-    public function paginate(array $filters): \Illuminate\Contracts\Pagination\LengthAwarePaginator
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    public function filteredQuery(array $filters): \Illuminate\Database\Eloquent\Builder
     {
-        $q = Invoice::query()->with('clientAccount');
+        $q = Invoice::query();
 
         if (! empty($filters['portal_view'])) {
             $q->whereNotIn('status', [Invoice::STATUS_DRAFT, 'pending']);
@@ -2852,6 +2855,13 @@ class InvoiceService
                 }
             });
         }
+
+        return $q;
+    }
+
+    public function paginate(array $filters): \Illuminate\Contracts\Pagination\LengthAwarePaginator
+    {
+        $q = $this->filteredQuery($filters)->with('clientAccount');
 
         $sortBy = $filters['sort_by'] ?? 'issued_at';
         $sortDir = strtolower((string) ($filters['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';

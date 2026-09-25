@@ -7,6 +7,7 @@ import BillingDollarStatIcon from "../../components/billing/BillingDollarStatIco
 import BillingInvoiceAddLineDrawer from "../../components/billing/BillingInvoiceAddLineDrawer.vue";
 import BillingInvoiceCreateDrawer from "../../components/billing/BillingInvoiceCreateDrawer.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
+import CrmExportCsvButton from "../../components/common/CrmExportCsvButton.vue";
 import InvoiceReviewSlackModal from "../../components/billing/InvoiceReviewSlackModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
@@ -2451,6 +2452,10 @@ function onDocKeydown(e) {
           <h1 class="staff-user-view__title billing-inv-toolbar__title mb-0 min-w-0">
             Invoice #{{ invoice.invoice_number }}
           </h1>
+          <CrmExportCsvButton
+            :path="`/invoices/${invoice.id}/export-csv`"
+            :filename-base="`invoice-${invoice.invoice_number || invoice.id}`"
+          />
         </div>
         <div class="staff-detail-tab-bar-wrap ms-lg-auto flex-grow-1">
           <div class="staff-detail-tab-bar">

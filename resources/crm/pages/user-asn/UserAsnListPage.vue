@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import api from "../../services/api";
 import AsnStatusChip from "../../components/asn/AsnStatusChip.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
+import CrmExportCsvButton from "../../components/common/CrmExportCsvButton.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
@@ -107,6 +108,12 @@ function toggleSort(column) {
 function clearSelection() {
   selected.value = new Set();
 }
+
+const exportParams = computed(() => ({
+  client_account_id: clientAccountId.value || undefined,
+  q: searchDebounced.value || undefined,
+  status: statusFilter.value !== "all" ? statusFilter.value : undefined,
+}));
 
 async function load() {
   if (!clientAccountId.value) {
@@ -337,7 +344,15 @@ onUnmounted(() => {
         <h1 class="h4 mb-1 fw-semibold text-body">Advanced Shipment Notice</h1>
         <p class="staff-page__intro user-asn-list__subtitle mb-0">Search by ASN # or tracking #.</p>
       </div>
-      <button type="button" class="btn btn-primary staff-page-primary" @click="createAsn">Create ASN</button>
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <CrmExportCsvButton
+          path="/asns/export-csv"
+          :params="exportParams"
+          filename-base="asns"
+          :disabled="loading || !clientAccountId"
+        />
+        <button type="button" class="btn btn-primary staff-page-primary" @click="createAsn">Create ASN</button>
+      </div>
     </div>
 
     <div

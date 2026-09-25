@@ -5,6 +5,7 @@ import api from "../../services/api";
 import AsnHubSummaryCards from "../../components/asn/AsnHubSummaryCards.vue";
 import AsnStatusChip from "../../components/asn/AsnStatusChip.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
+import CrmExportCsvButton from "../../components/common/CrmExportCsvButton.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
@@ -182,6 +183,20 @@ function listParams() {
   }
   return p;
 }
+
+const exportParams = computed(() => {
+  const p = {};
+  if (accountFilter.value) {
+    p.client_account_id = accountFilter.value;
+  }
+  if (statusFilter.value && statusFilter.value !== "all") {
+    p.status = statusFilter.value;
+  }
+  if (searchDebounced.value) {
+    p.q = searchDebounced.value;
+  }
+  return p;
+});
 
 async function loadSummary() {
   summaryLoading.value = true;
@@ -520,6 +535,12 @@ onUnmounted(() => {
         <p class="small admin-asn-list__subtitle mb-0">Search by ASN # or tracking #.</p>
       </div>
       <div class="d-flex flex-wrap gap-2 align-items-center">
+        <CrmExportCsvButton
+          path="/admin/asns/export-csv"
+          :params="exportParams"
+          filename-base="asns"
+          :disabled="loading"
+        />
         <button
           v-if="canCreateAsn"
           type="button"

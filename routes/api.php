@@ -256,6 +256,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::prefix('leads')->group(function () {
             Route::get('/meta', [LeadController::class, 'meta']);
+            Route::get('/export-csv', [LeadController::class, 'exportCsv']);
             Route::get('/', [LeadController::class, 'index']);
             Route::post('/', [LeadController::class, 'store']);
             Route::post('/import-csv', [LeadController::class, 'importCsv']);
@@ -486,11 +487,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::prefix('admin/asns')->group(function () {
         Route::get('/summary', [AdminAsnController::class, 'summary'])->middleware('can:receiving_asn.view');
         Route::get('/charge-options', [AdminAsnController::class, 'chargeOptions'])->middleware('can:receiving_asn.view');
+        Route::get('/export-csv', [AdminAsnController::class, 'exportCsv'])->middleware('can:receiving_asn.view');
         Route::get('/', [AdminAsnController::class, 'index'])->middleware('can:receiving_asn.view');
         Route::post('/non-compliant', [AdminAsnController::class, 'storeNonCompliant'])->middleware('can:receiving_asn.create');
         Route::get('/{asn}/product-catalog', [AsnController::class, 'productCatalog'])->middleware('can:receiving_asn.view');
         Route::post('/{asn}/catalog-products', [AsnController::class, 'storeCatalogProduct'])->middleware('can:receiving_asn.update');
         Route::post('/{asn}/lines/import-csv', [AsnController::class, 'importLinesCsv'])->middleware('can:receiving_asn.update');
+        Route::get('/{asn}/export-csv', [AdminAsnController::class, 'exportDetailCsv'])->middleware('can:receiving_asn.view');
         Route::get('/{asn}', [AdminAsnController::class, 'show'])->middleware('can:receiving_asn.view');
         Route::patch('/{asn}/status', [AdminAsnController::class, 'updateStatus'])->middleware('can:receiving_asn.update');
         Route::post('/{asn}/enrich-specs', [AdminAsnController::class, 'enrichSpecs'])->middleware('can:receiving_asn.update');
@@ -551,6 +554,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('asns')->group(function () {
+        Route::get('/export-csv', [AsnController::class, 'exportCsv'])->middleware('can:asns.view');
         Route::get('/', [AsnController::class, 'index'])->middleware('can:asns.view');
         Route::post('/', [AsnController::class, 'store'])->middleware('can:asns.create');
         Route::post('/bulk-delete', [AsnController::class, 'bulkDestroy'])->middleware('can:asns.delete');
@@ -559,6 +563,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{asn}/lines/{line}/barcode.pdf', [AsnController::class, 'barcodePdf'])->middleware('can:asns.view');
         Route::get('/{asn}/product-catalog', [AsnController::class, 'productCatalog'])->middleware('can:asns.view');
         Route::post('/{asn}/catalog-products', [AsnController::class, 'storeCatalogProduct'])->middleware('can:asns.update');
+        Route::get('/{asn}/export-csv', [AsnController::class, 'exportDetailCsv'])->middleware('can:asns.view');
         Route::get('/{asn}', [AsnController::class, 'show'])->middleware('can:asns.view');
         Route::patch('/{asn}', [AsnController::class, 'update'])->middleware('can:asns.update');
         Route::patch('/{asn}/number', [AsnController::class, 'updateNumber'])->middleware('can:asns.update');
@@ -655,6 +660,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('invoices/meta', [InvoiceController::class, 'meta'])
         ->name('invoices.meta');
+    Route::get('invoices/export-csv', [InvoiceController::class, 'exportCsv'])
+        ->name('invoices.export-csv');
+    Route::get('invoices/{invoice}/export-csv', [InvoiceController::class, 'exportDetailCsv'])
+        ->name('invoices.export-detail-csv');
     Route::post('invoices/{invoice}/share-link', [InvoiceController::class, 'shareLink'])
         ->name('invoices.share-link');
     Route::delete('invoices/{invoice}/line-groups/{groupKey}', [InvoiceController::class, 'destroyLineGroup'])

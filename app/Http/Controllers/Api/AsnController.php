@@ -12,7 +12,9 @@ use App\Models\User;
 use App\Services\AsnReceivingService;
 use App\Services\OrderDashboardSnapshotService;
 use App\Services\ShipHeroInventoryService;
+use App\Support\AsnCsvExport;
 use App\Support\Barcode\Code128Svg;
+use App\Support\CsvExporter;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,6 +23,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class AsnController extends Controller
@@ -309,6 +312,61 @@ class AsnController extends Controller
                 'total' => $paginator->total(),
             ],
         ]);
+    }
+
+    public function exportCsv(Request $request): StreamedResponse
+    {
+        $validated = $request->validate([
+            'client_account_id' => ['required', 'integer', 'exists:client_accounts,id'],
+            'q' => ['nullable', 'string', 'max:255'],
+            'status' => ['nullable', 'string', Rule::in(ClientAccountAsn::STATUSES)],
+        ]);
+        $clientAccountId = (int) $validated['client_account_id'];
+        Gate::authorize('view', ClientAccount::query()->findOrFail($clientAccountId));
+
+        $query = ClientAccountAsn::query()
+            ->where('client_account_id', $clientAccountId)
+            ->with(['lines', 'trackings', 'vendorLines', 'clientAccount', 'processedBy'])
+            ->orderBy('id');
+        if (! empty($validated['status'])) {
+            $query->where('status', (string) $validated['status']);
+        }
+        $q = isset($validated['q']) ? trim((string) $validated['q']) : '';
+        if ($q !== '') {
+            $like = '%'.$q.'%';
+            $query->where(function ($w) use ($like) {
+                $w->where('asn_number', 'like', $like)
+                    ->orWhereHas('trackings', function ($t) use ($like) {
+                        $t->where('tracking_number', 'like', $like);
+                    });
+            });
+        }
+
+        return CsvExporter::stream(
+            'asns-export-'.date('Y-m-d').'.csv',
+            AsnCsvExport::headers(),
+            function ($out) use ($query) {
+                $query->chunkById(100, function ($asns) use ($out) {
+                    foreach ($asns as $asn) {
+                        AsnCsvExport::writeAsn($out, $asn, $this->receiving);
+                    }
+                });
+            }
+        );
+    }
+
+    public function exportDetailCsv(Request $request, ClientAccountAsn $asn): StreamedResponse
+    {
+        Gate::authorize('view', $asn);
+        $safeNumber = preg_replace('/[^A-Za-z0-9._-]+/', '_', (string) $asn->asn_number) ?: 'asn';
+
+        return CsvExporter::stream(
+            'asn-'.$safeNumber.'-'.date('Y-m-d').'.csv',
+            AsnCsvExport::headers(),
+            function ($out) use ($asn) {
+                AsnCsvExport::writeAsn($out, $asn, $this->receiving);
+            }
+        );
     }
 
     public function store(Request $request): JsonResponse

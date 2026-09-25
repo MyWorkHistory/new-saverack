@@ -27,10 +27,13 @@ use App\Services\InvoiceService;
 use App\Services\InvoiceSlackReviewService;
 use App\Services\StripeInvoicePaymentService;
 use App\Support\Billing\InvoiceHistoryEventType;
+use App\Support\CsvExporter;
+use App\Support\InvoiceCsvExport;
 use App\Support\InvoiceReviewReason;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class InvoiceController extends Controller
 {
@@ -99,6 +102,60 @@ class InvoiceController extends Controller
         $data = $this->invoices->paginate($filters);
 
         return response()->json($data);
+    }
+
+    public function exportCsv(Request $request): StreamedResponse
+    {
+        $this->authorize('viewAny', Invoice::class);
+
+        $filters = $request->only([
+            'search',
+            'status',
+            'client_account_id',
+            'payment_type',
+            'issued_from',
+            'issued_to',
+        ]);
+
+        $portalAccountId = $this->resolvePortalClientAccountId($request);
+        if ($portalAccountId !== null) {
+            $filters['client_account_id'] = $portalAccountId;
+            $filters['portal_view'] = true;
+        }
+
+        $query = $this->invoices->filteredQuery($filters)
+            ->with(['items', 'clientAccount'])
+            ->orderBy('id');
+        $includeInternalNotes = $portalAccountId === null;
+
+        return CsvExporter::stream(
+            'invoices-export-'.date('Y-m-d').'.csv',
+            InvoiceCsvExport::headers(),
+            function ($out) use ($query, $includeInternalNotes) {
+                $query->chunkById(50, function ($invoices) use ($out, $includeInternalNotes) {
+                    foreach ($invoices as $invoice) {
+                        InvoiceCsvExport::writeInvoice($out, $invoice, $includeInternalNotes);
+                    }
+                });
+            }
+        );
+    }
+
+    public function exportDetailCsv(Request $request, Invoice $invoice): StreamedResponse
+    {
+        $this->authorize('view', $invoice);
+
+        $invoice->load(['items', 'clientAccount']);
+        $includeInternalNotes = $this->resolvePortalClientAccountId($request) === null;
+        $safeNumber = preg_replace('/[^A-Za-z0-9._-]+/', '_', (string) $invoice->invoice_number) ?: 'invoice';
+
+        return CsvExporter::stream(
+            'invoice-'.$safeNumber.'-'.date('Y-m-d').'.csv',
+            InvoiceCsvExport::headers(),
+            function ($out) use ($invoice, $includeInternalNotes) {
+                InvoiceCsvExport::writeInvoice($out, $invoice, $includeInternalNotes);
+            }
+        );
     }
 
     private function resolvePortalClientAccountId(Request $request): ?int

@@ -12,12 +12,15 @@ use App\Services\LeadService;
 use App\Services\LeadTemplateMailService;
 use App\Services\FulfillmentPricingPdfService;
 use App\Support\CrmActivityPresenter;
+use App\Support\CsvExporter;
+use App\Support\LeadCsvExport;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LeadController extends Controller
 {
@@ -64,6 +67,36 @@ class LeadController extends Controller
             'sort_by',
             'sort_dir',
         ])));
+    }
+
+    public function exportCsv(Request $request): StreamedResponse
+    {
+        Gate::authorize('viewAny', Lead::class);
+
+        $filters = $request->only([
+            'status',
+            'referral',
+            'follow_up_days',
+            'email_template_id',
+            'last_sent_template_id',
+            'search',
+            'q',
+        ]);
+        $query = $this->leads->filteredQuery($filters)
+            ->with(['latestTemplateSendEvent', 'feeItems', 'comments', 'statusEvents'])
+            ->orderBy('id');
+
+        return CsvExporter::stream(
+            'leads-export-'.date('Y-m-d').'.csv',
+            LeadCsvExport::headers(),
+            function ($out) use ($query) {
+                $query->chunkById(200, function ($leads) use ($out) {
+                    foreach ($leads as $lead) {
+                        LeadCsvExport::writeLead($out, $lead);
+                    }
+                });
+            }
+        );
     }
 
     public function store(Request $request): JsonResponse

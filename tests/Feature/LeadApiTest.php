@@ -558,4 +558,32 @@ TEXT;
         $this->assertSame('Love, Indus', $quoted['rows'][0]['company_name']);
         $this->assertSame(Lead::REFERRAL_GOOGLE, $quoted['rows'][0]['referral']);
     }
+
+    public function test_leads_export_csv_includes_all_lead_data(): void
+    {
+        $this->staffWithLeads();
+
+        Lead::query()->create([
+            'status' => Lead::STATUS_OPEN,
+            'referral' => Lead::REFERRAL_GOOGLE,
+            'company_name' => 'Export Lead Co',
+            'email' => 'export-lead@example.test',
+            'website' => 'https://exportlead.example',
+            'name' => 'Pat Export',
+            'comment' => 'Ready to onboard',
+            'follow_up_days' => 3,
+            'follow_up_at' => now()->addDays(3)->toDateString(),
+        ]);
+
+        $response = $this->get('/api/leads/export-csv');
+        $response->assertOk();
+        $this->assertStringContainsString('text/csv', (string) $response->headers->get('content-type'));
+        $csv = $response->streamedContent();
+        $this->assertStringContainsString('Company Name', $csv);
+        $this->assertStringContainsString('Export Lead Co', $csv);
+        $this->assertStringContainsString('export-lead@example.test', $csv);
+        $this->assertStringContainsString('Pat Export', $csv);
+        $this->assertStringContainsString('Ready to onboard', $csv);
+        $this->assertStringContainsString('google', $csv);
+    }
 }

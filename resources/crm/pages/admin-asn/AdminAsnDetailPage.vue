@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import api from "../../services/api";
 import AdminAsnReceivingFeesModal from "../../components/admin-asn/AdminAsnReceivingFeesModal.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
+import CrmExportCsvButton from "../../components/common/CrmExportCsvButton.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmNoteAuthorAvatar from "../../components/common/CrmNoteAuthorAvatar.vue";
 import ConfirmModal from "../../components/common/ConfirmModal.vue";
@@ -11,6 +12,7 @@ import AsnProductCatalogPanel from "../../components/inventory/AsnProductCatalog
 import { asnCatalogApiBase } from "../../composables/useAsnProductCatalog.js";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { useToast } from "../../composables/useToast.js";
+import { downloadListCsv } from "../../utils/downloadListCsv.js";
 import { errorMessage } from "../../utils/apiError.js";
 import { ASN_CARRIER_OPTIONS } from "../../utils/asnCarrierOptions.js";
 import { formatAsnDisplay, formatAsnHeading } from "../../utils/formatAsnDisplay.js";
@@ -1599,6 +1601,20 @@ function openPrintSlip() {
   openPdf(`/asns/${asnId.value}/packing-slip.pdf`, "Could not open packing slip PDF.");
 }
 
+async function exportAsnFromMenu() {
+  closeAllHeaderMenus();
+  if (!asn.value?.id) return;
+  try {
+    await downloadListCsv({
+      path: `/admin/asns/${asn.value.id}/export-csv`,
+      filenameBase: `asn-${asn.value.asn_number || asn.value.id}`,
+      toast,
+    });
+  } catch {
+    /* toast handled */
+  }
+}
+
 function openPrintLabel() {
   openPdf(`/asns/${asnId.value}/identification-label.pdf`, "Could not open identification label PDF.");
 }
@@ -1718,6 +1734,12 @@ onUnmounted(() => {
           >
             Mark as Ready
           </button>
+          <CrmExportCsvButton
+            v-if="asn?.id"
+            :path="`/admin/asns/${asn.id}/export-csv`"
+            :filename-base="`asn-${asn.asn_number || asn.id}`"
+            :disabled="loading"
+          />
           <button
             type="button"
             class="btn btn-outline-secondary fw-semibold d-inline-flex align-items-center gap-2"
@@ -2717,6 +2739,14 @@ onUnmounted(() => {
           </button>
           <button type="button" class="staff-row-menu__item" role="menuitem" @click="openPrintSlip(); closeAllHeaderMenus()">
             Print Packing Slip
+          </button>
+          <button
+            type="button"
+            class="staff-row-menu__item"
+            role="menuitem"
+            @click="exportAsnFromMenu"
+          >
+            Export CSV
           </button>
           <button type="button" class="staff-row-menu__item" role="menuitem" @click="openPrintLabel(); closeAllHeaderMenus()">
             Print Identification Label

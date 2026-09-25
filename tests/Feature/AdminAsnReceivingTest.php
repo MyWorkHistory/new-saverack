@@ -809,6 +809,49 @@ class AdminAsnReceivingTest extends TestCase
         $this->getJson('/api/admin/asns/summary')->assertForbidden();
     }
 
+    public function test_staff_asn_export_includes_all_line_and_tracking_details(): void
+    {
+        Sanctum::actingAs($this->staffUser(['receiving.view', 'clients.view']));
+        $account = $this->account('export');
+        $asn = ClientAccountAsn::create([
+            'client_account_id' => $account->id,
+            'asn_number' => '0099',
+            'status' => ClientAccountAsn::STATUS_IN_PROGRESS,
+            'total_boxes' => 6,
+            'total_pallets' => 3,
+            'expected_qty' => 5,
+            'accepted_qty' => 4,
+            'rejected_qty' => 1,
+        ]);
+        ClientAccountAsnLine::create([
+            'client_account_asn_id' => $asn->id,
+            'sku' => 'ADMIN-SKU',
+            'name' => 'Admin Widget',
+            'expected_qty' => 5,
+            'accepted_qty' => 4,
+            'rejected_qty' => 1,
+            'sort_order' => 0,
+        ]);
+        ClientAccountAsnTracking::create([
+            'client_account_asn_id' => $asn->id,
+            'carrier' => 'FedEx',
+            'tracking_number' => 'FX123EXPORT',
+            'sort_order' => 0,
+        ]);
+
+        $list = $this->get('/api/admin/asns/export-csv');
+        $list->assertOk();
+        $csv = $list->streamedContent();
+        $this->assertStringContainsString('0099', $csv);
+        $this->assertStringContainsString('ADMIN-SKU', $csv);
+        $this->assertStringContainsString('FX123EXPORT', $csv);
+        $this->assertStringContainsString('ASN Received QTY', $csv);
+
+        $detail = $this->get('/api/admin/asns/'.$asn->id.'/export-csv');
+        $detail->assertOk();
+        $this->assertStringContainsString('Admin Widget', $detail->streamedContent());
+    }
+
     protected function tearDown(): void
     {
         Mockery::close();

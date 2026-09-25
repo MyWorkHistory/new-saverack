@@ -2455,6 +2455,7 @@ function onDocKeydown(e) {
           <CrmExportCsvButton
             :path="`/invoices/${invoice.id}/export-csv`"
             :filename-base="`invoice-${invoice.invoice_number || invoice.id}`"
+            compact
           />
         </div>
         <div class="staff-detail-tab-bar-wrap ms-lg-auto flex-grow-1">

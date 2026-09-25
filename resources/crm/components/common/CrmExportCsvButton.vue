@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from "vue";
+import { ref } from "vue";
 import { useToast } from "../../composables/useToast.js";
 import { downloadListCsv } from "../../utils/downloadListCsv.js";
 
@@ -8,23 +8,13 @@ const props = defineProps({
   params: { type: Object, default: () => ({}) },
   filenameBase: { type: String, required: true },
   disabled: { type: Boolean, default: false },
+  compact: { type: Boolean, default: false },
 });
 
 const toast = useToast();
-const open = ref(false);
 const busy = ref(false);
 
-function onDocClick(event) {
-  if (!event.target?.closest?.("[data-export-root]")) {
-    open.value = false;
-  }
-}
-
-onMounted(() => document.addEventListener("click", onDocClick));
-onUnmounted(() => document.removeEventListener("click", onDocClick));
-
 async function runExport() {
-  open.value = false;
   if (busy.value) return;
   busy.value = true;
   try {
@@ -43,38 +33,28 @@ async function runExport() {
 </script>
 
 <template>
-  <div class="position-relative" data-export-root>
-    <button
-      type="button"
-      class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
-      :aria-expanded="open"
-      :disabled="disabled || busy"
-      @click.stop="open = !open"
+  <button
+    type="button"
+    class="btn staff-page-primary d-inline-flex align-items-center gap-2"
+    :class="compact ? 'btn-sm' : 'btn-primary'"
+    :disabled="disabled || busy"
+    @click="runExport"
+  >
+    <svg
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
     >
-      <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z" />
-      </svg>
-      Export
-      <svg
-        width="14"
-        height="14"
-        fill="currentColor"
-        viewBox="0 0 24 24"
-        class="text-secondary"
-        aria-hidden="true"
-      >
-        <path d="M7 10l5 5 5-5H7z" />
-      </svg>
-    </button>
-    <div
-      v-if="open"
-      class="dropdown-menu show shadow border px-0 py-1 mt-1"
-      style="min-width: 11rem; right: 0; left: auto"
-      @click.stop
-    >
-      <button type="button" class="dropdown-item small" :disabled="busy" @click="runExport">
-        Download CSV
-      </button>
-    </div>
-  </div>
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
+      />
+    </svg>
+    {{ busy ? "Exporting…" : "Export" }}
+  </button>
 </template>

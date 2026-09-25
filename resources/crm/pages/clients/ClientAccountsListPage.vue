@@ -17,6 +17,7 @@ import ClientAccountCreateDrawer from "../../components/clients/ClientAccountCre
 import ClientAccountEditModal from "../../components/clients/ClientAccountEditModal.vue";
 import ClientAccountSummaryCards from "../../components/clients/ClientAccountSummaryCards.vue";
 import CrmStatusUpdateModal from "../../components/common/CrmStatusUpdateModal.vue";
+import CrmExportCsvButton from "../../components/common/CrmExportCsvButton.vue";
 import CrmLoadingSpinner from "../../components/common/CrmLoadingSpinner.vue";
 import CrmSearchableSelect from "../../components/common/CrmSearchableSelect.vue";
 import CrmIconRowActions from "../../components/common/CrmIconRowActions.vue";
@@ -26,7 +27,6 @@ import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "../../constants/pagination";
 import { formatDateUs } from "../../utils/formatUserDates";
 import { setCrmPageMeta } from "../../composables/useCrmPageMeta.js";
 import { getPublicSignupUrl } from "../../utils/publicSignupUrl.js";
-import { downloadListCsv } from "../../utils/downloadListCsv.js";
 import { resolvePublicUrl } from "../../utils/resolvePublicUrl.js";
 import {
   accountsListAvatarUrl,
@@ -111,9 +111,7 @@ const manageMenuRow = computed(
 
 const addDrawerOpen = ref(false);
 const filterMenuOpen = ref(false);
-const exportOpen = ref(false);
 const bulkMenuOpen = ref(false);
-const exportBusy = ref(false);
 const bulkDeleteOpen = ref(false);
 const bulkDeleteBusy = ref(false);
 const selectedIds = ref([]);
@@ -345,7 +343,7 @@ function buildParams() {
   return p;
 }
 
-function buildExportParams() {
+const exportParams = computed(() => {
   const p = {};
   const s = (query.search || "").trim();
   if (s) p.search = s;
@@ -356,24 +354,7 @@ function buildExportParams() {
     p.status = query.status;
   }
   return p;
-}
-
-async function runAccountsExport() {
-  exportOpen.value = false;
-  exportBusy.value = true;
-  try {
-    await downloadListCsv({
-      path: "/client-accounts/export-csv",
-      params: buildExportParams(),
-      filenameBase: "accounts",
-      toast,
-    });
-  } catch {
-    /* toast handled in downloadListCsv */
-  } finally {
-    exportBusy.value = false;
-  }
-}
+});
 
 function normalizeAccountManagersFromMeta(payload) {
   const raw =
@@ -776,9 +757,6 @@ function toggleRowSelect(id) {
 }
 
 function onDocClick(e) {
-  if (!e.target.closest("[data-export-root]")) {
-    exportOpen.value = false;
-  }
   if (!e.target.closest("[data-toolbar-filter]")) {
     filterMenuOpen.value = false;
   }
@@ -1035,56 +1013,12 @@ onUnmounted(() => {
           <div
             class="staff-toolbar-row-actions d-flex flex-wrap align-items-center gap-2 gap-md-3 ms-md-auto flex-shrink-0"
           >
-            <div class="position-relative" data-export-root>
-              <button
-                type="button"
-                class="btn btn-outline-secondary staff-toolbar-btn d-inline-flex align-items-center gap-2"
-                :aria-expanded="exportOpen"
-                :disabled="loading || exportBusy"
-                @click.stop="
-                  bulkMenuOpen = false;
-                  exportOpen = !exportOpen;
-                "
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z"
-                  />
-                </svg>
-                Export
-                <svg
-                  width="14"
-                  height="14"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                  class="text-secondary"
-                  aria-hidden="true"
-                >
-                  <path d="M7 10l5 5 5-5H7z" />
-                </svg>
-              </button>
-              <div
-                v-if="exportOpen"
-                class="dropdown-menu show shadow border px-0 py-1 mt-1 staff-toolbar-export-dropdown"
-                style="min-width: 11rem; right: 0; left: auto"
-                @click.stop
-              >
-                <button
-                  type="button"
-                  class="dropdown-item small"
-                  :disabled="exportBusy"
-                  @click="runAccountsExport"
-                >
-                  Download CSV
-                </button>
-              </div>
-            </div>
+            <CrmExportCsvButton
+              path="/client-accounts/export-csv"
+              :params="exportParams"
+              filename-base="accounts"
+              :disabled="loading"
+            />
             <div
               v-if="canBulkUpdate || canBulkDelete"
               class="d-none d-lg-flex align-items-center gap-2 flex-shrink-0"
@@ -1120,7 +1054,6 @@ onUnmounted(() => {
                 aria-haspopup="true"
                 :disabled="loading"
                 @click.stop="
-                  exportOpen = false;
                   filterMenuOpen = false;
                   bulkMenuOpen = !bulkMenuOpen;
                 "
